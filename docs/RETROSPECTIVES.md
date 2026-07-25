@@ -116,3 +116,28 @@ that makes it survive intact — check identity, not just contents.*
 
 **LOW — `DOCUMENT_STATES`/`LINK_ORIGINS` duplicated the DDL's `CHECK` constraints** with nothing
 tying them together. A test now fails if they drift.
+
+## I5 — Sidecars (20260725 14:55)
+
+**HIGH — sidecar writes were not atomic.** `path.write_text` truncates before it writes, so a crash
+or full disk mid-write leaves a truncated sidecar — and the one thing a sidecar carries that cannot
+be recomputed is the document's permanent ULID. Losing it breaks every inbound `pnk://` link, and no
+later command can repair it, because nothing else knows what the id was. Now writes to a sibling
+temporary and `os.replace`s over the target. *Lesson: "the truth is in files" makes every file write
+a durability question; the ones holding unrecoverable identity deserve rename-based atomicity.*
+
+**MEDIUM — an explicit empty value was silently deleted on round-trip.** `tags: []` and
+`provenance: {}` vanished, because `write` tested truthiness. This is exactly the lesson I3 recorded
+one increment earlier — absent and empty are different statements — and I repeated it in a module
+whose entire contract is "do not lose what the user wrote". The `Sidecar` now records which known
+keys the file carried. *Lesson: a recorded lesson only helps if it is re-read while writing the next
+thing that could break the same way; the pattern to watch for is any `if value:` guarding output.*
+
+**MEDIUM — a hedged test assertion.** `assert made.title == "my research notes.md" or made.title ==
+"my research notes"` accepted either answer because I had not checked which one `Path.stem` gives.
+Two plausible values means the test asserts nothing about the one that is correct. Pinned to the
+real value. *Lesson: an `or` in an equality assertion is the tautology smell from I2 wearing a
+different hat.*
+
+**LOW — `KNOWN_KEYS` could drift from what `write` emits**, which would be silent data loss for a
+key the module claims to understand. A round-trip test now asserts every known key comes back.

@@ -18,6 +18,7 @@ In v0.1 sidecars are *created* and *moved*, never rewritten in place, so PyYAML 
 dump costs nothing yet. `pnk link` (v0.3) is what will need a comment-preserving writer.
 """
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -51,6 +52,13 @@ class Sidecar:
     provenance: dict[str, Any] = field(default_factory=dict[str, Any])
     extra: dict[str, Any] = field(default_factory=dict[str, Any])
     """Keys pinakes does not know. Round-tripped untouched — the file belongs to the user."""
+
+    present: frozenset[str] = frozenset()
+    """Known keys the file actually carried.
+
+    An explicit `tags: []` is not the same as no `tags` at all: the first is something the user
+    wrote and expects to still be there. Without this, writing back would quietly delete it.
+    """
 
 
 def sidecar_path(document: Path) -> Path:
@@ -96,29 +104,40 @@ def read(path: Path, *, owner: KbId) -> Sidecar:
         links=_links(path, data, owner=owner),
         provenance=_mapping(path, data, "provenance"),
         extra={key: value for key, value in data.items() if key not in KNOWN_KEYS},
+        present=frozenset(key for key in KNOWN_KEYS if key in data),
     )
 
 
 def write(path: Path, sidecar: Sidecar) -> None:
     """Write a sidecar. Unknown keys are written back; ordering is stable so diffs stay small."""
     document: dict[str, Any] = {"id": str(sidecar.id)}
-    if sidecar.title is not None:
+    if sidecar.title is not None or "title" in sidecar.present:
         document["title"] = sidecar.title
-    if sidecar.tags:
+    if sidecar.tags or "tags" in sidecar.present:
         document["tags"] = list(sidecar.tags)
-    if sidecar.created is not None:
+    if sidecar.created is not None or "created" in sidecar.present:
         document["created"] = sidecar.created
-    if sidecar.links:
+    if sidecar.links or "links" in sidecar.present:
         document["links"] = [{"to": str(link.to), "rel": link.rel} for link in sidecar.links]
-    if sidecar.provenance:
+    if sidecar.provenance or "provenance" in sidecar.present:
         document["provenance"] = dict(sidecar.provenance)
     for key in sorted(sidecar.extra):
         document[key] = sidecar.extra[key]
 
-    path.write_text(
-        yaml.safe_dump(document, sort_keys=False, allow_unicode=True, default_flow_style=False),
-        encoding="utf-8",
+    rendered = yaml.safe_dump(
+        document, sort_keys=False, allow_unicode=True, default_flow_style=False
     )
+
+    # Atomically: write beside the target, then rename over it. A truncated sidecar would lose the
+    # document's permanent ULID, and every inbound pnk:// link with it — the one failure in this
+    # module that no later command could repair.
+    temporary = path.with_name(f"{path.name}.new")
+    try:
+        temporary.write_text(rendered, encoding="utf-8")
+        os.replace(temporary, path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def skeleton(document: Path, *, title: str | None = None, created: str | None = None) -> Sidecar:

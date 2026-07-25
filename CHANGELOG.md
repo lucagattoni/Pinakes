@@ -41,6 +41,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fields is data loss; `self` and alias links are resolved to ULIDs on read, so what reaches disk
   survives being shared; a hand-broken `id` errors with "restore the original", never a renumber.
   `find_duplicate_ids` reports every path claiming a shared id, for §6.4's hard error.
+- Sidecar writes are atomic (write beside, then rename): a truncated sidecar would lose the
+  document's permanent ULID and every inbound link with it.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.

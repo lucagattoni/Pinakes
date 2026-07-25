@@ -102,7 +102,7 @@ def test_written_files_carry_no_content_hash(tmp_path: Path, owner: KbId) -> Non
 def test_skeleton_mints_an_id_and_a_readable_title() -> None:
     made = skeleton(Path("docs/my-research-notes.md"))
     assert made.id
-    assert made.title == "my research notes.md" or made.title == "my research notes"
+    assert made.title == "my research notes"
     assert made.links == ()
 
 
@@ -196,6 +196,59 @@ def test_duplicate_ids_are_found_and_reported_with_every_path() -> None:
 
 def test_no_duplicates_is_an_empty_result() -> None:
     assert find_duplicate_ids({Path("a"): Sidecar(id=mint_doc_id())}) == {}
+
+
+def test_an_explicit_empty_value_survives_a_round_trip(tmp_path: Path, owner: KbId) -> None:
+    """`tags: []` is something the user wrote; writing back must not quietly delete it."""
+    path = tmp_path / f"a.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\ntags: []\nprovenance: {{}}\n", encoding="utf-8")
+
+    write(path, read(path, owner=owner))
+    written = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert written["tags"] == []
+    assert written["provenance"] == {}
+
+
+def test_a_skeleton_writes_no_empty_keys(tmp_path: Path) -> None:
+    """The other half of the rule: absent stays absent."""
+    path = tmp_path / f"a.md{SIDECAR_SUFFIX}"
+    write(path, skeleton(Path("docs/a.md")))
+    written = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert set(written) == {"id", "title"}
+
+
+def test_writing_is_atomic_and_leaves_no_debris(tmp_path: Path, owner: KbId) -> None:
+    """A truncated sidecar loses the permanent id, and every inbound link with it."""
+    path = tmp_path / f"a.md{SIDECAR_SUFFIX}"
+    write(path, skeleton(Path("docs/a.md")))
+    original = read(path, owner=owner)
+
+    write(path, original)
+    assert list(tmp_path.iterdir()) == [path]
+    assert read(path, owner=owner).id == original.id
+
+
+def test_every_known_key_is_written_back(tmp_path: Path, owner: KbId) -> None:
+    """A key this module claims to understand but never writes would be silent data loss."""
+    from pinakes.sidecar import KNOWN_KEYS
+
+    kb, doc = mint_kb_id(), mint_doc_id()
+    path = tmp_path / f"a.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "id": mint_doc_id(),
+                "title": "t",
+                "tags": ["x"],
+                "created": "20260725 09:14",
+                "links": [{"to": f"pnk://{kb}/{doc}", "rel": "cites"}],
+                "provenance": {"source": "s"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    write(path, read(path, owner=owner))
+    assert set(yaml.safe_load(path.read_text(encoding="utf-8"))) == set(KNOWN_KEYS)
 
 
 def test_unreadable_file_reports_the_path(tmp_path: Path, owner: KbId) -> None:
