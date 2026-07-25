@@ -5,10 +5,13 @@ retrospective review (the workflow is in [`CLAUDE.md`](../CLAUDE.md)). Only find
 land here: a real defect the review caught, or a fact that would be expensive to rediscover. Fixes
 themselves live in the commits; this file records *what was learned*.
 
+Every heading and claim here carries `YYYYMMDD HH:MM` (local, 24h) — several increments can
+land in one day, and a bare date loses their order.
+
 Severity follows the design review's scale: **HIGH** — wrong behaviour or false confidence;
 **MEDIUM** — would block or mislead; **LOW** — worth remembering, not urgent.
 
-## I1 — Package skeleton, errors, CLI dispatch (20260725)
+## I1 — Package skeleton, errors, CLI dispatch (20260725 13:40)
 
 **MEDIUM — `PinakesError` could not be pickled, so an error crossing a process boundary raised
 `TypeError` instead of reporting itself.** `Exception.__reduce__` replays `self.args` through

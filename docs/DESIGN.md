@@ -1,6 +1,6 @@
 # pinakes — a portable, agent-first knowledge base
 
-**Status:** reviewed — ready to implement · **Date:** 20260725
+**Status:** reviewed — ready to implement · **Date:** 20260725 09:52 (pass 7)
 **Repo:** github.com/lucagattoni/Pinakes (PUBLIC) · **Licence:** Apache-2.0 · **Python:** 3.13+
 **Package:** `pinakes` (PyPI) · **Command:** `pnk` · **Tooling:** uv
 
@@ -112,7 +112,7 @@ low_below  = 0.31
 high_above = 0.62
 
 # Consumed only when [retrieval] rerank = "local". Mirrors [embedding]. The default model id is
-# identical on both backends (verified in fastembed's registry, 20260725), so switching backend
+# identical on both backends (verified in fastembed's registry, 20260725 13:49), so switching backend
 # does not change this block.
 [rerank]
 provider = "sentence-transformers"
@@ -205,7 +205,7 @@ code would be pure liability — this is the payoff of the truth/derived split.
 | > ~2M | Documented ceiling; `pnk doctor` says so plainly | Honest advice is "split the KB" — pretending otherwise is how tools lie |
 
 **Correction on the record:** `sqlite-vec` is **not an ANN index**. Verified against upstream
-(20260725): it performs exhaustive KNN over `vec0` tables and its README advertises "fast enough",
+(20260725 13:49): it performs exhaustive KNN over `vec0` tables and its README advertises "fast enough",
 not approximate. The tiers therefore buy **bounded memory and disk-resident vectors, not sublinear
 search** — latency still grows linearly with corpus size in every tier.
 
@@ -221,7 +221,7 @@ dims); `pnk doctor` warns past the 50k threshold and names the tier that will fi
 matters because a table of three tiers reads as three *available* tiers.
 
 **Environment requirement:** SQLite ≥ 3.35 compiled with FTS5, and — for the `sqlite-vec` tier —
-`enable_load_extension` available. uv-managed CPython 3.13 satisfies both (verified 20260725: SQLite
+`enable_load_extension` available. uv-managed CPython 3.13 satisfies both (verified 20260725 13:49: SQLite
 3.53.1, FTS5 present, extension loading permitted); some system Pythons are built without them, so
 `pnk doctor` probes both and reports a precise remedy rather than failing at query time.
 
@@ -314,7 +314,7 @@ the very per-job download problem the extras split exists to avoid.
 
 Model weights go to the **shared Hugging Face cache** (`HF_HOME`), never `.pinakes/cache/`, so N KBs
 on a machine share one copy. One backend needs help to honour that: fastembed left alone caches to
-`$TMPDIR/fastembed_cache`, not the HF cache (verified upstream, 20260725) — so the fastembed backend
+`$TMPDIR/fastembed_cache`, not the HF cache (verified upstream, 20260725 13:49) — so the fastembed backend
 always passes an explicit cache directory under `HF_HOME`, making the shared-cache statement true by
 construction on both backends rather than an assumption that silently fails on `[light]`. `.pinakes/cache/` holds only KB-derived artifacts. `pnk doctor` reports
 whether the configured model is present locally, and `--offline` fails fast instead of reaching out.
@@ -650,7 +650,7 @@ exhaustive not ANN, FTS5 + extension loading on uv-managed CPython 3.13, `pinake
 2.25 ms at 50k×384) was measured or fetched in-session rather than recalled; every locked constraint
 is honoured; every capability in §1 maps to a release in §8. Review complete.
 
-**Pass 6** (20260725, implementation-readiness review) — 2 HIGH, 2 MEDIUM, 1 LOW resolved; the two
+**Pass 6** (20260725 09:28, implementation-readiness review) — 2 HIGH, 2 MEDIUM, 1 LOW resolved; the two
 product calls were decided by the user, not the review.
 *HIGH:* the reranker was simultaneously a v0.1 default (`rerank = "local"` in §2.1, "on by default"
 in §4.1, its scores the substrate of §4.2's confidence signal, "rerank precision" in §7's v0.1 CI)
@@ -673,7 +673,7 @@ with `--force-unlock` as the human path, `pnk doctor` reports held locks (§6.5)
 guaranteed a two-file diff on every document edit while going stale whenever sync hadn't run —
 dropped from the sidecar (user decision); change detection is index-only, stated in §2.2.
 
-**Pass 7** (20260725, surfaced while adversarially reviewing `plans/v0.1.md` — the implementation
+**Pass 7** (20260725 09:52, surfaced while adversarially reviewing `plans/v0.1.md` — the implementation
 plan's review loop reads the design fresh each pass, which is how these escaped passes 1–6).
 *HIGH:* §4.5 claimed model weights go to the shared HF cache on both backends — false for fastembed,
 which defaults to `$TMPDIR/fastembed_cache` (verified upstream): CI's `HF_HOME` cache would never

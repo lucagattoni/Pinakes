@@ -69,3 +69,7 @@ and after numbers in the commit message.
 
 A change to any user-facing surface (CLI flag, manifest key, MCP tool, default, behaviour) updates
 `docs/DESIGN.md`, the README and `--help` text **in the same commit**.
+
+**Every date carries a time** — `YYYYMMDD HH:MM`, local 24h — in the CHANGELOG, `docs/DESIGN.md`'s
+iteration log and status line, `docs/RETROSPECTIVES.md`, and any "verified on" claim. Several
+entries land per day; a bare date loses their order and hides how fresh a verified claim is.

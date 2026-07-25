@@ -30,6 +30,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Timestamp convention (20260725 13:49): every date in the CHANGELOG, design iteration log,
+  retrospectives and "verified on" claims now carries `HH:MM` (local, 24h). Existing date-only
+  stamps backfilled, and the four external claims in `docs/DESIGN.md` (sqlite-vec exhaustive KNN,
+  fastembed's reranker registry, fastembed's `$TMPDIR` cache default, SQLite 3.53.1 + FTS5 +
+  loadable extensions on uv-managed CPython 3.13) were **re-verified** at that time rather than
+  having a time invented for them.
+
 - Design pass 6 (implementation-readiness, 20260725 09:28): the local reranker moves from v0.5 into
   v0.1 with `BAAI/bge-reranker-base` as the default and a `[rerank]` manifest block; `pnk search`
   added explicitly to the v0.1 scope; git hooks split so `pre-commit` mints and stages sidecars
