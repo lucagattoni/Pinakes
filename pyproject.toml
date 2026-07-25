@@ -37,7 +37,12 @@ Design = "https://github.com/lucagattoni/Pinakes/blob/main/docs/DESIGN.md"
 pnk = "pinakes.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8.0", "pyright>=1.1.390", "ruff>=0.9"]
+dev = [
+    "pytest>=8.0",
+    "pyright>=1.1.390",
+    "ruff>=0.9",
+    "ty>=0.0.63",
+]
 
 [build-system]
 requires = ["hatchling"]

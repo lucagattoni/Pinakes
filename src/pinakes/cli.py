@@ -27,6 +27,11 @@ EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_USAGE = 2
 
+# Where the dispatch target is stashed on the parsed namespace. Underscore-prefixed so it can never
+# collide with a future command's own option: argparse would silently let `--runner` overwrite the
+# dispatch target, and the CLI would call the wrong thing (or a string).
+RUNNER_DEST = "_runner"
+
 type CommandRunner = Callable[[argparse.Namespace], int]
 
 
@@ -65,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
     for command in COMMANDS:
         sub = subparsers.add_parser(command.name, help=command.help, description=command.help)
-        sub.set_defaults(run=command.run)
+        sub.set_defaults(_runner=command.run)
     return parser
 
 
@@ -73,7 +78,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    runner: CommandRunner | None = getattr(args, "run", None)
+    runner: CommandRunner | None = getattr(args, RUNNER_DEST, None)
     if runner is None:
         parser.print_help()
         return EXIT_OK

@@ -60,6 +60,33 @@ def test_every_command_names_the_increment_that_implements_it() -> None:
         assert exc_info.value.increment == command.increment
 
 
+def test_dispatch_target_is_hidden_from_the_option_namespace() -> None:
+    """The runner must not sit on a name a future command could take as its own option."""
+    from pinakes.cli import RUNNER_DEST, build_parser
+
+    assert RUNNER_DEST.startswith("_")
+    namespace = vars(build_parser().parse_args(["sync"]))
+    assert RUNNER_DEST in namespace
+    public_callables = [
+        name for name in namespace if not name.startswith("_") and callable(namespace[name])
+    ]
+    assert not public_callables
+
+
+def test_errors_survive_pickling() -> None:
+    """Exceptions cross process boundaries (xdist, multiprocessing) and must rebuild intact."""
+    import pickle
+
+    restored = pickle.loads(pickle.dumps(PinakesError("broke", remedy="fix it")))
+    assert restored.message == "broke"
+    assert restored.remedy == "fix it"
+
+    original = NotImplementedYetError("sync", increment="I8b")
+    restored_subclass = pickle.loads(pickle.dumps(original))
+    assert restored_subclass.message == original.message
+    assert restored_subclass.remedy == original.remedy
+
+
 def test_errors_carry_a_remedy() -> None:
     error = PinakesError("something broke", remedy="try this instead")
     assert error.message == "something broke"

@@ -13,6 +13,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   failure path strands the user), and `cli.py` rebuilt as argparse subparsers declaring the whole
   v0.1 command surface up front. Unimplemented commands name the increment that will land them.
   Exit codes are a contract: 0 success, 1 operational failure, 2 usage error.
+- `ty` added as a dev dependency and fast type pre-check; `pyright` strict remains the gate
+  (measured comparison in `docs/RETROSPECTIVES.md`).
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.

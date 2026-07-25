@@ -53,6 +53,9 @@ separate, bisectable landing:
 
 - **uv only** — `uv add`, `uv run`, `uv build`. Never pip, poetry, or a hand-managed venv.
 - Python 3.13+. `ruff`, `pyright` (strict), `pytest` must pass before any commit.
+- `uv run ty check` is a fast pre-check, never the gate: measured at 0.0.63 it catches a
+  fraction of what `pyright` strict does (docs/RETROSPECTIVES.md, I1). Re-measure when it
+  leaves beta.
 - **Core dependencies stay light.** Nothing pulling torch enters `[project.dependencies]` —
   embedding backends are extras (`[st]`, `[light]`). CI runs `[light]`.
 

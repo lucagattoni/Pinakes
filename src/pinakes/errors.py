@@ -18,6 +18,17 @@ class PinakesError(Exception):
         self.message = message
         self.remedy = remedy
 
+    def __reduce__(self) -> tuple[object, ...]:
+        """Rebuild through `PinakesError`, not `type(self)`.
+
+        `Exception.__reduce__` replays `self.args` through the subclass constructor, and subclasses
+        here take their own arguments (a command name, a path) rather than `(message, remedy)` — so
+        the default would raise `TypeError` while unpickling. Anything that moves an exception
+        across a process boundary (pytest-xdist, multiprocessing) hits this, and a checker that
+        crashes while *reporting* a failure is worse than the failure.
+        """
+        return (_rebuild, (self.message, self.remedy))
+
 
 class NotImplementedYetError(PinakesError):
     """A command in the CLI surface whose implementation has not landed yet.
@@ -36,3 +47,8 @@ class NotImplementedYetError(PinakesError):
         )
         self.command = command
         self.increment = increment
+
+
+def _rebuild(message: str, remedy: str) -> PinakesError:
+    """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable."""
+    return PinakesError(message, remedy=remedy)
