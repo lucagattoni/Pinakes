@@ -47,7 +47,7 @@ def tracked(connection: sqlite3.Connection) -> sqlite3.Connection:
 
 
 @pytest.fixture(autouse=True)
-def _close_tracked_connections() -> Iterator[None]:
+def close_tracked_connections() -> Iterator[None]:
     yield
     while _OPEN:
         _OPEN.pop().close()

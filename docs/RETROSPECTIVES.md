@@ -270,3 +270,27 @@ are now narrowed once into a small frozen dataclass instead of being cast field 
 apostrophe are all parser syntax; a user typing `it's` would otherwise crash the query. Quoting each
 word as a literal and joining with `OR` keeps recall — an implicit `AND` drops a passage for one
 missing word, which is exactly the recall the vector half is there to provide.
+
+## I10 — `pnk init`, the `notes` template, `pnk search` (20260725 17:15)
+
+**MEDIUM — warnings were being printed and ignored.** Turning `filterwarnings = ["error"]` on
+immediately produced two real problems that had been sitting in the summary: `importlib.abc.
+Traversable` is deprecated and **removed in Python 3.14**, so this project would have broken on the
+next Python it claims to support; and several tests leaked SQLite handles, surfacing as
+`ResourceWarning` raised from wherever the garbage collector happened to run — never the test that
+leaked. *Lesson: a warning nobody has to act on is a warning nobody reads. Making them errors cost
+one afternoon of cleanup and bought a Python upgrade.*
+
+**MEDIUM (process) — I committed with a failing gate.** The last edit before committing introduced a
+`reportUnusedFunction` on an autouse fixture; I had run pyright before that edit, not after. Fixed
+in the retrospective commit. *Lesson: the gate belongs immediately before `git commit`, not
+"recently" — and "recently" is exactly what it felt like at the time.*
+
+**LOW — the test fixture violated a manifest invariant I had written myself.** Setting
+`max_tokens = 60` while leaving `overlap = 64` was rejected by I3's cross-key validation. Pleasant
+confirmation that the check earns its place: the first thing it caught was its own author.
+
+**Design note — the template ships `[retrieval.confidence]` commented out.** `plans/v0.1.md` had
+already decided this, and building it made the reason concrete: `pnk init` cannot know anything
+about the corpus the user is about to add, so any threshold it wrote would be a number with no
+provenance. `confidence: unknown` until they fit their own is the only honest default.
