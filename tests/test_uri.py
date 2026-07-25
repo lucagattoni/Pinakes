@@ -30,9 +30,11 @@ def test_self_parses_unresolved_and_expands_to_the_owner() -> None:
     assert str(resolved) == f"{SCHEME}{owner}/{doc}"
 
 
-def test_self_is_case_insensitive() -> None:
+def test_self_is_case_insensitive_but_the_scheme_is_not() -> None:
     doc = mint_doc_id()
     assert parse(f"{SCHEME}SELF/{doc}").is_self
+    with pytest.raises(InvalidUriError):
+        parse(f"PNK://self/{doc}")
 
 
 def test_resolving_never_overrides_an_explicit_kb() -> None:
@@ -73,11 +75,18 @@ def test_malformed_uris_are_rejected(raw: str) -> None:
     assert "pnk://<kb-ulid>/<doc-ulid>" in exc_info.value.remedy
 
 
-def test_an_unresolved_uri_cannot_be_formatted() -> None:
-    """The type system, not discipline, is what stops a `self` link reaching disk."""
+def test_only_a_resolved_uri_knows_how_to_render_itself() -> None:
+    """The `self` expansion is enforced structurally: `ParsedUri` has no URI rendering at all.
+
+    (The primary guarantee is static — `format_uri` takes a `KbId`, and `ParsedUri.kb` is
+    `KbId | None`, so passing one is a type error. This asserts the runtime half of it.)
+    """
+    assert "__str__" not in ParsedUri.__dict__
+    assert "__str__" in PnkUri.__dict__
+
     parsed = parse(f"{SCHEME}self/{mint_doc_id()}")
     assert isinstance(parsed, ParsedUri)
-    assert not hasattr(parsed, "__str__") or "pnk://" not in str(parsed)
+    assert SCHEME not in repr(parsed)
 
 
 def test_resolved_uris_are_hashable_and_comparable() -> None:

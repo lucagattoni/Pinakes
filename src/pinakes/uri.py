@@ -12,11 +12,15 @@ document it always meant, not silently retarget itself.
 That expansion is enforced by the type system rather than by discipline: parsing yields a
 `ParsedUri`, which cannot be formatted; only `resolve()` — which demands the owning KB's id — turns
 it into a writable `PnkUri`.
+
+The scheme itself is matched case-sensitively. RFC 3986 would allow `PNK://`, but every URI in a
+sidecar is written by pinakes, so a differently-cased scheme means hand-editing — better surfaced
+than quietly accepted. The `self` sentinel *is* case-insensitive: users do type that one.
 """
 
 from dataclasses import dataclass
 
-from pinakes.errors import InvalidUriError
+from pinakes.errors import InvalidIdError, InvalidUriError
 from pinakes.ids import DocId, KbId, parse_doc_id, parse_kb_id
 
 SCHEME = "pnk://"
@@ -70,14 +74,14 @@ def parse(raw: str) -> ParsedUri:
     if not kb_part or not doc_part:
         raise InvalidUriError(raw, reason="both the KB and the document segment must be present")
 
-    kb = None if kb_part.lower() == SELF else parse_kb_id_for_uri(raw, kb_part)
-    return ParsedUri(kb=kb, doc=parse_doc_id_for_uri(raw, doc_part))
+    kb = None if kb_part.lower() == SELF else _kb_segment(raw, kb_part)
+    return ParsedUri(kb=kb, doc=_doc_segment(raw, doc_part))
 
 
-def parse_kb_id_for_uri(raw: str, segment: str) -> KbId:
+def _kb_segment(raw: str, segment: str) -> KbId:
     try:
         return parse_kb_id(segment)
-    except Exception as exc:
+    except InvalidIdError as exc:
         raise InvalidUriError(
             raw,
             reason=(
@@ -88,8 +92,8 @@ def parse_kb_id_for_uri(raw: str, segment: str) -> KbId:
         ) from exc
 
 
-def parse_doc_id_for_uri(raw: str, segment: str) -> DocId:
+def _doc_segment(raw: str, segment: str) -> DocId:
     try:
         return parse_doc_id(segment)
-    except Exception as exc:
+    except InvalidIdError as exc:
         raise InvalidUriError(raw, reason=f"`{segment}` is not a document ULID") from exc

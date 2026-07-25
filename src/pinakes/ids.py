@@ -7,8 +7,8 @@ IDs are canonical uppercase Crockford base32, 26 characters. Lowercase is **reje
 normalised**: two spellings of one identity would slip straight past the duplicate-ID check that
 protects §6.4's pairing, and an ID is machine-minted, so a lowercase one means something already
 went wrong. `python-ulid` is strict about the rest for us — it rejects the ambiguous Crockford
-letters (`I`, `L`, `O`, `U`), wrong lengths, and timestamps past the 48-bit ceiling (verified
-20260725 13:58, python-ulid 4.0.1).
+letters (`I`, `L`, `O`, `U` — all four probed), wrong lengths, and timestamps past the 48-bit
+ceiling (verified 20260725 14:05, python-ulid 4.0.1).
 """
 
 from typing import NewType

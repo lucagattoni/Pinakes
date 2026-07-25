@@ -56,7 +56,9 @@ line-length = 100
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+# BLE: a bare `except Exception` around a call whose failure mode is known swallows real
+# bugs — I2's retrospective caught two (docs/RETROSPECTIVES.md).
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "BLE"]
 
 [tool.pyright]
 include = ["src", "tests"]

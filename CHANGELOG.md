@@ -20,6 +20,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   where they do belong; `pnk://self/…` parses to an unresolved `ParsedUri` that *cannot* be
   formatted, so expanding it against the owning KB is enforced by the type system rather than by
   discipline. Lowercase IDs are rejected rather than normalised.
+- ruff `BLE` ruleset enabled (blind `except Exception`), after I2's retrospective found two.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.
