@@ -128,6 +128,17 @@ class IndexSchemaError(PinakesError):
         self.expected = expected
 
 
+class SidecarError(PinakesError):
+    """A `.pnk.yaml` sidecar is missing something, or says something that cannot be honoured."""
+
+    def __init__(self, path: Path, message: str, *, remedy: str | None = None) -> None:
+        super().__init__(
+            f"{path} {message}.",
+            remedy=remedy or "See docs/DESIGN.md §2.2 for the sidecar format.",
+        )
+        self.path = path
+
+
 def _rebuild(cls: type[PinakesError], message: str, remedy: str) -> PinakesError:
     """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable.
 
