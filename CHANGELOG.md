@@ -43,6 +43,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `find_duplicate_ids` reports every path claiming a shared id, for §6.4's hard error.
 - Sidecar writes are atomic (write beside, then rename): a truncated sidecar would lose the
   document's permanent ULID and every inbound link with it.
+- **I6** — chunking: `chunk.py` splits Markdown on headings and paragraphs (fenced code kept
+  whole) and plain text on blank lines, counting tokens through a `TokenCounter` protocol so the
+  logic is testable without model weights. Oversize text is split — sentences, then words, then
+  characters for an unbroken run — **never trimmed**, and `assert_chunkable` refuses a `max_tokens`
+  the model would have to truncate. Heading lines are included in their first chunk so heading-only
+  words stay searchable, and every chunk satisfies `text == source[char_start:char_end]`.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.

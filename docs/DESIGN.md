@@ -329,6 +329,13 @@ whether the configured model is present locally, and `--offline` fails fast inst
 
 ### 4.6 Chunking and tokens
 
+Chunks are paragraphs under a heading, and **the heading line is part of the first chunk beneath
+it** — not consumed as pure structure. The lexical index only sees chunk text, so a word appearing
+only in a heading would otherwise be unsearchable, and a passage quoted back to the user reads
+better carrying the heading it belongs to. `heading_path` still records the hierarchy separately,
+for filtering and citation. Each chunk's character span always satisfies
+`text == source[char_start:char_end]`, so a citation can be located exactly in the original file.
+
 `max_tokens` is counted with **the embedding model's own tokenizer**, and validated at sync against
 the model's `max_seq_length` minus special tokens (bge-small-en-v1.5: 512 → 510). A manifest asking
 for more is a hard error, not a silent truncation — a truncated chunk is a chunk whose tail is
