@@ -21,6 +21,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   formatted, so expanding it against the owning KB is enforced by the type system rather than by
   discipline. Lowercase IDs are rejected rather than normalised.
 - ruff `BLE` ruleset enabled (blind `except Exception`), after I2's retrospective found two.
+- **I3** — manifest: `manifest.py` parses and validates `pinakes.toml` (DESIGN §2.1) into frozen
+  dataclasses, plus `find_kb_root` git-style walk-up. Unknown keys are a hard error, not a silent
+  default — as is the retired `top_k`, which is rejected by name. Cross-key invariants are checked
+  at read time: widths must narrow (`final_k <= fusion_top_k <= candidates_per_source`),
+  `confirm_above_eur <= per_operation_eur` (or the confirmation prompt is unreachable),
+  `overlap < max_tokens`, ordered confidence thresholds, and `fitted_for` required whenever
+  thresholds are present. `[budget]` is validated from v0.1 though nothing consumes it until v0.4.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.

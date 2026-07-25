@@ -9,6 +9,8 @@ Subclasses are added by the increment that first raises them; an empty hierarchy
 would be a guess about failures that do not exist yet.
 """
 
+from pathlib import Path
+
 
 class PinakesError(Exception):
     """Base class for every failure pinakes reports to a human."""
@@ -75,6 +77,34 @@ class InvalidUriError(PinakesError):
         )
         self.raw = raw
         self.reason = reason
+
+
+class ManifestError(PinakesError):
+    """`pinakes.toml` is missing, unreadable, or says something that cannot be honoured."""
+
+    def __init__(
+        self, path: Path, *, table: str | None, message: str, remedy: str | None = None
+    ) -> None:
+        location = f"{path}" if table in (None, "<root>") else f"{path} [{table}]"
+        super().__init__(
+            f"{location}: {message}",
+            remedy=remedy or "See docs/DESIGN.md §2.1 for the manifest schema.",
+        )
+        self.path = path
+        self.table = table
+
+
+class NoKbFoundError(PinakesError):
+    """No `pinakes.toml` in this directory or any parent."""
+
+    def __init__(self, start: Path) -> None:
+        super().__init__(
+            f"no pinakes.toml found in {start} or any parent directory.",
+            remedy=(
+                "Run this inside a KB, pass --kb <path>, or create one with `pnk init <name>`."
+            ),
+        )
+        self.start = start
 
 
 def _rebuild(message: str, remedy: str) -> PinakesError:
