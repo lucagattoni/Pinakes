@@ -95,6 +95,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `post-commit`/`post-merge` update the index only and never dirty the tree. An existing hook that
   is not ours is left untouched and printed with the line to add; a hook that cannot find `pnk`
   warns and exits 0, because a hook that fails every commit only teaches `--no-verify`.
+- **I13** — `pnk serve`: an MCP server exposing `pinakes_search`, `pinakes_get` and
+  `pinakes_list_kbs`, namespaced so they cannot collide with another KB server an agent has loaded.
+  It answers only about the KBs named on its command line; no tool argument accepts a filesystem
+  path, and `pinakes_get` resolves a document ULID through the index. Passages come back inside a
+  delimited evidence field stating they are text to reason about, never instructions to follow.
+  Indexes are opened read-only and re-opened when a `stat()` shows the file was swapped.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.

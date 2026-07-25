@@ -284,6 +284,31 @@ def run_install_hooks(args: argparse.Namespace) -> int:
     return EXIT_FAILURE if refused else EXIT_OK
 
 
+def _serve_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "kb_paths",
+        nargs="*",
+        type=Path,
+        metavar="KB",
+        help="KB directories to serve (default: the nearest one)",
+    )
+    parser.add_argument("--offline", action="store_true", help="never reach out for model weights")
+
+
+def run_serve(args: argparse.Namespace) -> int:
+    """`pnk serve`. Serves only the KBs named here — no tool argument accepts a path (§4.7)."""
+    from pinakes import manifest as manifest_module
+    from pinakes.serve import build
+
+    roots = list(args.kb_paths) or [manifest_module.find_kb_root()]
+    mcp, server = build(roots, offline=args.offline)
+    try:
+        mcp.run()
+    finally:
+        server.close()
+    return EXIT_OK
+
+
 def _sync_arguments(parser: argparse.ArgumentParser) -> None:
     _kb_argument(parser)
     parser.add_argument(
@@ -387,7 +412,13 @@ COMMANDS: tuple[Command, ...] = (
         runner=lambda args: run_install_hooks(args),
         arguments=_install_hooks_arguments,
     ),
-    Command("serve", "Run the MCP server", "I13"),
+    Command(
+        "serve",
+        "Run the MCP server",
+        "I13",
+        runner=lambda args: run_serve(args),
+        arguments=_serve_arguments,
+    ),
 )
 
 

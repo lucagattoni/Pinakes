@@ -236,6 +236,10 @@ class HookError(PinakesError):
     """Git hooks cannot be installed here."""
 
 
+class ServeError(PinakesError):
+    """The MCP server cannot answer as asked."""
+
+
 def _rebuild(cls: type[PinakesError], message: str, remedy: str) -> PinakesError:
     """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable.
 

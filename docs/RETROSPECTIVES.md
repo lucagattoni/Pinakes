@@ -340,3 +340,26 @@ carelessness that can be fixed by resolving to be careful: the shell was reporti
 `check.sh`, which runs every gate under `set -e`, and pointed `CLAUDE.md` at it. *Lesson: if a
 safety check is a pipeline, the thing you are checking is the last command in the pipe. Make the
 gate a script that exits non-zero, and the mistake becomes unavailable.*
+
+## I13 — `pnk serve` (MCP) (20260725 18:15)
+
+**The boundary is testable, so it is tested.** §4.7's claim is that an agent cannot reach outside
+the KBs the server was pointed at. Three tests hold it: `pinakes_get` refuses a path, a traversal
+string and an unknown ULID identically; a KB that exists on disk but was not passed on the command
+line is unreachable and the error says arguments select by name or ULID *never by path*; and a
+document deleted since it was indexed cannot be fetched.
+
+**MEDIUM — `stat()`-based staleness detection works, and the test proves the thing the design
+argued about.** After a `--rebuild` swap the server returns the *new* documents. The design's
+reasoning (an open handle pins the old inode, so `meta.build_id` read through it would report the
+old build forever) is now backed by a test that would fail if someone "simplified" it back.
+
+**LOW — pyright strict flags decorator-registered functions as unused.** `@mcp.tool()` returns
+something pyright cannot tie back to the name, so all three tools looked dead. Rather than
+suppressing it, they are now registered in an explicit loop — which also makes the set of exposed
+tools one readable line instead of three annotations. *A suppression would have been the third one
+this session that turned out to be hiding something; making the code say what it means was cheaper.*
+
+**LOW — another leaked connection, caught by warnings-as-errors from I10.** A `Server` built inline
+inside a `pytest.raises` block was never closed. This is the third leak that setting only found;
+before I10 it would have been invisible.
