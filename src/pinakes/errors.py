@@ -198,6 +198,14 @@ class DuplicateIdsError(PinakesError):
         self.duplicates = dict(duplicates)
 
 
+class LockError(PinakesError):
+    """The sync lock cannot be taken safely."""
+
+
+class SyncError(PinakesError):
+    """A sync cannot proceed."""
+
+
 def _rebuild(cls: type[PinakesError], message: str, remedy: str) -> PinakesError:
     """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable.
 

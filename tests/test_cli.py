@@ -29,7 +29,10 @@ def test_bare_invocation_prints_help_and_succeeds(capsys: pytest.CaptureFixture[
         assert name in out
 
 
-@pytest.mark.parametrize("command", sorted(DESIGN_V01_COMMANDS))
+IMPLEMENTED = frozenset({"sync"})
+
+
+@pytest.mark.parametrize("command", sorted(DESIGN_V01_COMMANDS - IMPLEMENTED))
 def test_unimplemented_commands_fail_loudly_rather_than_pretending(
     command: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -53,8 +56,10 @@ def test_version_flag_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert __version__ in capsys.readouterr().out
 
 
-def test_every_command_names_the_increment_that_implements_it() -> None:
+def test_every_unimplemented_command_names_the_increment_that_will_land_it() -> None:
     for command in COMMANDS:
+        if command.name in IMPLEMENTED:
+            continue
         with pytest.raises(NotImplementedYetError) as exc_info:
             command.run(argparse.Namespace())
         assert exc_info.value.increment == command.increment

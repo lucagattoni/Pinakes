@@ -5,8 +5,9 @@ unless they are already cached — a clean checkout must never be blocked on a 1
 (which caches `HF_HOME`) runs them for real.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from types import ModuleType
 
 import numpy as np
 import pytest
@@ -93,10 +94,17 @@ def test_a_missing_extra_names_the_install_command(monkeypatch: pytest.MonkeyPat
 
     real_import = builtins.__import__
 
-    def refuse(name: str, *args: object, **kwargs: object) -> object:
+    def refuse(
+        name: str,
+        # Parameter names mirror `__import__` exactly, shadowing the builtins on purpose.
+        globals: Mapping[str, object] | None = None,
+        locals: Mapping[str, object] | None = None,
+        fromlist: Sequence[str] = (),
+        level: int = 0,
+    ) -> ModuleType:
         if name.startswith("sentence_transformers"):
             raise ImportError("no module named sentence_transformers")
-        return real_import(name, *args, **kwargs)  # pyright: ignore[reportCallIssue, reportArgumentType]
+        return real_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", refuse)
     with pytest.raises(BackendMissingError) as exc_info:

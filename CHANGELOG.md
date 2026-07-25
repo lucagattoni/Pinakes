@@ -62,6 +62,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   guessed unless a sidecar breaks the tie; a sidecar disagreeing with the index wins, because
   `docs/` is the truth and the index is derived; one id in two sidecars raises rather than
   renumbering. Orphaned sidecars and moved-without-sidecar cases are reported, never acted on.
+- **I8b** — `pnk sync` is real: walks the sources (never ingesting a sidecar as a document), runs
+  §6.4 pairing, and applies each document in its own transaction so one unreadable file is recorded
+  in `failures` and the run continues, exiting non-zero. `--rebuild` builds beside the index,
+  checkpoints, closes, renames, and removes the old `-wal`/`-shm` — `ledger.jsonl` is never touched.
+  `--sidecars-only [--stage]` is the pre-commit half (mints ids for staged files and `git add`s
+  them); `--index-only` is the post-commit half and never writes into `docs/`. `sync.lock` records
+  pid/host/start-time: a live holder means a quiet exit 0, a dead one is reclaimed with a warning,
+  another host is refused with `--force-unlock`.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.
