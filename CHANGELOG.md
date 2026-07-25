@@ -70,6 +70,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   them); `--index-only` is the post-commit half and never writes into `docs/`. `sync.lock` records
   pid/host/start-time: a live holder means a quiet exit 0, a dead one is reclaimed with a warning,
   another host is refused with `--force-unlock`.
+- **I9** — retrieval: `search.py` runs the §4.1 pipeline — metadata filters (tags from the sidecar
+  metadata, path prefix, source type, mtime range), FTS5 BM25 with user text escaped so it can never
+  be FTS syntax, NumPy cosine, RRF (k=60), optional local rerank, then the §4.2 confidence signal.
+  Queries refuse to run against an index built by a different model. Confidence is `unknown` unless
+  thresholds exist **and** `fitted_for` names the reranker actually in use; query-term coverage is a
+  tiebreak, never a gate.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.

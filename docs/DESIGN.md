@@ -241,7 +241,7 @@ matters because a table of three tiers reads as three *available* tiers.
 
 ```
 query
- └─ metadata filter        (SQL WHERE: tags, path, date, source_type)
+ └─ metadata filter        (SQL WHERE: tags, path prefix, mtime range, source_type)
  └─ parallel:
       ├─ BM25 via FTS5     → candidates_per_source (50)
       └─ vector search     → candidates_per_source (50)
@@ -251,7 +251,10 @@ query
 ```
 
 Each stage's width is a distinct manifest field (§2.1); a single `top_k` would be ambiguous across
-three different cut-offs.
+three different cut-offs. The date filter is the document's **mtime**: every document has one,
+whereas a sidecar's `created` is optional, and a filter that silently skipped documents lacking an
+optional field would be worse than no filter. Vector candidates with a non-positive cosine are
+dropped rather than padded into fusion — no shared direction is not weak evidence, it is none.
 
 No network at query time **once model weights are cached locally**; first use downloads them (§4.5).
 Embedding a corpus is free, so re-indexing is free, so **there is no cost pressure against improving

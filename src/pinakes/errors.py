@@ -206,6 +206,24 @@ class SyncError(PinakesError):
     """A sync cannot proceed."""
 
 
+class CoherenceError(PinakesError):
+    """The index was built by a different model than the manifest now names (§4.4)."""
+
+    def __init__(self, differences: Mapping[str, tuple[str, str]]) -> None:
+        listing = "; ".join(
+            f"{key}: index has {found!r}, manifest says {wanted!r}"
+            for key, (found, wanted) in sorted(differences.items())
+        )
+        super().__init__(
+            f"the index does not match the configured model — {listing}.",
+            remedy=(
+                "Run `pnk sync --rebuild`. Embeddings are meaningless across models: a KB that "
+                "silently returned results here would be returning garbage."
+            ),
+        )
+        self.differences = dict(differences)
+
+
 def _rebuild(cls: type[PinakesError], message: str, remedy: str) -> PinakesError:
     """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable.
 
