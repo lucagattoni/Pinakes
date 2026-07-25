@@ -30,6 +30,22 @@ carries rules that change how you work.
 - **The free path stays free.** No code path may make a paid API call outside `pnk ask --deep`.
 - Index schema changes bump `schema_version` and require a rebuild. Never write a migration.
 
+## Building v0.1 — one increment at a time
+
+[`plans/v0.1.md`](plans/v0.1.md) is the build order (I1–I15). Never batch increments; each one is a
+separate, bisectable landing:
+
+1. Own worktree, branch `YYYYMMDD_HHMM-i<N>-<slug>`.
+2. Implement the increment **with its tests** — tests ship in the increment that introduces the
+   behaviour, never deferred.
+3. Green before review: `uv run ruff check`, `uv run pyright`, `uv run pytest`.
+4. **Retrospective review** — a fresh adversarial pass over that increment's own diff, hunting for
+   what is wrong, missed, or asserted without evidence. Fix findings, re-run the checks, repeat
+   until a pass is clean. Findings and fixes are their own commit, separate from the implementation.
+5. **CHANGELOG `[Unreleased]` entry in the same commit as the code** — one line per increment.
+   v0.1 stays unreleased until the whole slice is usable end to end (I15 cuts it).
+6. Merge to `main`, push, remove the worktree.
+
 ## Tooling
 
 - **uv only** — `uv add`, `uv run`, `uv build`. Never pip, poetry, or a hand-managed venv.
