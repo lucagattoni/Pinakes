@@ -28,6 +28,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `confirm_above_eur <= per_operation_eur` (or the confirmation prompt is unreachable),
   `overlap < max_tokens`, ordered confidence thresholds, and `fitted_for` required whenever
   thresholds are present. `[budget]` is validated from v0.1 though nothing consumes it until v0.4.
+- **I4** — storage: `store.py` creates and opens `.pinakes/index.db` (DESIGN §3) — documents,
+  chunks, FTS5 external-content index with its triggers, float32 vector BLOBs, links, kb_refs,
+  failures and meta. `connect_rw` (WAL, foreign keys on) and `connect_ro` (`mode=ro`, so the MCP
+  server cannot write even by mistake); a `schema_version` mismatch refuses to open and instructs a
+  rebuild rather than migrating. `load_vectors` returns one contiguous float32 array with chunk ids
+  in row order, and rejects any stored vector whose width disagrees with the manifest.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.

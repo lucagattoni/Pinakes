@@ -107,6 +107,27 @@ class NoKbFoundError(PinakesError):
         self.start = start
 
 
+class StoreError(PinakesError):
+    """The index cannot be used as asked."""
+
+
+class IndexSchemaError(PinakesError):
+    """The index was built by a different schema version. There is no migration, by design."""
+
+    def __init__(self, path: Path, *, found: str | None, expected: int) -> None:
+        super().__init__(
+            f"{path} has schema version {found or 'unknown'}, but this pinakes expects {expected}.",
+            remedy=(
+                "Run `pnk sync --rebuild`. The index is derived state: rebuilding is free and "
+                "always safe, which is why this design carries no migration machinery "
+                "(docs/DESIGN.md §3)."
+            ),
+        )
+        self.path = path
+        self.found = found
+        self.expected = expected
+
+
 def _rebuild(message: str, remedy: str) -> PinakesError:
     """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable."""
     return PinakesError(message, remedy=remedy)
