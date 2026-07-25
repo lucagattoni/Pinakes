@@ -17,6 +17,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   two-phase sync semantics, WAL concurrency policy, budget accounting by pre-call reservation,
   cross-KB linking via ULID-addressed sidecars, and the v0.1–v0.5 delivery plan.
 
+- `plans/v0.1.md` (20260725 10:04) — implementation plan for the v0.1 vertical slice: 15 ordered
+  increments (I1–I15) with per-increment tests and exit criteria, decisions table (argparse,
+  jinja2-rendered manifests, `notes` template, open backend registry), and whole-slice acceptance
+  checks. Adversarially reviewed across 5 passes, 28 findings resolved (3 high, 10 medium, 15 low).
+
 ### Changed
 
 - Design pass 6 (implementation-readiness, 20260725 09:28): the local reranker moves from v0.5 into
