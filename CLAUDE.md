@@ -42,6 +42,9 @@ separate, bisectable landing:
 4. **Retrospective review** — a fresh adversarial pass over that increment's own diff, hunting for
    what is wrong, missed, or asserted without evidence. Fix findings, re-run the checks, repeat
    until a pass is clean. Findings and fixes are their own commit, separate from the implementation.
+   Findings worth keeping — a real defect, or a fact expensive to rediscover — get a line in
+   [`docs/RETROSPECTIVES.md`](docs/RETROSPECTIVES.md); a finding that becomes a durable rule is
+   promoted into this file too. Trivia stays in the commit message.
 5. **CHANGELOG `[Unreleased]` entry in the same commit as the code** — one line per increment.
    v0.1 stays unreleased until the whole slice is usable end to end (I15 cuts it).
 6. Merge to `main`, push, remove the worktree.

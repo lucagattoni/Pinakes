@@ -1,28 +1,67 @@
-"""Bootstrap tests: the package imports and the entry point behaves honestly."""
+"""CLI contract: the surface is complete, the behaviour is honest, exit codes mean something."""
+
+import argparse
 
 import pytest
 
 from pinakes import __version__
-from pinakes.cli import COMMANDS, main
+from pinakes.cli import COMMANDS, EXIT_FAILURE, EXIT_OK, EXIT_USAGE, main
+from pinakes.errors import NotImplementedYetError, PinakesError
+
+# docs/DESIGN.md §8's v0.1 command list. Hard-coded rather than derived from COMMANDS: a test that
+# reads the same source it checks would pass even if a command were dropped.
+DESIGN_V01_COMMANDS = frozenset({"init", "sync", "search", "doctor", "install-hooks", "serve"})
 
 
 def test_version_is_set() -> None:
     assert __version__ == "0.0.0"
 
 
-def test_bare_invocation_prints_help_and_succeeds(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr("sys.argv", ["pnk"])
-    assert main() == 0
-    assert "portable, agent-first knowledge base" in capsys.readouterr().out
+def test_surface_matches_the_design() -> None:
+    assert {command.name for command in COMMANDS} == DESIGN_V01_COMMANDS
 
 
-@pytest.mark.parametrize("command", sorted(COMMANDS))
-def test_planned_commands_fail_loudly_rather_than_pretending(
-    command: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_bare_invocation_prints_help_and_succeeds(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main([]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert "portable, agent-first knowledge base" in out
+    for name in DESIGN_V01_COMMANDS:
+        assert name in out
+
+
+@pytest.mark.parametrize("command", sorted(DESIGN_V01_COMMANDS))
+def test_unimplemented_commands_fail_loudly_rather_than_pretending(
+    command: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An unimplemented command must exit non-zero — silence would imply it worked."""
-    monkeypatch.setattr("sys.argv", ["pnk", command])
-    assert main() == 1
-    assert "not implemented yet" in capsys.readouterr().err
+    assert main([command]) == EXIT_FAILURE
+    err = capsys.readouterr().err
+    assert "not implemented yet" in err
+    assert "plans/v0.1.md" in err  # the remedy, not just the complaint
+
+
+def test_unknown_command_is_a_usage_error() -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["definitely-not-a-command"])
+    assert exc_info.value.code == EXIT_USAGE
+
+
+def test_version_flag_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--version"])
+    assert exc_info.value.code == EXIT_OK
+    assert __version__ in capsys.readouterr().out
+
+
+def test_every_command_names_the_increment_that_implements_it() -> None:
+    for command in COMMANDS:
+        with pytest.raises(NotImplementedYetError) as exc_info:
+            command.run(argparse.Namespace())
+        assert exc_info.value.increment == command.increment
+
+
+def test_errors_carry_a_remedy() -> None:
+    error = PinakesError("something broke", remedy="try this instead")
+    assert error.message == "something broke"
+    assert error.remedy == "try this instead"
+    assert str(error) == "something broke"
