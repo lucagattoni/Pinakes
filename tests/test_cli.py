@@ -85,6 +85,9 @@ def test_errors_survive_pickling() -> None:
     restored_subclass = pickle.loads(pickle.dumps(original))
     assert restored_subclass.message == original.message
     assert restored_subclass.remedy == original.remedy
+    # The subclass survives: an error caught by type on the far side of a process boundary must
+    # still be that type.
+    assert type(restored_subclass) is NotImplementedYetError
 
 
 def test_errors_carry_a_remedy() -> None:

@@ -236,6 +236,36 @@ def test_replacing_chunks_leaves_no_orphans_behind(index_path: Path) -> None:
     assert connection.execute("SELECT count(*) FROM embeddings").fetchone()[0] == 1
 
 
+def test_constants_match_the_check_constraints(index_path: Path) -> None:
+    """The DDL enforces these; the constants are what the code reads. They must not drift."""
+    from pinakes.store import DOCUMENT_STATES, LINK_ORIGINS, SCHEMA
+
+    for state in DOCUMENT_STATES:
+        assert f"'{state}'" in SCHEMA
+    for origin in LINK_ORIGINS:
+        assert f"'{origin}'" in SCHEMA
+
+
+def test_loading_vectors_does_not_double_the_peak(index_path: Path) -> None:
+    """The array is allocated once and filled, not built from a list and copied."""
+    import tracemalloc
+
+    connection = create(index_path)
+    doc = _document(connection)
+    wide = 256
+    ids = replace_chunks(connection, doc, [(f"c{n}", 0, 1, 1, None) for n in range(2000)])
+    for chunk_id in ids:
+        store_embedding(connection, chunk_id, np.ones(wide, dtype=np.float32))
+
+    tracemalloc.start()
+    _, matrix = load_vectors(connection, dim=wide)
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+
+    assert matrix.nbytes == 2000 * wide * 4
+    assert peak < matrix.nbytes * 1.6
+
+
 def test_metadata_json_round_trips_and_tolerates_rubbish() -> None:
     assert loads_metadata(dumps_metadata({"tags": ["a", "b"]})) == {"tags": ["a", "b"]}
     assert loads_metadata("[1, 2]") == {}

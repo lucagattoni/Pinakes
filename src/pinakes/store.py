@@ -17,7 +17,7 @@ returns the chunk ids in the same row order so a matrix index can be turned back
 
 import json
 import sqlite3
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Final, cast
 
@@ -29,6 +29,8 @@ SCHEMA_VERSION: Final = 1
 BUSY_TIMEOUT_MS: Final = 5_000
 VECTOR_DTYPE: Final = np.float32
 
+# Mirrored by CHECK constraints in SCHEMA below; `test_constants_match_the_check_constraints`
+# fails if the two ever drift.
 DOCUMENT_STATES: Final = ("active", "deleted")
 LINK_ORIGINS: Final = ("sidecar", "reverse-scan")
 
@@ -242,18 +244,22 @@ def load_vectors(
     stored vector whose width disagrees with the manifest is a hard error: a silently reshaped or
     truncated embedding would return plausible, wrong neighbours.
     """
-    query = (
-        "SELECT e.chunk_id AS chunk_id, e.vector AS vector FROM embeddings e "
-        "JOIN chunks c ON c.id = e.chunk_id "
-        "JOIN documents d ON d.id = c.doc_id "
+    source = (
+        "FROM embeddings e JOIN chunks c ON c.id = e.chunk_id JOIN documents d ON d.id = c.doc_id "
     )
-    if active_only:
-        query += "WHERE d.state = 'active' "
-    query += "ORDER BY e.chunk_id"
+    where = "WHERE d.state = 'active' " if active_only else ""
+
+    # Count first and fill a preallocated array. Collecting rows into a list and vstacking them
+    # peaks at roughly twice the final size — 669 MB measured for 200k x 384, which at 1M chunks
+    # would be ~3.4 GB against the ~1.5 GB §3.1 promises.
+    expected = int(connection.execute(f"SELECT count(*) {source}{where}").fetchone()[0])
+    matrix = np.empty((expected, dim), dtype=VECTOR_DTYPE)
 
     chunk_ids: list[int] = []
-    blobs: list[np.ndarray[Any, np.dtype[np.float32]]] = []
-    for row in connection.execute(query):
+    rows = connection.execute(
+        f"SELECT e.chunk_id AS chunk_id, e.vector AS vector {source}{where}ORDER BY e.chunk_id"
+    )
+    for row in rows:
         vector = unpack_vector(bytes(row["vector"]))
         if vector.shape[0] != dim:
             raise StoreError(
@@ -261,12 +267,15 @@ def load_vectors(
                 f"but the manifest says {dim}.",
                 remedy="The index was built with a different model. Run `pnk sync --rebuild`.",
             )
+        if len(chunk_ids) == expected:  # pragma: no cover — single writer holds the sync lock
+            raise StoreError(
+                "the index grew while it was being read.",
+                remedy="Re-run the command; `pnk sync` holds a lock so this should not recur.",
+            )
+        matrix[len(chunk_ids)] = vector
         chunk_ids.append(int(row["chunk_id"]))
-        blobs.append(vector)
 
-    if not blobs:
-        return [], np.zeros((0, dim), dtype=VECTOR_DTYPE)
-    return chunk_ids, np.ascontiguousarray(np.vstack(blobs), dtype=VECTOR_DTYPE)
+    return chunk_ids, matrix[: len(chunk_ids)]
 
 
 def record_failure(
@@ -289,8 +298,12 @@ def loads_metadata(raw: str) -> dict[str, Any]:
     return cast(dict[str, Any], parsed)
 
 
+type ChunkRow = tuple[str, int, int, int, str | None]
+"""(text, char_start, char_end, token_count, heading_path) — typed so a misordered field fails."""
+
+
 def replace_chunks(
-    connection: sqlite3.Connection, doc_id: str, chunks: Iterable[Sequence[Any]]
+    connection: sqlite3.Connection, doc_id: str, chunks: Iterable[ChunkRow]
 ) -> list[int]:
     """Replace a document's chunks wholesale, returning the new rowids in order.
 

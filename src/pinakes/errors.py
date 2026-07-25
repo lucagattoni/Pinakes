@@ -29,7 +29,7 @@ class PinakesError(Exception):
         across a process boundary (pytest-xdist, multiprocessing) hits this, and a checker that
         crashes while *reporting* a failure is worse than the failure.
         """
-        return (_rebuild, (self.message, self.remedy))
+        return (_rebuild, (type(self), self.message, self.remedy))
 
 
 class NotImplementedYetError(PinakesError):
@@ -128,6 +128,13 @@ class IndexSchemaError(PinakesError):
         self.expected = expected
 
 
-def _rebuild(message: str, remedy: str) -> PinakesError:
-    """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable."""
-    return PinakesError(message, remedy=remedy)
+def _rebuild(cls: type[PinakesError], message: str, remedy: str) -> PinakesError:
+    """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable.
+
+    Rebuilds the *original* subclass without calling its constructor, whose signature differs per
+    subclass. Message and remedy survive; subclass-specific attributes do not, which is the right
+    trade for an object whose job on the far side of a process boundary is to be reported.
+    """
+    error = cls.__new__(cls)
+    PinakesError.__init__(error, message, remedy=remedy)
+    return error

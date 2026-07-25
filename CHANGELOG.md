@@ -34,6 +34,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server cannot write even by mistake); a `schema_version` mismatch refuses to open and instructs a
   rebuild rather than migrating. `load_vectors` returns one contiguous float32 array with chunk ids
   in row order, and rejects any stored vector whose width disagrees with the manifest.
+- Error pickling now preserves the exact subclass (I1 rebuilt through the base class, so an
+  `except StoreError` across a process boundary would have missed it).
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.

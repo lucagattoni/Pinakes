@@ -87,3 +87,32 @@ there in the same change, per the repo's docs rule.
 **LOW — a test caught a real error-message defect.** Validation errors read
 `[<root>.retrieval]`; the table path is meant to name what the user would type. The failing test was
 fixed in the source, not the assertion.
+
+## I4 — SQLite storage, FTS5 triggers, vector loading (20260725 14:45)
+
+**MEDIUM — `load_vectors` peaked at roughly twice the array it returned.** It collected every
+embedding into a list and `vstack`ed it: measured 669 MB for 200k×384, where the result is 307 MB.
+At 1M chunks that is ~3.4 GB against the ~1.5 GB §3.1 states, so the design's own memory claim was
+wrong for its only shipping tier. Now counts first and fills a preallocated array, with a test
+asserting peak < 1.6× the result. *Lesson: "load it all into one contiguous array" has two
+implementations that differ by a factor of two, and only one of them matches what the design
+promises.*
+
+**MEDIUM — a non-database file produced a raw `sqlite3.DatabaseError`.** `PRAGMA journal_mode` is
+the first statement to touch the file, so it failed before any schema check could run, and the user
+got `file is not a database` with no remedy. Opening is now wrapped. *Lesson: the friendly check
+ran second; the pragma that configures the connection is what actually opens the file.*
+
+**MEDIUM — chunk insertion restarted ordinals at 0 on every call**, so a second call for the same
+document hit the `UNIQUE (doc_id, ordinal)` constraint. The operation is really a wholesale replace
+— re-chunking must not leave old chunks searchable — so it now deletes first and is named for that.
+Both this and the one above were caught by tests written in the same increment.
+
+**MEDIUM — pickling collapsed every error subclass to `PinakesError`.** I1's `__reduce__` fix
+rebuilt through the base class, so `StoreError` came back as `PinakesError` and any `except
+StoreError` on the far side would miss it. Now rebuilds the original class via `__new__`, keeping
+message and remedy. *Lesson: a fix that makes an object survive a round trip is not the same as one
+that makes it survive intact — check identity, not just contents.*
+
+**LOW — `DOCUMENT_STATES`/`LINK_ORIGINS` duplicated the DDL's `CHECK` constraints** with nothing
+tying them together. A test now fails if they drift.
