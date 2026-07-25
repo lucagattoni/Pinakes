@@ -127,13 +127,23 @@ def test_weights_resolve_under_the_shared_cache(
     assert "fastembed_cache" not in str(hf_cache_dir())
 
 
-def _weights_cached(fragment: str) -> bool:
+def _runnable(fragment: str) -> bool:
+    """Both halves must hold: the backend importable *and* its weights already cached.
+
+    Checking only the cache was wrong — the weights live in a shared, machine-wide directory, so
+    they can be present in an environment that has no fastembed installed at all. The test then ran
+    and failed with `BackendMissingError` instead of skipping.
+    """
+    from importlib.util import find_spec
+
+    if find_spec("fastembed") is None:
+        return False
     cache = hf_cache_dir()
     return cache.exists() and any(fragment in entry.name for entry in cache.iterdir())
 
 
 @pytest.mark.model
-@pytest.mark.skipif(not _weights_cached("bge-small"), reason="embedding weights not cached")
+@pytest.mark.skipif(not _runnable("bge-small"), reason="fastembed or its weights absent")
 def test_real_embedding_backend_agrees_with_the_manifest() -> None:
     section = EmbeddingSection(
         provider=FASTEMBED, model="BAAI/bge-small-en-v1.5", dim=384, revision=None
@@ -155,7 +165,7 @@ def test_real_embedding_backend_agrees_with_the_manifest() -> None:
 
 
 @pytest.mark.model
-@pytest.mark.skipif(not _weights_cached("bge-reranker"), reason="reranker weights not cached")
+@pytest.mark.skipif(not _runnable("bge-reranker"), reason="fastembed or its weights absent")
 def test_real_reranker_orders_by_relevance() -> None:
     reranker = load_reranker(
         RerankSection(provider=FASTEMBED, model="BAAI/bge-reranker-base", revision=None)

@@ -55,6 +55,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   onto the shared `HF_HOME` cache rather than its `$TMPDIR` default, and `max_seq_length` is derived
   from the loaded tokenizer. `dim` disagreeing with the manifest is a hard error. Model-marked tests
   exercise real weights and skip when they are not cached.
+- **I8a** — sync pairing: `pairing.py` implements DESIGN §6.4's two-phase algorithm as a pure
+  function over two snapshots — no filesystem, no SQLite, no clock — returning actions for the sync
+  driver to execute. Covers every row of the table plus the compound cases: adoption beats deletion
+  so a rename+edit keeps its id and emits no delete; duplicate content is reported rather than
+  guessed unless a sidecar breaks the tie; a sidecar disagreeing with the index wins, because
+  `docs/` is the truth and the index is derived; one id in two sidecars raises rather than
+  renumbering. Orphaned sidecars and moved-without-sidecar cases are reported, never acted on.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.

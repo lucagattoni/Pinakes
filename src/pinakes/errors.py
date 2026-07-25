@@ -9,6 +9,7 @@ Subclasses are added by the increment that first raises them; an empty hierarchy
 would be a guess about failures that do not exist yet.
 """
 
+from collections.abc import Mapping
 from pathlib import Path
 
 
@@ -172,6 +173,29 @@ class BackendUnknownError(PinakesError):
         )
         self.provider = provider
         self.known = known
+
+
+class DuplicateIdsError(PinakesError):
+    """One document id claimed by more than one sidecar.
+
+    Fatal by design: renumbering would break inbound links that were perfectly fine, and there is
+    no way to tell which document the id was originally minted for (docs/DESIGN.md §6.4).
+    """
+
+    def __init__(self, duplicates: Mapping[str, list[str]]) -> None:
+        listing = "; ".join(
+            f"{doc_id} claimed by {', '.join(paths)}"
+            for doc_id, paths in sorted(duplicates.items())
+        )
+        super().__init__(
+            f"the same document id appears in more than one sidecar: {listing}.",
+            remedy=(
+                "Decide which document owns the id and give the other a new sidecar (delete "
+                "its `id` and let sync mint one). Never edit the id of a document other KBs "
+                "link to."
+            ),
+        )
+        self.duplicates = dict(duplicates)
 
 
 def _rebuild(cls: type[PinakesError], message: str, remedy: str) -> PinakesError:
