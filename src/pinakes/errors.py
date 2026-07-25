@@ -49,6 +49,34 @@ class NotImplementedYetError(PinakesError):
         self.increment = increment
 
 
+class InvalidIdError(PinakesError):
+    """A string that should have been a ULID is not one."""
+
+    def __init__(self, raw: str, *, kind: str) -> None:
+        super().__init__(
+            f"{raw!r} is not a valid {kind} ULID.",
+            remedy=(
+                "IDs are 26-character uppercase Crockford base32, minted by pinakes and never "
+                "edited by hand. If this came from a sidecar, restore the original ID — "
+                "renumbering breaks every inbound link (docs/DESIGN.md §2.2)."
+            ),
+        )
+        self.raw = raw
+        self.kind = kind
+
+
+class InvalidUriError(PinakesError):
+    """A `pnk://` link is malformed."""
+
+    def __init__(self, raw: str, *, reason: str) -> None:
+        super().__init__(
+            f"{raw!r} is not a valid pnk:// URI: {reason}.",
+            remedy="The form is pnk://<kb-ulid>/<doc-ulid> — see docs/DESIGN.md §2.2.",
+        )
+        self.raw = raw
+        self.reason = reason
+
+
 def _rebuild(message: str, remedy: str) -> PinakesError:
     """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable."""
     return PinakesError(message, remedy=remedy)

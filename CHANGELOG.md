@@ -15,6 +15,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Exit codes are a contract: 0 success, 1 operational failure, 2 usage error.
 - `ty` added as a dev dependency and fast type pre-check; `pyright` strict remains the gate
   (measured comparison in `docs/RETROSPECTIVES.md`).
+- **I2** — identity: `ids.py` (ULID minting and strict parsing behind `KbId`/`DocId` NewTypes) and
+  `uri.py` (`pnk://<kb-ulid>/<doc-ulid>`). Aliases are rejected inside a URI with an error naming
+  where they do belong; `pnk://self/…` parses to an unresolved `ParsedUri` that *cannot* be
+  formatted, so expanding it against the owning KB is enforced by the type system rather than by
+  discipline. Lowercase IDs are rejected rather than normalised.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.
