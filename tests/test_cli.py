@@ -29,7 +29,7 @@ def test_bare_invocation_prints_help_and_succeeds(capsys: pytest.CaptureFixture[
         assert name in out
 
 
-IMPLEMENTED = frozenset({"sync", "init", "search"})
+IMPLEMENTED = frozenset({"sync", "init", "search", "doctor"})
 
 
 @pytest.mark.parametrize("command", sorted(DESIGN_V01_COMMANDS - IMPLEMENTED))

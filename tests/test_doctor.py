@@ -1,0 +1,191 @@
+"""`pnk doctor`: the checks that make the design's stated limits visible instead of mysterious."""
+
+from collections.abc import Sequence
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from pinakes import store
+from pinakes.doctor import Status, diagnose, prune
+from pinakes.embed import (
+    ModelInfo,
+    Vectors,
+    register_embedding_backend,
+    register_reranker,
+)
+from pinakes.ids import mint_doc_id
+from pinakes.init import init
+from pinakes.manifest import load
+from pinakes.sidecar import SIDECAR_SUFFIX
+from pinakes.sync import SyncOptions, sync
+
+DIM = 3
+
+
+class FakeBackend:
+    def embed(self, texts: Sequence[str]) -> Vectors:
+        rows = [np.ones(DIM, dtype=np.float32) for _ in texts]
+        if not rows:
+            return np.zeros((0, DIM), dtype=np.float32)
+        return np.ascontiguousarray(np.vstack(rows), dtype=np.float32)
+
+    def count_tokens(self, text: str) -> int:
+        return len(text.split())
+
+    def info(self) -> ModelInfo:
+        return ModelInfo("fake", "fake-model", "rev1", DIM, 512)
+
+
+class FakeReranker:
+    def score(self, query: str, passages: Sequence[str]) -> list[float]:
+        return [0.0] * len(passages)
+
+    def info(self) -> ModelInfo:
+        return ModelInfo("fake", "fake-reranker", "v1", 0, 512)
+
+
+@pytest.fixture
+def kb(tmp_path: Path) -> Path:
+    register_embedding_backend("fake", lambda section, offline: FakeBackend())
+    register_reranker("fake", lambda section, offline: FakeReranker())
+
+    result = init(tmp_path / "kb", now="20260725 17:30")
+    path = result.root / "pinakes.toml"
+    text = path.read_text(encoding="utf-8")
+    text = text.replace('provider = "sentence-transformers"', 'provider = "fake"')
+    text = text.replace('model    = "BAAI/bge-small-en-v1.5"', 'model    = "fake-model"')
+    text = text.replace("dim      = 384", f"dim      = {DIM}")
+    text = text.replace('model    = "BAAI/bge-reranker-base"', 'model    = "fake-reranker"')
+    path.write_text(text, encoding="utf-8")
+
+    (result.root / "docs" / "a.md").write_text("# A\n\nSome text.\n", encoding="utf-8")
+    return result.root
+
+
+def checks(root: Path) -> dict[str, tuple[Status, str]]:
+    return {c.name: (c.status, c.detail) for c in diagnose(load(root)).checks}
+
+
+def test_a_fresh_kb_reports_no_index_yet(kb: Path) -> None:
+    found = checks(kb)
+    assert found["index"][0] is Status.WARN
+    assert "not built yet" in found["index"][1]
+    assert found["sqlite"][0] is Status.OK
+    assert "FTS5 present" in found["sqlite"][1]
+
+
+def test_a_synced_kb_is_healthy(kb: Path) -> None:
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    found = checks(kb)
+    assert found["index"][0] is Status.OK
+    assert found["model coherence"][0] is Status.OK
+    assert found["duplicate ids"][0] is Status.OK
+    assert found["scale"][0] is Status.OK
+    assert found["failures"][0] is Status.OK
+
+
+def test_an_incoherent_index_is_reported_as_a_failure(kb: Path) -> None:
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    connection = store.connect_rw(kb / ".pinakes" / "index.db")
+    store.set_meta(connection, {"embedding_model": "something-else"})
+    connection.commit()
+    connection.close()
+
+    report = diagnose(load(kb))
+    assert report.worst is Status.FAIL
+    assert checks(kb)["model coherence"][0] is Status.FAIL
+
+
+def test_an_uncalibrated_kb_is_a_warning_not_a_failure(kb: Path) -> None:
+    """`unknown` is honest; it is worth reporting, but it is not broken."""
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    assert checks(kb)["calibration"][0] is Status.WARN
+
+
+def test_thresholds_fitted_for_another_reranker_fail(kb: Path) -> None:
+    path = kb / "pinakes.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + '\n[retrieval.confidence]\nfitted_for = "someone-else@v9"\n'
+        "low_below = 0.3\nhigh_above = 0.7\n",
+        encoding="utf-8",
+    )
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    status, detail = checks(kb)["calibration"]
+    assert status is Status.FAIL
+    assert "someone-else@v9" in detail
+
+
+def test_an_unpinned_revision_is_a_warning_with_the_value_to_pin(kb: Path) -> None:
+    status, detail = checks(kb)["embedding"]
+    assert status is Status.WARN
+    assert "revision unpinned" in detail
+
+
+def test_orphaned_sidecars_are_reported_and_only_pruned_on_request(kb: Path) -> None:
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    (kb / "docs" / "a.md").unlink()
+
+    report = diagnose(load(kb))
+    orphan_check = next(c for c in report.checks if c.name == "orphaned sidecars")
+    assert orphan_check.status is Status.WARN
+    assert report.orphans and report.orphans[0].name.endswith(SIDECAR_SUFFIX)
+    assert report.orphans[0].is_file()  # reported, not removed
+
+    removed = prune(report.orphans)
+    assert removed and not removed[0].exists()
+
+
+def test_duplicate_ids_are_a_failure_naming_both_paths(kb: Path) -> None:
+    shared = mint_doc_id()
+    for name in ("a.md", "b.md"):
+        (kb / "docs" / name).write_text(f"# {name}\n\ntext\n", encoding="utf-8")
+        (kb / "docs" / f"{name}{SIDECAR_SUFFIX}").write_text(f"id: {shared}\n", encoding="utf-8")
+
+    status, detail = checks(kb)["duplicate ids"]
+    assert status is Status.FAIL
+    assert "a.md" in detail and "b.md" in detail
+
+
+def test_a_broken_sidecar_is_a_failure(kb: Path) -> None:
+    (kb / "docs" / f"a.md{SIDECAR_SUFFIX}").write_text("id: not-a-ulid\n", encoding="utf-8")
+    assert checks(kb)["sidecars"][0] is Status.FAIL
+
+
+def test_a_held_lock_is_reported_with_its_holder(kb: Path) -> None:
+    import json
+    import os
+    import socket
+
+    state = kb / ".pinakes"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "sync.lock").write_text(
+        json.dumps({"pid": os.getpid(), "host": socket.gethostname(), "started": "20260725 17:00"}),
+        encoding="utf-8",
+    )
+    status, detail = checks(kb)["sync lock"]
+    assert status is Status.WARN
+    assert str(os.getpid()) in detail
+
+
+def test_a_loose_folder_is_told_it_is_not_hook_managed(kb: Path) -> None:
+    status, detail = checks(kb)["git hooks"]
+    assert status is Status.WARN
+    assert "not a git repository" in detail
+
+
+def test_recorded_failures_are_surfaced(kb: Path) -> None:
+    (kb / "docs" / "bad.md").write_bytes(b"\xff\xfe not utf-8 \xff")
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    status, detail = checks(kb)["failures"]
+    assert status is Status.WARN
+    assert "bad.md" in detail
+
+
+def test_every_problem_carries_a_remedy(kb: Path) -> None:
+    """A report that says "problem" without saying "do this" is just anxiety."""
+    (kb / "docs" / f"a.md{SIDECAR_SUFFIX}").write_text("id: nope\n", encoding="utf-8")
+    for check in diagnose(load(kb)).checks:
+        if check.status is not Status.OK:
+            assert check.remedy, f"{check.name} has no remedy"

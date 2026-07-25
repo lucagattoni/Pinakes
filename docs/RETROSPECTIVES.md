@@ -294,3 +294,23 @@ confirmation that the check earns its place: the first thing it caught was its o
 already decided this, and building it made the reason concrete: `pnk init` cannot know anything
 about the corpus the user is about to add, so any threshold it wrote would be a number with no
 provenance. `confidence: unknown` until they fit their own is the only honest default.
+
+## I11 — `pnk doctor` (20260725 17:35)
+
+**MEDIUM — ty found a second real defect hiding behind a `pyright: ignore`.** I had typed a dict as
+`dict[Path, object]` and silenced the resulting argument-type complaint rather than fixing the
+annotation. That is the same shape as I8b's finding, and it is now a pattern: **an inline
+suppression is where a type error goes to be forgotten.** Every `pyright: ignore` in `src/` has been
+removed as of this increment; the two that existed were both hiding something real, not appeasing a
+checker that was wrong.
+
+**Worth stating — doctor is where several design promises stop being rhetorical.** §3.1's linear
+scan ceiling, §6.2's link-coverage ceiling, §4.2's `unknown` confidence, §6.4's orphan reporting and
+§6.5's lock are all "we will tell you rather than pretend" commitments. None of them is honest
+unless something actually prints them, and until this increment none of them did. The test that says
+every non-OK check must carry a remedy is the one enforcing the spirit of it: a report that says
+"problem" without saying "do this" is just anxiety.
+
+**Design note — an uncalibrated KB is a WARN, not a FAIL.** Reporting `confidence: unknown` is the
+honest behaviour the design chose, so a KB doing exactly that is not broken; it is uninformative,
+and the warning says so with a pointer to §4.2 and §7.

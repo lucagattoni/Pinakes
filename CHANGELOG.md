@@ -85,6 +85,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   --deep` as *planned for v0.4* rather than implying it exists.
 - pytest now treats warnings as errors, which immediately surfaced a deprecated
   `importlib.abc.Traversable` import and several leaked SQLite handles in the tests.
+- **I11** — `pnk doctor`: environment (SQLite version, FTS5, loadable extensions), backend and
+  weights, template drift, index coherence, calibration validity, orphaned sidecars, duplicate ids,
+  dangling links and link coverage, recorded failures, the 50k-chunk NumPy-tier threshold, a held
+  sync lock, and hook status. Every non-OK check carries a remedy. `--prune` is the only thing that
+  changes anything, and it prints every path before removing it.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.

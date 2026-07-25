@@ -230,6 +230,38 @@ def run_search(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _doctor_arguments(parser: argparse.ArgumentParser) -> None:
+    _kb_argument(parser)
+    parser.add_argument(
+        "--prune",
+        action="store_true",
+        help="delete orphaned sidecars, after printing every path",
+    )
+
+
+def run_doctor(args: argparse.Namespace) -> int:
+    """`pnk doctor`. Exit 1 on any FAIL; warnings are reported but do not fail the command."""
+    from pinakes import manifest as manifest_module
+    from pinakes.doctor import Status, diagnose, prune
+
+    loaded = manifest_module.discover(args.kb)
+    report = diagnose(loaded)
+    for check in report.checks:
+        print(check.line())
+
+    if args.prune:
+        if not report.orphans:
+            print("\nnothing to prune.")
+        else:
+            print("\nremoving these orphaned sidecars:")
+            for path in report.orphans:
+                print(f"  {path.relative_to(loaded.root)}")
+            removed = prune(report.orphans)
+            print(f"removed {len(removed)}.")
+
+    return EXIT_FAILURE if report.worst is Status.FAIL else EXIT_OK
+
+
 def _sync_arguments(parser: argparse.ArgumentParser) -> None:
     _kb_argument(parser)
     parser.add_argument(
@@ -319,7 +351,13 @@ COMMANDS: tuple[Command, ...] = (
         runner=lambda args: run_search(args),
         arguments=_search_arguments,
     ),
-    Command("doctor", "Check environment, coherence, orphans, links, hooks", "I11"),
+    Command(
+        "doctor",
+        "Check environment, coherence, orphans, links, hooks",
+        "I11",
+        runner=lambda args: run_doctor(args),
+        arguments=_doctor_arguments,
+    ),
     Command("install-hooks", "Install git hooks that keep the index fresh", "I12"),
     Command("serve", "Run the MCP server", "I13"),
 )
