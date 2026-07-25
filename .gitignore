@@ -1,0 +1,26 @@
+# Generated KB state — index, spend ledger, caches. Never committed, always rebuildable.
+.pinakes/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Models and data that must never enter a public repo
+*.safetensors
+*.onnx
+*.bin
+
+# OS
+.DS_Store
