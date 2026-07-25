@@ -38,7 +38,8 @@ separate, bisectable landing:
 1. Own worktree, branch `YYYYMMDD_HHMM-i<N>-<slug>`.
 2. Implement the increment **with its tests** — tests ship in the increment that introduces the
    behaviour, never deferred.
-3. Green before review: `uv run ruff check`, `uv run pyright`, `uv run pytest`.
+3. Green before review: run `./check.sh` — it runs every gate under `set -e`, so a
+   failure is a non-zero exit rather than a line in a log that a pipe then swallows.
 4. **Retrospective review** — a fresh adversarial pass over that increment's own diff, hunting for
    what is wrong, missed, or asserted without evidence. Fix findings, re-run the checks, repeat
    until a pass is clean. Findings and fixes are their own commit, separate from the implementation.

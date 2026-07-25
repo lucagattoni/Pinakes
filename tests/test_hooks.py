@@ -1,7 +1,8 @@
-"""Git hooks: the split that keeps a commit's tree clean, and the refusal to touch someone's hook."""
+"""Git hooks: the split that keeps a commit's tree clean, and the refusal to edit a hook."""
 
 import os
 import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -151,7 +152,7 @@ def test_a_real_commit_lands_the_sidecar_in_the_same_commit(kb: Path) -> None:
     git(kb, "add", "docs/note.md")
 
     environment = dict(os.environ)
-    environment["PATH"] = f"{Path(os.sys.executable).parent}:{environment['PATH']}"
+    environment["PATH"] = f"{Path(sys.executable).parent}:{environment['PATH']}"
     subprocess.run(["git", "commit", "-q", "-m", "add a note"], cwd=kb, check=True, env=environment)
 
     committed = git(kb, "show", "--name-only", "--pretty=format:", "HEAD").split()

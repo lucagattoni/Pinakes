@@ -332,3 +332,11 @@ a core-only install should feel it.
 **LOW (test hygiene) — a "tree is clean" assertion failed on files the fixture never committed.**
 The hooks were fine; the setup was. An assertion about cleanliness is only meaningful from a clean
 starting point.
+
+**HIGH (process) — I committed with red gates for the second time, and now understand why.** The
+pattern `uv run pyright 2>&1 | tail -1 && git commit …` reports the exit status of `tail`, which is
+always 0. Both checkers were failing and the commit went through looking green. This is not
+carelessness that can be fixed by resolving to be careful: the shell was reporting success. Added
+`check.sh`, which runs every gate under `set -e`, and pointed `CLAUDE.md` at it. *Lesson: if a
+safety check is a pipeline, the thing you are checking is the last command in the pipe. Make the
+gate a script that exits non-zero, and the mistake becomes unavailable.*
