@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/)
 
 > **Status: design complete, implementation not started.** Nothing here works yet. The architecture
-> is specified in [`docs/DESIGN.md`](docs/DESIGN.md) and has been through six adversarial review
+> is specified in [`docs/DESIGN.md`](docs/DESIGN.md) and has been through seven adversarial review
 > passes. There is no PyPI release; the install instructions below describe the intended v0.1.
 
 ---
@@ -67,7 +67,7 @@ uvx --from "pinakes[st]" pnk serve    # MCP server, zero install
 
 [`docs/DESIGN.md`](docs/DESIGN.md) is the specification: storage schema, sync semantics, concurrency
 policy, budget accounting, cross-KB linking, and the delivery plan. It also documents its own review
-history — six passes, 54 findings, including the three factual errors the review caught.
+history — seven passes, 58 findings, including the four factual errors the review caught.
 
 Two limits are stated there rather than hidden: no vector tier is sublinear (`sqlite-vec` performs
 exhaustive KNN, not approximate search), and without fan-out query, cross-KB answers are capped by

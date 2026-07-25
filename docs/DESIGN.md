@@ -183,7 +183,7 @@ One SQLite file, `.pinakes/index.db`, in **WAL mode**. No server, no separate ve
 
 | Table | Purpose |
 |---|---|
-| `documents` | id, path (relative, POSIX separators), content_hash, mtime, source_type, title, metadata (JSON), state (`active` / `deleted`) |
+| `documents` | id, path (relative, POSIX separators), content_hash, sidecar_hash, mtime, source_type, title, metadata (JSON), state (`active` / `deleted`) — `sidecar_hash` is what lets §6.4 notice a sidecar-only edit |
 | `chunks` | id, doc_id, ordinal, text, char span, token count, heading path |
 | `chunks_fts` | FTS5 external-content table over `chunks.text`, kept in sync by triggers — BM25 |
 | `embeddings` | chunk_id, vector (float32 BLOB) — the single representation; tier 1 loads it into one contiguous NumPy array at open |
@@ -313,7 +313,10 @@ weights download once per cache key, not once per job. Without that cache the re
 the very per-job download problem the extras split exists to avoid.
 
 Model weights go to the **shared Hugging Face cache** (`HF_HOME`), never `.pinakes/cache/`, so N KBs
-on a machine share one copy. `.pinakes/cache/` holds only KB-derived artifacts. `pnk doctor` reports
+on a machine share one copy. One backend needs help to honour that: fastembed left alone caches to
+`$TMPDIR/fastembed_cache`, not the HF cache (verified upstream, 20260725) — so the fastembed backend
+always passes an explicit cache directory under `HF_HOME`, making the shared-cache statement true by
+construction on both backends rather than an assumption that silently fails on `[light]`. `.pinakes/cache/` holds only KB-derived artifacts. `pnk doctor` reports
 whether the configured model is present locally, and `--offline` fails fast instead of reaching out.
 
 ### 4.6 Chunking and tokens
@@ -450,6 +453,23 @@ Phase-2 rules, applied in order:
 | New path, no sidecar | Mint a ULID, write the sidecar |
 | Path gone, no hash match | Mark `state = deleted` (soft). **Leave the sidecar on disk** and report it as orphaned |
 | Same ID in two sidecars | Hard error naming both paths. Never silently renumber — that would break every inbound link |
+
+Three consequences the table implies but must be stated:
+
+- **Soft delete removes the searchable trace, keeps the identity.** Executing a soft delete deletes
+  the document's chunks and embeddings (FTS rows follow via triggers) so a deleted document can
+  never surface in results; the `documents` row itself stays, `state = deleted`, because it is the
+  identity the next sync's pairing needs.
+- **Sidecar-only edits are their own change class.** The table above governs *document identity*;
+  a user editing tags, title or links with the document untouched must not fall through to "Skip"
+  and freeze. Sync also hashes sidecar content (`documents.sidecar_hash`, §3); on change it
+  refreshes `documents.metadata` and `links` without re-chunking or re-embedding.
+- **Rename + edit in the same sync:** the hash tie is gone, so rows alone would soft-delete the old
+  path and mint at the new one — breaking inbound links. If the sidecar travelled with the file,
+  the adoption row wins over the deletion row: the ID continues at the new path, content is
+  re-embedded, and **no soft delete is emitted for that ID**. If the sidecar did not travel,
+  soft-delete + mint is the honest outcome, and sync reports it as a likely moved-without-sidecar
+  case (§9's most-likely-corruption risk, surfaced at the moment it happens).
 
 Deletion is soft and sidecars are never removed automatically: `pnk doctor --prune` does that, only
 on explicit request, after printing the list. Deleting a user's file because a hash didn't match is
@@ -652,3 +672,16 @@ with `--force-unlock` as the human path, `pnk doctor` reports held locks (§6.5)
 *LOW:* the sidecar's `content_hash` duplicated `documents.content_hash`, was read by nothing, and
 guaranteed a two-file diff on every document edit while going stale whenever sync hadn't run —
 dropped from the sidecar (user decision); change detection is index-only, stated in §2.2.
+
+**Pass 7** (20260725, surfaced while adversarially reviewing `plans/v0.1.md` — the implementation
+plan's review loop reads the design fresh each pass, which is how these escaped passes 1–6).
+*HIGH:* §4.5 claimed model weights go to the shared HF cache on both backends — false for fastembed,
+which defaults to `$TMPDIR/fastembed_cache` (verified upstream): CI's `HF_HOME` cache would never
+hit and `pnk doctor`'s weights check would probe the wrong directory. The fastembed backend now
+passes an explicit cache dir under `HF_HOME`, making the claim true by construction.
+*MEDIUM:* a sidecar-only edit (tags/title/links changed, document untouched) fell through §6.4's
+"path and hash unchanged → Skip" and was never re-indexed — `documents.sidecar_hash` added (§3) and
+the sidecar-only change class stated (§6.4); soft delete left chunks and embeddings searchable —
+removal on soft delete stated, identity row retained (§6.4); rename+edit in one sync had both the
+adoption and deletion rows firing for the same ID with no stated winner — sidecar adoption now wins,
+no soft delete emitted, and the sidecar-didn't-travel case is reported at sync time (§6.4).
