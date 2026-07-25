@@ -107,8 +107,17 @@ vector_tier           = "auto"        # "auto" | "numpy" | "sqlite-vec"
 
 [retrieval.confidence]
 # Fitted against the template's golden set (§4.2/§7). Absent ⇒ report `unknown`, never guess.
+fitted_for = "BAAI/bge-reranker-base@…"   # reranker model@revision — on mismatch, report `unknown`
 low_below  = 0.31
 high_above = 0.62
+
+# Consumed only when [retrieval] rerank = "local". Mirrors [embedding]. The default model id is
+# identical on both backends (verified in fastembed's registry, 20260725), so switching backend
+# does not change this block.
+[rerank]
+provider = "sentence-transformers"
+model    = "BAAI/bge-reranker-base"       # ~1.04 GB — see §4.5 for the weight/caching story
+revision = "…"
 
 [budget]
 confirm_above_eur = 0.01              # prompt for confirmation (soft)
@@ -133,7 +142,6 @@ relied upon.
 
 ```yaml
 id: 01JQ8ZC4V7K2N…            # ULID, assigned once, never regenerated
-content_hash: sha256:9f2a…    # change detection, independent of the ID
 title: "Attention Is All You Need"
 tags: [transformers, architecture]
 created: 20260725 09:14
@@ -152,6 +160,12 @@ is used on a machine where that alias doesn't exist, or is renamed — so aliase
 input and resolved to ULIDs before the sidecar is written. Aliases live only in the manifest's
 `[[links.kb]]` (machine-local resolution); they never appear inside a `pnk://` URI. This is the
 single decision that makes links survive being shared.
+
+**The sidecar carries no content hash.** Change detection belongs to the index
+(`documents.content_hash`, §3), which sync compares against the file on disk. A hash in the sidecar
+would dirty two files on every document edit, and would be stale — silently wrong — whenever the
+document changed without a sync in between. Nothing in the pairing algorithm (§6.4) reads it:
+sidecars pair by adjacency, documents pair by the index's hashes.
 
 Why sidecars rather than in-text links: a PDF cannot carry a wikilink without being rewritten, and
 mutating source documents breaks the "originals are the truth" contract. One mechanism that works
@@ -289,7 +303,14 @@ uvx --from "pinakes[st]" pnk serve       # zero-install MCP server
 
 A core-only install cannot embed. That is a supported state, not a broken one: any command needing
 embeddings fails immediately with the exact extra to install, and `pnk doctor` reports it. CI runs
-`[light]` — a 2GB download per job is untenable.
+`[light]` — a 2GB torch download per job is untenable.
+
+Both extras also provide the default reranker (§2.1): `BAAI/bge-reranker-base` exists under the same
+id in `sentence-transformers` and in fastembed's registry (~1.04 GB of weights). Weights are a
+*model download*, not an install cost, so the extras stay light — but CI must **cache `HF_HOME`**
+(keyed on the model ids + revisions in the demo KB's manifest) so the ~1.4 GB of embedding + reranker
+weights download once per cache key, not once per job. Without that cache the reranker would recreate
+the very per-job download problem the extras split exists to avoid.
 
 Model weights go to the **shared Hugging Face cache** (`HF_HOME`), never `.pinakes/cache/`, so N KBs
 on a machine share one copy. `.pinakes/cache/` holds only KB-derived artifacts. `pnk doctor` reports
@@ -392,7 +413,18 @@ deterministic, cron-safe. A rebuild that wiped `.pinakes/` wholesale would destr
 that §5's rolling budget is computed from, turning a routine maintenance command into a silent
 budget reset. Only `cache/` is optionally cleared, behind `--clear-cache`.
 
-`pnk install-hooks` writes `post-merge` + `post-commit` hooks calling `pnk sync --quiet`;
+`pnk install-hooks` writes **three** hooks, split by what each may touch:
+
+- **`pre-commit`** runs `pnk sync --sidecars-only --stage`: for every *staged* new document it mints
+  the ULID, writes the sidecar, and `git add`s it — so a document and its ID land in the **same
+  commit**, never one behind. Only sidecars of staged documents are touched, which keeps partial
+  staging (`git add -p`) honest, and `git commit --no-verify` is the documented escape hatch. This is
+  the one hook allowed to write into `docs/`; it writes nothing else.
+- **`post-commit` + `post-merge`** run `pnk sync --quiet`: index work only. Because sidecars were
+  authored at pre-commit time, this stage never dirties the tree it just committed — a post-commit
+  hook that created sidecars would leave every document commit trailing an untracked `.pnk.yaml`,
+  demanding a second commit forever.
+
 `pnk init --ci` drops a GitHub Actions workflow that syncs and caches `.pinakes/`. No daemon.
 
 Because freshness is git-triggered, **a KB is normally a git repo** — an assumption of the design,
@@ -434,8 +466,16 @@ A git hook can fire while an MCP server is answering. The policy:
 
 - SQLite in **WAL mode**: readers are never blocked by the writer.
 - The MCP server opens the index **read-only** (`file:…?mode=ro`) with a `busy_timeout`.
-- `pnk sync` takes an advisory `.pinakes/sync.lock`; a second sync exits immediately rather than
-  interleaving with the first.
+- `pnk sync` takes an advisory `.pinakes/sync.lock` recording **pid, hostname and start time**.
+  A second sync finding the lock does not just exit: if the holder is alive on this host, exit 0
+  quietly — hook-driven contention is normal, not an error. If the recorded pid is dead on this
+  host, **reclaim the lock with a warning** — a sync killed mid-run must not disable hook-driven
+  freshness forever, which is exactly what a bare "exit if lock exists" rule would do, silently,
+  with `--quiet` hiding the symptom. If the hostname is not this machine (shared/NFS checkout),
+  refuse and name the lock: liveness cannot be checked across hosts, so the conservative path is a
+  human running `pnk sync --force-unlock`. `pnk doctor` reports any held lock with its age and
+  holder. Residual risk — pid reuse can misjudge liveness — is accepted: start time in the lock
+  makes the misjudgement window narrow, and the failure mode is one skipped sync, not corruption.
 - The server detects a swapped index by **`stat()`ing `.pinakes/index.db` (inode + mtime) per
   request**, not by reading `meta.build_id` through its own connection — an open handle keeps the
   *old* inode alive after a rename, so it would report the old `build_id` forever and never notice
@@ -475,11 +515,14 @@ say so.
 **v0.1 — thin vertical slice, end to end**
 
 `pnk init` (one template) · `pnk sync` + `--rebuild` with the full §6.4 semantics · Markdown/text/code
-ingest · structural chunking · local embeddings · FTS5 + NumPy exact vector + RRF · metadata filters ·
-`pnk doctor` (environment/FTS5, backend, model coherence, orphans, duplicate IDs, hook status) ·
-`pnk install-hooks` · WAL/read-only/lock policy (§6.5) · `pnk serve` — MCP server
-(`pinakes_search`, `pinakes_get`, `pinakes_list_kbs`) · golden-set eval harness ·
-CI (uv, ruff, pyright, pytest) · Apache-2.0 · PyPI release.
+ingest · structural chunking · local embeddings · FTS5 + NumPy exact vector + RRF · **local
+cross-encoder rerank** (the §4.2 confidence signal is fitted on its scores, so it cannot ship later
+than the signal) · metadata filters · **`pnk search`** — the CLI query surface §4.2's escalation
+message depends on; a "vertical slice" that can only be queried over MCP would not reach end to end ·
+`pnk doctor` (environment/FTS5, backend, model coherence, orphans, duplicate IDs, hook status, held
+sync lock) · `pnk install-hooks` (§6.3 three-hook split) · WAL/read-only/lock policy (§6.5) ·
+`pnk serve` — MCP server (`pinakes_search`, `pinakes_get`, `pinakes_list_kbs`) · golden-set eval
+harness · CI (uv, ruff, pyright, pytest, `HF_HOME` cache §4.5) · Apache-2.0 · PyPI release.
 
 Features deferred past v0.1, but whose **schema and identifiers ship in v0.1 because they cannot be
 retrofitted**: ULID document *and* KB IDs, sidecar generation for every document, the manifest schema
@@ -492,7 +535,7 @@ migration this design deliberately has no machinery for.
 | v0.2 | PDF ingest (pymupdf), extraction cache, extraction quality tests | Parsing is the biggest quality risk; isolate it from core-design feedback |
 | v0.3 | `pnk link`, `pinakes_links`, cross-KB traversal, sidecar scanning, link-coverage reporting | Needs two populated KBs to be worth anything |
 | v0.4 | `pnk ask --deep`, budget ledger, reservations, `pnk budget` | First paid path and its guardrails ship together |
-| v0.5 | Template ecosystem, `pnk upgrade` migrations, `sqlite-vec` tier, local reranker | Generalisation, once real usage has shaped one template well |
+| v0.5 | Template ecosystem, `pnk upgrade` migrations, `sqlite-vec` tier | Generalisation, once real usage has shaped one template well |
 
 **MCP tools are namespaced `pinakes_*`, not `kb_*`.** An agent commonly has several servers loaded at
 once, and a tool called `kb_search` is a collision waiting to happen. Every tool takes an explicit
@@ -510,7 +553,7 @@ once, and a tool called `kb_search` is a collision waiting to happen. Every tool
 | **Sidecar/document separation** | A user moving a file without its sidecar is the most likely real-world corruption. Mitigated by hash-based rename detection (§6.4) and `pnk doctor`; not eliminated |
 | **Confidence heuristic** | Uncalibrated abstention would be worse than none. Mitigated by golden-set calibration, `unknown` as an honest default, and measured false-abstain rate |
 | **`sqlite-vec` maturity** | Pre-v1, breaking changes expected. Contained: only reached above 50k chunks, deferred to v0.5, NumPy tier remains a supported override |
-| **torch install weight** | ~2GB for the default backend. Contained by the extras split (§4.5); CI runs `[light]` |
+| **torch install weight** | ~2GB for the default backend, plus ~1.4GB of model weights (embedding + reranker). Contained by the extras split and the CI `HF_HOME` cache (§4.5); CI runs `[light]` |
 | **Template versioning** | Migrations are shown, never auto-applied (§6.1); templates version independently of the package |
 | **Scope creep via `--deep`** | The paid loop is where this design could grow a second, worse agent framework. Bounded by: same tools as MCP, hard caps, and no orchestration the free path doesn't have |
 | **Environment assumptions** | FTS5 and (for v0.5) loadable extensions are not universal in system Pythons. Probed by `pnk doctor` with a named remedy; uv-managed CPython is the supported baseline (§3.1) |
@@ -586,3 +629,26 @@ renamed across passes 1–4. No section contradicts another; every external clai
 exhaustive not ANN, FTS5 + extension loading on uv-managed CPython 3.13, `pinakes` free on PyPI,
 2.25 ms at 50k×384) was measured or fetched in-session rather than recalled; every locked constraint
 is honoured; every capability in §1 maps to a release in §8. Review complete.
+
+**Pass 6** (20260725, implementation-readiness review) — 2 HIGH, 2 MEDIUM, 1 LOW resolved; the two
+product calls were decided by the user, not the review.
+*HIGH:* the reranker was simultaneously a v0.1 default (`rerank = "local"` in §2.1, "on by default"
+in §4.1, its scores the substrate of §4.2's confidence signal, "rerank precision" in §7's v0.1 CI)
+and a v0.5 deliverable in §8 — a freshly-inited KB would have defaulted to a stage that didn't
+exist, and v0.1 would have shipped with no defined confidence signal. Resolved: the reranker ships
+in v0.1; default `BAAI/bge-reranker-base` (user decision — same id on both backends beats the
+smaller ms-marco model's provider-specific ids), a `[rerank]` manifest block mirroring
+`[embedding]`, `fitted_for` added to `[retrieval.confidence]`, and a CI `HF_HOME` cache so ~1.4GB
+of weights download per cache key, not per job (§2.1, §4.5, §8). And §8's v0.1 had no CLI query
+surface at all — `pnk search` existed in §4.2's escalation story, the CLI stub and the README, but
+not in the release that claims "end to end". Added explicitly (§8).
+*MEDIUM:* the `post-commit` hook wrote sidecars, dirtying the tree it had just committed — every
+document commit would trail an untracked `.pnk.yaml` forever. Resolved with a three-hook split:
+`pre-commit` mints and stages sidecars for staged documents only, `post-commit`/`post-merge` touch
+the index only (§6.3). And a stale `sync.lock` from a killed sync silently disabled hook-driven
+freshness forever ("a second sync exits immediately" had no liveness story). Resolved: the lock
+records pid/host/start-time; dead-pid locks are reclaimed with a warning, cross-host locks refuse
+with `--force-unlock` as the human path, `pnk doctor` reports held locks (§6.5).
+*LOW:* the sidecar's `content_hash` duplicated `documents.content_hash`, was read by nothing, and
+guaranteed a two-file diff on every document edit while going stale whenever sync hadn't run —
+dropped from the sidecar (user decision); change detection is index-only, stated in §2.2.
