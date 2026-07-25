@@ -197,3 +197,24 @@ back around `-0.28` and `-7.85`, not in `[0, 1]`. The illustrative thresholds in
 (`low_below = 0.31`, `high_above = 0.62`) read like normalised scores; calibration must either fit
 against the logit scale or squash it first. Recorded now so I14 does not quietly fit thresholds to
 the wrong scale.
+
+## I8a — Sync pairing core (20260725 15:50)
+
+**MEDIUM — a model-test guard checked the wrong half (found in I7, surfaced here).** The
+`model`-marked tests skipped when weights were absent, but not when the *backend* was absent. Model
+weights live in a shared machine-wide cache, so a worktree without the `light` extra installed still
+saw them, ran the test, and failed with `BackendMissingError` instead of skipping. Only noticed
+because a second worktree had a different install set. Now both halves are checked. *Lesson: a skip
+condition is a claim about the environment, and machine-wide state (a shared cache) is not evidence
+about the local one.*
+
+**Design note, not a defect — `DuplicateIdsError` raises rather than returning an action.**
+`plans/v0.1.md` lists it among `pair()`'s return values. Raising is better: the condition is fatal
+for the whole run, and an action every caller must remember to inspect is one a caller will
+eventually forget. Recorded because it is a deliberate divergence from the reviewed plan.
+
+**What the exhaustive table bought.** Writing one test per §6.4 row, then the compound cases the
+table cannot express, is what forced the two decisions the design left implicit: a sidecar
+disagreeing with the index wins (`docs/` is truth, the index is derived), and a whole-picture rule
+must be order-independent — asserted directly by pairing the same snapshot walked forwards and
+backwards.
