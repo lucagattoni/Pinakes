@@ -262,6 +262,28 @@ def run_doctor(args: argparse.Namespace) -> int:
     return EXIT_FAILURE if report.worst is Status.FAIL else EXIT_OK
 
 
+def _install_hooks_arguments(parser: argparse.ArgumentParser) -> None:
+    _kb_argument(parser)
+
+
+def run_install_hooks(args: argparse.Namespace) -> int:
+    """`pnk install-hooks`. Exits 1 if any existing hook was left alone rather than clobbered."""
+    from pinakes import manifest as manifest_module
+    from pinakes.hooks import install, suggestion
+
+    loaded = manifest_module.discover(args.kb)
+    written, refused = install(loaded.root)
+
+    for status in written:
+        print(f"installed {status.name}")
+    for status in refused:
+        print(f"\nleft {status.path} alone — it is not ours, and editing it is not our call.")
+        print("To wire pinakes in yourself, add this line:")
+        print(f"    {suggestion(status.name)}")
+
+    return EXIT_FAILURE if refused else EXIT_OK
+
+
 def _sync_arguments(parser: argparse.ArgumentParser) -> None:
     _kb_argument(parser)
     parser.add_argument(
@@ -358,7 +380,13 @@ COMMANDS: tuple[Command, ...] = (
         runner=lambda args: run_doctor(args),
         arguments=_doctor_arguments,
     ),
-    Command("install-hooks", "Install git hooks that keep the index fresh", "I12"),
+    Command(
+        "install-hooks",
+        "Install git hooks that keep the index fresh",
+        "I12",
+        runner=lambda args: run_install_hooks(args),
+        arguments=_install_hooks_arguments,
+    ),
     Command("serve", "Run the MCP server", "I13"),
 )
 

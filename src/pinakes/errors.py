@@ -232,6 +232,10 @@ class InitError(PinakesError):
     """A KB cannot be created here."""
 
 
+class HookError(PinakesError):
+    """Git hooks cannot be installed here."""
+
+
 def _rebuild(cls: type[PinakesError], message: str, remedy: str) -> PinakesError:
     """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable.
 

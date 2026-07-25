@@ -314,3 +314,21 @@ every non-OK check must carry a remedy is the one enforcing the spirit of it: a 
 **Design note — an uncalibrated KB is a WARN, not a FAIL.** Reporting `confidence: unknown` is the
 honest behaviour the design chose, so a KB doing exactly that is not broken; it is uninformative,
 and the warning says so with a pointer to §4.2 and §7.
+
+## I12 — `pnk install-hooks` (20260725 17:50)
+
+**Confirmed end to end, with a real commit: the three-hook split does what design pass 6 claimed.**
+`docs/note.md` and `docs/note.md.pnk.yaml` land in the *same* commit, and `git status` is clean
+afterwards. That was the whole argument for splitting the hooks, and it is now a test rather than a
+paragraph.
+
+**LOW — the pre-commit half needs no embedding backend at all**, which only became obvious when a
+subprocess `pnk` ran without the test's fake registered and the sidecar half still worked. That is
+the right shape: minting an id is cheap and belongs before the commit; embedding is slow and belongs
+after it. Worth recording because it means a KB whose backend is not installed can still commit
+documents with correct, permanent ids — the failure is deferred to indexing, exactly where §4.5 says
+a core-only install should feel it.
+
+**LOW (test hygiene) — a "tree is clean" assertion failed on files the fixture never committed.**
+The hooks were fine; the setup was. An assertion about cleanliness is only meaningful from a clean
+starting point.

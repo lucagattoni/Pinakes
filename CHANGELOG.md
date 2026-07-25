@@ -90,6 +90,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   dangling links and link coverage, recorded failures, the 50k-chunk NumPy-tier threshold, a held
   sync lock, and hook status. Every non-OK check carries a remedy. `--prune` is the only thing that
   changes anything, and it prints every path before removing it.
+- **I12** — `pnk install-hooks` writes the §6.3 three-hook split: `pre-commit` mints ids for staged
+  documents and stages the sidecars (so a document and its permanent id land in one commit),
+  `post-commit`/`post-merge` update the index only and never dirty the tree. An existing hook that
+  is not ours is left untouched and printed with the line to add; a hook that cannot find `pnk`
+  warns and exits 0, because a hook that fails every commit only teaches `--no-verify`.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.
