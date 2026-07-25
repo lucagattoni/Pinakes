@@ -74,6 +74,162 @@ def _kb_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _init_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("path", type=Path, help="directory to create the KB in")
+    parser.add_argument("--name", default=None, help="human-facing name (default: the directory)")
+    parser.add_argument("--template", default="notes", help="blueprint to stamp from")
+
+
+def run_init(args: argparse.Namespace) -> int:
+    from pinakes.init import init
+
+    result = init(args.path, name=args.name, template_name=args.template)
+    print(f"created {result.root} from {result.template}")
+    print(f"  kb id: {result.kb_id}  (permanent — never edit it)")
+    print("\nNext:")
+    print(f"  1. put Markdown files in {result.root / 'docs'}")
+    print("  2. `pnk sync` to index them, then commit the sidecars it writes")
+    print('  3. `pnk search "…"` to search, for free, offline')
+    return EXIT_OK
+
+
+def _search_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("query", help="what to search for")
+    _kb_argument(parser)
+    parser.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        metavar="TAG",
+        help="only documents carrying this tag (repeatable)",
+    )
+    parser.add_argument(
+        "--path-prefix",
+        default=None,
+        metavar="PREFIX",
+        help="only documents whose path starts with this",
+    )
+    parser.add_argument(
+        "--source-type", default=None, metavar="TYPE", help="markdown, text or code"
+    )
+    parser.add_argument(
+        "--modified-after",
+        default=None,
+        metavar="YYYYMMDD",
+        help="only documents modified on or after this date",
+    )
+    parser.add_argument(
+        "--modified-before",
+        default=None,
+        metavar="YYYYMMDD",
+        help="only documents modified on or before this date",
+    )
+    parser.add_argument("-k", type=int, default=None, help="how many passages to return")
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument("--offline", action="store_true", help="never reach out for model weights")
+
+
+def _as_timestamp(value: str | None) -> float | None:
+    from datetime import datetime
+
+    if value is None:
+        return None
+    try:
+        return datetime.strptime(value, "%Y%m%d").timestamp()
+    except ValueError as exc:
+        raise PinakesError(
+            f"{value!r} is not a date.", remedy="Use YYYYMMDD, for example 20260725."
+        ) from exc
+
+
+def run_search(args: argparse.Namespace) -> int:
+    """`pnk search`. Prints cited passages and an honest confidence line."""
+    import json as json_module
+
+    from pinakes import manifest as manifest_module
+    from pinakes import store
+    from pinakes.embed import load_backend, load_reranker
+    from pinakes.search import Filters, search
+
+    loaded = manifest_module.discover(args.kb)
+    backend = load_backend(loaded.embedding, offline=args.offline)
+    reranker = (
+        load_reranker(loaded.rerank, offline=args.offline)
+        if loaded.retrieval.rerank == "local"
+        else None
+    )
+
+    connection = store.connect_ro(loaded.index_path)
+    try:
+        result = search(
+            connection,
+            loaded,
+            args.query,
+            backend=backend,
+            reranker=reranker,
+            filters=Filters(
+                tags=tuple(args.tag),
+                path_prefix=args.path_prefix,
+                source_type=args.source_type,
+                modified_after=_as_timestamp(args.modified_after),
+                modified_before=_as_timestamp(args.modified_before),
+            ),
+            limit=args.k,
+        )
+    finally:
+        connection.close()
+
+    if args.json:
+        print(
+            json_module.dumps(
+                {
+                    "query": result.query,
+                    "confidence": result.confidence,
+                    "confidence_reason": result.confidence_reason,
+                    "considered": result.considered,
+                    "passages": [
+                        {
+                            "doc_id": passage.doc_id,
+                            "path": passage.path,
+                            "title": passage.title,
+                            "heading_path": passage.heading_path,
+                            "char_start": passage.char_start,
+                            "char_end": passage.char_end,
+                            "text": passage.text,
+                            "rerank_score": passage.rerank_score,
+                            "fused_score": passage.fused_score,
+                        }
+                        for passage in result.passages
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return EXIT_OK
+
+    if not result.passages:
+        print("no passages matched.")
+        print(f"confidence: {result.confidence} — {result.confidence_reason}")
+        return EXIT_OK
+
+    for position, passage in enumerate(result.passages, start=1):
+        heading = f" — {passage.heading_path}" if passage.heading_path else ""
+        print(f"[{position}] {passage.path}{heading}")
+        for line in passage.text.strip().splitlines():
+            print(f"    {line}")
+        print(f"    ({passage.citation()})")
+        print()
+
+    print(f"confidence: {result.confidence} — {result.confidence_reason}")
+    if result.confidence in ("low", "unknown"):
+        # Never advertise a command that does not exist yet: --deep lands in v0.4 (§4.2).
+        print(
+            "retrieval-only result. Paid synthesis (`pnk ask --deep`) is planned for v0.4; "
+            "until then, narrowing the query or adding a filter is the lever you have."
+        )
+    return EXIT_OK
+
+
 def _sync_arguments(parser: argparse.ArgumentParser) -> None:
     _kb_argument(parser)
     parser.add_argument(
@@ -142,7 +298,13 @@ def run_sync(args: argparse.Namespace) -> int:
 # The v0.1 surface (docs/DESIGN.md §8), in the order a user meets it. `increment` points at
 # plans/v0.1.md, so an unimplemented command tells the user exactly when it arrives.
 COMMANDS: tuple[Command, ...] = (
-    Command("init", "Create a KB from a template", "I10"),
+    Command(
+        "init",
+        "Create a KB from a template",
+        "I10",
+        runner=lambda args: run_init(args),
+        arguments=_init_arguments,
+    ),
     Command(
         "sync",
         "Index changed sources (--rebuild for a full rebuild)",
@@ -150,7 +312,13 @@ COMMANDS: tuple[Command, ...] = (
         runner=lambda args: run_sync(args),
         arguments=_sync_arguments,
     ),
-    Command("search", "Hybrid retrieval: BM25 + vector + rerank", "I10"),
+    Command(
+        "search",
+        "Hybrid retrieval: BM25 + vector + rerank",
+        "I10",
+        runner=lambda args: run_search(args),
+        arguments=_search_arguments,
+    ),
     Command("doctor", "Check environment, coherence, orphans, links, hooks", "I11"),
     Command("install-hooks", "Install git hooks that keep the index fresh", "I12"),
     Command("serve", "Run the MCP server", "I13"),

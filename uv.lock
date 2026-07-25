@@ -1032,6 +1032,7 @@ name = "pinakes"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "jinja2" },
     { name = "mcp" },
     { name = "numpy" },
     { name = "python-ulid" },
@@ -1057,6 +1058,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastembed", marker = "extra == 'light'", specifier = ">=0.8" },
+    { name = "jinja2", specifier = ">=3.1" },
     { name = "mcp", specifier = ">=1.28" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "python-ulid", specifier = ">=3.0" },

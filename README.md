@@ -55,9 +55,10 @@ renames, moves, and being shared with someone else.
 uv add "pinakes[st]"                  # sentence-transformers backend (default)
 uv add "pinakes[light]"               # fastembed — ONNX, ~100MB, no torch
 
-pnk init my-kb --template notes       # stamp a KB from a blueprint
+pnk init my-kb                        # stamp a KB (--template notes is the default)
 pnk sync                              # index what changed (git-hook friendly)
-pnk search "hybrid retrieval"         # free: BM25 + vector + rerank
+pnk search "hybrid retrieval"         # free: BM25 + vector + rerank, with a
+                                      # confidence signal that says `unknown` until calibrated
 pnk doctor                            # environment, coherence, orphans, link coverage
 
 uvx --from "pinakes[st]" pnk serve    # MCP server, zero install

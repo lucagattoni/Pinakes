@@ -1,0 +1,5 @@
+# The blueprint's own version, independent of the pinakes package version (docs/DESIGN.md §6.1).
+# A package upgrade must never silently re-chunk someone's corpus.
+name = "notes"
+version = "1.0"
+description = "Plain Markdown notes: the smallest useful knowledge base."

@@ -224,6 +224,14 @@ class CoherenceError(PinakesError):
         self.differences = dict(differences)
 
 
+class TemplateError(PinakesError):
+    """A template is missing or unusable."""
+
+
+class InitError(PinakesError):
+    """A KB cannot be created here."""
+
+
 def _rebuild(cls: type[PinakesError], message: str, remedy: str) -> PinakesError:
     """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable.
 

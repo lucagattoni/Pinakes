@@ -76,6 +76,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Queries refuse to run against an index built by a different model. Confidence is `unknown` unless
   thresholds exist **and** `fitted_for` names the reranker actually in use; query-term coverage is a
   tiebreak, never a gate.
+- **I10** — `pnk init` and `pnk search` are real. `init` stamps a KB from the packaged `notes`
+  template (jinja2, `StrictUndefined`, so a template typo fails at render rather than becoming an
+  empty manifest key), mints its permanent ULID, and writes the `.gitignore` that keeps the index
+  and ledger off any remote. The template ships `[retrieval.confidence]` **commented out**:
+  thresholds fitted on someone else's corpus are not a calibration. `search` runs the free pipeline
+  with the full filter set, human or `--json` output, and an escalation note that names `pnk ask
+  --deep` as *planned for v0.4* rather than implying it exists.
+- pytest now treats warnings as errors, which immediately surfaced a deprecated
+  `importlib.abc.Traversable` import and several leaked SQLite handles in the tests.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.

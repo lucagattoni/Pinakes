@@ -1,0 +1,12 @@
+# A golden set: questions with known-correct sources. Add your own — retrieval tuning without a
+# scoreboard is guessing (docs/DESIGN.md §7).
+#
+# Each entry:
+#   question: what someone would actually ask
+#   expect:   paths (relative to the KB root) that should be retrieved
+#   kind:     lexical | paraphrase | filter | multi-hop | no-answer
+#
+# `no-answer` entries matter most: the correct behaviour is to abstain, and without them a system
+# that answers everything confidently scores perfectly.
+
+questions: []
