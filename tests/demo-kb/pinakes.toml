@@ -1,0 +1,38 @@
+[kb]
+name     = "demo"
+id       = "01KYCPTN72ZXC1DDWS6054MGZV"
+template = "notes@1.0"
+created  = "20260725 18:20"
+
+[sources]
+roots   = ["docs/"]
+include = ["**/*.md"]
+
+[embedding]
+provider = "fastembed"
+model    = "BAAI/bge-small-en-v1.5"
+dim      = 384
+
+[chunking]
+strategy   = "structural"
+max_tokens = 120
+overlap    = 16
+
+[retrieval]
+candidates_per_source = 30
+fusion                = "rrf"
+fusion_top_k          = 12
+final_k               = 5
+rerank                = "local"
+vector_tier           = "numpy"
+
+# Fitted by `python -m pinakes.calibrate tests/demo-kb` against the golden set, on this reranker's
+# real (un-normalised) logits. Re-fit if either model changes: thresholds do not transfer.
+[retrieval.confidence]
+fitted_for = "BAAI/bge-reranker-base"
+low_below  = -5.4213
+high_above = -3.5016
+
+[rerank]
+provider = "fastembed"
+model    = "BAAI/bge-reranker-base"

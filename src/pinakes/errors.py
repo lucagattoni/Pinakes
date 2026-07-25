@@ -240,6 +240,14 @@ class ServeError(PinakesError):
     """The MCP server cannot answer as asked."""
 
 
+class EvalError(PinakesError):
+    """The golden set or its baseline cannot be used."""
+
+
+class CalibrationError(PinakesError):
+    """Thresholds cannot be fitted from this golden set."""
+
+
 def _rebuild(cls: type[PinakesError], message: str, remedy: str) -> PinakesError:
     """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable.
 

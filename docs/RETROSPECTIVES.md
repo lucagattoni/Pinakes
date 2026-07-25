@@ -363,3 +363,35 @@ this session that turned out to be hiding something; making the code say what it
 **LOW — another leaked connection, caught by warnings-as-errors from I10.** A `Server` built inline
 inside a `pytest.raises` block was never closed. This is the third leak that setting only found;
 before I10 it would have been invisible.
+
+## I14 — Demo KB, golden set, eval harness, calibration (20260725 19:00)
+
+**HIGH — the two error rates were a flattering zero, and it took looking at real numbers to see
+it.** The first eval run reported `false_abstain: 0.0` and `false_confidence: 0.0`. Both were
+vacuous: the demo KB had no fitted thresholds, so confidence was *always* `unknown`, so neither
+error could ever be counted. A CI gate on false-confidence would have passed forever, and passed
+loudest exactly when calibration was missing. Added `confidence_coverage` to the metrics, and made a
+drop in it a regression in its own right. *Lesson: a perfect score on an error rate is a claim that
+deserves the same suspicion as a failing one — check the denominator before believing the ratio.*
+
+**HIGH — the first threshold formula made `low` unreachable.** `low_below = min(answerable)` came
+out at -9.885 on real logits, a floor almost nothing falls below, so the system could essentially
+never abstain and false-abstain was zero *by construction*. Both thresholds are now fitted from the
+**unanswerable** distribution — the only outcomes known absolutely — with `low_below` its median and
+`high_above` a high percentile. Only visible because the fit was run against real reranker scores
+rather than a fake's tidy 0-to-1 range.
+
+**The measured cost of the confidence heuristic, stated plainly: false-confidence is 0.25.** One
+no-answer question in four still gets a confident answer, because the score distributions genuinely
+overlap (answerable -9.9..7.9, unanswerable -8.3..-2.7). §4.2 promised this would be measured rather
+than assumed; it is now in `docs/DESIGN.md`'s risk table with its date and models. Two caveats are
+recorded with it: eight no-answer questions is a small sample, and the thresholds are fitted on the
+same set they are scored against, so it is a floor rather than a measurement.
+
+**MEDIUM — the test fixture copied `.pinakes/` and ran the 64-dimensional fake against a
+384-dimensional index.** I4's stored-vector width check refused it, which is exactly right and
+briefly baffling. Generated state is now excluded from the copy. *A good sign for the guard: the
+first thing it caught was a developer, not a user.*
+
+**LOW — ruff caught `assert ... or True` in my own test.** The tautology lesson from I2, third
+appearance, this time found by a linter rather than by reading. `SIM222` earns its place.

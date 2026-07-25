@@ -101,6 +101,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   path, and `pinakes_get` resolves a document ULID through the index. Passages come back inside a
   delimited evidence field stating they are text to reason about, never instructions to follow.
   Indexes are opened read-only and re-opened when a `stat()` shows the file was swapped.
+- **I14** — the scoreboard: a 30-document synthetic demo KB (invented institute, invented
+  policies — nothing harvested), a 41-question golden set spanning lexical, paraphrase, filter,
+  scripted multi-hop and no-answer cases, `pinakes.eval` (recall@k, MRR, rerank precision,
+  false-abstain, false-confidence, confidence coverage, baseline comparison) and
+  `pinakes.calibrate`, which prints a `[retrieval.confidence]` block and never writes one.
+  Measured with the real `[light]` models: recall@5 0.879, MRR 0.774, rerank precision 0.727,
+  **false-confidence 0.25** — the heuristic's real cost, now visible instead of assumed.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.
