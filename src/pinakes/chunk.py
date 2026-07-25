@@ -256,8 +256,17 @@ def _fit(block: Block, *, counter: TokenCounter, max_tokens: int, overlap: int) 
         body = "".join(text for text, _ in candidate)
         if window and counter.count_tokens(body) > max_tokens:
             emit()
-            window = _carry_over(window, counter=counter, overlap=overlap)
-            window.append((piece, position))
+            carried = _carry_over(window, counter=counter, overlap=overlap)
+            # The carry is context, not content: if keeping it would push this chunk past the
+            # model's window, drop it. `overlap` close to `max_tokens` otherwise produces chunks
+            # larger than the limit — the tail would be truncated at encode time, silently, which
+            # is the outcome §4.6 exists to prevent.
+            with_carry = "".join(text for text, _ in [*carried, (piece, position)])
+            window = (
+                [*carried, (piece, position)]
+                if (counter.count_tokens(with_carry) <= max_tokens)
+                else [(piece, position)]
+            )
         else:
             window = candidate
     emit()
@@ -327,11 +336,10 @@ def _split_points(text: str) -> list[tuple[str, int]]:
     pieces reproduces the block. That is what makes the never-drop guarantee checkable.
     """
     pieces: list[tuple[str, int]] = []
-    position = 0
     for match in re.finditer(r".*?(?:(?<=[.!?;:])\s+|\n|$)", text, flags=re.S):
         piece = match.group(0)
-        if not piece:
-            continue
-        pieces.append((piece, position))
-        position += len(piece)
+        if piece:
+            # `match.start()`, never a running total: finditer can yield an empty match at the end
+            # of the string, and skipping one would desynchronise an accumulator from the source.
+            pieces.append((piece, match.start()))
     return pieces or [(text, 0)]

@@ -141,3 +141,32 @@ different hat.*
 
 **LOW — `KNOWN_KEYS` could drift from what `write` emits**, which would be silent data loss for a
 key the module claims to understand. A round-trip test now asserts every known key comes back.
+
+## I6 — Structural chunking (20260725 15:10)
+
+**HIGH — overlap could push a chunk past `max_tokens`.** The carried-over tail was prepended
+unconditionally, so `overlap = 9` with `max_tokens = 10` produced 12-token chunks (probed). Those
+are exactly the chunks the model truncates at encode time, silently — the failure §4.6 exists to
+prevent, reintroduced by the feature meant to improve context. The carry is now dropped when it
+would breach the limit, and a parametrised test sweeps the whole `(max_tokens, overlap)` matrix.
+*Lesson: the earlier test used `overlap=5, max_tokens=15` and passed; one comfortable ratio proves
+nothing about the boundary. Sweep the matrix when two parameters interact.*
+
+**HIGH (design, found by a test) — heading text landed in no chunk at all.** Headings were consumed
+as pure structure, so a word appearing only in a heading was unsearchable: the FTS index sees chunk
+text and nothing else. `heading_path` looked like it covered this, but it is a separate column that
+v0.1 never searches. Headings are now part of the first chunk beneath them, and `docs/DESIGN.md`
+§4.6 says so. *Lesson: "the information is still recorded somewhere" is not the same as "the
+information is still retrievable"; check which column the query path actually reads.*
+
+**MEDIUM — sentence splitting silently gave up on text without punctuation.** A long run with no
+`.!?;:` produced one oversize piece that was emitted whole. Now falls back to words, then to
+characters for a genuinely unbroken run (a hash, a base64 blob).
+
+**LOW — piece offsets came from a running total** that `finditer`'s empty end-of-string match could
+desynchronise from the source. Now taken from `match.start()`, so spans are exact by construction
+rather than by accounting.
+
+**LOW (test-design) — a stand-in counter can be wrong in the direction that hides the bug.** The
+word-counter says a 400-character unbroken run is one token; every real tokenizer disagrees. The
+character-cut path needed a token-dense counter to be exercised at all.

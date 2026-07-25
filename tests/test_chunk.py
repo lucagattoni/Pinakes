@@ -141,6 +141,26 @@ def test_overlap_repeats_context_without_losing_position(counter: TokenCounter) 
     assert_nothing_dropped(sentences, chunks)
 
 
+@pytest.mark.parametrize("max_tokens", [4, 10, 25])
+@pytest.mark.parametrize("overlap", [0, 1, 3, 9])
+def test_no_chunk_ever_exceeds_the_limit(max_tokens: int, overlap: int) -> None:
+    """Across the whole (max_tokens, overlap) matrix, including overlap close to the limit.
+
+    An earlier version kept the carried-over context unconditionally, so `overlap = 9` with
+    `max_tokens = 10` produced 12-token chunks — silently truncated at encode time.
+    """
+    if overlap >= max_tokens:
+        pytest.skip("rejected by configuration")
+    counter = WordCounter()
+    text = " ".join(f"clause {n} of the paragraph." for n in range(40))
+    chunks = chunk_document(
+        text, counter=counter, max_tokens=max_tokens, overlap=overlap, kind="text"
+    )
+    assert chunks
+    assert all(chunk.token_count <= max_tokens for chunk in chunks)
+    assert_nothing_dropped(text, chunks)
+
+
 def test_a_single_unbroken_run_is_still_divided(counter: TokenCounter) -> None:
     """One enormous piece with no punctuation must not defeat the limit."""
     text = "word " * 200
