@@ -62,3 +62,28 @@ written again.
 **LOW — the scheme is matched case-sensitively** while the `self` sentinel is not. Deliberate (URIs
 are machine-written, `self` is hand-typed) but undocumented; now stated in the module docstring and
 covered by a test.
+
+## I3 — Manifest parsing and KB root discovery (20260725 14:25)
+
+**MEDIUM — an explicit empty value silently became the default.** `timezone = ""` in `[budget]` read
+back as `"UTC"`, because the accessor ended in `or "UTC"`. Same shape accepted `name = ""` and
+`model = ""` outright. All three confirmed by probe. Empty strings are now rejected with a named
+key, and the default only applies when the key is *absent*. *Lesson: `value or default` conflates
+"missing" with "empty", and for user configuration those mean opposite things — one is silence, the
+other is a mistake worth reporting.*
+
+**MEDIUM — narrowing by `assert`.** Two call sites used `assert value is not None` to convince the
+type checker, and a `_require` fallback built a `Path` out of a table name for an error that could
+never fire. Python strips asserts under `-O`, so the "guarantee" was a comment with syntax. Replaced
+with three explicit accessors — `string` (required, returns `str`), `optional_string`, `string_or` —
+which give the type checker what it needs without a runtime claim. *Lesson: when a type checker
+needs an assertion, the API shape is usually wrong; fixing the signature beats asserting.*
+
+**MEDIUM (docs) — the required/optional split existed only in code.** `[chunking]`, `[retrieval]`,
+`[rerank]` and `[budget]` are optional with documented defaults while `[kb]`, `[sources]` and
+`[embedding]` are mandatory — a user-facing contract that `docs/DESIGN.md` §2.1 never stated. Added
+there in the same change, per the repo's docs rule.
+
+**LOW — a test caught a real error-message defect.** Validation errors read
+`[<root>.retrieval]`; the table path is meant to name what the user would type. The failing test was
+fixed in the source, not the assertion.

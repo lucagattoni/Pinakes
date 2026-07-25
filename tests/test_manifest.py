@@ -202,6 +202,28 @@ def test_created_must_carry_a_time(write_manifest: WriteManifest) -> None:
     assert "20260725 09:14" in exc_info.value.message
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        "[kb]\nname = ''\nid = '{kb_id}'\n[sources]\nroots=['docs/']\n"
+        "[embedding]\nprovider='p'\nmodel='m'\ndim=1\n",
+        "[kb]\nname = 'k'\nid = '{kb_id}'\n[sources]\nroots=['docs/']\n"
+        "[embedding]\nprovider='p'\nmodel=''\ndim=1\n",
+    ],
+)
+def test_empty_strings_are_rejected(write_manifest: WriteManifest, body: str) -> None:
+    with pytest.raises(ManifestError) as exc_info:
+        load(write_manifest(body.format(kb_id=mint_kb_id())))
+    assert "must not be empty" in exc_info.value.message
+
+
+def test_an_explicit_empty_value_never_becomes_the_default(write_manifest: WriteManifest) -> None:
+    """`timezone = ""` is a mistake to report, not a request for UTC."""
+    with pytest.raises(ManifestError) as exc_info:
+        load(write_manifest(minimal(extra="\n[budget]\ntimezone = ''\n")))
+    assert "`timezone` must not be empty" in exc_info.value.message
+
+
 def test_malformed_toml_names_the_file(write_manifest: WriteManifest) -> None:
     with pytest.raises(ManifestError) as exc_info:
         load(write_manifest("[kb\nname = "))

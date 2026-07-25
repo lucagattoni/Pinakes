@@ -205,9 +205,7 @@ def _optional_table(root_table: Table, name: str) -> Table | None:
 def _kb(root_table: Table, path: Path) -> KbSection:
     table = _required_table(root_table, "kb", path)
     name = table.string("name")
-    assert name is not None
     raw_id = table.string("id")
-    assert raw_id is not None
     try:
         kb_id = parse_kb_id(raw_id)
     except InvalidIdError as exc:
@@ -221,7 +219,7 @@ def _kb(root_table: Table, path: Path) -> KbSection:
             ),
         ) from exc
 
-    created = table.string("created", required=False)
+    created = table.optional_string("created")
     if created is not None:
         try:
             # A wall-clock stamp by design: the manifest records when the KB was created
@@ -235,7 +233,7 @@ def _kb(root_table: Table, path: Path) -> KbSection:
             ) from exc
 
     section = KbSection(
-        name=name, id=kb_id, template=table.string("template", required=False), created=created
+        name=name, id=kb_id, template=table.optional_string("template"), created=created
     )
     table.done()
     return section
@@ -267,10 +265,10 @@ def _sources(root_table: Table, path: Path) -> SourcesSection:
 def _embedding(root_table: Table, path: Path) -> EmbeddingSection:
     table = _required_table(root_table, "embedding", path)
     section = EmbeddingSection(
-        provider=_require(table.string("provider"), table, "provider"),
-        model=_require(table.string("model"), table, "model"),
+        provider=table.string("provider"),
+        model=table.string("model"),
         dim=table.integer("dim", minimum=1),
-        revision=table.string("revision", required=False),
+        revision=table.optional_string("revision"),
     )
     table.done()
     return section
@@ -341,7 +339,7 @@ def _confidence(retrieval: Table, path: Path) -> ConfidenceSection | None:
     table = retrieval.table("confidence")
     if table is None:
         return None
-    fitted_for = table.string("fitted_for", required=False)
+    fitted_for = table.optional_string("fitted_for")
     if fitted_for is None:
         raise ManifestError(
             path,
@@ -378,9 +376,9 @@ def _rerank(root_table: Table, path: Path) -> RerankSection:
             provider="sentence-transformers", model="BAAI/bge-reranker-base", revision=None
         )
     section = RerankSection(
-        provider=table.string("provider", required=False, default="sentence-transformers") or "",
-        model=table.string("model", required=False, default="BAAI/bge-reranker-base") or "",
-        revision=table.string("revision", required=False),
+        provider=table.string_or("provider", "sentence-transformers"),
+        model=table.string_or("model", "BAAI/bge-reranker-base"),
+        revision=table.optional_string("revision"),
     )
     table.done()
     return section
@@ -400,7 +398,7 @@ def _budget(root_table: Table, path: Path) -> BudgetSection:
         confirm_above_eur=table.number("confirm_above_eur", default=0.01, minimum=0.0),
         per_operation_eur=table.number("per_operation_eur", default=0.05, minimum=0.0),
         monthly_eur=table.number("monthly_eur", default=5.0, minimum=0.0),
-        timezone=table.string("timezone", required=False, default="UTC") or "UTC",
+        timezone=table.string_or("timezone", "UTC"),
         on_exceed=table.choice("on_exceed", ON_EXCEED, default="abort"),
     )
     table.done()
@@ -435,7 +433,7 @@ def _links(root_table: Table, path: Path) -> tuple[LinkedKb, ...]:
         return ()
     entries: list[LinkedKb] = []
     for table in links_table.tables("kb"):
-        raw_id = _require(table.string("id"), table, "id")
+        raw_id = table.string("id")
         try:
             kb_id = parse_kb_id(raw_id)
         except InvalidIdError as exc:
@@ -443,9 +441,9 @@ def _links(root_table: Table, path: Path) -> tuple[LinkedKb, ...]:
                 path, table=table.name, message=f"`id` is not a ULID: {raw_id!r}"
             ) from exc
         entry = LinkedKb(
-            name=_require(table.string("name"), table, "name"),
+            name=table.string("name"),
             id=kb_id,
-            path=_require(table.string("path"), table, "path"),
+            path=table.string("path"),
         )
         table.done()
         entries.append(entry)
@@ -467,9 +465,3 @@ def _reject_duplicates(entries: Sequence[LinkedKb], path: Path) -> None:
                 message=f"duplicate {field}: {', '.join(duplicates)}",
                 remedy="Each connected KB is listed once; an alias must resolve to one KB.",
             )
-
-
-def _require(value: str | None, table: Table, key: str) -> str:
-    if value is None:  # pragma: no cover — `required=True` already raised
-        raise ManifestError(Path(table.name), table=table.name, message=f"missing `{key}`")
-    return value

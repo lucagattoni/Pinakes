@@ -44,17 +44,33 @@ class Table:
             raise self._fail(f"missing required key `{key}`")
         return None
 
-    def string(self, key: str, *, required: bool = True, default: str | None = None) -> str | None:
+    def _string(self, key: str, *, required: bool) -> str | None:
         value = self._take(key, required=required)
         if value is None:
-            return default
+            return None
         if not isinstance(value, str):
             raise self._fail(f"`{key}` must be a string, found {type(value).__name__}")
+        if not value.strip():
+            # An explicit empty string is a mistake, never a request for the default: silently
+            # substituting one would hide it until something far downstream failed obscurely.
+            raise self._fail(f"`{key}` must not be empty")
         return value
 
+    def string(self, key: str) -> str:
+        """A required string. The return type is `str`, so callers need no assertion."""
+        value = self._string(key, required=True)
+        assert value is not None  # `required=True` raised already; this is for the type checker
+        return value
+
+    def optional_string(self, key: str) -> str | None:
+        return self._string(key, required=False)
+
+    def string_or(self, key: str, default: str) -> str:
+        return self._string(key, required=False) or default
+
     def choice(self, key: str, allowed: Sequence[str], *, default: str | None = None) -> str:
-        value = self.string(key, required=default is None, default=default)
-        if value is None or value not in allowed:
+        value = self.string(key) if default is None else self.string_or(key, default)
+        if value not in allowed:
             raise self._fail(
                 f"`{key}` must be one of {', '.join(repr(option) for option in allowed)}, "
                 f"found {value!r}"

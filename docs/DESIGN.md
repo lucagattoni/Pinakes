@@ -134,6 +134,14 @@ id   = "01JQ8ZM7…"
 path = "~/kb/archive"
 ```
 
+**Required vs optional.** `[kb]` (`name`, `id`), `[sources]` (`roots`) and `[embedding]`
+(`provider`, `model`, `dim`) must be present: nothing can sensibly default a KB's identity, its
+sources, or the model whose output the index *is*. `[chunking]`, `[retrieval]`, `[rerank]` and
+`[budget]` may be omitted and take the values shown above; `[retrieval.confidence]` and
+`[[links.kb]]` are absent until something produces them. Unknown keys are rejected, and an explicit
+empty string is an error rather than a request for the default — silently substituting one hides a
+mistake until it fails somewhere far away.
+
 ### 2.2 The sidecar — `<file>.pnk.yaml`
 
 Auto-created at first ingest for **every** document, not only linked ones. This is deliberate: the

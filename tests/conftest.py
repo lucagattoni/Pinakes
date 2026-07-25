@@ -4,6 +4,7 @@
 the documented example drift apart, these tests are where it shows up.
 """
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -68,7 +69,7 @@ def kb_root(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def write_manifest(tmp_path: Path) -> "object":
+def write_manifest(tmp_path: Path) -> Callable[[str], Path]:
     """Write an arbitrary manifest body into a fresh KB root and return that root."""
 
     counter = {"n": 0}
