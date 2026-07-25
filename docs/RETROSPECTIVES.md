@@ -170,3 +170,30 @@ rather than by accounting.
 **LOW (test-design) — a stand-in counter can be wrong in the direction that hides the bug.** The
 word-counter says a 400-character unbroken run is one token; every real tokenizer disagrees. The
 character-cut path needed a token-dense counter to be exercised at all.
+
+## I7 — Embedding backends and reranker (20260725 15:35)
+
+**MEDIUM — a fake that could never disagree.** The test backend was registered as
+`FakeBackend(section.dim)`, so it reported whatever width the manifest claimed — making the
+dim-mismatch check, the one guard against storing incomparable vectors, impossible to test. Pinned
+to a fixed width. *Lesson: second time in three increments that a stand-in was wrong in exactly the
+direction that hides the bug (I6's word-counter was the first). A fake that derives its answer from
+the input under test asserts nothing.*
+
+**MEDIUM — an assertion guessed at a real model's behaviour.** `count_tokens("retrieval augmented
+generation") > 3` was written before any model had been run; the real BPE count is exactly 3, and
+the test failed the moment weights were cached. Rewritten to assert the *relationship* (longer text
+→ more tokens) rather than a number I had invented. *Lesson: when a test crosses into a real
+dependency, assert properties, not remembered values.*
+
+**Verified against real weights** (not inferred): fastembed's `BAAI/bge-small-en-v1.5` gives
+`dim=384`, `max_seq_length=512` derived from the tokenizer's truncation config, normalised float32
+vectors (self-cosine 1.0), and it wrote to `~/.cache/huggingface/hub` rather than
+`$TMPDIR/fastembed_cache`. `BAAI/bge-reranker-base` ranked a relevant passage above an irrelevant
+one, `-0.28` vs `-7.85`.
+
+**LOW (reference, matters for I14) — reranker scores are raw logits, not probabilities.** They came
+back around `-0.28` and `-7.85`, not in `[0, 1]`. The illustrative thresholds in §2.1
+(`low_below = 0.31`, `high_above = 0.62`) read like normalised scores; calibration must either fit
+against the logit scale or squash it first. Recorded now so I14 does not quietly fit thresholds to
+the wrong scale.

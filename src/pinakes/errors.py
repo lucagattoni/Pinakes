@@ -143,6 +143,37 @@ class ChunkingError(PinakesError):
     """A document cannot be chunked as configured."""
 
 
+class EmbeddingError(PinakesError):
+    """A backend cannot do what the manifest asks."""
+
+
+class BackendMissingError(PinakesError):
+    """The backend a manifest names is not installed. A supported state, not a broken one (§4.5)."""
+
+    def __init__(self, provider: str, *, extra: str) -> None:
+        super().__init__(
+            f"the `{provider}` backend is not installed.",
+            remedy=(
+                f'Install it with `uv add "pinakes[{extra}]"`. A core-only install can index and '
+                f"search nothing that needs embeddings — that is expected, not a fault."
+            ),
+        )
+        self.provider = provider
+        self.extra = extra
+
+
+class BackendUnknownError(PinakesError):
+    """The manifest names a provider nothing has registered."""
+
+    def __init__(self, provider: str, *, known: list[str]) -> None:
+        super().__init__(
+            f"no backend is registered for provider {provider!r}.",
+            remedy=f"Known providers: {', '.join(known) or '(none)'}.",
+        )
+        self.provider = provider
+        self.known = known
+
+
 def _rebuild(cls: type[PinakesError], message: str, remedy: str) -> PinakesError:
     """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable.
 

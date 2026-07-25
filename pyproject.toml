@@ -67,3 +67,8 @@ typeCheckingMode = "strict"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    # Needs real model weights. Skipped unless they are already cached, so a clean checkout is
+    # never blocked on a download; CI caches HF_HOME and runs them for real.
+    "model: exercises a real embedding or reranking model",
+]

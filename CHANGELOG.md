@@ -49,6 +49,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   characters for an unbroken run — **never trimmed**, and `assert_chunkable` refuses a `max_tokens`
   the model would have to truncate. Heading lines are included in their first chunk so heading-only
   words stay searchable, and every chunk satisfies `text == source[char_start:char_end]`.
+- **I7** — backends: `embed.py` defines `EmbeddingBackend` and `Reranker` protocols behind open
+  registries with lazy imports, so a core-only install never pulls torch and a missing backend fails
+  naming the exact extra. sentence-transformers and fastembed implementations; fastembed is forced
+  onto the shared `HF_HOME` cache rather than its `$TMPDIR` default, and `max_seq_length` is derived
+  from the loaded tokenizer. `dim` disagreeing with the manifest is a hard error. Model-marked tests
+  exercise real weights and skip when they are not cached.
 - Repository bootstrap: Apache-2.0 licence, `pyproject.toml` (uv, Python 3.13+, ruff, pyright
   strict, pytest), README, project conventions in `CLAUDE.md`, and a CLI stub that exits non-zero
   on every unimplemented command rather than implying it worked.
