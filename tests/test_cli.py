@@ -14,7 +14,7 @@ DESIGN_V01_COMMANDS = frozenset({"init", "sync", "search", "doctor", "install-ho
 
 
 def test_version_is_set() -> None:
-    assert __version__ == "0.0.0"
+    assert __version__ == "0.1.0"
 
 
 def test_surface_matches_the_design() -> None:

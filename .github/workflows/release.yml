@@ -1,0 +1,43 @@
+name: Release
+
+# Publishing is deliberately manual: it runs only when a maintainer pushes a v* tag, never on a
+# merge. PyPI trusted publishing must be configured for this repository first — a human step that
+# cannot be automated from here (plans/v0.1.md, I15).
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write        # trusted publishing; no API token is stored anywhere
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Refuse a tag that disagrees with the package version
+        run: |
+          set -e
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(uv run --frozen python -c 'import pinakes; print(pinakes.__version__)')"
+          if [ "$tag" != "$version" ]; then
+            echo "tag $tag does not match pinakes $version" >&2
+            exit 1
+          fi
+
+      - run: uv build
+
+      - name: Smoke-test the wheel before it leaves the building
+        run: |
+          set -e
+          uv run --isolated --no-project --with dist/*.whl pnk --version
+          uv run --isolated --no-project --with dist/*.whl pnk init /tmp/release-smoke
+          test -f /tmp/release-smoke/pinakes.toml
+
+      - name: Publish to PyPI
+        run: uv publish

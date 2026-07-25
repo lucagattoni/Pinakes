@@ -8,9 +8,11 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/)
 
-> **Status: design complete, implementation not started.** Nothing here works yet. The architecture
-> is specified in [`docs/DESIGN.md`](docs/DESIGN.md) and has been through seven adversarial review
-> passes. There is no PyPI release; the install instructions below describe the intended v0.1.
+> **Status: v0.1 — the vertical slice works.** `init`, `sync`, `search`, `doctor`, `install-hooks`
+> and `serve` are implemented and tested. The architecture is specified in
+> [`docs/DESIGN.md`](docs/DESIGN.md) (seven adversarial review passes) and was built increment by
+> increment against [`plans/v0.1.md`](plans/v0.1.md), with a retrospective after each
+> ([`docs/RETROSPECTIVES.md`](docs/RETROSPECTIVES.md)).
 
 ---
 
@@ -49,7 +51,7 @@ ceiling rather than an after-the-fact report; a rolling ledger tracks daily and 
 **KBs link to each other.** Sidecars carry `pnk://<kb-ulid>/<doc-ulid>` references, so links survive
 renames, moves, and being shared with someone else.
 
-## Intended usage (v0.1)
+## Usage
 
 ```bash
 uv add "pinakes[st]"                  # sentence-transformers backend (default)
@@ -70,9 +72,12 @@ uvx --from "pinakes[st]" pnk serve    # MCP server, zero install
 policy, budget accounting, cross-KB linking, and the delivery plan. It also documents its own review
 history — seven passes, 58 findings, including the four factual errors the review caught.
 
-Two limits are stated there rather than hidden: no vector tier is sublinear (`sqlite-vec` performs
-exhaustive KNN, not approximate search), and without fan-out query, cross-KB answers are capped by
-how well your KBs are linked.
+Three limits are stated there rather than hidden: no vector tier is sublinear (`sqlite-vec` performs
+exhaustive KNN, not approximate search); without fan-out query, cross-KB answers are capped by how
+well your KBs are linked; and the confidence signal is a calibrated heuristic whose measured
+false-confidence rate on the demo corpus is **0.25** — one no-answer question in four still gets a
+confident answer. That number is published because a heuristic whose cost is unmeasured is worse
+than one whose cost is known.
 
 ## Your data stays yours
 

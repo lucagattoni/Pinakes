@@ -1029,7 +1029,6 @@ wheels = [
 
 [[package]]
 name = "pinakes"
-version = "0.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
@@ -1065,7 +1064,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sentence-transformers", marker = "extra == 'st'", specifier = ">=5.0" },
 ]
-provides-extras = ["st", "light"]
+provides-extras = ["light", "st"]
 
 [package.metadata.requires-dev]
 dev = [

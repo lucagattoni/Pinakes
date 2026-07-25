@@ -395,3 +395,23 @@ first thing it caught was a developer, not a user.*
 
 **LOW — ruff caught `assert ... or True` in my own test.** The tautology lesson from I2, third
 appearance, this time found by a linter rather than by reading. `SIM222` earns its place.
+
+## I15 — CI, packaging, 0.1.0 (20260725 19:30)
+
+**MEDIUM — the version lived in two places.** `pyproject.toml` and `__init__.py` each carried it,
+which is one place to forget on every release. Hatch now reads it from the module, and the release
+workflow refuses a tag that disagrees with it — a mismatched tag is the kind of thing nobody notices
+until an install pulls the wrong thing.
+
+**The wheel smoke test earned its place immediately.** `pnk init` reads its template through
+`importlib.resources`, so a packaging mistake is invisible in the source tree and total after
+install. Running `pnk init` from the *built wheel* — and asserting the manifest, the golden-set stub
+and the `.gitignore` all appear — is the only check that would have caught it.
+
+**Publishing is left as a human step, on purpose.** The release workflow runs on a `v*` tag and
+nothing else, and PyPI trusted publishing has to be configured in the PyPI UI first. Neither the tag
+nor the publish happens automatically from a merge: an irreversible, outward-facing action should
+need someone to mean it.
+
+**§8's v0.1 sentence, walked item by item: 17/17 present.** The plan asked for that walk explicitly
+at this increment rather than trusting the accumulated sense that everything got done.

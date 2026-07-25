@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Python and dependencies
+        # The [light] extra, never [st]: a 2GB torch download per job is untenable, and fastembed
+        # exercises the same protocols (docs/DESIGN.md §4.5).
+        run: uv sync --frozen --extra light
+
+      # Model weights are a download, not an install. Keyed on the models the demo KB names, so a
+      # model change invalidates the cache and nothing else does. Without this the reranker alone
+      # would pull ~1GB per job.
+      - name: Cache model weights
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ hashFiles('tests/demo-kb/pinakes.toml') }}
+          restore-keys: hf-
+
+      - name: Format
+        run: uv run --frozen ruff format --check .
+
+      - name: Lint
+        run: uv run --frozen ruff check .
+
+      - name: Types (ty, fast pre-check)
+        run: uv run --frozen ty check .
+
+      - name: Types (pyright, strict — the gate)
+        run: uv run --frozen pyright
+
+      - name: Tests
+        # Warnings are errors here (pyproject), which is how a deprecation reaches a human.
+        run: uv run --frozen pytest -q
+
+      - name: Model-backed tests
+        run: uv run --frozen pytest -q -m model
+
+  eval:
+    # The scoreboard §7 requires: a retrieval change has to move these numbers, and a regression
+    # beyond tolerance fails the build rather than being noticed later.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen --extra light
+
+      - name: Cache model weights
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ hashFiles('tests/demo-kb/pinakes.toml') }}
+          restore-keys: hf-
+
+      - name: Index the demo KB
+        run: uv run --frozen pnk sync --kb tests/demo-kb
+
+      - name: Health check
+        run: uv run --frozen pnk doctor --kb tests/demo-kb
+
+      - name: Golden-set evaluation against the baseline
+        run: uv run --frozen python -m pinakes.eval tests/demo-kb
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build the wheel and sdist
+        run: uv build
+
+      # Proves the templates travel inside the wheel. `pnk init` reads them through
+      # importlib.resources, so a packaging mistake is invisible until someone installs it.
+      - name: Smoke-test the built wheel
+        run: |
+          set -e
+          uv run --isolated --no-project --with dist/*.whl pnk --version
+          mkdir -p /tmp/smoke
+          uv run --isolated --no-project --with dist/*.whl pnk init /tmp/smoke/kb
+          test -f /tmp/smoke/kb/pinakes.toml
+          test -f /tmp/smoke/kb/eval/questions.yaml
+          grep -q '.pinakes/' /tmp/smoke/kb/.gitignore
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

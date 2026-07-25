@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0] — 20260725 15:27
+
 ### Added
 
 - **I1** — package skeleton: `errors.py` (`PinakesError` carries a message *and* a remedy, so no
@@ -101,6 +105,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   path, and `pinakes_get` resolves a document ULID through the index. Passages come back inside a
   delimited evidence field stating they are text to reason about, never instructions to follow.
   Indexes are opened read-only and re-opened when a `stat()` shows the file was swapped.
+- **I15** — CI (ruff, ty, pyright strict, pytest with warnings as errors, model-backed tests, a
+  golden-set evaluation gated against the committed baseline, and a wheel smoke test that runs
+  `pnk init` from the built artifact to prove templates are packaged), a release workflow that runs
+  only on a `v*` tag and refuses one that disagrees with `__version__`, and the version moved to a
+  single source of truth.
 - **I14** — the scoreboard: a 30-document synthetic demo KB (invented institute, invented
   policies — nothing harvested), a 41-question golden set spanning lexical, paraphrase, filter,
   scripted multi-hop and no-answer cases, `pinakes.eval` (recall@k, MRR, rerank precision,
@@ -140,7 +149,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sidecar-only edits re-index; soft delete now removes chunks/embeddings; rename+edit resolution
   stated (sidecar adoption wins over deletion).
 
-Nothing is released yet — no functionality exists, so this stays unreleased until the v0.1 vertical
-slice (`init` / `sync` / `search` / MCP server / eval harness) is usable end to end.
+**The v0.1 vertical slice is usable end to end**: `pnk init` → `pnk sync` → `pnk search`, plus
+`pnk doctor`, `pnk install-hooks` and `pnk serve`, with a golden-set scoreboard and CI.
 
-[Unreleased]: https://github.com/lucagattoni/Pinakes/commits/main
+Measured on the demo KB with the `[light]` models: recall@5 0.879, MRR 0.774, rerank precision
+0.727, false-abstain 0.03, **false-confidence 0.25**. That last number is the honest cost of the
+confidence heuristic on a corpus of 30 documents and 8 no-answer questions — reported rather than
+hidden, which is what §4.2 committed to.
+
+Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk ask --deep` and the
+budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
+where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
+
+[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.0

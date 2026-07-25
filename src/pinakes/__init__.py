@@ -1,8 +1,9 @@
 """pinakes — a portable, agent-first knowledge base.
 
-The architecture is specified in docs/DESIGN.md. Nothing is implemented yet.
+One directory is one knowledge base: human-readable sources, human-readable metadata, and a
+disposable machine index. The architecture is specified in docs/DESIGN.md.
 """
 
-__version__ = "0.0.0"
+__version__ = "0.1.0"
 
 __all__ = ["__version__"]

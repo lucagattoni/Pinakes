@@ -1,6 +1,6 @@
 [project]
 name = "pinakes"
-version = "0.0.0"
+dynamic = ["version"]
 description = "A portable, agent-first knowledge base. One directory = one KB."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -9,7 +9,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Luca Gattoni" }]
 keywords = ["knowledge-base", "rag", "retrieval", "mcp", "sqlite", "embeddings"]
 classifiers = [
-    "Development Status :: 1 - Planning",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3.13",
     "Topic :: Text Processing :: Indexing",
@@ -48,6 +48,11 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# Single source of truth: the version lives in the module, and the package inherits it. Two places
+# to bump is one place to forget.
+[tool.hatch.version]
+path = "src/pinakes/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pinakes"]
