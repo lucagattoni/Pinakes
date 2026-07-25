@@ -246,3 +246,27 @@ list.*
 mismatch. Typing the shim to `__import__`'s actual signature satisfied both and deleted the
 suppression. *First time the "fast pre-check" found something the gate had been told to skip —
 noted, since I1's decision assumed ty would only ever be faster, not different.*
+
+## I9 — Retrieval pipeline (20260725 16:55)
+
+**MEDIUM — vector search padded its candidate list with zero-similarity passages.** `argsort` returns
+every row, so a query sharing no direction at all with a passage still ranked it, and with nothing
+better available those passages reached the user. Real models rarely produce an exact zero, so this
+would have hidden until a sparse or domain-shifted corpus hit it. Non-positive cosines are now
+dropped. *Lesson: "return the top N by similarity" is only sane while similarity means something;
+N is a cap, not a quota to fill.*
+
+**MEDIUM (design gap, decided here) — the design said the filter set included "date", and no date
+column existed.** Documents carry `mtime`; a sidecar's `created` is optional, and filtering on an
+optional field silently excludes every document that lacks it — worse than having no filter. The
+filter is now `mtime`, and §4.1 says so. *Lesson: when the design names a filter dimension, check
+which column actually holds it for **every** row, not just the well-formed ones.*
+
+**LOW — `sqlite3.Row` hands back `Any`, which erased types through the whole hydration path.** Rows
+are now narrowed once into a small frozen dataclass instead of being cast field by field at each use
+— pyright strict was the thing that made this visible.
+
+**Worth recording: FTS5 escaping is not optional.** `AND`, `OR`, `NEAR`, `*`, `"` and a bare
+apostrophe are all parser syntax; a user typing `it's` would otherwise crash the query. Quoting each
+word as a literal and joining with `OR` keeps recall — an implicit `AND` drops a passage for one
+missing word, which is exactly the recall the vector half is there to provide.
