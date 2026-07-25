@@ -218,3 +218,31 @@ table cannot express, is what forced the two decisions the design left implicit:
 disagreeing with the index wins (`docs/` is truth, the index is derived), and a whole-picture rule
 must be order-independent — asserted directly by pairing the same snapshot walked forwards and
 backwards.
+
+## I8b — `pnk sync`, locking, and the rebuild swap (20260725 16:20)
+
+**HIGH — the rebuild swap left the old database's `-wal`/`-shm` behind.** Design pass 2 fixed the
+missing checkpoint; this is the other half nobody had noticed. SQLite names the companions after the
+*path*, not the inode, so after `os.replace` they sit beside the **new** index claiming to be its
+write-ahead log — the exact corruption the checkpoint was added to prevent, reintroduced by the
+rename that followed it. They are now removed after the swap. *Lesson: an atomic rename is atomic
+for one file; a WAL database is three files with correlated names, and correctness arguments about
+"the file" quietly skip the other two.*
+
+**MEDIUM — a read-only SQLite connection creates `-wal` and `-shm` itself.** This masked the bug
+above: the test read the index before asserting the companions were gone, and the read created them.
+Worth knowing beyond this test — §4.7 says the MCP server opens the index read-only "so it cannot
+write", which remains true of the *data*, but the server does create files in `.pinakes/`. Any
+future check that treats "no companions present" as evidence of a clean shutdown is wrong.
+
+**MEDIUM — a leaked connection inside a test helper.** The helper was a generator, and a caller
+using `next()` left it suspended, so its `finally: close()` never ran. The symptom appeared in an
+unrelated assertion about rebuild. Now returns a list and closes immediately. *Lesson: a generator
+with cleanup in `finally` only cleans up if it is exhausted; for a fixture-shaped helper, return the
+list.*
+
+**LOW — ty caught a loose test shim pyright had been told to ignore.** The monkeypatched
+`__import__` took `*args: object`; pyright was silenced with an inline ignore, ty flagged the real
+mismatch. Typing the shim to `__import__`'s actual signature satisfied both and deleted the
+suppression. *First time the "fast pre-check" found something the gate had been told to skip —
+noted, since I1's decision assumed ty would only ever be faster, not different.*
