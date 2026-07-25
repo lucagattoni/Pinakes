@@ -30,8 +30,8 @@ st = ["sentence-transformers>=5.0"]      # default backend (§4.5 of docs/DESIGN
 light = ["fastembed>=0.8"]               # ONNX, ~100MB, no torch — what CI runs
 
 [project.urls]
-Homepage = "https://github.com/lucagattoni/KB"
-Design = "https://github.com/lucagattoni/KB/blob/main/docs/DESIGN.md"
+Homepage = "https://github.com/lucagattoni/Pinakes"
+Design = "https://github.com/lucagattoni/Pinakes/blob/main/docs/DESIGN.md"
 
 [project.scripts]
 pnk = "pinakes.cli:main"

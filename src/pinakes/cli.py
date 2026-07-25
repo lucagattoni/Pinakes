@@ -12,7 +12,7 @@ import sys
 
 from pinakes import __version__
 
-DESIGN_URL = "https://github.com/lucagattoni/KB/blob/main/docs/DESIGN.md"
+DESIGN_URL = "https://github.com/lucagattoni/Pinakes/blob/main/docs/DESIGN.md"
 
 # Planned for v0.1 (docs/DESIGN.md §8).
 COMMANDS = {

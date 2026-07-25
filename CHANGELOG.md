@@ -20,4 +20,4 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Nothing is released yet — no functionality exists, so this stays unreleased until the v0.1 vertical
 slice (`init` / `sync` / `search` / MCP server / eval harness) is usable end to end.
 
-[Unreleased]: https://github.com/lucagattoni/KB/commits/main
+[Unreleased]: https://github.com/lucagattoni/Pinakes/commits/main

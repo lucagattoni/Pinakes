@@ -1,7 +1,7 @@
 # pinakes — a portable, agent-first knowledge base
 
 **Status:** reviewed — ready to implement · **Date:** 20260725
-**Repo:** github.com/lucagattoni/KB (PUBLIC) · **Licence:** Apache-2.0 · **Python:** 3.13+
+**Repo:** github.com/lucagattoni/Pinakes (PUBLIC) · **Licence:** Apache-2.0 · **Python:** 3.13+
 **Package:** `pinakes` (PyPI) · **Command:** `pnk` · **Tooling:** uv
 
 > *The* Pinakes *were Callimachus's catalogue of the Library of Alexandria — the first known index
