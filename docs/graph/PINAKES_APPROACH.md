@@ -62,14 +62,24 @@ agent does (CLI, cron), reusing the same tools.
 All edges land in the existing derived store (`.pinakes/index.db`), disposable, rebuilt free.
 Adding edge storage bumps `schema_version` — one rebuild, no migration, per invariant.
 
-| Edge type | Source | Weight | Notes |
+**The node model, stated before the edges that connect it.** The graph is heterogeneous, per
+hipporag.md's chunk↔tag/chunk↔heading mapping: **chunk** nodes (the retrieval unit), **document**
+nodes (one per doc; a membership edge links each chunk to its doc), **tag** and **heading-path**
+nodes (one per distinct value — bipartite hubs, not pairwise overlap edges), and **entity** nodes
+when the `[ner]` extra is on. Shared-value relations go *through* their hub node (`doc ↔ tag`,
+`chunk ↔ heading`), which is what lets §4B seed tags and headings and weigh their specificity as
+1/connected-chunk-count; the pairwise "overlap weight" below is the derived two-step through the
+hub. Only chunk nodes carry embeddings; that asymmetry drives the traversal ranking rule in §4A.
+
+| Edge | Connects | Weight | Notes |
 |---|---|---|---|
-| `sibling` | adjacent `chunks.ordinal` | 1.0 | already derivable |
-| `parent` / `child` | `chunks.heading_path` | 1.0 | hierarchy both directions |
-| `co-located` | shared directory in `documents.path` | 1/dir-size | degree-damped |
-| `shared-tag` | sidecar `tags` overlap | 1/tag-degree | see vocabulary caution below |
-| authored (`cites`, …) | sidecar `links` | 2.0 | highest-trust edge class |
-| `mentions` *(optional)* | NER at sync, chunk→entity | normalized occurrence (count / entities-in-chunk) | `[ner]` extra, default off |
+| membership | chunk ↔ doc | 1.0 | how doc-level edges reach chunks |
+| `sibling` | chunk ↔ chunk (adjacent `ordinal`) | 1.0 | already derivable |
+| `parent` / `child` | chunk ↔ heading node ↔ chunk | 1.0 | hierarchy both directions |
+| `co-located` | doc ↔ doc (shared directory) | 1/dir-size | degree-damped |
+| `shared-tag` | doc ↔ tag node | 1/tag-degree | see vocabulary caution below |
+| authored (`cites`, …) | doc ↔ doc (sidecar `links`) | 2.0 | highest-trust edge class |
+| `mentions` *(optional)* | chunk ↔ entity node | normalized occurrence (count / entities-in-chunk) | `[ner]` extra, default off |
 
 Weights are starting points to be fitted against the golden set, not measured constants.
 
@@ -118,19 +128,22 @@ means an empty third channel, and RRF simply fuses two lists as it does now.
 Pinakes' storage: take the fused top-*k* chunks as roots, expand over the edge set breadth-first
 to depth ≤ 2, score expanded chunks by edge weight and link distance, and feed the ranked list
 into the existing RRF as the third input. The mechanism is a **per-depth loop in Python, not a
-recursive CTE**: one SQL query per hop fetches the frontier's neighbours, NumPy ranks candidate
-neighbours by cosine against the query embedding (the embeddings already sit in the in-process
-array — DESIGN §3.1), and a Python-side visited-edge set enforces the two datastax bounding rules
-that make traversal survive real graphs: per-node fan-out capped at `adjacent_k` neighbours ranked
-by query similarity, and visited-**edge** dedup so a hub (popular tag, big directory) expands once
-globally, not once per encounter. Neither rule is expressible inside a plain SQLite CTE — ranking
-needs the vector array and global dedup needs shared state — and pruning *after* an unbounded CTE
-would let the hub explosion happen before the prune. A driver loop it is; still small, still free.
+recursive CTE**: one SQL query per hop fetches the frontier's neighbours, then the ranking rule
+follows the node model's asymmetry — **chunk** neighbours are ranked by cosine against the query
+embedding (the embeddings already sit in the in-process array — DESIGN §3.1); **non-chunk** nodes
+(doc, tag, heading) carry no embedding, pass through by edge weight, and contribute their member
+chunks, which are then query-ranked like any others. A Python-side visited-edge set enforces the
+two datastax bounding rules that make traversal survive real graphs: per-node fan-out capped at
+`adjacent_k` neighbours ranked as above, and visited-**edge** dedup so a hub (popular tag, big
+directory) expands once globally, not once per encounter. Neither rule is expressible inside a
+plain SQLite CTE — ranking needs the vector array and global dedup needs shared state — and
+pruning *after* an unbounded CTE would let the hub explosion happen before the prune. A driver
+loop it is; still small, still free.
 
 Also evaluated in Stage A, per graphiti.md's explicit recommendation: **in-degree over the `links`
-table as a zero-cost salience signal** (citation count as a static prior on expanded chunks), and
-the `center_node_uuid`-style link-distance rerank. Both are cheaper than everything else on this
-page and belong in the first eval matrix.
+table as a zero-cost salience signal** — a static citation-count prior on documents, inherited by
+their chunks through the membership edge — and the `center_node_uuid`-style link-distance rerank.
+Both are cheaper than everything else on this page and belong in the first eval matrix.
 
 **Stage B — PPR (only if eval demands it).** If the golden set shows Stage A leaving multi-hop
 recall on the table (the gate is quantified in §9), implement the R4 channel with HippoRAG 2's
@@ -142,15 +155,20 @@ The personalization vector has two parts, and the second is the one that matters
   nodes — **tag and heading nodes play the phrase-node role**, matched against the query by the
   same embedding/BM25 machinery (hipporag.md's own mapping). With `[ner]`, entity nodes join them.
 - *Chunk seeds:* **every chunk node in the graph**, weighted by its raw dense (cosine) score
-  × 0.05 — not only the RRF candidates. Seeding all chunks, not top-k, is HippoRAG 2's stated key
-  to multi-hop signal flow and its guard against the simple-query regression that one study in the
-  GraphRAG-Bench line measured at ~13% (GRAPH_RAG §2.3). The dense scores for all chunks are a
-  by-product of the vector search the pipeline already ran; this costs one array multiply.
+  × 0.05, clamped at zero (DESIGN §4.1 already treats non-positive cosine as no evidence; a reset
+  vector must not carry negative mass) — not only the RRF candidates. Seeding all chunks, not
+  top-k, is HippoRAG 2's stated key to multi-hop signal flow and its guard against the
+  simple-query regression that one study in the GraphRAG-Bench line measured at ~13%
+  (GRAPH_RAG §2.3). On the NumPy tier the full score vector is a free by-product of the vector
+  search already run; under the future `sqlite-vec` tier (v0.5), which scans out only a top-N,
+  the seeds are that top-N with the remaining chunks at zero — degraded, stated, and still broad
+  at N=50×2.
 
-Implementation is power iteration in NumPy over the (sparse) adjacency matrix — hipporag.md and
-fast-graphrag.md both confirm no igraph is needed at Pinakes' scale. Whether `scipy.sparse` enters
-core or the loop stays dense NumPy under 50k chunks is decided by profiling against the
-core-deps-stay-light rule, not assumed here.
+Implementation is power iteration over the edge list in plain NumPy — a gather/scatter
+(`np.add.at`) sparse matvec, never a dense adjacency matrix (50k² floats would be ~10 GB against a
+design that budgets 77 MB for all embeddings at that scale). Whether `scipy.sparse` replaces the
+hand-rolled matvec is decided by profiling against the core-deps-stay-light rule, not assumed
+here; hipporag.md and fast-graphrag.md both confirm no igraph is needed at Pinakes' scale.
 
 **Why staged and not both at once:** two implementations means two eval matrices and two things to
 maintain before the first user-visible win. Bounded expansion answers "does graph structure help
@@ -184,10 +202,12 @@ pinakes_links(kb, doc_id, rel?, direction?, depth?=1, query?)
   spending its own turn on an explicit probe has judged the hop worth it; the automatic channel
   runs on every query and must stay cheap.
 - **Ranking with and without `query`.** When the optional `query` is supplied, fan-out and
-  `score` use similarity to it (the datastax rule); without it, edge weight and link distance
-  rank — deterministic neighbourhood inspection is a legitimate use. `confidence` carries the
-  same calibrated signal class as `pinakes_search`, completing R6's stated contract
-  ("neighbours plus the same confidence signal").
+  `score` use similarity to it (the datastax rule), and `confidence` carries the same calibrated
+  signal class as `pinakes_search` — completing R6's stated contract ("neighbours plus the same
+  confidence signal"). Without `query`, edge weight and link distance rank — deterministic
+  neighbourhood inspection is a legitimate use — and `confidence` is reported `unknown`: the
+  calibrated signal is fitted on query-relevance scores, and a query-less listing has nothing to
+  be confident about (DESIGN §4.2's "absent ⇒ unknown, never invented" ethos).
 - **Score + frontier on every return.** That pair is the Graph-R1 loop's full input — an
   untrained caller can run think → probe → decide with no policy on the server side. R6 stands:
   no traversal policy inside Pinakes.
@@ -240,8 +260,8 @@ loop." A decompose→DAG→topo-order loop *is* orchestration the free path does
 proposal therefore amends that line rather than claiming compliance with it: the bound that
 actually contains the agent-framework risk is the conjunction of *same retrieval tools as MCP*
 (nothing retrieves that the free path can't), *hard caps* (rounds, budget, context), and *no
-persistent agent state beyond the transcript*. The DAG is prompt-side structure within one
-operation, not a framework. DESIGN §9's wording should be updated in the increment that ships
+persistent agent state beyond the transcript and the explicitly staged, user-committed suggestions
+below*. The DAG is prompt-side structure within one operation, not a framework. DESIGN §9's wording should be updated in the increment that ships
 this, so the risk table stays true.
 
 **The budget instrument (Youtu-GraphRAG's schema, shipped per template).** Each template carries a
@@ -260,14 +280,17 @@ structure every investigated system throws away per query. Pinakes persists it a
 provenance `origin: deep`), and a `--write-suggestions` flag stages them into the sidecars for the
 user to review and commit. Sidecars are Pinakes-authored files by design (sync generates their
 skeletons), so this writes where Pinakes already writes — the flag exists because *semantic*
-additions deserve explicit opt-in, a stricter bar than the invariant demands. Two schema notes,
+additions deserve explicit opt-in, a stricter bar than the invariant demands. One schema note,
 recorded because sidecar-schema evolution is the design's acknowledged blind spot (claudekb.md,
-D18 discussion): `origin: deep` extends the per-link sidecar shape additively, and the `links`
-table's `origin` enum (`sidecar` / `reverse-scan`, DESIGN §3) gains a third value. Both belong in
-the increment that ships this, stated in DESIGN, with `schema_version` bumped for the table half.
-Committed suggestions become authored edges: free forever, visible to every future query, to the
-graph channel, and to every connected KB. Paid inference becomes a one-time, auditable investment
-instead of a recurring cost — with the human in the loop.
+D18 discussion): the per-link sidecar shape gains an optional provenance field (`origin: deep`) —
+strictly additive, stated in DESIGN in the increment that ships this. The `links` *table's*
+`origin` enum (`sidecar` / `reverse-scan`, DESIGN §3) does **not** change: an accepted suggestion
+is read from the sidecar like any other link, so its row is `origin: sidecar` at authored weight —
+acceptance-by-commit is exactly what promotes a machine suggestion to authored trust, and the
+`deep` provenance survives in the truth layer where it belongs. Committed suggestions are then
+free forever, visible to every future query, to the graph channel, and to every connected KB.
+Paid inference becomes a one-time, auditable investment instead of a recurring cost — with the
+human in the loop.
 
 **The tunability knob.** One number the user reasons about: the per-operation cap already
 specified in DESIGN §5, which — because per-round cost is constant — translates directly into "how
@@ -339,7 +362,7 @@ gates independently:
 | Gate | What must be true before |
 |---|---|
 | `expand` default-on | multi-hop recall@k up, simple-lookup unchanged, false-abstain flat |
-| `ppr` implemented at all | expansion's multi-hop recall@k sits ≥ 5 points below the golden set's *graph-reachable ceiling* — the share of multi-hop questions whose evidence lies within 2 hops of the fused seeds. Below-ceiling-but-close means expansion suffices; a wide gap is PPR's mandate |
+| `ppr` implemented at all | expansion's multi-hop recall@k sits ≥ 5 points below the golden set's *graph-reachable ceiling* — the share of multi-hop questions whose evidence lies within 2 hops of the fused seeds. Below-ceiling-but-close means expansion suffices; a wide gap is PPR's mandate. The eval also reports the **beyond-2-hop share** (questions the ceiling excludes) — if that class dominates, the gate is blind to exactly what PPR's diffusion could reach, and the decision is made on that number, not the gate alone |
 | `[ner]` mentions edges default-on | the active channel gains from them on the golden set, sync time acceptable |
 | `--deep` loop ships | budget machinery in the same release (DESIGN §5 ordering), per-class evals include cost/query |
 
