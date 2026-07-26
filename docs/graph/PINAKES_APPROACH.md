@@ -1,6 +1,6 @@
 # The Pinakes graph: lazy, agent-driven, budget-tunable
 
-**Status:** proposed approach · **Date:** 20260726 08:59 · revised after adversarial review 20260726 09:35
+**Status:** proposed approach · **Date:** 20260726 08:59 · review-revised 20260726 09:11, 09:17, 09:21 (three adversarial passes)
 **Builds on:** [`../GRAPH_RAG.md`](../GRAPH_RAG.md) (R1–R7) and the investigation docs in this
 directory — twelve external projects plus the in-house precedent (ClaudeKB). This doc is the
 decision layer: what Pinakes should actually build, in what order, gated how. GRAPH_RAG.md remains
@@ -64,19 +64,30 @@ Adding edge storage bumps `schema_version` — one rebuild, no migration, per in
 
 **The node model, stated before the edges that connect it.** The graph is heterogeneous, per
 hipporag.md's chunk↔tag/chunk↔heading mapping: **chunk** nodes (the retrieval unit), **document**
-nodes (one per doc; a membership edge links each chunk to its doc), **tag** and **heading-path**
-nodes (one per distinct value — bipartite hubs, not pairwise overlap edges), and **entity** nodes
-when the `[ner]` extra is on. Shared-value relations go *through* their hub node (`doc ↔ tag`,
-`chunk ↔ heading`), which is what lets §4B seed tags and headings and weigh their specificity as
-1/connected-chunk-count; the pairwise "overlap weight" below is the derived two-step through the
-hub. Only chunk nodes carry embeddings; that asymmetry drives the traversal ranking rule in §4A.
+nodes (one per doc; a membership edge links each chunk to its doc), **tag** nodes (one per
+distinct tag KB-wide), **heading-path** nodes (**scoped per document** — a global "Introduction"
+hub would weld every document into one noise clique worse than any tag), **directory** nodes (one
+per directory), and **entity** nodes when the `[ner]` extra is on. Every shared-value relation
+goes *through* its hub node — `doc ↔ tag`, `doc ↔ directory`, `chunk ↔ heading` — never as
+materialized pairwise edges: hubs are what let §4B seed tags and headings with specificity
+1/connected-chunk-count, what keep edge counts linear instead of O(members²) per shared value,
+and what give §4A's visited-edge dedup a single node to expand once globally. Spoke weights are
+per-spoke; flow between two members through their hub is the product of both spokes, so
+1/degree spokes damp big hubs superlinearly — deliberate, and like every weight here a starting
+point to fit. Hierarchy is the one relation that stays direct: `parent`/`child` edges are
+chunk ↔ chunk, derived by `heading_path` prefix comparison (DESIGN §3 stores the path per chunk;
+heading nodes exist for seeding and same-section grouping, not to carry hierarchy). On
+embeddings: only chunk nodes carry stored *content* embeddings; hub and entity nodes get cheap
+label embeddings (used for entity near-duplicate linking and §4B seed matching) that §4A
+deliberately does not use for traversal ranking.
 
 | Edge | Connects | Weight | Notes |
 |---|---|---|---|
 | membership | chunk ↔ doc | 1.0 | how doc-level edges reach chunks |
 | `sibling` | chunk ↔ chunk (adjacent `ordinal`) | 1.0 | already derivable |
-| `parent` / `child` | chunk ↔ heading node ↔ chunk | 1.0 | hierarchy both directions |
-| `co-located` | doc ↔ doc (shared directory) | 1/dir-size | degree-damped |
+| `parent` / `child` | chunk ↔ chunk (`heading_path` prefix) | 1.0 | hierarchy both directions |
+| `in-section` | chunk ↔ heading node (per-doc) | 1.0 | same-section grouping; §4B seeds |
+| `co-located` | doc ↔ directory node | 1/dir-size | hub form; degree-damped |
 | `shared-tag` | doc ↔ tag node | 1/tag-degree | see vocabulary caution below |
 | authored (`cites`, …) | doc ↔ doc (sidecar `links`) | 2.0 | highest-trust edge class |
 | `mentions` *(optional)* | chunk ↔ entity node | normalized occurrence (count / entities-in-chunk) | `[ner]` extra, default off |
@@ -127,12 +138,16 @@ means an empty third channel, and RRF simply fuses two lists as it does now.
 **Stage A — bounded expansion from hits (ship first).** Graphiti's third-channel shape on
 Pinakes' storage: take the fused top-*k* chunks as roots, expand over the edge set breadth-first
 to depth ≤ 2, score expanded chunks by edge weight and link distance, and feed the ranked list
-into the existing RRF as the third input. The mechanism is a **per-depth loop in Python, not a
+into the existing RRF as the third input. **Depth counts logical hops** — chunk-or-doc to
+chunk-or-doc transitions — with membership edges and hub-node pass-throughs depth-free; counted
+in physical edges, the model's plumbing (chunk→doc→doc→chunk) would strand the highest-trust
+authored edges beyond depth 2, which cannot be the intent. §5's tool cap and §9's reachability
+ceiling use the same metric. The mechanism is a **per-depth loop in Python, not a
 recursive CTE**: one SQL query per hop fetches the frontier's neighbours, then the ranking rule
 follows the node model's asymmetry — **chunk** neighbours are ranked by cosine against the query
 embedding (the embeddings already sit in the in-process array — DESIGN §3.1); **non-chunk** nodes
-(doc, tag, heading) carry no embedding, pass through by edge weight, and contribute their member
-chunks, which are then query-ranked like any others. A Python-side visited-edge set enforces the
+(doc, tag, heading, directory) carry no content embedding, pass through by edge weight, and
+contribute their member chunks, which are then query-ranked like any others. A Python-side visited-edge set enforces the
 two datastax bounding rules that make traversal survive real graphs: per-node fan-out capped at
 `adjacent_k` neighbours ranked as above, and visited-**edge** dedup so a hub (popular tag, big
 directory) expands once globally, not once per encounter. Neither rule is expressible inside a
@@ -160,9 +175,11 @@ The personalization vector has two parts, and the second is the one that matters
   top-k, is HippoRAG 2's stated key to multi-hop signal flow and its guard against the
   simple-query regression that one study in the GraphRAG-Bench line measured at ~13%
   (GRAPH_RAG §2.3). On the NumPy tier the full score vector is a free by-product of the vector
-  search already run; under the future `sqlite-vec` tier (v0.5), which scans out only a top-N,
-  the seeds are that top-N with the remaining chunks at zero — degraded, stated, and still broad
-  at N=50×2.
+  search already run. Under the future `sqlite-vec` tier (v0.5) only the vector scan's top-N
+  (~50; BM25 candidates carry no cosine) would have scores — which is precisely the top-k-only
+  seeding HippoRAG 2 warns against. That degraded mode is acceptable only because the vec tier
+  is a v0.5 concern; when it lands, all-chunk seeding must be re-evaluated on that tier, not
+  assumed.
 
 Implementation is power iteration over the edge list in plain NumPy — a gather/scatter
 (`np.add.at`) sparse matvec, never a dense adjacency matrix (50k² floats would be ~10 GB against a
@@ -261,8 +278,8 @@ proposal therefore amends that line rather than claiming compliance with it: the
 actually contains the agent-framework risk is the conjunction of *same retrieval tools as MCP*
 (nothing retrieves that the free path can't), *hard caps* (rounds, budget, context), and *no
 persistent agent state beyond the transcript and the explicitly staged, user-committed suggestions
-below*. The DAG is prompt-side structure within one operation, not a framework. DESIGN §9's wording should be updated in the increment that ships
-this, so the risk table stays true.
+below*. The DAG is prompt-side structure within one operation, not a framework. DESIGN §9's
+wording should be updated in the increment that ships this, so the risk table stays true.
 
 **The budget instrument (Youtu-GraphRAG's schema, shipped per template).** Each template carries a
 three-list seed schema — entity types, relation types, attribute types. For research-papers:
@@ -362,7 +379,7 @@ gates independently:
 | Gate | What must be true before |
 |---|---|
 | `expand` default-on | multi-hop recall@k up, simple-lookup unchanged, false-abstain flat |
-| `ppr` implemented at all | expansion's multi-hop recall@k sits ≥ 5 points below the golden set's *graph-reachable ceiling* — the share of multi-hop questions whose evidence lies within 2 hops of the fused seeds. Below-ceiling-but-close means expansion suffices; a wide gap is PPR's mandate. The eval also reports the **beyond-2-hop share** (questions the ceiling excludes) — if that class dominates, the gate is blind to exactly what PPR's diffusion could reach, and the decision is made on that number, not the gate alone |
+| `ppr` implemented at all | expansion's multi-hop recall@k sits ≥ 5 points below the golden set's *graph-reachable ceiling* — the share of multi-hop questions whose evidence lies within 2 logical hops (§4A's metric) of the fused seeds. Below-ceiling-but-close means expansion suffices; a wide gap is PPR's mandate. The eval also reports the **beyond-2-hop share** (questions the ceiling excludes) — if that class dominates, the gate is blind to exactly what PPR's diffusion could reach, and the decision is made on that number, not the gate alone |
 | `[ner]` mentions edges default-on | the active channel gains from them on the golden set, sync time acceptable |
 | `--deep` loop ships | budget machinery in the same release (DESIGN §5 ordering), per-class evals include cost/query |
 
