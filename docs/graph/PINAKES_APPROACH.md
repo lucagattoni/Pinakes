@@ -1,6 +1,6 @@
 # The Pinakes graph: lazy, agent-driven, budget-tunable
 
-**Status:** proposed approach · **Date:** 20260726 08:59 · review-revised 20260726 09:11, 09:17, 09:23, 09:29 (four adversarial passes; commit times)
+**Status:** proposed approach · **Date:** 20260726 08:59 · review-revised 20260726 09:11, 09:17, 09:23, 09:28, 09:34 (five adversarial passes; commit times)
 **Builds on:** [`../GRAPH_RAG.md`](../GRAPH_RAG.md) (R1–R7) and the investigation docs in this
 directory — twelve external projects plus the in-house precedent (ClaudeKB). This doc is the
 decision layer: what Pinakes should actually build, in what order, gated how. GRAPH_RAG.md remains
@@ -107,8 +107,9 @@ Three findings shape this table:
 
 - **Hub damping is not optional.** ClaudeKB's experience (curated `vocab.yml` exists precisely to
   stop tag sprawl) and datastax's visited-edge dedup both say the same thing: shared-value edges
-  over popular values produce noise cliques. Tag and directory edges are weighted down by degree
-  from day one; `mentions` weights are normalized per chunk for the same reason. `pnk doctor`
+  over popular values produce noise cliques. Tag, directory and section spokes are weighted down
+  by degree from day one (the complete damping statement follows the table); `mentions` weights
+  are normalized per chunk for the same reason. `pnk doctor`
   reports the highest-degree edge hubs so a user can see when a tag has become meaningless glue.
 - **Authored links are sparse, precious signal — plan for scarcity.** ClaudeKB shows that even
   agents author links only when a validator makes linking a precondition of landing a write, and
@@ -158,7 +159,8 @@ follows the node model's asymmetry — **chunk** neighbours are ranked by cosine
 embedding (in-process on the NumPy tier — DESIGN §3.1; the v0.5 `sqlite-vec` tier instead fetches
 the bounded frontier's vectors from SQLite per hop, cheap because the frontier is capped);
 **non-chunk** nodes (doc, tag, heading, directory) carry no content embedding, pass through by
-edge weight, and contribute their member chunks, which are then query-ranked like any others. A
+edge weight, and contribute their member chunks (minus the root's own document — §3's membership
+exclusion), which are then query-ranked like any others. A
 Python-side visited-edge set enforces the two datastax bounding rules that make traversal survive
 real graphs: per-node fan-out capped at
 `adjacent_k` neighbours ranked as above, and visited-**edge** dedup so a hub (popular tag, big
@@ -391,7 +393,7 @@ gates independently:
 | Gate | What must be true before |
 |---|---|
 | `expand` default-on | multi-hop recall@k up, simple-lookup unchanged, false-abstain flat |
-| `ppr` implemented at all | expansion's multi-hop recall@k sits ≥ 5 points below the golden set's *graph-reachable ceiling* — the share of multi-hop questions whose evidence lies within 2 logical hops (§4A's metric) of the fused seeds. Below-ceiling-but-close means expansion suffices; a wide gap is PPR's mandate. The eval also reports the **beyond-2-hop share** (questions the ceiling excludes) — if that class dominates, the gate is blind to exactly what PPR's diffusion could reach, and the decision is made on that number, not the gate alone |
+| `ppr` implemented at all | expansion's multi-hop recall@k sits ≥ 5 points below the golden set's *channel-reachable ceiling* — the share of multi-hop questions whose evidence lies within 2 logical hops (§4A's metric) of the fused seeds, **minus what §3's membership exclusion forbids the channel to return**. Below-ceiling-but-close means expansion suffices; a wide gap is PPR's mandate. The eval also reports two excluded shares: the **beyond-2-hop share** — if it dominates, the gate is blind to exactly what PPR's diffusion could reach — and the **membership-only-reachable share** — if *it* dominates the gap, revisit the §3 exclusion before implementing PPR, because that is the cheaper remedy. The decision weighs all three numbers, not the gate alone |
 | `[ner]` mentions edges default-on | the active channel gains from them on the golden set, sync time acceptable |
 | `--deep` loop ships | budget machinery in the same release (DESIGN §5 ordering), per-class evals include cost/query |
 
