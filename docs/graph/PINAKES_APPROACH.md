@@ -1,13 +1,14 @@
 # The Pinakes graph: lazy, agent-driven, budget-tunable
 
-**Status:** proposed approach · **Date:** 20260726 08:59
-**Builds on:** [`../GRAPH_RAG.md`](../GRAPH_RAG.md) (R1–R7) and the twelve investigation docs in
-this directory. This doc is the decision layer: what Pinakes should actually build, in what order,
-gated how. GRAPH_RAG.md remains the research record and is deliberately untouched.
+**Status:** proposed approach · **Date:** 20260726 08:59 · revised after adversarial review 20260726 09:35
+**Builds on:** [`../GRAPH_RAG.md`](../GRAPH_RAG.md) (R1–R7) and the investigation docs in this
+directory — twelve external projects plus the in-house precedent (ClaudeKB). This doc is the
+decision layer: what Pinakes should actually build, in what order, gated how. GRAPH_RAG.md remains
+the research record and is deliberately untouched.
 
 ---
 
-## 1. What twelve investigations changed
+## 1. What the investigations changed
 
 GRAPH_RAG.md concluded: no prebuilt LLM graph, free structural edges, PPR as a candidate third
 channel, traversal exposed as tools, extraction (if ever) lazy and written back. Every project
@@ -16,24 +17,26 @@ sharpened it into implementable form:
 
 | Doc | Verdict in one line | What Pinakes takes |
 |---|---|---|
-| [lightrag.md](lightrag.md) | The cost model R1 exists to avoid; nothing lazy | Caller-supplied dual-level keywords as search params |
+| [lightrag.md](lightrag.md) | The cost model R1 exists to avoid; nothing lazy | Caller-supplied dual-level keywords on `pinakes_search` (§5) |
 | [microsoft-graphrag.md](microsoft-graphrag.md) | LazyGraphRAG still not OSS (verified v3.1.1); OSS has its ingredients | The relevance-test budget as `--deep`'s single cost knob |
-| [graphiti.md](graphiti.md) | Converged on BM25+cosine+RRF; its MCP server has no traversal tool | BFS-from-hits as a cheap graph channel; the gap `pinakes_links` fills |
+| [graphiti.md](graphiti.md) | Converged on BM25+cosine+RRF; its MCP server has no traversal tool | Expansion-from-hits as a cheap graph channel; link-distance rerank; the gap `pinakes_links` fills |
 | [hipporag.md](hipporag.md) | PPR works; graph pays only on multi-hop | The exact PPR recipe (§4, stage B) |
 | [fast-graphrag.md](fast-graphrag.md) | Query-time PPR stage is entirely LLM-free | Confirmation that R4 has zero free-path cost |
 | [graph-r1.md](graph-r1.md) | Trained traversal ≈ 2.3–2.5 turns; the loop survives without RL | What tool *returns* must contain (§5) |
-| [linearrag.md](linearrag.md) | Zero-LLM entity graph beats HippoRAG 2 on multi-hop | `mentions` edges — the one free edge class we lacked (§3) |
-| [datastax-graph-rag.md](datastax-graph-rag.md) | Metadata-defined edges + bounded traversal, abandoned but right | Query-ranked bounded fan-out, visited-edge dedup (§5) |
+| [linearrag.md](linearrag.md) | Zero-LLM entity graph beats HippoRAG 2 on its benchmarks | `mentions` edges — the one free edge class we lacked (§3) |
+| [datastax-graph-rag.md](datastax-graph-rag.md) | Metadata-defined edges + bounded traversal, abandoned but right | Query-ranked bounded fan-out, visited-edge dedup (§4, §5) |
 | [code-graph-rag.md](code-graph-rag.md) | NL→Cypher needs a validator stack; typed verbs don't | Keep `pinakes_links` typed, hard-capped (§5) |
-| [minirag.md](minirag.md) | A 1.5B local model can build a useful entity layer — gain shrinks with a strong reader | The conditional design for the `[ner]` extra's future upgrade |
+| [minirag.md](minirag.md) | A 1.5B local model can build a useful entity layer — gain shrinks with a strong reader | Evidence on file if the `[ner]` extra ever needs an SLM upgrade — an R1 amendment, not a plan (§3) |
 | [youtu-graphrag.md](youtu-graphrag.md) | Schema-bounded extraction is the budget instrument | Three-list seed schema per template (§6) |
 | [logicrag.md](logicrag.md) | Per-query DAG, zero corpus graph, warm-up-first | The `--deep` loop skeleton (§6) |
 | [claudekb.md](claudekb.md) | Pinakes is a near-drop-in for its deferred retrieval layer | The `pnk adopt` path (§8); link-authoring realism (§3) |
 
 License gate, stated once: LinearRAG and LogicRAG are GPL-3.0; Youtu-GraphRAG's LICENSE forbids
 commercial use despite its README's MIT badge. **Algorithms may inform this design; no code from
-those three repos may ever be vendored or translated line-by-line.** Graphiti, fast-graphrag,
-HippoRAG, MiniRAG, datastax/graph-rag, nano-graphrag are MIT/Apache-2.0.
+those three repos may ever be vendored or translated line-by-line.** The permissively licensed
+sources — Graphiti, fast-graphrag, HippoRAG, MiniRAG, datastax/graph-rag, LightRAG,
+microsoft/graphrag, Graph-R1, code-graph-rag (all MIT or Apache-2.0 per their docs here) — are
+safe to study at code level.
 
 ---
 
@@ -43,7 +46,7 @@ Three layers, each free until the last, each gated by the golden set before it d
 
 ```
 sync time   (free)   edge derivation: structural + authored (+ optional NER mentions)
-query time  (free)   graph channel: BFS-from-hits first, PPR if eval demands it
+query time  (free)   graph channel: bounded expansion first, PPR if eval demands it
                      tool surface: pinakes_links + enriched pinakes_search returns
 --deep only (paid)   lazy agent loop: warm-up → decompose → budgeted rounds → sidecar write-back
 ```
@@ -66,15 +69,17 @@ Adding edge storage bumps `schema_version` — one rebuild, no migration, per in
 | `co-located` | shared directory in `documents.path` | 1/dir-size | degree-damped |
 | `shared-tag` | sidecar `tags` overlap | 1/tag-degree | see vocabulary caution below |
 | authored (`cites`, …) | sidecar `links` | 2.0 | highest-trust edge class |
-| `mentions` *(optional)* | NER at sync, chunk→entity | occurrence count | `[ner]` extra, default off |
+| `mentions` *(optional)* | NER at sync, chunk→entity | normalized occurrence (count / entities-in-chunk) | `[ner]` extra, default off |
+
+Weights are starting points to be fitted against the golden set, not measured constants.
 
 Three findings shape this table:
 
 - **Hub damping is not optional.** ClaudeKB's experience (curated `vocab.yml` exists precisely to
   stop tag sprawl) and datastax's visited-edge dedup both say the same thing: shared-value edges
   over popular values produce noise cliques. Tag and directory edges are weighted down by degree
-  from day one, and `pnk doctor` reports the highest-degree edge hubs so a user can see when a tag
-  has become meaningless glue.
+  from day one; `mentions` weights are normalized per chunk for the same reason. `pnk doctor`
+  reports the highest-degree edge hubs so a user can see when a tag has become meaningless glue.
 - **Authored links are sparse, precious signal — plan for scarcity.** ClaudeKB shows that even
   agents author links only when a validator makes linking a precondition of landing a write, and
   then only the weakest useful kind. Pinakes must never assume link density; the structural edges
@@ -82,47 +87,76 @@ Three findings shape this table:
   zero-link docs) is the proven pressure short of a hard gate.
 - **`mentions` is the one free edge class that bridges unrelated documents.** Every structural
   edge above connects things that are already near each other (same doc, same directory, same
-  tag). LinearRAG demonstrates — beating HippoRAG 2 and LightRAG on four multi-hop benchmarks with
-  zero index-time LLM tokens — that chunk→entity co-mention edges built by plain NER supply the
-  missing cross-silo bridges. Design: an optional `[ner]` extra (spaCy, pinned small model);
-  entities are surface-form nodes with embedding-linked near-duplicates; edges are hash-diffed
-  incrementally like everything else in sync; **default off** until the golden set shows the BFS
-  or PPR channel gaining from it (LinearRAG's own caveat — entity fragmentation — plus MiniRAG's
-  finding that the gain shrinks with a strong reader, both say: measure, don't assume). Rebuild
-  stays free in euros; the honest cost is sync wall-clock and one more model download, which is
-  why it is an extra and not core.
+  tag). LinearRAG's results — beating HippoRAG 2 and LightRAG on its four benchmarks with zero
+  index-time LLM tokens — *suggest* that chunk→entity co-mention edges supply the missing
+  cross-silo bridges. Suggest, not demonstrate: LinearRAG's wins come from a whole system —
+  transformer-scale NER (a 440 MB spaCy model), sentence-level embeddings of the entire corpus,
+  and query-gated spreading activation before its PPR — and no published ablation isolates the
+  edges alone. That is exactly why the `[ner]` extra ships **default off** behind its own eval
+  gate (§9). Design: spaCy with a pinned model; entities are surface-form nodes with
+  embedding-linked near-duplicates; edges hash-diffed incrementally like everything else in sync.
+  Rebuild stays free in euros; the honest cost is sync wall-clock and one more model download,
+  which is why it is an extra and not core.
 
-Nothing in this section calls an LLM. R1 stands: **no LLM extraction in `pnk sync`, ever.**
+Nothing in this section calls an LLM, and R1 stands: **no LLM extraction in `pnk sync`.** One
+boundary case is named rather than blurred: MiniRAG proves a 1.5–4B *local* model can build a
+useful entity layer at sync — free in euros but LLM extraction all the same, which R1 as written
+forbids at any version. This doc does **not** propose it. If the spaCy `[ner]` extra ever proves
+insufficient where an SLM layer would not be, that is a conscious amendment of R1's wording (from
+"no LLM extraction" to "no paid extraction; opt-in local-model extraction behind an extra,
+eval-gated") to be argued then — not a silent reinterpretation now.
 
 ---
 
 ## 4. Query time: the graph channel (€0, staged)
 
-Gated behind `[retrieval] graph_channel = "off" | "bfs" | "ppr"`, default `off` until R7's gates
-pass. Both stages degrade to today's behaviour when the graph is sparse — an empty edge set means
-an empty third channel, and RRF simply fuses two lists as it does now.
+Gated behind `[retrieval] graph_channel = "off" | "expand" | "ppr"`, default `off` until R7's
+gates pass. Both stages degrade to today's behaviour when the graph is sparse — an empty edge set
+means an empty third channel, and RRF simply fuses two lists as it does now.
 
-**Stage A — BFS-from-hits (ship first).** Graphiti's third channel, on Pinakes' storage: take the
-fused top-*k* chunks, expand over the edge set with a recursive CTE (depth ≤ 2), score expanded
-chunks by link distance and edge weight, feed the ranked list into the existing RRF as the third
-input. Two bounding rules from datastax/graph-rag, adopted verbatim because they are what makes
-traversal survive real graphs: per-edge fan-out capped at `adjacent_k` neighbours ranked by
-similarity to the query, and visited-**edge** dedup so a hub (popular tag, big directory) expands
-once globally, not once per encounter. This is dozens of lines over an index that already exists.
+**Stage A — bounded expansion from hits (ship first).** Graphiti's third-channel shape on
+Pinakes' storage: take the fused top-*k* chunks as roots, expand over the edge set breadth-first
+to depth ≤ 2, score expanded chunks by edge weight and link distance, and feed the ranked list
+into the existing RRF as the third input. The mechanism is a **per-depth loop in Python, not a
+recursive CTE**: one SQL query per hop fetches the frontier's neighbours, NumPy ranks candidate
+neighbours by cosine against the query embedding (the embeddings already sit in the in-process
+array — DESIGN §3.1), and a Python-side visited-edge set enforces the two datastax bounding rules
+that make traversal survive real graphs: per-node fan-out capped at `adjacent_k` neighbours ranked
+by query similarity, and visited-**edge** dedup so a hub (popular tag, big directory) expands once
+globally, not once per encounter. Neither rule is expressible inside a plain SQLite CTE — ranking
+needs the vector array and global dedup needs shared state — and pruning *after* an unbounded CTE
+would let the hub explosion happen before the prune. A driver loop it is; still small, still free.
 
-**Stage B — PPR (only if eval demands it).** If the golden set's multi-hop section shows Stage A
-leaving recall on the table, implement the R4 channel with HippoRAG 2's measured recipe rather
-than folklore defaults: damping **0.5** (not 0.85), undirected, weighted; personalization vector =
-at most 5 entity-side seeds weighted by match score and damped by node specificity (1/chunk-count),
-**plus every candidate chunk node at `fused_score × 0.05`**. That broad chunk seeding is
-HippoRAG 2's stated guard against the simple-query regression GraphRAG-Bench documents — the
-specific risk R7 exists to watch. Pure scipy over the adjacency matrix; no igraph dependency
-unless profiling says otherwise.
+Also evaluated in Stage A, per graphiti.md's explicit recommendation: **in-degree over the `links`
+table as a zero-cost salience signal** (citation count as a static prior on expanded chunks), and
+the `center_node_uuid`-style link-distance rerank. Both are cheaper than everything else on this
+page and belong in the first eval matrix.
+
+**Stage B — PPR (only if eval demands it).** If the golden set shows Stage A leaving multi-hop
+recall on the table (the gate is quantified in §9), implement the R4 channel with HippoRAG 2's
+measured recipe rather than folklore defaults: damping **0.5** (not 0.85), undirected, weighted.
+The personalization vector has two parts, and the second is the one that matters:
+
+- *Non-chunk seeds:* at most 5 nodes from the metadata side of the graph, weighted by match score
+  and damped by node specificity (1/chunk-count). Without the `[ner]` extra there are no entity
+  nodes — **tag and heading nodes play the phrase-node role**, matched against the query by the
+  same embedding/BM25 machinery (hipporag.md's own mapping). With `[ner]`, entity nodes join them.
+- *Chunk seeds:* **every chunk node in the graph**, weighted by its raw dense (cosine) score
+  × 0.05 — not only the RRF candidates. Seeding all chunks, not top-k, is HippoRAG 2's stated key
+  to multi-hop signal flow and its guard against the simple-query regression that one study in the
+  GraphRAG-Bench line measured at ~13% (GRAPH_RAG §2.3). The dense scores for all chunks are a
+  by-product of the vector search the pipeline already ran; this costs one array multiply.
+
+Implementation is power iteration in NumPy over the (sparse) adjacency matrix — hipporag.md and
+fast-graphrag.md both confirm no igraph is needed at Pinakes' scale. Whether `scipy.sparse` enters
+core or the loop stays dense NumPy under 50k chunks is decided by profiling against the
+core-deps-stay-light rule, not assumed here.
 
 **Why staged and not both at once:** two implementations means two eval matrices and two things to
-maintain before the first user-visible win. BFS answers "does graph structure help this KB at all"
-with minimal code; PPR is the escalation with a measured recipe waiting if the answer is "yes, and
-BFS isn't enough." Each stage crosses its own golden-set gate (§9) before defaulting on.
+maintain before the first user-visible win. Bounded expansion answers "does graph structure help
+this KB at all" with minimal code; PPR is the escalation with a measured recipe waiting if the
+answer is "yes, and expansion isn't enough." Each stage crosses its own golden-set gate (§9)
+before defaulting on.
 
 ---
 
@@ -135,24 +169,36 @@ an open query language (NL→Cypher) needed a defensive validator stack that a t
 encodes for free. Both lessons land directly in the tool contract:
 
 ```
-pinakes_links(kb, doc_id, rel?, direction?, depth?=1)
+pinakes_links(kb, doc_id, rel?, direction?, depth?=1, query?)
   → { neighbours: [{doc_id, title, rel, direction, distance, score}],
       frontier:   [{doc_id, rel}],          # unexpanded next hops
       unresolved: [{target, reason}],        # dangling pnk:// etc., never dropped
-      truncated:  bool }                     # caps hit — narrow, don't retry
+      confidence, truncated }                # same signal class as pinakes_search;
+                                             # truncated ⇒ narrow, don't retry
 ```
 
 - **Typed args, hard caps.** `depth` is server-capped (≤ 3) regardless of what the caller asks;
   fan-out per node capped at `adjacent_k`; responses double-capped (row count + token budget) with
-  `truncated` set so the agent narrows instead of paging. No query-language argument, ever.
-- **Score + frontier on every return.** `pinakes_search` already returns confidence and a
-  suggested next search (DESIGN §4.2); `pinakes_links` returns per-neighbour scores and the
-  unexpanded frontier. That pair is the Graph-R1 loop's full input — an untrained caller can run
-  think → probe → decide with no policy on the server side. R6 stands: no traversal policy inside
-  Pinakes.
-- **Tool descriptions carry the loop hints.** "Prefer refining the query over raising k"; "one
-  hop at a time usually beats depth=3" — Graph-R1's learned behaviours, encoded as prose where an
-  untrained agent will read them.
+  `truncated` set so the agent narrows instead of paging. No query-language argument, ever. The
+  tool's cap (3) is deliberately one more than the automatic channel's depth (2): an agent
+  spending its own turn on an explicit probe has judged the hop worth it; the automatic channel
+  runs on every query and must stay cheap.
+- **Ranking with and without `query`.** When the optional `query` is supplied, fan-out and
+  `score` use similarity to it (the datastax rule); without it, edge weight and link distance
+  rank — deterministic neighbourhood inspection is a legitimate use. `confidence` carries the
+  same calibrated signal class as `pinakes_search`, completing R6's stated contract
+  ("neighbours plus the same confidence signal").
+- **Score + frontier on every return.** That pair is the Graph-R1 loop's full input — an
+  untrained caller can run think → probe → decide with no policy on the server side. R6 stands:
+  no traversal policy inside Pinakes.
+- **Tool descriptions carry the loop hints.** "Prefer refining the query over raising k" is
+  Graph-R1's learned behaviour, encoded as prose where an untrained agent will read it. "Take one
+  hop and look before asking for depth 3" is Pinakes' own guidance following from the caps above —
+  labelled as ours, not the paper's.
+- **Dual-level keywords on search (from LightRAG).** `pinakes_search` gains optional
+  `entities=[]` / `concepts=[]` parameters: entity-ish terms boost the FTS5/link side, concept-ish
+  terms the embedding side. The caller's agent does the keyword split in its own reasoning — the
+  one genuinely useful piece of LightRAG's query side, obtained without its LLM call.
 
 ---
 
@@ -164,44 +210,69 @@ This is R5 made concrete, assembled from the three projects that each solved one
 
 ```
 round 0   free pipeline as-is → calibrated confidence signal
-          confident → answer, spend €0            (most queries end here)
-low conf  decompose: 1–2 LLM calls → subproblem dependency DAG → topo order
+          confident → ONE synthesis call over retrieved passages, done
+          (cheapest paid exit; decomposition never runs)
+low conf  decompose: 1–2 LLM calls → subproblem dependency DAG
+          → cycle check (reject or repair on back-edge — LogicRAG skipped this; we don't)
+          → topo order
 rounds    per subproblem: free retrieval → solve → fold into rolling summary
           rolling summary caps context → per-round cost is CONSTANT
-          → pre-call reservation (DESIGN §5) prices the whole loop before it runs
+          every round's query, cost and result → the ask transcript (auditable, not discarded)
 stop      confidence gate per round · max_rounds · budget cap — whichever first
 ```
 
 Two deliberate corrections to LogicRAG: the round-0 sufficiency judge is Pinakes' *calibrated*
 confidence signal, not an uncalibrated LLM self-check (fixing LogicRAG's documented
 premature-confidence defect on 4-hop questions); and every subproblem's retrieval is the free
-hybrid pipeline, so the only paid tokens are decomposition and synthesis. LogicRAG's own numbers
-(1,778 tokens/query where LightRAG spends 5,731, with zero index cost) show this shape is not a
-compromise — it is the efficient frontier.
+hybrid pipeline, so the only paid tokens are decomposition, per-round solving, and synthesis.
+LogicRAG's own numbers (1,778 tokens/query where LightRAG spends 5,731, with zero index cost) show
+this shape is not a compromise — it is the efficient frontier.
+
+Budget mechanics, precisely: the constant per-round cost gives the **dry-run estimate** a sound
+upper bound (`decompose + max_rounds × round-cost + synthesis`) to print and confirm against
+`confirm_above_eur`; during the run, DESIGN §5's **per-call reservation** halts the loop the
+moment the next round would breach the cap. Estimate up front, reserve per call — two existing
+mechanisms, used as designed.
+
+**Honest scope note (amending, not reinterpreting).** DESIGN §9 bounds `--deep` with "no
+orchestration the free path doesn't have," and §4.3 calls it "a bounded version of the same
+loop." A decompose→DAG→topo-order loop *is* orchestration the free path doesn't have. This
+proposal therefore amends that line rather than claiming compliance with it: the bound that
+actually contains the agent-framework risk is the conjunction of *same retrieval tools as MCP*
+(nothing retrieves that the free path can't), *hard caps* (rounds, budget, context), and *no
+persistent agent state beyond the transcript*. The DAG is prompt-side structure within one
+operation, not a framework. DESIGN §9's wording should be updated in the increment that ships
+this, so the risk table stays true.
 
 **The budget instrument (Youtu-GraphRAG's schema, shipped per template).** Each template carries a
-three-list seed schema — entity types, relation types, attribute types (research-papers:
-`author/paper/venue/method` × `cites/extends/evaluates_on`). Any `--deep` extraction prompt
-includes it verbatim: it caps output combinatorially, keeps extraction on-domain, and makes scope
-a declarative, diffable file rather than a prompt-engineering accident. Schema growth is a
-user-committed diff, never a silent runtime mutation (Youtu's code writes expansions back with no
-threshold — the exact failure mode to design out).
+three-list seed schema — entity types, relation types, attribute types. For research-papers:
+entities `author/paper/venue/method/dataset`, relations `cites/extends/evaluates_on/authored_by`,
+attributes `year/task/metric`. Any `--deep` extraction prompt includes it verbatim: it caps output
+combinatorially, keeps extraction on-domain, and makes scope a declarative, diffable file rather
+than a prompt-engineering accident. Schema growth is a user-committed diff, never a silent runtime
+mutation (Youtu's code writes expansions back with no threshold — the exact failure mode to design
+out).
 
 **The write-back (the design's own rule, now with mechanics).** What a `--deep` run discovers —
 sub-answers that co-supported an answer, entity pairs that bridged subproblems — is exactly the
 structure every investigated system throws away per query. Pinakes persists it as *suggestions*:
 `pnk ask --deep` ends by printing proposed sidecar additions (`links:` entries with `rel` and
-provenance `origin: deep`), and a `--write-suggestions` flag stages them into the sidecars for
-the user to review and commit. Committed suggestions become authored edges: free forever, visible
-to every future query, to the BFS/PPR channel, and to every connected KB. Paid inference becomes a
-one-time, auditable investment instead of a recurring cost — the property R5 demanded, with the
-human in the loop the sidecar invariant requires (`docs/` belongs to the user; nothing writes
-there silently).
+provenance `origin: deep`), and a `--write-suggestions` flag stages them into the sidecars for the
+user to review and commit. Sidecars are Pinakes-authored files by design (sync generates their
+skeletons), so this writes where Pinakes already writes — the flag exists because *semantic*
+additions deserve explicit opt-in, a stricter bar than the invariant demands. Two schema notes,
+recorded because sidecar-schema evolution is the design's acknowledged blind spot (claudekb.md,
+D18 discussion): `origin: deep` extends the per-link sidecar shape additively, and the `links`
+table's `origin` enum (`sidecar` / `reverse-scan`, DESIGN §3) gains a third value. Both belong in
+the increment that ships this, stated in DESIGN, with `schema_version` bumped for the table half.
+Committed suggestions become authored edges: free forever, visible to every future query, to the
+graph channel, and to every connected KB. Paid inference becomes a one-time, auditable investment
+instead of a recurring cost — with the human in the loop.
 
 **The tunability knob.** One number the user reasons about: the per-operation cap already
-specified in DESIGN §5, which — because per-round cost is constant — now translates directly into
-"how many rounds can this question afford." LazyGraphRAG's single relevance-test budget validated
-that one legible knob beats a panel of thresholds.
+specified in DESIGN §5, which — because per-round cost is constant — translates directly into "how
+many rounds can this question afford." LazyGraphRAG's single relevance-test budget (100/500/1500,
+with published quality curves) is the working precedent for a single legible cost knob.
 
 ---
 
@@ -210,22 +281,26 @@ that one legible knob beats a panel of thresholds.
 Restated because the investigations added evidence, not because the answers changed:
 
 - **No LLM extraction in `pnk sync`** — R1, now backed by Microsoft's own Standard→Fast→Lazy
-  trajectory and by LinearRAG beating extraction-based systems without extraction.
+  trajectory and by LinearRAG beating extraction-based systems without extraction. (The SLM
+  boundary case and the amendment it would require are stated in §3, not hidden here.)
 - **No traversal policy or agent framework inside Pinakes** — R6, backed by Graph-R1 (the loop
-  belongs to the caller) and by DESIGN §9's "second, worse agent framework" risk.
+  belongs to the caller). The `--deep` loop's relationship to DESIGN §9's risk line is handled
+  honestly in §6.
 - **No graph query language on the tool surface** — code-graph-rag's validator stack is the
   cautionary tale; typed verbs with caps.
 - **No graph database, no new index file** — edges live in SQLite tables beside everything else;
   the single-portable-directory constraint holds.
-- **No migrations** — edge schema changes bump `schema_version` and rebuild, per invariant.
+- **No migrations** — edge and enum schema changes bump `schema_version` and rebuild, per
+  invariant; sidecar-schema additions stay strictly additive (§6).
 
 ---
 
 ## 8. ClaudeKB: the first fleet (`pnk adopt`)
 
-The second-pass investigation ([claudekb.md](claudekb.md)) reached a strategic conclusion: ClaudeKB's
-roadmap defers exactly the layer Pinakes is — cross-KB search, MCP, ranking — and Pinakes can serve
-it with **zero blueprint changes on ClaudeKB's side**. The mapping is mostly mechanical:
+The second-pass investigation ([claudekb.md](claudekb.md)) reached a strategic conclusion:
+ClaudeKB's roadmap defers exactly the layer Pinakes is — cross-KB search, MCP, ranking — and
+Pinakes can serve it with only small, mostly KB-side adaptations. The mapping is largely
+mechanical:
 
 | ClaudeKB has | Pinakes needs | Adapter |
 |---|---|---|
@@ -234,15 +309,21 @@ it with **zero blueprint changes on ClaudeKB's side**. The mapping is mostly mec
 | gate-enforced link graph (every page reachable) | authored edges | parse Markdown links at sync; `index.md` out-edges become a curated seed prior |
 | `kb://name/path.md` cross-KB links | `pnk://` ULID links | resolve path→ULID at index time; report dangling via `pnk doctor` |
 
-Real blockers, all small: ULIDs must be committed back into KB repos (a one-time write-back
-ceremony, gated like any sidecar write); sidecars under `docs/` would deploy on public ClaudeKB
-sites (relocate or exclude in the SSG config); frontmatter→sidecar sync is one-directional and
-needs a rule for conflicts.
+Real blockers, all small but not zero: ULIDs must be committed back into KB repos (a one-time
+write-back ceremony, gated like any sidecar write); sidecars under `docs/` would deploy on public
+ClaudeKB sites (exclude via SSG config — which may touch a blueprint-owned, checksummed file, so
+it lands as a blueprint version bump on the ClaudeKB side, not a hand-edit); frontmatter→sidecar
+sync is one-directional and needs a conflict rule; and each KB needs a `pinakes.toml` plus a
+minimal fleet registry.
 
-Proposed proof, when its version window arrives: `pnk adopt` run against a scaffolded demo KB from
-the ClaudeKB template, measured with the golden set. Strategic value beyond the fleet itself: v0.3's
-stated prerequisite is "two populated KBs to be worth anything" — a ClaudeKB fleet is that corpus,
-already curated, already linked, already access-controlled.
+Sequencing, honestly: the automated `pnk adopt` command is v0.5+ work (§10). What v0.3 needs is
+just **two populated KBs** — and a single ClaudeKB-templated KB adopted *by hand* (a
+frontmatter→sidecar script run once, ULIDs committed) is a realistic v0.3-window corpus without
+any adopt machinery. The fleet-scale value arrives with the command; the prerequisite-unblocking
+value doesn't have to wait for it.
+
+Proposed proof, when the version window arrives: `pnk adopt` run against a scaffolded demo KB from
+the ClaudeKB template, measured with the golden set.
 
 ---
 
@@ -250,15 +331,16 @@ already curated, already linked, already access-controlled.
 
 R7, extended with the specific numbers this research surfaced. The golden set gains two sections
 **before** any graph channel lands: multi-hop relational (the ~91%-vs-34% class where graphs pay)
-and simple factual lookup (the class where GraphRAG-Bench measures graphs *costing* ~13% accuracy).
-Per-class reporting, and one hard rule: **a graph channel that regresses simple-lookup precision
-stays `off` by default**, whatever it does for multi-hop. Every stage gates independently:
+and simple factual lookup (the class where one study in the GraphRAG-Bench line measured graphs
+*costing* ~13% accuracy). Per-class reporting, and one hard rule: **a graph channel that regresses
+simple-lookup precision stays `off` by default**, whatever it does for multi-hop. Every stage
+gates independently:
 
 | Gate | What must be true before |
 |---|---|
-| `bfs` default-on | multi-hop recall@k up, simple-lookup unchanged, false-abstain flat |
-| `ppr` implemented at all | BFS measurably leaves multi-hop recall on the table |
-| `[ner]` mentions edges default-on | channel gains from them on the golden set, sync time acceptable |
+| `expand` default-on | multi-hop recall@k up, simple-lookup unchanged, false-abstain flat |
+| `ppr` implemented at all | expansion's multi-hop recall@k sits ≥ 5 points below the golden set's *graph-reachable ceiling* — the share of multi-hop questions whose evidence lies within 2 hops of the fused seeds. Below-ceiling-but-close means expansion suffices; a wide gap is PPR's mandate |
+| `[ner]` mentions edges default-on | the active channel gains from them on the golden set, sync time acceptable |
 | `--deep` loop ships | budget machinery in the same release (DESIGN §5 ordering), per-class evals include cost/query |
 
 Per repo rule, every retrieval change lands with before/after numbers in the commit message.
@@ -271,24 +353,25 @@ Extends GRAPH_RAG.md's R-table into a build order; v0.1/v0.2 are untouched by al
 
 | Version | Lands | From |
 |---|---|---|
-| v0.3 | `pnk link` · `pinakes_links` (typed, capped, frontier+scores) · structural edge derivation · BFS channel (`graph_channel`, default off) · golden-set multi-hop + simple-lookup sections · link-coverage + edge-hub reporting in `pnk doctor` | R2 R3 R6 R7 · §3 §4A §5 |
-| v0.3.x | PPR stage, only if BFS gate says so (HippoRAG 2 recipe) · `[ner]` extra with `mentions` edges, default off, eval-gated | §4B · §3 |
-| v0.4 | `--deep` warm-up loop (LogicRAG skeleton, calibrated round-0 gate) · per-template seed schemas · `--write-suggestions` sidecar write-back · budget machinery (same release, per DESIGN §5) | R5 · §6 |
-| v0.5+ | `pnk adopt` (ClaudeKB fleet) · template-schema ecosystem maturation | §8 |
-| never | LLM extraction in `pnk sync` · traversal policy in-engine · graph query language · graph DB · migrations | R1 R6 · §7 |
+| v0.3 | `pnk link` · `pinakes_links` (typed, capped, score+frontier+confidence) · `pinakes_search` `entities`/`concepts` params · structural edge derivation · expansion channel (`graph_channel`, default off) · in-degree salience + link-distance rerank in the eval matrix · golden-set multi-hop + simple-lookup sections · link-coverage + edge-hub reporting in `pnk doctor` · hand-adopted ClaudeKB corpus as second KB | R2 R3 R6 R7 · §3 §4A §5 §8 |
+| v0.3.x | PPR stage, only if the §9 gate says so (HippoRAG 2 recipe) · `[ner]` extra with `mentions` edges, default off, eval-gated | §4B · §3 |
+| v0.4 | `--deep` warm-up loop (LogicRAG skeleton + cycle check, calibrated round-0 gate) · ask transcript · per-template seed schemas · `--write-suggestions` sidecar write-back (`origin: deep`) · budget machinery (same release, per DESIGN §5) · DESIGN §9 wording update (§6) | R5 · §6 |
+| v0.5+ | `pnk adopt` (automated ClaudeKB fleet onboarding) · template-schema ecosystem maturation | §8 |
+| never | LLM extraction in `pnk sync` (SLM boundary case requires an explicit R1 amendment, §3) · traversal policy in-engine · graph query language · graph DB · migrations | R1 R6 · §7 |
 
 ---
 
 ## 11. Summary
 
 The research question was how to get a smart, budget-friendly, tunable, agent-driven, lazy graph.
-The answer that survived twelve investigations is that each adjective already had a best-in-class
-mechanism — they just lived in different projects:
+The answer that survived twelve external investigations plus the in-house precedent is that each
+adjective already had a best-in-class mechanism — they just lived in different projects:
 
 - **smart** — entity co-mention bridges (LinearRAG) over structural fabric (datastax), ranked by
-  BFS then PPR with measured parameters (Graphiti, HippoRAG 2);
+  bounded expansion (Graphiti's channel shape) then, if the eval demands it, PPR with HippoRAG 2's
+  measured parameters;
 - **budget-friendly** — €0 until `--deep`; then constant per-round cost (LogicRAG) under the
-  existing reservation cap;
+  existing estimate-then-reserve machinery;
 - **tunable** — one config gate per channel, one budget number per operation, one seed schema per
   template (Youtu-GraphRAG), every default set by the golden set, not intuition;
 - **agent-driven** — score + frontier on every tool return so the caller runs the loop
