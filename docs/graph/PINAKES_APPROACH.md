@@ -1,6 +1,6 @@
 # The Pinakes graph: lazy, agent-driven, budget-tunable
 
-**Status:** proposed approach · **Date:** 20260726 08:59 · review-revised 20260726 09:11, 09:17, 09:21 (three adversarial passes)
+**Status:** proposed approach · **Date:** 20260726 08:59 · review-revised 20260726 09:11, 09:17, 09:23, 09:29 (four adversarial passes; commit times)
 **Builds on:** [`../GRAPH_RAG.md`](../GRAPH_RAG.md) (R1–R7) and the investigation docs in this
 directory — twelve external projects plus the in-house precedent (ClaudeKB). This doc is the
 decision layer: what Pinakes should actually build, in what order, gated how. GRAPH_RAG.md remains
@@ -83,16 +83,25 @@ deliberately does not use for traversal ranking.
 
 | Edge | Connects | Weight | Notes |
 |---|---|---|---|
-| membership | chunk ↔ doc | 1.0 | how doc-level edges reach chunks |
+| membership | chunk ↔ doc | 1.0 | transit plumbing, not signal — see below |
 | `sibling` | chunk ↔ chunk (adjacent `ordinal`) | 1.0 | already derivable |
 | `parent` / `child` | chunk ↔ chunk (`heading_path` prefix) | 1.0 | hierarchy both directions |
-| `in-section` | chunk ↔ heading node (per-doc) | 1.0 | same-section grouping; §4B seeds |
+| `in-section` | chunk ↔ heading node (per-doc) | 1/section-size | same-section grouping; §4B seeds |
 | `co-located` | doc ↔ directory node | 1/dir-size | hub form; degree-damped |
 | `shared-tag` | doc ↔ tag node | 1/tag-degree | see vocabulary caution below |
 | authored (`cites`, …) | doc ↔ doc (sidecar `links`) | 2.0 | highest-trust edge class |
 | `mentions` *(optional)* | chunk ↔ entity node | normalized occurrence (count / entities-in-chunk) | `[ner]` extra, default off |
 
-Weights are starting points to be fitted against the golden set, not measured constants.
+Weights are starting points to be fitted against the golden set, not measured constants. The
+damping principle applies to *every* shared-value hub — tag, directory, and `in-section` alike
+(1/section-size; a 50-chunk section must not be a full-strength clique). The two exemptions are
+explicit, not accidental: `sibling` and `parent`/`child` stay at 1.0 because adjacency and
+hierarchy are not shared-value relations, and **membership is transit plumbing, not signal** —
+same-doc chunks reached only through their own document's membership edges are excluded from the
+expansion channel's output and never consume its fan-out budget (intra-doc structure is already
+sibling/parent-child/in-section's job; the channel exists to surface *cross-doc* connections).
+HippoRAG 2's own passage↔phrase edges sit undamped at 1.0 and rely on seed-side specificity
+instead (hipporag.md) — that precedent is noted, and the choice here is the stricter one.
 
 Three findings shape this table:
 
@@ -139,16 +148,19 @@ means an empty third channel, and RRF simply fuses two lists as it does now.
 Pinakes' storage: take the fused top-*k* chunks as roots, expand over the edge set breadth-first
 to depth ≤ 2, score expanded chunks by edge weight and link distance, and feed the ranked list
 into the existing RRF as the third input. **Depth counts logical hops** — chunk-or-doc to
-chunk-or-doc transitions — with membership edges and hub-node pass-throughs depth-free; counted
+chunk-or-doc transitions — with membership edges and hub- and entity-node pass-throughs
+depth-free; counted
 in physical edges, the model's plumbing (chunk→doc→doc→chunk) would strand the highest-trust
 authored edges beyond depth 2, which cannot be the intent. §5's tool cap and §9's reachability
 ceiling use the same metric. The mechanism is a **per-depth loop in Python, not a
 recursive CTE**: one SQL query per hop fetches the frontier's neighbours, then the ranking rule
 follows the node model's asymmetry — **chunk** neighbours are ranked by cosine against the query
-embedding (the embeddings already sit in the in-process array — DESIGN §3.1); **non-chunk** nodes
-(doc, tag, heading, directory) carry no content embedding, pass through by edge weight, and
-contribute their member chunks, which are then query-ranked like any others. A Python-side visited-edge set enforces the
-two datastax bounding rules that make traversal survive real graphs: per-node fan-out capped at
+embedding (in-process on the NumPy tier — DESIGN §3.1; the v0.5 `sqlite-vec` tier instead fetches
+the bounded frontier's vectors from SQLite per hop, cheap because the frontier is capped);
+**non-chunk** nodes (doc, tag, heading, directory) carry no content embedding, pass through by
+edge weight, and contribute their member chunks, which are then query-ranked like any others. A
+Python-side visited-edge set enforces the two datastax bounding rules that make traversal survive
+real graphs: per-node fan-out capped at
 `adjacent_k` neighbours ranked as above, and visited-**edge** dedup so a hub (popular tag, big
 directory) expands once globally, not once per encounter. Neither rule is expressible inside a
 plain SQLite CTE — ranking needs the vector array and global dedup needs shared state — and
