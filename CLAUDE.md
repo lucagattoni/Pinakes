@@ -106,3 +106,10 @@ same places (docs/RETROSPECTIVES.md, 20260727).
 **Every date carries a time** — `YYYYMMDD HH:MM`, local 24h — in the CHANGELOG, `docs/DESIGN.md`'s
 iteration log and status line, `docs/RETROSPECTIVES.md`, and any "verified on" claim. Several
 entries land per day; a bare date loses their order and hides how fresh a verified claim is.
+
+**Read the clock; never compose a timestamp.** Run `date "+%Y%m%d %H:%M"` and paste the result.
+Session context carries a *date*, never a time, so any `HH:MM` not read from the clock is invented —
+and an invented one lands in the future about half the time. `plans/v0.2.md` shipped four
+"verified 20260727 17:34" claims written at 17:00 (docs/RETROSPECTIVES.md, 20260727 17:00). A
+timestamp exists to say how fresh a verified claim is, so a fabricated one is a false evidence
+claim, not a formatting slip. One `date` call covers a whole batch of edits.

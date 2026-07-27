@@ -463,3 +463,36 @@ owned it, so it never shipped — while the invariant it guards is the one `CLAU
 non-negotiable. Now enforced, and verified in both directions: it passes on the current source and
 catches a planted `import openai`. *Lesson: every promised check carries an increment number and a
 path, or it is a wish.*
+
+## Planning v0.2 (20260727 17:00)
+
+**A review pass is a change, and a change needs its own review.** Adversarial pass 2 over
+`plans/v0.2.md` returned 5 HIGH — and **four of the five were created by pass 1's own fixes**, not
+survivals of pass 1's findings. Pass 1 correctly rejected a per-page cost estimate as an
+order-of-magnitude under-reservation against whole-document requests; the shape it introduced
+instead was quadratic in input and stopped fitting the model's context window at ~166 pages, so a
+100-page document reserved ~$375 and the feature failed closed with a refusal no user could satisfy.
+*Lesson: never implement from the revision that a review produced. Two passes are the floor for a
+document of this size, and each pass reviews the previous pass's fixes, not only the original.*
+
+**A threshold that only exists in `tests/` protects nobody.** Both fitted floors — the one that
+triggers paid re-extraction and the one that stops a paid run on an already-healthy PDF — were
+committed to `tests/pdf-corpus/baseline.json`, which no wheel installs, while three runtime
+consumers on a user's own KB depended on them. The fail-closed rule was also stated for one floor
+and not the other, so the guard against paying to re-extract a healthy PDF was silently disabled
+everywhere. *Lesson: a value a user's runtime reads is package data, and every fail-closed rule is
+stated and tested once per consumer, not once per document.*
+
+**An append-only ledger needs a way to say "this never happened".** Every paid call wrote a
+reservation before the call and a reconciliation after, with an unreconciled reservation counted at
+its reserved amount. A call that *raised* — timeout, 429, 5xx — therefore left spend that nothing
+could ever close, in a file `CLAUDE.md` forbids editing: a handful of transient failures would lock
+a user out of a monthly budget permanently. *Lesson: a two-state protocol over an append-only log
+needs a third state. Reserve → reconcile **or void**.*
+
+**Timestamps were composed instead of read.** Four "verified on 20260727 17:34" claims were written
+at 17:00 — 34 minutes in the future. Session context carries a date but never a time, so any `HH:MM`
+not read from the clock is invented, and an invented one lands in the future about half the time. A
+timestamp exists to say how fresh a verified claim is, so a fabricated one is a false evidence claim
+rather than a formatting slip. *Lesson: run `date "+%Y%m%d %H:%M"` and paste the result; one call
+covers a batch of edits. Now a rule in CLAUDE.md.*
