@@ -55,10 +55,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`TEXT_POLICY_VERSION`) from `LAYOUT_VERSION` so a change to either is never invisible to the
   other's fingerprint. `assemble()` runs the whole pipeline and emits the seam's `ExtractedText`,
   normalising each block *before* computing its offset — never after, since normalisation changes
-  length. Forty table-driven tests check three properties per case, not two: join-identity and
-  contiguous coverage are one property and its corollary, so a third, content-anchored assertion
-  (a sentinel placed on one page, and no other, must fall inside that page's span) is what actually
-  catches a wrong page number.
+  length. Forty-two table-driven tests check three properties per `assemble()` case, not two:
+  join-identity and contiguous coverage are one property and its corollary, so a third,
+  content-anchored assertion (a sentinel placed on one page, and no other, must fall inside that
+  page's span, and every non-empty page must carry one) is what actually catches a wrong page
+  number.
 
 ## [0.1.4] — 20260727 21:19
 

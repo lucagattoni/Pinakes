@@ -48,7 +48,15 @@ def word(text: str, *, x: float, y: float, size: float = 10.0, gap: float = 0.0)
 
 
 def assert_extraction_properties(result: ExtractedText, sentinels: dict[int, str]) -> None:
-    """The three properties every `assemble()` case must hold, content-anchoring included."""
+    """The three properties every `assemble()` case must hold, content-anchoring included.
+
+    Every *non-empty* page span must carry a sentinel: a page a fixture forgets to anchor is a page
+    whose span could be silently wrong (even off by a whole page) with every property here still
+    passing, since join-identity and contiguous coverage don't know or care which page is which. A
+    zero-width span — a page with no characters at all
+    (`test_assemble_page_with_no_characters_at_all`) — is the one legitimate exception: there is no
+    content on such a page for a sentinel to anchor to.
+    """
     assert "".join(result.text[s:e] for s, e in result.page_spans) == result.text
 
     covered = 0
@@ -56,6 +64,10 @@ def assert_extraction_properties(result: ExtractedText, sentinels: dict[int, str
         assert start == covered, "page_spans must be contiguous, in page order, with no gaps"
         covered = end
     assert covered == len(result.text)
+
+    non_empty_pages = {i for i, (start, end) in enumerate(result.page_spans) if end > start}
+    missing = non_empty_pages - sentinels.keys()
+    assert not missing, f"page(s) {missing} have content but no sentinel to anchor them"
 
     for page_index, sentinel in sentinels.items():
         start, end = result.page_spans[page_index]
@@ -515,27 +527,89 @@ def test_text_policy_version_is_a_hand_bumped_int() -> None:
 # --------------------------------------------------------------------------------------------
 
 _PDF_LIBRARY_MARKERS = ("pypdfium2", "fitz", "pymupdf", "pdfium")
+_FILESYSTEM_MARKERS = ("os", "pathlib", "io")
 
 
 def _imported_names(path: Path) -> set[str]:
+    """Every module *and* fully-qualified name this file imports.
+
+    `from X import Y` is recorded as `X.Y`, not only `X` — `from pinakes.extract import layout`
+    imports the *name* `layout`, and checking only `node.module` (`"pinakes.extract"`) would let
+    it slip straight past a search for `"extract.layout"`, despite being the exact import
+    `layout.py` itself already uses for its own dependencies. Bare relative imports (`from . import
+    layout`, where `node.module` is `None`) are folded in by name alone, since there is no absolute
+    path to qualify them with, and would otherwise be dropped entirely.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     names: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             names.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            names.add(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                names.add(f"{node.module}.{alias.name}" if node.module else alias.name)
+            if node.module:
+                names.add(node.module)
     return names
+
+
+def _imports_module(imports: set[str], module: str) -> bool:
+    """True if `imports` names `module` itself or a dotted name/submodule under it.
+
+    Deliberately not a bare substring test: `"io" in name` also matches `typing.Optional` and
+    `collections.abc.Iterable` (`...t-i-o-n...`), neither of which touches the filesystem. `os` and
+    `io` are common enough as substrings that a future, unrelated import would trip this the moment
+    it added a word containing one — matching on the module boundary (`==` or a `"module."` prefix)
+    is what `pypdfium2`/`fitz`/`pymupdf`/`pdfium` don't need, since none of them collides with an
+    ordinary English word, but `os`/`io`/`pathlib` do.
+    """
+    return any(name == module or name.startswith(f"{module}.") for name in imports)
 
 
 def test_layout_is_pure() -> None:
     imports = _imported_names(LAYOUT_PATH)
     for marker in _PDF_LIBRARY_MARKERS:
         assert not any(marker in name for name in imports), f"layout.py imports {marker}"
+    for module in _FILESYSTEM_MARKERS:
+        assert not _imports_module(imports, module), f"layout.py imports {module}"
 
 
 def test_textpolicy_is_pure_and_does_not_import_layout() -> None:
     imports = _imported_names(TEXTPOLICY_PATH)
     for marker in _PDF_LIBRARY_MARKERS:
         assert not any(marker in name for name in imports), f"textpolicy.py imports {marker}"
+    for module in _FILESYSTEM_MARKERS:
+        assert not _imports_module(imports, module), f"textpolicy.py imports {module}"
     assert not any("extract.layout" in name or name == "layout" for name in imports)
+
+
+def test_imported_names_catches_a_name_import_of_layout() -> None:
+    """The exact violation `test_textpolicy_is_pure_and_does_not_import_layout` exists to catch —
+    `from pinakes.extract import layout`, the same style `layout.py` itself uses for `ExtractedText`
+    — must actually be visible to it, not silently reduced to the enclosing package's name."""
+    tmp = LAYOUT_PATH.parent / "__scratch_import_check__.py"
+    tmp.write_text("from pinakes.extract import layout\n", encoding="utf-8")
+    try:
+        imports = _imported_names(tmp)
+        assert any("extract.layout" in name or name == "layout" for name in imports)
+    finally:
+        tmp.unlink()
+
+
+def test_imports_module_catches_a_real_filesystem_import_but_not_a_lookalike_word() -> None:
+    """Proves both directions of the fix at once: `import os` must be caught (the actual violation
+    this check exists to find), while `from typing import Optional` — which contains the substring
+    `"io"` but touches no filesystem — must not be, or the check would false-positive on ordinary,
+    unrelated code the moment it used a word like "Optional" or "collections.abc.Iterable"."""
+    assert _imports_module(_imported_names_from_source("import os\n"), "os")
+    assert _imports_module(_imported_names_from_source("from os import path\n"), "os")
+    assert not _imports_module(_imported_names_from_source("from typing import Optional\n"), "io")
+
+
+def _imported_names_from_source(source: str) -> set[str]:
+    tmp = LAYOUT_PATH.parent / "__scratch_import_check__.py"
+    tmp.write_text(source, encoding="utf-8")
+    try:
+        return _imported_names(tmp)
+    finally:
+        tmp.unlink()

@@ -37,12 +37,19 @@ _LINE_TOLERANCE = 2.0
 # a space is inserted even if the font's own space glyph did not produce one (rule: geometry
 # decides, never which content-stream operator a character happened to arrive in).
 _WORD_GAP = 0.4
-# A gap at least this wide, between two characters that landed in the same y-band, is two columns
-# printed at the same height, not one wide word-space — split into separate Blocks, never joined
-# with a single space, or a two-column page reads as one line spanning the full page width.
-_BLOCK_SPLIT_GAP = 20.0
-# A gap this wide between two clusters of block x0s is a column boundary, not a ragged margin.
+# One shared constant for "this gap is column-sized", used both to split same-line characters into
+# separate Blocks (two columns printed at the same height must never read as one line spanning the
+# page) and to cluster already-formed Blocks into columns in `reading_order`. Two separately-tuned
+# constants that happened to share a value would drift the moment either was fitted against real
+# documents without the other noticing — one name, one fit, everywhere it is used.
 _COLUMN_GAP = 20.0
+# How far apart two running-head candidates' y0 may land and still count as "the same" band. Not
+# `round()`: rounding to the nearest point puts a hard wall at every half-integer, so two instances
+# of one genuine running head at 750.4 and 750.6 — sub-point rendering jitter, smaller than any real
+# layout difference — round to *different* integers and are silently treated as two distinct lines,
+# each below the recurrence threshold on its own even though the line is really recurring on every
+# page. Tolerance-based clustering (matching `_LINE_TOLERANCE`'s own approach) has no such wall.
+_RUNNING_HEAD_Y_TOLERANCE = 3.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,9 +112,9 @@ def blocks_from_chars(chars: Sequence[CharSpan], *, page_index: int = 0) -> list
 
     Three passes: cluster characters into lines by baseline proximity (`_LINE_TOLERANCE`); within
     each line, split into runs wherever the gap between consecutive characters reaches
-    `_BLOCK_SPLIT_GAP` — two columns printed at the same height are two runs, never one line
-    spanning the page; then, within a run, concatenate left to right, inserting a space wherever the
-    (smaller) gap exceeds `_WORD_GAP` and the source did not already supply one. Never asks which
+    `_COLUMN_GAP` — two columns printed at the same height are two runs, never one line spanning the
+    page; then, within a run, concatenate left to right, inserting a space wherever the (smaller)
+    gap exceeds `_WORD_GAP` and the source did not already supply one. Never asks which
     content-stream operator produced a character — a word arriving as two text runs looks identical,
     geometrically, to one arriving as a single run, which is what makes that case free to handle
     correctly rather than a special case to detect.
@@ -128,13 +135,16 @@ def blocks_from_chars(chars: Sequence[CharSpan], *, page_index: int = 0) -> list
             lines.append([char])
     lines.sort(key=lambda line: -max(c.y0 for c in line))
 
-    body_size = _mode_font_size(ordered)
+    # One vote per *line*, not per character: a verbose heading's own character count must never
+    # be able to out-vote a short body line and become the "body" size itself, which would invert
+    # `line_size > body_size` for the heading it describes.
+    body_size = _mode_font_size([max(c.font_size for c in line) for line in lines])
     blocks: list[Block] = []
     for line in lines:
         line_sorted = sorted(line, key=lambda c: c.x0)
         runs: list[list[CharSpan]] = [[line_sorted[0]]]
         for char in line_sorted[1:]:
-            if char.x0 - runs[-1][-1].x1 >= _BLOCK_SPLIT_GAP:
+            if char.x0 - runs[-1][-1].x1 >= _COLUMN_GAP:
                 runs.append([char])
             else:
                 runs[-1].append(char)
@@ -170,16 +180,24 @@ def _block_from_run(run: Sequence[CharSpan], *, page_index: int, body_size: floa
     )
 
 
-def _mode_font_size(chars: Sequence[CharSpan]) -> float:
+def _mode_font_size(sizes: Sequence[float]) -> float:
+    """The most common size in `sizes` — one entry per line, so a page's dominant body size is
+    decided by how many *lines* are that size, never by how many *characters* are."""
     counts: dict[float, int] = {}
-    for char in chars:
-        counts[char.font_size] = counts.get(char.font_size, 0) + 1
+    for size in sizes:
+        counts[size] = counts.get(size, 0) + 1
     return max(counts, key=lambda size: (counts[size], -size)) if counts else 0.0
 
 
 def reading_order(page: Page) -> Page:
     """Column-aware ordering: cluster blocks by `x0` gap, then top-to-bottom within each column,
     columns left to right. A single-column page is one cluster and this is a no-op beyond sorting.
+
+    Each candidate is compared against the column's own *start* (`columns[-1][0]`), never its most
+    recently added member: comparing to the last-placed block lets a column's accepted range chain
+    forward one small step at a time — each step individually under `_COLUMN_GAP`, the total drift
+    from the column's start well past it — and, sorted by `x0`, can merge a genuine third column
+    into what should be its neighbour's cluster.
     """
     if not page.blocks:
         return page
@@ -187,7 +205,7 @@ def reading_order(page: Page) -> Page:
     by_x = sorted(page.blocks, key=lambda b: b.x0)
     columns: list[list[Block]] = [[by_x[0]]]
     for block in by_x[1:]:
-        if block.x0 - columns[-1][-1].x0 > _COLUMN_GAP:
+        if block.x0 - columns[-1][0].x0 >= _COLUMN_GAP:
             columns.append([block])
         else:
             columns[-1].append(block)
@@ -214,12 +232,26 @@ def strip_running_heads(pages: RawPages, *, threshold: float) -> RunningHeadResu
     if total == 0:
         return RunningHeadResult(pages=pages, suppressed=0, total_pages=0)
 
+    # One shared set of anchors for the whole document, built once and reused for both passes
+    # below, so a given y0 always resolves to the same band regardless of which page contributed
+    # the anchor or which pass is asking.
+    band_anchors: list[float] = []
+
+    def y_band(y0: float) -> int:
+        for index, anchor in enumerate(band_anchors):
+            if abs(y0 - anchor) <= _RUNNING_HEAD_Y_TOLERANCE:
+                return index
+        band_anchors.append(y0)
+        return len(band_anchors) - 1
+
+    def block_key(block: Block) -> tuple[int, str]:
+        return (y_band(block.y0), _DIGITS.sub("#", block.text.strip()))
+
     signatures: dict[tuple[int, str], set[int]] = {}
     for page_num, page in enumerate(pages):
         seen_this_page: set[tuple[int, str]] = set()
         for block in page.blocks:
-            key = (round(block.y0), _DIGITS.sub("#", block.text.strip()))
-            seen_this_page.add(key)
+            seen_this_page.add(block_key(block))
         for key in seen_this_page:
             signatures.setdefault(key, set()).add(page_num)
 
@@ -234,8 +266,7 @@ def strip_running_heads(pages: RawPages, *, threshold: float) -> RunningHeadResu
     for page in pages:
         new_blocks: list[Block] = []
         for block in page.blocks:
-            key = (round(block.y0), _DIGITS.sub("#", block.text.strip()))
-            if key in running:
+            if block_key(block) in running:
                 suppressed_count += 1
                 new_blocks.append(
                     Block(
@@ -268,9 +299,11 @@ def join_hyphenation(lines: Sequence[Block]) -> list[Block]:
     "Next real content" skips transparently over any number of `suppressed` blocks in between — a
     running head is page furniture, invisible to the document's own prose — but stops dead at a
     `heading`: a heading is real content, and a hyphen immediately before one almost certainly ends
-    a compound word or a sentence, not a wrapped one. The join can span a page boundary (the two
-    `Block`s keep their own `page_index`; `assemble` is what turns `joins_previous` into "no
-    separator here" when it builds the final text and its per-page spans).
+    a compound word or a sentence, not a wrapped one. The check runs both ways: a hyphen belonging
+    to a heading itself is never a join candidate either, for the same reason a heading is never a
+    valid *continuation* — "never join across a heading" means on either side of it. The join can
+    span a page boundary (the two `Block`s keep their own `page_index`; `assemble` is what turns
+    `joins_previous` into "no separator here" when it builds the final text and its per-page spans).
     """
     result = [
         Block(
@@ -288,7 +321,7 @@ def join_hyphenation(lines: Sequence[Block]) -> list[Block]:
     ]
 
     for i, block in enumerate(result):
-        if block.suppressed:
+        if block.suppressed or block.heading:
             continue
         stripped = _trailing_hyphen_stripped(block.text)
         if stripped is None:
@@ -362,6 +395,18 @@ def assemble(pages: RawPages, *, running_head_threshold: float) -> ExtractedText
             position += len(piece)
             pending = next(visible, None)
         page_spans.append((start, position))
+
+    if pending is not None:
+        # A block whose `page_index` never matched any page in `range(len(ordered_pages))` — out
+        # of range, or the sequence isn't grouped by page — would otherwise be silently dropped
+        # from the text with no error at all, not merely mis-spanned: the loop above only ever
+        # advances past a page once, so a block for a page number already walked (or never
+        # reached) simply falls off the end. That is a caller bug (I3b's future adapter builds
+        # `page_index`; this module only consumes it), and it must be loud, never quiet.
+        raise RuntimeError(
+            f"block for page {pending.page_index} was never placed — pages must be numbered "
+            f"0..{len(ordered_pages) - 1} and grouped by page in `pages`"
+        )
 
     text = "".join(text_parts)
     return ExtractedText(text=text, page_spans=tuple(page_spans), per_page_provenance=())
