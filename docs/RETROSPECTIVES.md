@@ -496,3 +496,44 @@ not read from the clock is invented, and an invented one lands in the future abo
 timestamp exists to say how fresh a verified claim is, so a fabricated one is a false evidence claim
 rather than a formatting slip. *Lesson: run `date "+%Y%m%d %H:%M"` and paste the result; one call
 covers a batch of edits. Now a rule in CLAUDE.md.*
+
+## Planning v0.2, pass 3 (20260727 20:23)
+
+**Three review passes, and each one's largest source of new HIGHs was the previous pass's fixes.**
+Pass 2 found that four of its five HIGHs were created by pass 1's repairs; pass 3 found the same of
+five of its twelve. Reviewing a plan is a change to the plan, and a change needs its own review.
+*Lesson: budget for the review of the review. A plan is not ready because the last pass was clean —
+it is ready when a pass over the **current** text is clean.*
+
+**What broke the cycle was method, not effort.** Five of pass 3's twelve HIGHs were found only by
+checking the plan against `src/` and against arithmetic — never by reading the plan, however
+adversarially. `--rebuild` discards the index and reads its "before" snapshot from the *empty* new
+database (`sync.py:231-241`), so a guarantee recorded only in `index.db` was invisible to the one
+command that most needed it. A trace test asserted "exactly one chunk contains this offset" while
+`chunk.py:239-269` prepends the carried overlap and takes `start` from the *carried* piece, so
+chunk *n+1* begins inside chunk *n* whenever a block splits. A filter test named `tags` as a column;
+it is `json_each` over a `NOT NULL DEFAULT '{}'` field, so the assertion was true by schema for
+every row and would have passed on a corpus with no tags at all. A raster gate promised "a moved
+word must fail" against a threshold its own arithmetic puts about four lines of text away. And the
+docs sweep enumerated README *additions* while four sentences already in the README are falsified
+by the release — the same defect, and the same count, as the audit at 0.1.2.
+*Lesson: a consistency pass cannot find a claim that is internally consistent and externally false.
+Run three narrow passes instead of one wide one — code-reality (resolve every claim about `src/`
+against the file), arithmetic (recompute every stated number), and promise-ledger (walk every
+enumerated bound, flag, floor, gate and amendment asking "which increment makes this true, and
+which test proves it"). Each found HIGHs the wide pass missed.*
+
+**A threshold you cannot fit yet is not a threshold — ship the metric, defer the loop.** Two passes
+each tried to fit the completeness audit's floor, and each picked a pair that was not the pair it is
+applied to, because the applied pair needs paid model output that does not exist at fitting time.
+The second attempt would have fitted over a population including a fixture the reader contract
+requires to *raise*, landing the floor near zero and leaving the audit inert on every installed
+copy. *Lesson: when a threshold's correct fitting data cannot exist yet, that is the finding. Ship
+the measurement, report it, and let the release that produces real data fit the number.*
+
+**"Bypasses module X" is a claim about an import graph, and it was false.** The paid extractor was
+documented as bypassing `layout.py` — while calling `normalise()`, which lives in it. The version
+constant covering that module was then deliberately excluded from the paid fingerprint, so a
+whitespace or ligature change would have missed every *free* cache entry and silently **hit** every
+paid one, with the coherence check unable to see it. *Lesson: when two consumers share one stage,
+version that stage separately rather than arguing about which of them "really" runs it.*
