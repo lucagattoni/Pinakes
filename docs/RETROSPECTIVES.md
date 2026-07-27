@@ -1,6 +1,6 @@
 # Retrospectives
 
-One section per increment of [`plans/v0.1.md`](../plans/v0.1.md), written during that increment's
+One section per increment of the project's build plans (`plans/`), written during that increment's
 retrospective review (the workflow is in [`CLAUDE.md`](../CLAUDE.md)). Only findings worth keeping
 land here: a real defect the review caught, or a fact that would be expensive to rediscover. Fixes
 themselves live in the commits; this file records *what was learned*.
@@ -653,3 +653,69 @@ message said ~440 KB (that is `du`'s block-rounded disk usage of the whole direc
 said ~370 KB (unreconstructable), and the budgeted quantity — the PDF bytes `test_byte_budget` sums
 — is 266 KiB. *Lesson: when a number appears in two documents, both are guesses unless one of them
 was measured; measure once and paste the same figure.*
+
+## I3a — extraction core, pure: chars to ordered, de-furnished text (20260728 00:52)
+
+**HIGH — column clustering compared each candidate to the wrong reference point, letting drift
+accumulate past its own threshold.** `reading_order` grouped blocks into columns by comparing each
+new block's `x0` to the *last-placed* member of the current column, not the column's start. Sorted
+by `x0`, each step can individually stay under `_COLUMN_GAP` while the column's accepted range walks
+steadily rightward — so a genuine third column, far enough from the first to be its own column, could
+still merge into the second's cluster one small step at a time. Caught with a reproduction script
+laying out three real columns and reading the wrong (merged) order back. *Lesson: "cluster by gap"
+needs a fixed anchor — the cluster's start, not its most recent member — or the gap check bounds a
+single step while saying nothing about total drift.*
+
+**HIGH — y-band clustering by `round()` put a hard wall at every half-integer.** `strip_running_heads`
+grouped running-head candidates into y-bands with `round(block.y0)`. Two renderings of one genuine
+running head at 750.4 and 750.6 pt — sub-point jitter, far smaller than any real layout difference —
+round to 750 and 751: two distinct, non-recurring signatures, each individually under the suppression
+threshold even though the line recurs on every page. Fixed with tolerance-based clustering (shared
+anchors, `abs(y0 - anchor) <= _RUNNING_HEAD_Y_TOLERANCE`) matching `_LINE_TOLERANCE`'s own approach
+elsewhere in the same file. *Lesson: `round()` is a clustering method with an invisible discontinuity
+at every `.5`; anything claiming "the same, allowing for rendering jitter" needs a tolerance compare,
+never a shared rounding function, or the false-boundary cases won't show up until real PDFs hit them.*
+
+**HIGH — the import-purity test only recognised `import X`, not `from X import Y`.** `_imported_names`
+walked `ast.ImportFrom` nodes and recorded `node.module` only. `from pinakes.extract import layout` —
+the exact style `layout.py` itself already uses for its own dependency on `ExtractedText` — resolves
+to the module name `pinakes.extract`, plus the *separately* recorded name `layout`; the check for
+`"extract.layout"` matched neither, so `textpolicy.py` could have imported `layout.py` this way and
+`test_textpolicy_is_pure_and_does_not_import_layout` would have stayed green. Fixed by folding
+`ImportFrom.names` into fully-qualified names (`f"{module}.{alias.name}"`) alongside the bare module.
+*Lesson: an import-graph test written against `ast.Import` habits misses `ast.ImportFrom` entirely
+unless it's built and then attacked with the exact style the file under test itself uses.*
+
+**MEDIUM — a page's dominant font size was voted on by character, not by line, so a verbose heading
+could out-vote the body size it was meant to be measured against.** `_mode_font_size` originally took
+one entry per *character* in `blocks_from_chars`; a short body line has few characters, a heading with
+a long title has many, and counting per-character let a sufficiently wordy heading tip the "mode" size
+to its own, inverting `line_size > body_size` for the very line it should have flagged as a heading.
+Fixed to take one entry per *line* (`[max(c.font_size for c in line) for line in lines]`). *Lesson:
+"most common value" needs its unit stated explicitly — voting by the wrong unit of measurement
+produces a plausible-looking answer that is wrong in exactly the cases with more text, which are also
+the cases most likely to be headings.*
+
+**MEDIUM — a symmetric rule was checked on one side only, twice, in different functions.**
+`join_hyphenation` skipped a block as a join source when it was `suppressed`, but not when it was
+itself a `heading` — so a heading ending in a hyphen could be joined into as a *source*, even though
+the same function already refuses to join *into* a heading as a continuation. Separately, `assemble`
+silently produced a truncated document if a block's `page_index` ever fell outside `range(len(pages))`
+— a caller bug that should be loud (I3b's future pdfium adapter is the only caller that will ever
+construct `page_index`), rather than a quietly shorter `ExtractedText` with no error at all. Both fixed
+in the same pass: the heading check now runs both ways, and `assemble` raises `RuntimeError` on an
+unplaced block. *Lesson: when a function enforces "never X across a boundary," check both directions
+explicitly — a docstring that says "either side" is a claim, not a guarantee, until both sides have a
+test — and prefer a loud failure over a silently smaller correct-shaped result whenever "silently
+smaller" is a shape invariants alone can't distinguish from correct.*
+
+**LOW — fixing the "no filesystem access" gap introduced a fragile substring check, caught before it
+shipped.** Extending the import-purity test to also assert no `os`/`pathlib`/`io` import used the same
+`marker in name` substring style already used for PDF libraries (`"pypdfium2" in name`). Re-deriving
+what that check would actually match against layout.py's real imports first — rather than trusting
+that it passed — showed `"io" in name` matches `typing.Optional` and `collections.abc.Iterable`
+(`...t-i-o-n...`), neither of which touches a filesystem; the check would have false-positived the
+moment either was ever imported. Fixed to match on the module boundary (`name == module or
+name.startswith(f"{module}.")`) before it was ever committed. *Lesson: two-letter module names are not
+safe substring needles — `os`/`io` collide with ordinary English inside almost any longer identifier
+— so "does this file import X" must match on the dotted-name boundary, never bare containment.*
