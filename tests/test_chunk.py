@@ -70,6 +70,8 @@ def test_source_type_from_filename() -> None:
     assert source_type("main.py") == "code"
     assert source_type("readme") == "text"
     assert source_type("data.csv") == "text"
+    assert source_type("scan.pdf") == "pdf"
+    assert source_type("SCAN.PDF") == "pdf"
 
 
 def test_paragraphs_become_chunks_under_their_heading_path(counter: TokenCounter) -> None:

@@ -12,6 +12,13 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Three legs (I1): the light-only core, [pdf] added, then [claude] added on top. Each is a
+        # supported install state (docs/DESIGN.md §4.5) and each must pass this job on its own —
+        # a matrix that stopped at [light] would prove nothing about the other two for six
+        # increments, the exact gap I1's own exit criterion closes.
+        extras: ["light", "light pdf", "light pdf claude"]
     steps:
       - uses: actions/checkout@v4
 
@@ -22,8 +29,16 @@ jobs:
 
       - name: Install Python and dependencies
         # The [light] extra, never [st]: a 2GB torch download per job is untenable, and fastembed
-        # exercises the same protocols (docs/DESIGN.md §4.5).
-        run: uv sync --frozen --extra light
+        # exercises the same protocols (docs/DESIGN.md §4.5). [pdf]/[claude] install one pure-Python
+        # SDK apiece and never call them — this job proves the extra installs and imports cleanly,
+        # not that the paid path works.
+        run: |
+          set -e
+          args=""
+          for extra in ${{ matrix.extras }}; do
+            args="$args --extra $extra"
+          done
+          uv sync --frozen $args
 
       # Model weights are a download, not an install. Keyed on the models the demo KB names, so a
       # model change invalidates the cache and nothing else does. Without this the reranker alone
@@ -52,6 +67,10 @@ jobs:
         run: uv run --frozen pytest -q
 
       - name: Model-backed tests
+        # Pinned to the [light] leg alone (I1): `_runnable()` skips only when fastembed is absent or
+        # the HF cache is empty, both true on every leg alike, so running this on all three would
+        # triple it for no added coverage.
+        if: matrix.extras == 'light'
         run: uv run --frozen pytest -q -m model
 
   eval:

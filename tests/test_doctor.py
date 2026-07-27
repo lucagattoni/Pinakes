@@ -1,7 +1,8 @@
 """`pnk doctor`: the checks that make the design's stated limits visible instead of mysterious."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from types import ModuleType
 
 import numpy as np
 import pytest
@@ -101,6 +102,46 @@ def test_an_uncalibrated_kb_is_a_warning_not_a_failure(kb: Path) -> None:
     """`unknown` is honest; it is worth reporting, but it is not broken."""
     sync(load(kb), options=SyncOptions(), now="20260725 17:31")
     assert checks(kb)["calibration"][0] is Status.WARN
+
+
+def test_pdf_extractor_check_is_ok_when_include_cannot_match_pdf(kb: Path) -> None:
+    """The template's default `include` never matches `.pdf`, regardless of the environment."""
+    assert checks(kb)["pdf extractor"][0] is Status.OK
+
+
+def test_pdf_extractor_check_warns_when_include_can_match_pdf_and_backend_is_missing(
+    monkeypatch: pytest.MonkeyPatch, kb: Path
+) -> None:
+    import builtins
+
+    real_import = builtins.__import__
+
+    def refuse(
+        name: str,
+        globals: Mapping[str, object] | None = None,
+        locals: Mapping[str, object] | None = None,
+        fromlist: Sequence[str] = (),
+        level: int = 0,
+    ) -> ModuleType:
+        if name == "pypdfium2":
+            raise ImportError("no module named pypdfium2")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", refuse)
+
+    path = kb / "pinakes.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md", "**/*.txt"]', 'include = ["**/*.md", "**/*.txt", "**/*.pdf"]'
+        ),
+        encoding="utf-8",
+    )
+
+    found = next(c for c in diagnose(load(kb)).checks if c.name == "pdf extractor")
+    assert found.status is Status.WARN
+    assert "pypdfium2" in found.detail
+    assert found.remedy is not None
+    assert "pinakes[pdf]" in found.remedy
 
 
 def test_thresholds_fitted_for_another_reranker_fail(kb: Path) -> None:

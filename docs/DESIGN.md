@@ -92,6 +92,10 @@ model    = "BAAI/bge-small-en-v1.5"
 dim      = 384
 revision = "…"                        # HF commit sha — index refuses to load on mismatch (§4.4)
 
+[extraction]
+backend = "pypdfium2"                 # "pypdfium2" (free) | "claude-vision" (paid, opt-in)
+model   = "claude-opus-5"             # consulted only when backend = "claude-vision"
+
 [chunking]
 strategy   = "structural"             # headings/paragraphs, not blind character windows
 max_tokens = 510                      # ≤ model max_seq_length minus special tokens (§4.6)
@@ -136,11 +140,13 @@ path = "~/kb/archive"
 
 **Required vs optional.** `[kb]` (`name`, `id`), `[sources]` (`roots`) and `[embedding]`
 (`provider`, `model`, `dim`) must be present: nothing can sensibly default a KB's identity, its
-sources, or the model whose output the index *is*. `[chunking]`, `[retrieval]`, `[rerank]` and
-`[budget]` may be omitted and take the values shown above; `[retrieval.confidence]` and
-`[[links.kb]]` are absent until something produces them. Unknown keys are rejected, and an explicit
-empty string is an error rather than a request for the default — silently substituting one hides a
-mistake until it fails somewhere far away.
+sources, or the model whose output the index *is*. `[extraction]`, `[chunking]`, `[retrieval]`,
+`[rerank]` and `[budget]` may be omitted and take the values shown above; `[retrieval.confidence]`
+and `[[links.kb]]` are absent until something produces them. `backend` is validated against the
+registered extractors (extract/__init__.py) without importing either — an unknown name is rejected
+before either extra could matter. Unknown keys are rejected, and an explicit empty string is an
+error rather than a request for the default — silently substituting one hides a mistake until it
+fails somewhere far away.
 
 ### 2.2 The sidecar — `<file>.pnk.yaml`
 
@@ -308,13 +314,24 @@ documentation. It pulls torch (~2GB), so **the documented install line includes 
 ```
 uv add "pinakes[st]"                     # standard install — default backend
 uv add "pinakes[light]"                  # fastembed (ONNX, ~100MB, no torch)
+uv add "pinakes[pdf]"                    # free PDF extraction (pypdfium2)
+uv add "pinakes[claude]"                 # + the opt-in paid Claude-vision extractor
 uv add pinakes                           # core only: parsing, FTS5, storage, MCP, CLI
 uvx --from "pinakes[st]" pnk serve       # zero-install MCP server
 ```
 
 A core-only install cannot embed. That is a supported state, not a broken one: any command needing
-embeddings fails immediately with the exact extra to install, and `pnk doctor` reports it. CI runs
-`[light]` — a 2GB torch download per job is untenable.
+embeddings fails immediately with the exact extra to install, and `pnk doctor` reports it. CI's
+`check` job is a three-leg matrix over `[light]`, `[light,pdf]` and `[light,pdf,claude]` — each is a
+supported install state and each must pass on its own; a 2GB torch download per job stays untenable
+regardless, which is why `[st]` is never one of the three.
+
+`[pdf]` (pypdfium2, BSD-3-Clause/Apache-2.0) and `[claude]` (the Anthropic SDK — named for the
+vendor, because an extra whose name hid which client it installs would hide that from whoever reads
+the manifest) are the v0.2 extractor backends (§2.1's `[extraction]`). **`[claude]` requires
+`[pdf]`**: the paid path slices PDFs, pre-checks the free text yield and audits its output against
+the native layer, all through pypdfium2 — installing it without `[pdf]` would be a backend that
+cannot run its own pre-checks.
 
 Both extras also provide the default reranker (§2.1): `BAAI/bge-reranker-base` exists under the same
 id in `sentence-transformers` and in fastembed's registry (~1.04 GB of weights). Weights are a
@@ -446,6 +463,9 @@ budget reset. Only `cache/` is optionally cleared, behind `--clear-cache`.
   hook that created sidecars would leave every document commit trailing an untracked `.pnk.yaml`,
   demanding a second commit forever.
 
+`pnk sync` gains `--extract=BACKEND`, overriding `[extraction] backend` for that one run; the name is
+validated against the registered extractors the same way the manifest is — no importing either.
+
 `pnk init --ci` drops a GitHub Actions workflow that syncs and caches `.pinakes/`. No daemon.
 
 Because freshness is git-triggered, **a KB is normally a git repo** — an assumption of the design,
@@ -570,7 +590,7 @@ migration this design deliberately has no machinery for.
 
 | Release | Adds | Why this order |
 |---|---|---|
-| v0.2 | PDF ingest (pymupdf), extraction cache, extraction quality tests | Parsing is the biggest quality risk; isolate it from core-design feedback |
+| v0.2 | PDF ingest (pypdfium2), extraction cache, extraction quality tests | Parsing is the biggest quality risk; isolate it from core-design feedback |
 | v0.3 | `pnk link`, `pinakes_links`, cross-KB traversal, sidecar scanning, link-coverage reporting, free structural edges and the expansion graph channel (default off) | Needs two populated KBs to be worth anything. Detailed build order: [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
 | v0.3.x | PPR graph channel and the `[ner]` mentions-edge extra — both only if the golden-set gates justify them | Each is eval-gated rather than scheduled; see `graph/PINAKES_APPROACH.md` §9 |
 | v0.4 | `pnk ask --deep`, budget ledger, reservations, `pnk budget` | First paid path and its guardrails ship together |
@@ -592,7 +612,7 @@ once, and a tool called `kb_search` is a collision waiting to happen. Every tool
 | **Sidecar/document separation** | A user moving a file without its sidecar is the most likely real-world corruption. Mitigated by hash-based rename detection (§6.4) and `pnk doctor`; not eliminated |
 | **Confidence heuristic** | Uncalibrated abstention would be worse than none. Mitigated by golden-set calibration, `unknown` as an honest default, and a measured false-abstain rate. **Measured on the demo KB (20260725 18:55, bge-small + bge-reranker-base): false-abstain 0.03, false-confidence 0.25.** One no-answer question in four still gets a confident answer — the score distributions genuinely overlap. The number is small (8 no-answer questions) and the thresholds are fitted on the same set they are scored against, so treat it as a floor. This is the cost §4.2 said would be measured rather than assumed |
 | **`sqlite-vec` maturity** | Pre-v1, breaking changes expected. Contained: only reached above 50k chunks, deferred to v0.5, NumPy tier remains a supported override |
-| **torch install weight** | ~2GB for the default backend, plus ~1.4GB of model weights (embedding + reranker). Contained by the extras split and the CI `HF_HOME` cache (§4.5); CI runs `[light]` |
+| **torch install weight** | ~2GB for the default backend, plus ~1.4GB of model weights (embedding + reranker). Contained by the extras split and the CI `HF_HOME` cache (§4.5); CI's `check` job is a three-leg matrix over `[light]`, `[light,pdf]` and `[light,pdf,claude]`, never `[st]` |
 | **Template versioning** | Migrations are shown, never auto-applied (§6.1); templates version independently of the package |
 | **Scope creep via `--deep`** | The paid loop is where this design could grow a second, worse agent framework. Bounded by: same tools as MCP, hard caps, and no orchestration the free path doesn't have |
 | **Environment assumptions** | FTS5 and (for v0.5) loadable extensions are not universal in system Pythons. Probed by `pnk doctor` with a named remedy; uv-managed CPython is the supported baseline (§3.1) |

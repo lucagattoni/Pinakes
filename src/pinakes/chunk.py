@@ -26,6 +26,7 @@ from pinakes.errors import ChunkingError
 
 MARKDOWN_SUFFIXES = frozenset({".md", ".markdown"})
 CODE_SUFFIXES = frozenset({".py", ".js", ".ts", ".rs", ".go", ".java", ".c", ".h", ".cpp", ".sh"})
+PDF_SUFFIXES = frozenset({".pdf"})
 
 _ATX_HEADING = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<title>.+?)\s*#*\s*$")
 _FENCE = re.compile(r"^\s*(```|~~~)")
@@ -67,6 +68,8 @@ def source_type(filename: str) -> str:
         return "markdown"
     if suffix in CODE_SUFFIXES:
         return "code"
+    if suffix in PDF_SUFFIXES:
+        return "pdf"
     return "text"
 
 

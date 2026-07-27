@@ -79,9 +79,12 @@ def write(kb: Path, name: str, text: str) -> Path:
     return path
 
 
-def run(kb: Path, **options: bool) -> SyncReport:
+def run(kb: Path, *, extract: str | None = None, **options: bool) -> SyncReport:
     return sync(
-        load(kb), options=SyncOptions(**options), backend_factory=fake_factory, now="20260725 16:00"
+        load(kb),
+        options=SyncOptions(extract=extract, **options),
+        backend_factory=fake_factory,
+        now="20260725 16:00",
     )
 
 
@@ -224,6 +227,39 @@ def test_one_broken_document_does_not_block_the_others(kb: Path) -> None:
         assert connection.execute("SELECT count(*) FROM failures").fetchone()[0] == 1
     finally:
         connection.close()
+
+
+def test_a_pdf_fails_at_extraction_but_does_not_block_the_rest(kb: Path) -> None:
+    """§6.4 isolation extended to extraction: no adapter yet, and says so once, not per path."""
+    manifest_path = kb / "pinakes.toml"
+    manifest_path.write_text(
+        manifest_path.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]', 'include = ["**/*.md", "**/*.pdf"]'
+        ),
+        encoding="utf-8",
+    )
+    write(kb, "good.md", "# Good\n\nFine text.\n")
+    (kb / "docs" / "a.pdf").write_bytes(b"not a real pdf, and it must not matter")
+    (kb / "docs" / "b.pdf").write_bytes(b"neither is this one")
+
+    report = run(kb)
+    assert not report.ok
+    assert {path for path, _, _ in report.failures} == {"docs/a.pdf", "docs/b.pdf"}
+    assert [doc["path"] for doc in index(kb)] == ["docs/good.md"]
+
+    connection = store.connect_ro(kb / ".pinakes" / "index.db")
+    try:
+        stages = {
+            str(row["stage"]) for row in connection.execute("SELECT DISTINCT stage FROM failures")
+        }
+        assert stages == {"extract"}
+    finally:
+        connection.close()
+
+    remedy = report.failures[0][2]
+    assert remedy  # every failure here is a PinakesError; none should carry an empty remedy
+    printed = report.lines()
+    assert printed.count(remedy) == 1  # once, not once per failing path
 
 
 def test_sidecars_are_never_ingested_as_documents(kb: Path) -> None:

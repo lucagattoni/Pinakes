@@ -26,7 +26,14 @@ from pathlib import Path
 from pinakes import store
 from pinakes.chunk import assert_chunkable, chunk_document, source_type
 from pinakes.embed import EmbeddingBackend, load_backend
-from pinakes.errors import PinakesError, SyncError
+from pinakes.errors import (
+    BackendUnknownError,
+    ExtractionError,
+    ExtractorMissingError,
+    PinakesError,
+    SyncError,
+)
+from pinakes.extract import ExtractionContext, load_extractor, registered_extractors
 from pinakes.ids import DocId
 from pinakes.lock import LockOutcome, SyncLock
 from pinakes.manifest import Manifest
@@ -73,6 +80,7 @@ class SyncOptions:
     stage: bool = False
     offline: bool = False
     force_unlock: bool = False
+    extract: str | None = None  # overrides `[extraction] backend` for one run
 
 
 @dataclass(slots=True)
@@ -84,7 +92,8 @@ class SyncReport:
     minted: int = 0
     deleted: int = 0
     sidecars_written: list[str] = field(default_factory=list[str])
-    failures: list[tuple[str, str]] = field(default_factory=list[tuple[str, str]])
+    # (path, error, remedy) — "" when the failure carried none (a bare OSError/ValueError)
+    failures: list[tuple[str, str, str]] = field(default_factory=list[tuple[str, str, str]])
     ambiguities: tuple[Ambiguity, ...] = ()
     orphaned_sidecars: tuple[str, ...] = ()
     moved_without_sidecar: tuple[str, ...] = ()
@@ -114,8 +123,21 @@ class SyncReport:
             )
         for orphan in self.orphaned_sidecars:
             lines.append(f"orphaned sidecar (kept; remove with `pnk doctor --prune`): {orphan}")
-        for path, error in self.failures:
-            lines.append(f"failed: {path}: {error}")
+        lines.extend(self.failure_lines())
+        return lines
+
+    def failure_lines(self) -> list[str]:
+        """One line per failing path, then each distinct remedy **once** - never per path.
+
+        Several documents can fail identically (a whole `[pdf]`-less KB full of PDFs, say), and a
+        remedy that only needs saying once should not scroll past N times.
+        """
+        lines = [f"failed: {path}: {error}" for path, error, _ in self.failures]
+        seen: list[str] = []
+        for _, _, remedy in self.failures:
+            if remedy and remedy not in seen:
+                seen.append(remedy)
+        lines.extend(seen)
         return lines
 
 
@@ -206,11 +228,18 @@ def sync(
     options = options or SyncOptions()
     stamp = now or datetime.now().strftime("%Y%m%d %H:%M")
 
+    # Resolved and validated before the lock is even taken: an unknown backend is a configuration
+    # mistake, not a per-document failure, and it should fail the same way on a KB with zero PDFs
+    # as on one full of them (I1's exit criterion).
+    extraction_backend = options.extract or manifest.extraction.backend
+    if extraction_backend not in registered_extractors():
+        raise BackendUnknownError(extraction_backend, known=registered_extractors())
+
     with SyncLock(manifest.state_dir, force=options.force_unlock) as lock:
         if not lock.acquired:
             return SyncReport(busy=True)
         report = SyncReport(reclaimed_lock=lock.outcome is LockOutcome.RECLAIMED)
-        _run(manifest, options, backend_factory, stamp, report)
+        _run(manifest, options, backend_factory, stamp, report, extraction_backend)
         return report
 
 
@@ -220,6 +249,7 @@ def _run(
     backend_factory: BackendFactory,
     stamp: str,
     report: SyncReport,
+    extraction_backend: str,
 ) -> None:
     files, sidecars = walk_sources(manifest)
 
@@ -257,6 +287,7 @@ def _run(
                 sidecar_by_document=sidecar_by_document,
                 stamp=stamp,
                 report=report,
+                extraction_backend=extraction_backend,
             )
 
         store.set_meta(
@@ -312,6 +343,7 @@ def _apply(
     sidecar_by_document: dict[str, WalkedSidecar],
     stamp: str,
     report: SyncReport,
+    extraction_backend: str,
 ) -> None:
     match action:
         case Skip():
@@ -345,19 +377,17 @@ def _apply(
             content_hash=content_hash,
             sidecar_hash=sidecar_hash,
             sidecar_by_document=sidecar_by_document,
+            extraction_backend=extraction_backend,
         )
         connection.commit()
     except (PinakesError, OSError, ValueError) as exc:
         connection.rollback()
-        store.record_failure(
-            connection,
-            path=path,
-            stage="index",
-            error=f"{type(exc).__name__}: {exc}",
-            happened=stamp,
-        )
+        stage = "extract" if isinstance(exc, ExtractionError | ExtractorMissingError) else "index"
+        remedy = exc.remedy if isinstance(exc, PinakesError) else ""
+        error = f"{type(exc).__name__}: {exc}"
+        store.record_failure(connection, path=path, stage=stage, error=error, happened=stamp)
         connection.commit()
-        report.failures.append((path, str(exc)))
+        report.failures.append((path, error, remedy))
         return
 
     if is_rename:
@@ -504,12 +534,19 @@ def _index_document(
     content_hash: str,
     sidecar_hash: str | None,
     sidecar_by_document: dict[str, WalkedSidecar],
+    extraction_backend: str,
 ) -> None:
     if backend is None:  # pragma: no cover — only when nothing needed embedding
         raise SyncError("no embedding backend was loaded.", remedy="This is a bug; report it.")
 
     source = manifest.root / path
-    text = source.read_text(encoding="utf-8")
+    kind = source_type(path)
+    if kind == "pdf":
+        extractor = load_extractor(extraction_backend)
+        ctx = ExtractionContext(model=manifest.extraction.model)
+        text = extractor.extract(source, ctx).text
+    else:
+        text = source.read_text(encoding="utf-8")
     parsed = _read_sidecar_for(manifest, path)
 
     chunks = chunk_document(
@@ -517,7 +554,7 @@ def _index_document(
         counter=backend,
         max_tokens=manifest.chunking.max_tokens,
         overlap=manifest.chunking.overlap,
-        kind=source_type(path),
+        kind=kind,
     )
 
     connection.execute(
@@ -533,7 +570,7 @@ def _index_document(
             content_hash,
             sidecar_hash if sidecar_hash is not None else _sidecar_hash(sidecar_by_document, path),
             source.stat().st_mtime,
-            source_type(path),
+            kind,
             parsed.title if parsed else None,
             store.dumps_metadata(_metadata(parsed)),
         ),

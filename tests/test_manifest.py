@@ -37,6 +37,8 @@ def test_the_design_example_parses(kb_root: Path) -> None:
     assert manifest.kb.template == "notes@1.0"
     assert manifest.sources.exclude == ("**/drafts/**",)
     assert manifest.embedding.dim == 384
+    assert manifest.extraction.backend == "pypdfium2"
+    assert manifest.extraction.model == "claude-opus-5"
     assert manifest.retrieval.final_k == 8
     assert manifest.retrieval.confidence is not None
     assert manifest.retrieval.confidence.fitted_for == "BAAI/bge-reranker-base@abc123"
@@ -55,11 +57,29 @@ def test_paths_derive_from_the_root(kb_root: Path) -> None:
 def test_omitted_sections_take_the_documented_defaults(write_manifest: WriteManifest) -> None:
     manifest = load(write_manifest(minimal()))
     assert manifest.chunking == manifest.chunking.__class__("structural", 510, 64)
+    assert manifest.extraction == manifest.extraction.__class__("pypdfium2", "claude-opus-5")
     assert manifest.retrieval.candidates_per_source == 50
     assert manifest.retrieval.rerank == "local"
     assert manifest.retrieval.confidence is None
     assert manifest.rerank.model == "BAAI/bge-reranker-base"
     assert manifest.budget.on_exceed == "abort"
+
+
+def test_extraction_backend_must_be_registered(write_manifest: WriteManifest) -> None:
+    """Rejected without importing anything: manifest validation checks the registry's key set."""
+    body = minimal(extraction='\n[extraction]\nbackend = "telepathy"\n')
+    with pytest.raises(ManifestError) as exc_info:
+        load(write_manifest(body))
+    assert "telepathy" in exc_info.value.message
+
+
+def test_extraction_model_defaults_and_can_be_overridden(write_manifest: WriteManifest) -> None:
+    body = minimal(
+        extraction='\n[extraction]\nbackend = "claude-vision"\nmodel = "claude-opus-4-8"\n'
+    )
+    manifest = load(write_manifest(body))
+    assert manifest.extraction.backend == "claude-vision"
+    assert manifest.extraction.model == "claude-opus-4-8"
 
 
 @pytest.mark.parametrize(

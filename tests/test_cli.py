@@ -2,6 +2,7 @@
 
 import argparse
 import re
+from pathlib import Path
 
 import pytest
 
@@ -105,3 +106,11 @@ def test_errors_carry_a_remedy() -> None:
     assert error.message == "something broke"
     assert error.remedy == "try this instead"
     assert str(error) == "something broke"
+
+
+def test_unknown_extract_flag_is_rejected(
+    kb_root: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Rejected before anything is imported — even a KB with zero documents still refuses."""
+    assert main(["sync", "--kb", str(kb_root), "--extract", "telepathy"]) == EXIT_FAILURE
+    assert "telepathy" in capsys.readouterr().err

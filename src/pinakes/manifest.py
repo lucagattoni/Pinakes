@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pinakes._toml import ROOT_NAME, Table
 from pinakes.errors import InvalidIdError, ManifestError, NoKbFoundError
+from pinakes.extract import registered_extractors
 from pinakes.ids import KbId, parse_kb_id
 
 MANIFEST_NAME = "pinakes.toml"
@@ -36,6 +37,8 @@ RERANK_MODES = ("local", "none")
 VECTOR_TIERS = ("auto", "numpy", "sqlite-vec")
 CHUNK_STRATEGIES = ("structural",)
 ON_EXCEED = ("abort", "partial")
+EXTRACTION_BACKEND_DEFAULT = "pypdfium2"
+EXTRACTION_MODEL_DEFAULT = "claude-opus-5"
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +62,14 @@ class EmbeddingSection:
     model: str
     dim: int
     revision: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractionSection:
+    """`backend` names a registry entry (extract/__init__.py); `model` is paid-backend-only."""
+
+    backend: str
+    model: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +133,7 @@ class Manifest:
     kb: KbSection
     sources: SourcesSection
     embedding: EmbeddingSection
+    extraction: ExtractionSection
     chunking: ChunkingSection
     retrieval: RetrievalSection
     rerank: RerankSection
@@ -177,6 +189,7 @@ def load(root: Path) -> Manifest:
         kb=_kb(root_table, path),
         sources=_sources(root_table, path),
         embedding=_embedding(root_table, path),
+        extraction=_extraction(root_table, path),
         chunking=_chunking(root_table, path),
         retrieval=_retrieval(root_table, path),
         rerank=_rerank(root_table, path),
@@ -269,6 +282,20 @@ def _embedding(root_table: Table, path: Path) -> EmbeddingSection:
         model=table.string("model"),
         dim=table.integer("dim", minimum=1),
         revision=table.optional_string("revision"),
+    )
+    table.done()
+    return section
+
+
+def _extraction(root_table: Table, path: Path) -> ExtractionSection:
+    table = _optional_table(root_table, "extraction")
+    if table is None:
+        return ExtractionSection(backend=EXTRACTION_BACKEND_DEFAULT, model=EXTRACTION_MODEL_DEFAULT)
+    section = ExtractionSection(
+        backend=table.choice(
+            "backend", registered_extractors(), default=EXTRACTION_BACKEND_DEFAULT
+        ),
+        model=table.string_or("model", EXTRACTION_MODEL_DEFAULT),
     )
     table.done()
     return section

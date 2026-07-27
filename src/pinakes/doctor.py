@@ -14,11 +14,12 @@ import sqlite3
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from pinakes import store, template
 from pinakes.embed import hf_cache_dir, load_backend, load_reranker
-from pinakes.errors import PinakesError
+from pinakes.errors import ExtractionError, ExtractorMissingError, PinakesError
+from pinakes.extract import load_extractor
 from pinakes.ids import DocId
 from pinakes.lock import LOCK_NAME, read_holder
 from pinakes.manifest import Manifest
@@ -67,6 +68,7 @@ def diagnose(manifest: Manifest) -> Report:
     checks.extend(_environment())
     checks.append(_template(manifest))
     checks.extend(_backends(manifest))
+    checks.append(_extraction(manifest))
 
     orphans, sidecar_checks = _sidecars(manifest)
     checks.extend(sidecar_checks)
@@ -159,6 +161,29 @@ def _backends(manifest: Manifest) -> Iterator[Check]:
             yield Check(label, Status.OK, f"{detail}@{section.revision}")
 
     yield Check("model cache", Status.OK, f"weights resolve under {hf_cache_dir()}")
+
+
+def _could_match_pdf(include: Sequence[str]) -> bool:
+    probe = PurePosixPath("docs/__pdf_probe__.pdf")
+    return any(probe.full_match(pattern) for pattern in include)
+
+
+def _extraction(manifest: Manifest) -> Check:
+    backend = manifest.extraction.backend
+    try:
+        load_extractor(backend)
+    except ExtractorMissingError as exc:
+        if _could_match_pdf(manifest.sources.include):
+            return Check(
+                "pdf extractor",
+                Status.WARN,
+                f"`include` can match .pdf, but {backend} is not installed",
+                f'Install it with `uv add "pinakes[{exc.extra}]"`, or PDFs will fail to index.',
+            )
+        return Check("pdf extractor", Status.OK, f"{backend} not installed (no .pdf in `include`)")
+    except ExtractionError:
+        pass  # the library imported; the adapter just is not implemented yet (I1)
+    return Check("pdf extractor", Status.OK, f"{backend} importable")
 
 
 def _sidecars(manifest: Manifest) -> tuple[list[Path], list[Check]]:

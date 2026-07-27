@@ -4,12 +4,45 @@
 the documented example drift apart, these tests are where it shows up.
 """
 
+import os
 from collections.abc import Callable
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
 
 from pinakes.ids import mint_kb_id
+
+# Pinned once, here, for whatever fixture-generation code reads it (I2's corpus generator, later).
+# Only its stability matters, not its value: set 20260727 21:40, changing it invalidates nothing
+# that exists yet, only a byte-identical regeneration a later increment may want.
+os.environ.setdefault("SOURCE_DATE_EPOCH", "1785181219")
+
+PDF_CORPUS = Path(__file__).parent / "pdf-corpus"
+
+
+def pdf_runnable() -> bool:
+    """Both halves must hold: `pinakes[pdf]` importable *and* the corpus it reads from exists.
+
+    Mirrors `test_embed.py`'s `_runnable` — checking only one half proved wrong there (a real
+    absent-dependency failure instead of a skip), for the same reason: the two facts vary
+    independently (an installed extra with no corpus checked out; a corpus with no extra installed).
+    """
+    return find_spec("pypdfium2") is not None and PDF_CORPUS.is_dir()
+
+
+def paid_runnable() -> bool:
+    """All three: `anthropic` importable, a key present, and the pytest-only spend opt-in set.
+
+    `PINAKES_ALLOW_SPEND` is a pytest condition only, never a product guard (ground rules) — the
+    product's own opt-in is `[extraction] backend`/`--extract=`/the accountant.
+    """
+    return (
+        find_spec("anthropic") is not None
+        and bool(os.environ.get("ANTHROPIC_API_KEY"))
+        and os.environ.get("PINAKES_ALLOW_SPEND") == "1"
+    )
+
 
 VALID_MANIFEST = """\
 [kb]
@@ -27,6 +60,10 @@ exclude = ["**/drafts/**"]
 provider = "sentence-transformers"
 model    = "BAAI/bge-small-en-v1.5"
 dim      = 384
+
+[extraction]
+backend = "pypdfium2"
+model   = "claude-opus-5"
 
 [chunking]
 strategy   = "structural"

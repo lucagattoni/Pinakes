@@ -7,7 +7,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **I1 of the v0.2 build order: extras, the extractor seam, and an honest core-only failure.**
+  `pyproject.toml` gains `[pdf]` (pypdfium2) and `[claude]` (the Anthropic SDK, requiring `[pdf]`)
+  as opt-in extras — core stays torch-free and now extractor-free too. `src/pinakes/extract/`
+  is a new package: an `Extractor` protocol, the `ExtractedText`/`ExtractionContext` types that
+  will cross the seam for every backend to come, and an open, lazily-importing registry (mirroring
+  `embed.py`'s) holding `pypdfium2` and `claude-vision` as honest stubs that name the increment
+  that implements them (I3b, I7b) — plus a working `fake` backend for later increments to test
+  against without either extra installed. `chunk.source_type` maps `.pdf` → `"pdf"`, and
+  `pnk sync` routes a PDF through the registry instead of crashing on `read_text`: extraction
+  failures record a `failures` row at stage `extract`, isolated from every other document, with
+  the remedy printed once rather than once per file. The manifest gains `[extraction]`
+  (`backend`, `model`), validated against the registry without importing anything, and
+  `pnk sync --extract=BACKEND` overrides it for one run. `pnk doctor` gains a `pdf extractor`
+  check. CI's `check` job is now a three-leg matrix (`[light]`, `[light,pdf]`,
+  `[light,pdf,claude]`), and `check.sh` gains an `extras-not-core` gate.
 
 ## [0.1.4] — 20260727 21:19
 

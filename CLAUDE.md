@@ -84,7 +84,9 @@ Work left local is invisible to every other agent, machine and scheduled run.
   fraction of what `pyright` strict does (docs/RETROSPECTIVES.md, I1). Re-measure when it
   leaves beta.
 - **Core dependencies stay light.** Nothing pulling torch enters `[project.dependencies]` —
-  embedding backends are extras (`[st]`, `[light]`). CI runs `[light]`.
+  embedding backends are extras (`[st]`, `[light]`), and so are the PDF extractors (`[pdf]`,
+  `[claude]`). CI's `check` job is a three-leg matrix over `[light]`, `[light,pdf]` and
+  `[light,pdf,claude]`.
 
 ## Changing retrieval
 

@@ -224,6 +224,25 @@ class CoherenceError(PinakesError):
         self.differences = dict(differences)
 
 
+class ExtractorMissingError(PinakesError):
+    """The library a registered extractor needs is not installed. A supported state (§4.5)."""
+
+    def __init__(self, provider: str, *, extra: str) -> None:
+        super().__init__(
+            f"the `{provider}` extractor is not installed.",
+            remedy=(
+                f'Install it with `uv add "pinakes[{extra}]"`. A core-only install can index '
+                f"everything except PDFs — that is expected, not a fault."
+            ),
+        )
+        self.provider = provider
+        self.extra = extra
+
+
+class ExtractionError(PinakesError):
+    """A registered extractor could not produce text from this document."""
+
+
 class TemplateError(PinakesError):
     """A template is missing or unusable."""
 

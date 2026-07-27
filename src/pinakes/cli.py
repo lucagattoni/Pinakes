@@ -333,6 +333,12 @@ def _sync_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--force-unlock", action="store_true", help="take a lock held by another machine"
     )
+    parser.add_argument(
+        "--extract",
+        default=None,
+        metavar="BACKEND",
+        help="override `[extraction] backend` for this run only",
+    )
     parser.add_argument("-q", "--quiet", action="store_true", help="print only problems")
 
 
@@ -351,6 +357,7 @@ def run_sync(args: argparse.Namespace) -> int:
             stage=args.stage,
             offline=args.offline,
             force_unlock=args.force_unlock,
+            extract=args.extract,
         ),
     )
 
@@ -368,8 +375,8 @@ def run_sync(args: argparse.Namespace) -> int:
         for line in report.lines():
             print(line)
     elif not report.ok:
-        for path, error in report.failures:
-            print(f"failed: {path}: {error}", file=sys.stderr)
+        for line in report.failure_lines():
+            print(line, file=sys.stderr)
 
     return EXIT_OK if report.ok else EXIT_FAILURE
 
