@@ -109,6 +109,20 @@ jobs:
           test -f /tmp/smoke/kb/eval/questions.yaml
           grep -q '.pinakes/' /tmp/smoke/kb/.gitignore
 
+      # plans/v0.1.md promised this gate under "Verification of the whole" and it never shipped:
+      # the item carried no increment number, so no increment owned it (see that plan's close-out,
+      # rule 8). The invariant holds structurally today — core deps are jinja2, mcp, numpy,
+      # python-ulid, pyyaml — but "holds today" is not "cannot break", and CLAUDE.md calls the free
+      # path non-negotiable.
+      - name: The free path stays free — no paid-API client imported in src/
+        run: |
+          set -e
+          if grep -rniE '^[[:space:]]*(import|from)[[:space:]]+(anthropic|openai|cohere|mistralai|google\.generativeai)\b' src/; then
+            echo "::error::A paid-API client is imported in src/. DESIGN §1: no code path may make a paid call outside 'pnk ask --deep'." >&2
+            exit 1
+          fi
+          echo "no paid-API imports in src/"
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist

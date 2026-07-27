@@ -26,6 +26,17 @@ identical to 0.1.0.
   synthesis passed six adversarial review passes (27→7→8→5→1→0 findings).
 - **`Makefile`** — every target wraps the command CI actually runs, so a green `make check` locally
   means what it means on the runner. `make help` lists them.
+- **A close-out on [`plans/v0.1.md`](plans/v0.1.md)** — "What the build taught", written against the
+  15 shipped increments and the 52 retrospective findings: where the plan proved right, where it was
+  wrong and whether planning could have caught it, what happened to each named risk, twelve rules
+  for the next plan, and the list of what in it is now stale. The headline: no finding invalidated
+  any plan-level decision, and every expensive miss was *machinery* — gate mechanism, test fidelity,
+  warning policy, metric denominators, write durability — in a plan that specified algorithms
+  closely and machinery barely at all.
+- **CI gate: the free path stays free.** `plans/v0.1.md` promised a check that no paid-API client is
+  imported in `src/` and it never shipped, because the item sat in a section with no increment
+  number and so no increment owned it. Now enforced, and verified in both directions — it passes on
+  the current source and catches a planted `import openai`.
 
 ### Changed
 
