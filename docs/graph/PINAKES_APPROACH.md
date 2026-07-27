@@ -1,7 +1,7 @@
 # The Pinakes graph: lazy, agent-driven, budget-tunable
 
 **Status:** proposed approach · **Date:** 20260726 08:59 · review-revised 20260726 09:11, 09:17, 09:23, 09:28, 09:34 (five adversarial passes; commit times)
-**Builds on:** [`../GRAPH_RAG.md`](../GRAPH_RAG.md) (R1–R7) and the investigation docs in this
+**Builds on:** [`GRAPH_RAG.md`](GRAPH_RAG.md) (R1–R7) and the investigation docs in this
 directory — twelve external projects plus the in-house precedent (ClaudeKB). This doc is the
 decision layer: what Pinakes should actually build, in what order, gated how. GRAPH_RAG.md remains
 the research record and is deliberately untouched.

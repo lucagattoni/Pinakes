@@ -1,8 +1,12 @@
 # Graph, RAG and agents — what the research says, and what pinakes should do
 
-**Status:** research summary + recommendations · **Date:** 20260725
+**Status:** research summary + recommendations · **Date:** 20260725 15:12 (file mtime — the doc
+predates its commit)
 **Scope:** whether pinakes should acquire a graph layer, and if so, which one
-**Relates to:** `DESIGN.md` §4 (retrieval), §6.2 (links), §8 (roadmap)
+**Relates to:** [`../DESIGN.md`](../DESIGN.md) §4 (retrieval), §6.2 (links), §8 (roadmap)
+**Superseded as the decision layer by** [`PINAKES_APPROACH.md`](PINAKES_APPROACH.md), which turns
+R1–R7 below into a gated build order after twelve further investigations. This file records what
+the research found; that one records what Pinakes decided to do about it.
 
 ---
 

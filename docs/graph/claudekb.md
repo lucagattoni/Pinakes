@@ -1,6 +1,6 @@
 # ClaudeKB — the in-house precedent
 
-**Repo:** local (github_lucagattoni/ClaudeKB) · **Investigated:** 20260725 15:31 · second pass (playbooks, kbtool, decisions, research, retrieval-layer fit): 20260726 08:52
+**Repo:** https://github.com/lucagattoni/ClaudeKB · **Investigated:** 20260725 15:31 · second pass (playbooks, kbtool, decisions, research, retrieval-layer fit): 20260726 08:52
 
 ## What it is
 
