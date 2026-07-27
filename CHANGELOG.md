@@ -9,6 +9,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Nothing yet.
 
+## [0.1.2] — 20260727 15:25
+
+### Fixed
+
+- **README accuracy.** An audit against the shipped CLI found the README to be the only surface
+  overclaiming — `cli.py` and the CHANGELOG both say "planned for v0.4" where the README said
+  "exists". Corrected: `pnk ask --deep` is now stated as planned rather than shipped; the budget
+  ledger is future tense (`[budget]` is parsed and validated today, consumed by nothing); the
+  install lines no longer point at a PyPI package that returns 404, and give a working
+  install-from-source instead; the headline KB diagram no longer shows a `.pdf`, which is the one
+  file type v0.1 cannot ingest (that lands in v0.2); and the design-review line now says four
+  externally *verified* claims, two of which proved false, rather than "four factual errors".
+- **A `[light]` install no longer walks into a wall.** `pnk init` always stamps the
+  sentence-transformers backend, so the documented `[light]` path failed at the first `pnk sync`.
+  The README now says to set `provider = "fastembed"` first. (The underlying asymmetry — `init`
+  cannot see which extra is installed — is left for a `--backend` flag rather than papered over.)
+- `docs/DESIGN.md`'s status line said "ready to implement" two releases after shipping, and §8
+  listed the PyPI release as delivered when nothing has been published.
+- The `[0.1.1]` CHANGELOG heading had no matching link definition, so it rendered as literal text,
+  and `[Unreleased]` still compared against `v0.1.0`.
+
+### Added
+
+- README **Development** section (`make install` / `check` / `demo` / `eval`) — the Makefile shipped
+  in 0.1.1 without its README counterpart, which the repo's own docs rule requires.
+- README and `docs/DESIGN.md` §8 now point at [`docs/graph/`](docs/graph/); ~3,000 lines of research
+  shaping v0.3 were reachable only from the CHANGELOG. §8 also gains the `v0.3.x` row for the
+  eval-gated PPR channel and `[ner]` extra.
+
 ## [0.1.1] — 20260727 14:52
 
 Documentation, tooling and release plumbing. No change to installed behaviour: the wheel's code is
@@ -208,5 +237,7 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.2
+[0.1.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.1
 [0.1.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.0

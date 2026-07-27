@@ -1,6 +1,6 @@
 # pinakes — a portable, agent-first knowledge base
 
-**Status:** reviewed — ready to implement · **Date:** 20260725 09:52 (pass 7)
+**Status:** **implemented** — v0.1.1 shipped · **Date:** 20260725 09:52 (pass 7); status updated 20260727 15:22
 **Repo:** github.com/lucagattoni/Pinakes (PUBLIC) · **Licence:** Apache-2.0 · **Python:** 3.13+
 **Package:** `pinakes` (PyPI) · **Command:** `pnk` · **Tooling:** uv
 
@@ -560,7 +560,7 @@ message depends on; a "vertical slice" that can only be queried over MCP would n
 `pnk doctor` (environment/FTS5, backend, model coherence, orphans, duplicate IDs, hook status, held
 sync lock) · `pnk install-hooks` (§6.3 three-hook split) · WAL/read-only/lock policy (§6.5) ·
 `pnk serve` — MCP server (`pinakes_search`, `pinakes_get`, `pinakes_list_kbs`) · golden-set eval
-harness · CI (uv, ruff, pyright, pytest, `HF_HOME` cache §4.5) · Apache-2.0 · PyPI release.
+harness · CI (uv, ruff, pyright, pytest, `HF_HOME` cache §4.5) · Apache-2.0 · PyPI release **(pending: trusted publishing is unconfigured, so the upload is gated on `PUBLISH_TO_PYPI`; everything else in this list shipped)**.
 
 Features deferred past v0.1, but whose **schema and identifiers ship in v0.1 because they cannot be
 retrofitted**: ULID document *and* KB IDs, sidecar generation for every document, the manifest schema
@@ -571,7 +571,8 @@ migration this design deliberately has no machinery for.
 | Release | Adds | Why this order |
 |---|---|---|
 | v0.2 | PDF ingest (pymupdf), extraction cache, extraction quality tests | Parsing is the biggest quality risk; isolate it from core-design feedback |
-| v0.3 | `pnk link`, `pinakes_links`, cross-KB traversal, sidecar scanning, link-coverage reporting | Needs two populated KBs to be worth anything |
+| v0.3 | `pnk link`, `pinakes_links`, cross-KB traversal, sidecar scanning, link-coverage reporting, free structural edges and the expansion graph channel (default off) | Needs two populated KBs to be worth anything. Detailed build order: [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
+| v0.3.x | PPR graph channel and the `[ner]` mentions-edge extra — both only if the golden-set gates justify them | Each is eval-gated rather than scheduled; see `graph/PINAKES_APPROACH.md` §9 |
 | v0.4 | `pnk ask --deep`, budget ledger, reservations, `pnk budget` | First paid path and its guardrails ship together |
 | v0.5 | Template ecosystem, `pnk upgrade` migrations, `sqlite-vec` tier | Generalisation, once real usage has shaped one template well |
 
