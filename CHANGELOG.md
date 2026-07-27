@@ -9,6 +9,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Nothing yet.
 
+## [0.1.3] — 20260727 15:40
+
+### Added
+
+- **A post-v0.1 housekeeping retrospective** in [`docs/RETROSPECTIVES.md`](docs/RETROSPECTIVES.md),
+  covering the release-that-never-happened, the docs-only merge that turned `main` red, the merge
+  run from inside a worktree that silently landed nothing while leaving a tag off-`main`, the four
+  README claims that contradicted the code, and the promised CI gate that no increment owned.
+- Three rules promoted into `CLAUDE.md` from those findings: verify a release the way a stranger
+  would (`git tag -l`, `gh release list`, `merge-base --is-ancestor`) rather than believing the
+  CHANGELOG; never `git merge` from inside the feature worktree, where three successive commands
+  report success while nothing lands; and the README describes what ships, checked by running the
+  commands it shows.
+
 ## [0.1.2] — 20260727 15:25
 
 ### Fixed
@@ -237,7 +251,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.3
 [0.1.2]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.2
 [0.1.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.1
 [0.1.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.0

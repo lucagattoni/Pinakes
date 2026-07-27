@@ -415,3 +415,51 @@ need someone to mean it.
 
 **§8's v0.1 sentence, walked item by item: 17/17 present.** The plan asked for that walk explicitly
 at this increment rather than trusting the accumulated sense that everything got done.
+
+---
+
+## Post-v0.1 release housekeeping (20260727 15:35)
+
+Not an increment — a session that merged the graph research, closed out the v0.1 plan, and cut the
+releases that had never been cut. Recorded because four of its findings are the kind that cost more
+to rediscover than to write down, and one is a mistake made *in this session* by the person writing
+this.
+
+**The 0.1.0 release existed in every artifact except the ones that matter.** `__version__` said
+`0.1.0`, the CHANGELOG had a dated `[0.1.0]` section, and its footer linked
+`releases/tag/v0.1.0` — while `git tag -l` was empty, no GitHub release existed, and PyPI returned
+404. The release workflow fires only on a `v*` tag, so nothing had ever been built or published.
+*Lesson: a version number is a claim, and a claim in a CHANGELOG is the easiest kind to believe.
+Verify a release the way a stranger would — `git tag -l`, `gh release list`, the package index —
+never by reading the file that asserts it.*
+
+**A docs-only merge turned `main` red.** `ruff format --check .` formats Python fenced blocks
+*inside Markdown*, so an igraph snippet in a research doc failed the Format gate. The instinct that
+a documentation change cannot break the build is wrong in this repo, and the gate is the only
+arbiter. Now stated in `CLAUDE.md` and in the README's Development section.
+
+**Merging from inside the feature worktree silently does nothing, and the tag lands off-`main`.**
+Running `git merge --ff-only <branch>` while `cwd` is that branch's own worktree merges the branch
+into itself — "Already up to date" — and the subsequent `git push origin main` reports "Everything
+up-to-date" because the local `main` ref never moved. The `git tag` that followed pointed at a
+commit reachable only from the branch, so `v0.1.2` existed, was pushed, and was **not an ancestor of
+`main`**. Both commands *succeeded*; nothing failed loudly. *Lesson: merge from the primary
+checkout, and before creating a release assert the lineage —
+`git merge-base --is-ancestor vX.Y.Z main`.*
+
+**The README was the only surface that lied.** An audit against the running CLI found four claims
+contradicting the code: `pnk ask --deep` described as existing (it is a v0.4 plan), a budget ledger
+described as tracking spend (nothing writes one), install lines pointing at a PyPI package that
+404s, and the headline KB diagram built on a `.pdf` — the one file type v0.1 cannot ingest.
+`cli.py` and the CHANGELOG were scrupulous in the same places, both saying "planned for v0.4".
+*Lesson: prose drifts toward the design and away from the build, because the design is what the
+author is thinking about. The check that works is running the commands the README shows.* The
+documented `[light]` install had the same shape: co-equal in the README, broken at the first `sync`
+because `pnk init` always stamps sentence-transformers.
+
+**A promise in a section with no increment number belongs to nobody.** `plans/v0.1.md` asked for a
+CI grep gate keeping paid-API clients out of `src/` under "Verification of the whole". No increment
+owned it, so it never shipped — while the invariant it guards is the one `CLAUDE.md` calls
+non-negotiable. Now enforced, and verified in both directions: it passes on the current source and
+catches a planted `import openai`. *Lesson: every promised check carries an increment number and a
+path, or it is a wish.*

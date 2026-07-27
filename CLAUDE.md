@@ -60,8 +60,16 @@ Work left local is invisible to every other agent, machine and scheduled run.
 - **Cut the release** as soon as the work passes the SemVer table in the global rules (feature =
   MINOR, fix/docs/deps = PATCH, breaking = MAJOR). Complete work never lingers in `[Unreleased]`.
 - Release procedure: bump `__version__`, move `[Unreleased]` into a dated `[x.y.z] — YYYYMMDD HH:MM`
-  section, commit, then `git tag -a vx.y.z` and push the tag. The tag must equal `__version__` or
-  the workflow refuses it. `make release-check` prints both before you tag.
+  section (add its link definition at the foot and repoint `[Unreleased]`'s compare), commit,
+  **merge to `main` from the primary checkout**, push, then `git tag -a vx.y.z` and push the tag.
+  The tag must equal `__version__` or the workflow refuses it — `make release-check` prints both.
+- **Verify, never assume, that a release happened**: `git tag -l`, `gh release list`, and
+  `git merge-base --is-ancestor vx.y.z main` before writing release notes. A CHANGELOG entry and a
+  `__version__` are only claims — v0.1.0 had both for two days with no tag, no release and nothing
+  published (docs/RETROSPECTIVES.md, 20260727).
+- **Never run `git merge` from inside the feature worktree.** Merging a branch into itself reports
+  "Already up to date", the following push reports "Everything up-to-date", and a tag created there
+  points off-`main` — three successful commands, nothing landed.
 - The tag builds and smoke-tests the wheel every time; the **PyPI upload is gated** on the repo
   variable `PUBLISH_TO_PYPI` so tagging is always safe. Turn it on once trusted publishing exists
   (`gh variable set PUBLISH_TO_PYPI --body true`).
@@ -88,6 +96,12 @@ and after numbers in the commit message.
 
 A change to any user-facing surface (CLI flag, manifest key, MCP tool, default, behaviour) updates
 `docs/DESIGN.md`, the README and `--help` text **in the same commit**.
+
+**The README describes what ships, not what is designed** — anything unbuilt carries the version
+that will bring it. Prose drifts toward the design, because the design is what you are thinking
+about; check it by *running the commands the README shows*, install line included. An audit at 0.1.2
+found four README claims contradicting the code while `cli.py` and the CHANGELOG were correct in the
+same places (docs/RETROSPECTIVES.md, 20260727).
 
 **Every date carries a time** — `YYYYMMDD HH:MM`, local 24h — in the CHANGELOG, `docs/DESIGN.md`'s
 iteration log and status line, `docs/RETROSPECTIVES.md`, and any "verified on" claim. Several
