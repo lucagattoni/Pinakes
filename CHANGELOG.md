@@ -40,6 +40,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   test's own docstring, because a whole-page mean would accept arbitrary reflow). Pillow joins the
   dev dependency group only, never core and never an extra, and `pdf_runnable()` grows the third
   half of its environment check to match.
+- **I3a: the free extraction pipeline's pure, structural half.** `src/pinakes/extract/layout.py`
+  turns pdfium's character-level text into ordered, de-furnished text with no PDF library and no
+  filesystem access (asserted by an import-graph test): `blocks_from_chars` groups characters into
+  line-level blocks from geometry alone — including splitting same-height text into separate
+  blocks at a column-sized gap, not a single line spanning the page; `reading_order` clusters
+  blocks into columns by `x0` gap and orders top-to-bottom within each; `strip_running_heads`
+  suppresses a line recurring, digits normalised, on `>= T` of pages (never fewer than two, or a
+  one-page document would see every line as "100% recurring" and suppress itself whole);
+  `join_hyphenation` joins a trailing hyphen or U+00AD into a lowercase continuation, skipping
+  transparently over suppressed running heads but never joining into a heading, and can join
+  across a page boundary. `extract/textpolicy.py` carries the one string policy both extraction
+  backends will run — ligature expansion, NFC, whitespace collapse — versioned separately
+  (`TEXT_POLICY_VERSION`) from `LAYOUT_VERSION` so a change to either is never invisible to the
+  other's fingerprint. `assemble()` runs the whole pipeline and emits the seam's `ExtractedText`,
+  normalising each block *before* computing its offset — never after, since normalisation changes
+  length. Forty table-driven tests check three properties per case, not two: join-identity and
+  contiguous coverage are one property and its corollary, so a third, content-anchored assertion
+  (a sentinel placed on one page, and no other, must fall inside that page's span) is what actually
+  catches a wrong page number.
 
 ## [0.1.4] — 20260727 21:19
 
