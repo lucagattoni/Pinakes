@@ -1,6 +1,7 @@
 """Packaging invariants: extras stay extras, and each library imports cleanly when installed."""
 
 import tomllib
+from collections.abc import Callable
 from importlib import import_module
 from importlib.machinery import ModuleSpec
 from importlib.util import find_spec
@@ -23,6 +24,15 @@ def _spec_absent(name: str) -> ModuleSpec | None:
 
 def _spec_present(name: str) -> ModuleSpec | None:
     return ModuleSpec(name, None)
+
+
+def _spec_for(*present: str) -> Callable[[str], ModuleSpec | None]:
+    """A `find_spec` stand-in reporting only the named modules as importable."""
+
+    def find(name: str) -> ModuleSpec | None:
+        return ModuleSpec(name, None) if name in present else None
+
+    return find
 
 
 def test_extractors_stay_extras() -> None:
@@ -49,25 +59,32 @@ def test_anthropic_imports_without_a_warning() -> None:
     import_module("anthropic")
 
 
-def test_pdf_runnable_requires_both_the_extra_and_the_corpus(
+def test_pdf_runnable_requires_all_three_conditions(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Both halves must hold — checking only one passes on a KB with one but not the other."""
+    """pypdfium2, Pillow, and the corpus — checking fewer than all three passes on a KB missing one.
+
+    Pillow joined this predicate in I2 (dev-group-only, never core, never an extra): a pypdfium2 +
+    corpus check that forgot it would report runnable in an environment where `pdf`-marked tests
+    would still crash constructing a `PIL.Image`, not skip.
+    """
     corpus = tmp_path / "pdf-corpus"
+    monkeypatch.setattr(conftest, "PDF_CORPUS", corpus)
 
     monkeypatch.setattr(conftest, "find_spec", _spec_absent)
-    monkeypatch.setattr(conftest, "PDF_CORPUS", corpus)
-    assert conftest.pdf_runnable() is False  # neither half holds
-
-    monkeypatch.setattr(conftest, "find_spec", _spec_present)
-    assert conftest.pdf_runnable() is False  # extra importable, corpus still absent
+    assert conftest.pdf_runnable() is False  # nothing holds
 
     corpus.mkdir()
-    monkeypatch.setattr(conftest, "find_spec", _spec_absent)
-    assert conftest.pdf_runnable() is False  # corpus present, extra still absent
+    assert conftest.pdf_runnable() is False  # corpus present, neither library is
+
+    monkeypatch.setattr(conftest, "find_spec", _spec_for("pypdfium2"))
+    assert conftest.pdf_runnable() is False  # pypdfium2 only, Pillow still missing
+
+    monkeypatch.setattr(conftest, "find_spec", _spec_for("PIL"))
+    assert conftest.pdf_runnable() is False  # Pillow only, pypdfium2 still missing
 
     monkeypatch.setattr(conftest, "find_spec", _spec_present)
-    assert conftest.pdf_runnable() is True  # both hold
+    assert conftest.pdf_runnable() is True  # all three hold
 
 
 def test_paid_runnable_requires_all_three_conditions(monkeypatch: pytest.MonkeyPatch) -> None:

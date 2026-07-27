@@ -11,7 +11,7 @@ SHELL := /bin/sh
 DEMO_KB := tests/demo-kb
 
 .PHONY: help install check fmt fmt-check lint types types-fast test test-model eval demo doctor \
-        build smoke clean release-check
+        corpus build smoke clean release-check
 
 help:  ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -33,7 +33,7 @@ lint:  ## Lint gate only
 	uv run --frozen ruff check .
 
 types-fast:  ## ty — fast pre-check, never the gate (docs/RETROSPECTIVES.md, I1)
-	uv run --frozen ty check .
+	uv run --frozen ty check --extra-search-path stubs .
 
 types:  ## pyright strict — the type gate
 	uv run --frozen pyright
@@ -52,6 +52,9 @@ doctor:  ## Health-check the demo KB
 
 eval:  ## Golden-set evaluation against the baseline (needs `make demo` first)
 	uv run --frozen python -m pinakes.eval $(DEMO_KB)
+
+corpus:  ## Regenerate tests/pdf-corpus/ in place — review with `git diff` before committing
+	SOURCE_DATE_EPOCH=1785181219 uv run --frozen python3 tests/pdf-corpus/generate.py
 
 build:  ## Build wheel and sdist
 	uv build

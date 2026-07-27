@@ -24,6 +24,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `pnk sync --extract=BACKEND` overrides it for one run. `pnk doctor` gains a `pdf extractor`
   check. CI's `check` job is now a three-leg matrix (`[light]`, `[light,pdf]`,
   `[light,pdf,claude]`), and `check.sh` gains an `extras-not-core` gate.
+- **I2: the synthetic hard-case PDF corpus and its generator.** `tests/pdf-corpus/` holds 19
+  committed fixtures across seven strata (two-column, tables, headers/footers, ligatures &
+  hyphenation, scanned, pathological, baseline) totalling 59 pages and ~370 KB, each paired with a
+  hand-authored `.expected.txt` written from the fixture's *spec* — never from an extractor's
+  output, which would only prove an extractor agrees with itself. No real-world PDF is committed:
+  a dependency-free PDF writer (`pdfwriter.py`) emits raw content streams using the base-14 fonts,
+  so no layout engine hides the coordinates under its own decisions. The three scanned fixtures
+  raster `baseline-12p`'s own pages via pypdfium2 + Pillow and reuse its ground truth verbatim,
+  making free-vs-paid extraction directly comparable on identical content. `make corpus`
+  regenerates in place; `check.sh` gains a `corpus-regenerates` gate where the sixteen text-layer
+  fixtures must reproduce **byte-identically** and the three scanned ones within a stated pixel
+  tolerance (>300 pixels differing by >32 levels is a failure — an absolute count, derived in the
+  test's own docstring, because a whole-page mean would accept arbitrary reflow). Pillow joins the
+  dev dependency group only, never core and never an extra, and `pdf_runnable()` grows the third
+  half of its environment check to match.
 
 ## [0.1.4] — 20260727 21:19
 

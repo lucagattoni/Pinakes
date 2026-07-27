@@ -6,7 +6,11 @@
 set -e
 uv run --frozen ruff format --check .
 uv run --frozen ruff check .
-uv run --frozen ty check .
+# --extra-search-path stubs/: pypdfium2 ships no py.typed marker (stubs/pypdfium2.pyi covers it
+# for pyright); ty has no pyproject-level stubPath equivalent yet, so it needs the same path named
+# on its own command line, or it hard-errors on a [light]-only checkout where pypdfium2 isn't
+# installed — unlike pyright, which only warns (I2, docs/RETROSPECTIVES.md).
+uv run --frozen ty check --extra-search-path stubs .
 uv run --frozen pyright
 uv run --frozen pytest -q
 
@@ -15,6 +19,24 @@ uv run --frozen pytest -q
 if awk '/^dependencies = \[/,/^\]/' pyproject.toml | grep -qiE 'pypdfium2|anthropic'; then
     echo "pypdfium2 or anthropic found inside [project.dependencies] — they must stay extras" >&2
     exit 1
+fi
+
+# corpus-regenerates (I2): the sixteen text-layer fixtures must reproduce byte-identically from
+# their own committed generator, and the three scanned ones within the pixel tolerance.
+# SOURCE_DATE_EPOCH exported here explicitly — belt and suspenders alongside the generator's own
+# fallback when unset (plans/v0.2.md, I2): neither should be the only thing standing between a
+# regeneration and a fresh CreationDate rewriting every fixture.
+#
+# The text-layer half always runs — `--skip-scanned` drops the only fixtures needing pypdfium2 and
+# Pillow — so a [light]-only checkout still gets the gate. Only the *scanned half* skips, printing
+# its reason, which is what the plan asks for.
+SOURCE_DATE_EPOCH=1785181219 uv run --frozen pytest -q \
+    tests/test_pdf_corpus.py::test_regeneration_is_reproducible
+if uv run --frozen python3 -c "import pypdfium2, PIL" 2>/dev/null; then
+    SOURCE_DATE_EPOCH=1785181219 uv run --frozen pytest -q \
+        tests/test_pdf_corpus.py::test_scanned_regeneration_within_tolerance
+else
+    echo "corpus-regenerates (scanned half): skipped — pinakes[pdf] and/or Pillow not installed"
 fi
 
 echo "all gates green"

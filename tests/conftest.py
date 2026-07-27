@@ -13,7 +13,7 @@ import pytest
 
 from pinakes.ids import mint_kb_id
 
-# Pinned once, here, for whatever fixture-generation code reads it (I2's corpus generator, later).
+# Pinned once, here, for whatever fixture-generation code reads it (I2's corpus generator).
 # Only its stability matters, not its value: set 20260727 21:40, changing it invalidates nothing
 # that exists yet, only a byte-identical regeneration a later increment may want.
 os.environ.setdefault("SOURCE_DATE_EPOCH", "1785181219")
@@ -22,13 +22,18 @@ PDF_CORPUS = Path(__file__).parent / "pdf-corpus"
 
 
 def pdf_runnable() -> bool:
-    """Both halves must hold: `pinakes[pdf]` importable *and* the corpus it reads from exists.
+    """All three must hold: `pinakes[pdf]` importable, Pillow importable, and the corpus present.
 
-    Mirrors `test_embed.py`'s `_runnable` — checking only one half proved wrong there (a real
-    absent-dependency failure instead of a skip), for the same reason: the two facts vary
-    independently (an installed extra with no corpus checked out; a corpus with no extra installed).
+    Mirrors `test_embed.py`'s `_runnable` — checking fewer than every part proved wrong there (a
+    real absent-dependency failure instead of a skip), for the same reason here: the three facts
+    vary independently (an installed extra with no corpus checked out; a corpus with no extra
+    installed; pypdfium2 present but Pillow — dev-group-only, never core, never an extra — is
+    not). Pillow joins the predicate in I2, the increment that first needs it (ground rules, rule
+    5): I1 only needed the first two.
     """
-    return find_spec("pypdfium2") is not None and PDF_CORPUS.is_dir()
+    return (
+        find_spec("pypdfium2") is not None and find_spec("PIL") is not None and PDF_CORPUS.is_dir()
+    )
 
 
 def paid_runnable() -> bool:

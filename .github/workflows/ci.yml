@@ -57,7 +57,7 @@ jobs:
         run: uv run --frozen ruff check .
 
       - name: Types (ty, fast pre-check)
-        run: uv run --frozen ty check .
+        run: uv run --frozen ty check --extra-search-path stubs .
 
       - name: Types (pyright, strict — the gate)
         run: uv run --frozen pyright

@@ -1142,6 +1142,7 @@ st = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "pillow" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
@@ -1165,6 +1166,7 @@ provides-extras = ["claude", "light", "pdf", "st"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "pillow", specifier = ">=12.3.0" },
     { name = "pyright", specifier = ">=1.1.390" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.9" },
