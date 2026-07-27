@@ -164,7 +164,14 @@ def _backends(manifest: Manifest) -> Iterator[Check]:
 
 
 def _could_match_pdf(include: Sequence[str]) -> bool:
-    probe = PurePosixPath("docs/__pdf_probe__.pdf")
+    """Whether an `include` pattern could ever match a `.pdf`.
+
+    `walk_sources` applies each pattern via `root.glob(pattern)`, where `root` is already
+    `sources.roots` resolved — a pattern is relative to that root, never to the KB root. A probe
+    prefixed with the root's own name (e.g. "docs/") would make a bare pattern like `*.pdf` look
+    like it cannot match, when `root.glob("*.pdf")` matches it directly.
+    """
+    probe = PurePosixPath("__pdf_probe__.pdf")
     return any(probe.full_match(pattern) for pattern in include)
 
 

@@ -97,7 +97,10 @@ and after numbers in the commit message.
 ## Docs
 
 A change to any user-facing surface (CLI flag, manifest key, MCP tool, default, behaviour) updates
-`docs/DESIGN.md`, the README and `--help` text **in the same commit**.
+`docs/DESIGN.md`, the README and `--help` text **in the same commit** — including README/Makefile
+*prose* describing build or CI behaviour, not only flags and manifest keys: I1 changed CI to a
+three-leg matrix and left two stale "as CI does" comments in README.md and the Makefile
+(docs/RETROSPECTIVES.md, 20260727 22:28).
 
 **The README describes what ships, not what is designed** — anything unbuilt carries the version
 that will bring it. Prose drifts toward the design, because the design is what you are thinking

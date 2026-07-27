@@ -68,8 +68,9 @@ jobs:
 
       - name: Model-backed tests
         # Pinned to the [light] leg alone (I1): `_runnable()` skips only when fastembed is absent or
-        # the HF cache is empty, both true on every leg alike, so running this on all three would
-        # triple it for no added coverage.
+        # the HF cache is empty, both true on every leg alike, so this dedicated step would triple
+        # for no benefit on the other two. (The Tests step above already runs these once per leg too
+        # when the cache is warm — this step's own redundancy predates the matrix and is unrelated.)
         if: matrix.extras == 'light'
         run: uv run --frozen pytest -q -m model
 

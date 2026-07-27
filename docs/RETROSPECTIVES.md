@@ -574,3 +574,35 @@ as fitted over a stratum of 3-page fixtures — where per-document recurrence ca
 not. *Lesson: state a fitted threshold's resolution alongside its value. If the corpus cannot
 distinguish 0.4 from 0.6, "fitted" is a claim the data does not support — enlarge the fixture or
 call it a chosen constant.*
+
+## I1 — extras, the extractor seam (20260727 22:28)
+
+**An explicit, textual exit criterion is not met just because the surrounding tests feel thorough.**
+The plan's own words were "the `filterwarnings` probe and both marker predicates get named tests" —
+the probe got tests; `pdf_runnable()`/`paid_runnable()` did not, and nothing caught it until the
+review grepped for their names and found only their own definitions. Twenty-odd other tests passing
+made the increment *feel* covered. *Lesson: when a plan states a test-coverage exit criterion in so
+many words, grep for the named thing before calling the increment done — a feeling of thoroughness
+is not the same claim as a named test existing.*
+
+**A synthetic probe path that doesn't mirror the real call site's resolution semantics passes on the
+easy case and is silently wrong on the common one.** `doctor._could_match_pdf` checked whether
+`sources.include` could ever match a PDF by testing patterns against a probe path prefixed with the
+root's own name (`"docs/__pdf_probe__.pdf"`) — but `walk_sources` applies each pattern via
+`root.glob(pattern)`, where `root` is *already* resolved, so a pattern is relative to it, never to
+the KB root. The bug was invisible in-repo because the one test written for it used `**/*.pdf`,
+which happens to match regardless of the extra prefix; a bare `*.pdf` — an equally ordinary
+manifest — silently reported `OK: not installed (no .pdf in include)` on a KB that would, in fact,
+fail its very next `pnk sync`. *Lesson: a synthetic probe is only as good as its fidelity to the real
+resolution path, and one test shape that happens to tolerate an error is not evidence the error
+doesn't exist — test the shape closest to the literal documented example, not only the most generic
+one.*
+
+**The docs-in-the-same-commit rule missed two files because neither is named a "user-facing
+surface."** DESIGN.md and CLAUDE.md were amended correctly in the same commit that made CI a
+three-leg matrix; README.md's and the Makefile's own `make install` comments, both reading "as CI
+does," were not — the exact class of drift a 0.1.2 audit already caught once for this project
+(above). Neither file is a flag, a manifest key, or a `--help` string, so neither felt like it was in
+scope. *Lesson: "describes CI/build behaviour in prose" is as much a user-facing surface as a CLI
+flag — grep README.md and the Makefile for the thing that changed, not only `cli.py` and
+`DESIGN.md`.*

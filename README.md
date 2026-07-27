@@ -83,7 +83,7 @@ message for an avoidable wall.
 ## Development
 
 ```bash
-make install    # sync the dev environment (the light extra, as CI does)
+make install    # sync the dev environment (the light extra — CI's minimum leg)
 make check      # every gate, stopping at the first failure — run before every commit
 make demo       # index the synthetic demo KB
 make eval       # golden-set evaluation against the recorded baseline

@@ -17,7 +17,7 @@ help:  ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
-install:  ## Sync the dev environment (light extra, as CI does)
+install:  ## Sync the dev environment (light extra — CI's minimum leg; add --extra pdf/claude for the others)
 	uv sync --frozen --extra light
 
 check:  ## Every gate, stopping at the first failure — run before every commit

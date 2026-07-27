@@ -109,9 +109,11 @@ def test_pdf_extractor_check_is_ok_when_include_cannot_match_pdf(kb: Path) -> No
     assert checks(kb)["pdf extractor"][0] is Status.OK
 
 
+@pytest.mark.parametrize("pdf_pattern", ["**/*.pdf", "*.pdf"])
 def test_pdf_extractor_check_warns_when_include_can_match_pdf_and_backend_is_missing(
-    monkeypatch: pytest.MonkeyPatch, kb: Path
+    monkeypatch: pytest.MonkeyPatch, kb: Path, pdf_pattern: str
 ) -> None:
+    """Both a `**`-prefixed and a bare pattern must be caught — `root.glob` honours both."""
     import builtins
 
     real_import = builtins.__import__
@@ -132,7 +134,8 @@ def test_pdf_extractor_check_warns_when_include_can_match_pdf_and_backend_is_mis
     path = kb / "pinakes.toml"
     path.write_text(
         path.read_text(encoding="utf-8").replace(
-            'include = ["**/*.md", "**/*.txt"]', 'include = ["**/*.md", "**/*.txt", "**/*.pdf"]'
+            'include = ["**/*.md", "**/*.txt"]',
+            f'include = ["**/*.md", "**/*.txt", "{pdf_pattern}"]',
         ),
         encoding="utf-8",
     )
