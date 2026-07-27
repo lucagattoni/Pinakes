@@ -4,6 +4,6 @@ One directory is one knowledge base: human-readable sources, human-readable meta
 disposable machine index. The architecture is specified in docs/DESIGN.md.
 """
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 __all__ = ["__version__"]

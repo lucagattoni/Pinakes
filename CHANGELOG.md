@@ -9,6 +9,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Nothing yet.
 
+## [0.1.4] — 20260727 21:19
+
+### Added
+
+- **`plans/v0.2.md`**, the reviewed build order for the PDF-extraction release (I1–I9): a free
+  `pypdfium2` extractor, an opt-in paid Claude-vision extractor, and the budget machinery that
+  ships with the first thing that can spend. Reviewed over four adversarial passes (7 HIGH/19
+  MEDIUM/8 LOW, 5/18/8, 12/31/17, then three narrow methods — code-reality, arithmetic,
+  promise-ledger — at 19/39/23) before implementation began.
+- **A CLAUDE.md rule: read the clock, never compose a timestamp.** Run `date "+%Y%m%d %H:%M"` and
+  paste the result — session context carries a date but never a time, so an invented `HH:MM` lands
+  in the future about half the time, as four stamps in an early plan draft did.
+
 ## [0.1.3] — 20260727 15:40
 
 ### Added
@@ -251,7 +264,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.4
 [0.1.3]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.3
 [0.1.2]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.2
 [0.1.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.1
