@@ -537,3 +537,40 @@ constant covering that module was then deliberately excluded from the paid finge
 whitespace or ligature change would have missed every *free* cache entry and silently **hit** every
 paid one, with the coherence check unable to see it. *Lesson: when two consumers share one stage,
 version that stage separately rather than arguing about which of them "really" runs it.*
+
+## Planning v0.2, pass 4 — three narrow passes (20260727 20:57)
+
+**Splitting one wide review into three narrow ones is what finally found the structural defects.**
+Passes 1–3 were each a thorough adversarial reading, and each one's largest source of new HIGHs was
+the previous pass's fixes. Pass 4 ran instead as a *code-reality* pass (resolve every claim about
+`src/` against the file), an *arithmetic* pass (recompute every stated number), and a
+*promise-ledger* pass (walk every enumerated flag, floor, gate, constant and amendment row, asking
+only "which increment makes this true, and which test proves it"). Together they returned 19 HIGH —
+and almost none of them were things a fourth general reading would have caught.
+*Lesson: a reviewer reading for coherence finds incoherence. Defects that are internally consistent
+and externally false need a pass that leaves the document: to the source, to a calculator, or to a
+checklist. Run those as separate passes, because each is a different kind of attention.*
+
+**A review pass's own fixes are the highest-risk text in the document.** Four of pass 2's five HIGHs
+came from pass 1's fixes; five of pass 3's twelve came from pass 2's; and two of pass 4's came from
+*inside* pass 3's fixes — a `pnk budget` ordering bug fixed by assigning the edit to an increment
+that lands earlier, and a missing-amendment-row sweep that added a row for one copy of a sentence
+and missed two others. The arithmetic pass caught the sharpest case: pass 3 replaced a raster
+tolerance that could not detect a moved word with a different tolerance that also could not detect a
+moved word. *Lesson: never ship the revision a review produced. Re-review the fixes specifically,
+and prefer a method that cannot be fooled by the same reasoning that produced them.*
+
+**"The code already does X" is a claim, and this project keeps getting it wrong.** Verified against
+`src/`: `write_sidecar` runs only for newly minted documents, so a plan built on "sync writes the
+sidecar" had no write path for the case it cared about; `pnk init --ci` was designed in DESIGN and
+never built, while an increment was written to modify it; CI installs `--extra light` and runs the
+model tests in the `check` job, so a new matrix leg would triple them rather than skip them; and
+`--index-only`, which the hooks run, is contractually forbidden from writing into `docs/` at all.
+*Lesson: every plan sentence about existing behaviour carries a `file:line`, or it is a guess.*
+
+**A threshold needs enough data to have chosen it.** The running-head threshold `T` was documented
+as fitted over a stratum of 3-page fixtures — where per-document recurrence can only be 1/3, 2/3 or
+1, so every `T` in (1/3, 2/3] reproduces the corpus identically. The value was real, the fit was
+not. *Lesson: state a fitted threshold's resolution alongside its value. If the corpus cannot
+distinguish 0.4 from 0.6, "fitted" is a claim the data does not support — enlarge the fixture or
+call it a chosen constant.*
