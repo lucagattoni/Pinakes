@@ -65,8 +65,13 @@ Query flow (`HippoRAG.retrieve()` → `graph_search_with_fact_entities()` → `r
 6. **PPR call** (`run_ppr()`):
    ```python
    self.graph.personalized_pagerank(
-       vertices=range(n), damping=0.5, directed=False,
-       weights='weight', reset=reset_prob, implementation='prpack')
+       vertices=range(n),
+       damping=0.5,
+       directed=False,
+       weights="weight",
+       reset=reset_prob,
+       implementation="prpack",
+   )
    ```
    python-igraph, prpack solver, **damping = 0.5** (`BaseConfig.damping`; tuned on 100 MuSiQue
    training examples in the v1 paper; same value in both versions). d=0.5 means half the walk mass
