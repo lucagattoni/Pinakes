@@ -41,6 +41,11 @@ NAMED_PAID_TWINS = {
 TOTAL_BUDGET_BYTES = 2 * 1024 * 1024
 SCANNED_BUDGET_BYTES = int(1.5 * 1024 * 1024)
 
+# The scanned stratum's own raster resolution (`generate.py` renders at 150 dpi). The tolerance
+# comparison must render at the same scale — see `test_scanned_regeneration_within_tolerance`.
+RENDER_SCALE = 150 / 72
+MAX_CHANGED_PIXELS = 300
+
 
 def _load_module(path: Path, name: str) -> ModuleType:
     """`tests/pdf-corpus/` has a hyphen, so it cannot be a dotted-import package — load by path."""
@@ -144,13 +149,25 @@ def test_regeneration_is_reproducible(tmp_path: Path) -> None:
 @pytest.mark.skipif(not pdf_runnable(), reason="pinakes[pdf] and/or Pillow not installed")
 def test_scanned_regeneration_within_tolerance(tmp_path: Path) -> None:
     """No text layer, matching page count and geometry, and at most 300 pixels differing by more
-    than 32 levels (~0.014% of an A4-at-150dpi page) — an absolute count, not a whole-page mean.
+    than 32 levels — an absolute count, not a whole-page mean.
 
-    The arithmetic (plans/v0.2.md, I2): at 150 dpi an A4 page is 1240 x 1754 = 2,174,960 px. A
-    6-character 10pt word at ~20% ink occupies a ~62x15px box (~200 ink px); moving it changes both
-    the vacated and the occupied ink, ~400-680px. 300 sits under that signal and well over
-    sub-pixel/compression noise on a handful of glyphs — a whole-page *mean* tolerance of 2/255
-    would instead need ~17,000 fully-flipped pixels to trip, silently passing a moved word.
+    **The comparison must run at the fixtures' own resolution or the threshold means nothing**, and
+    the arithmetic below is measured rather than estimated, because an earlier version of it was
+    wrong in both its page format and its dpi and nobody could tell from a green gate.
+
+    The fixtures are US Letter (612 x 792 pt — `PAGE_W`/`PAGE_H` in `generate.py`, never A4)
+    rastered at 150 dpi, so a page measures 1275 x 1651 = 2,105,025 px and 300 px is 0.014% of it.
+    Measured on `baseline-12p`'s ninth page: shifting the whole page by 3 px changes **33,451**
+    pixels by more than 32 levels, ~111x the threshold, so a single moved word — a small fraction
+    of a page — still clears it comfortably. The gate is deliberately deaf below 32 levels: a
+    contrast change from 0.35 to 0.45 moves *zero* pixels past that bar, which is the intended
+    noise floor, while 0.35 to 0.5 trips it at 12,762 px.
+
+    `scale=RENDER_SCALE`, never `scale=1.0`: pdfium's default renders 1 px per *point*, i.e. 72 dpi,
+    downsampling the stored 150 dpi image ~2x before comparing. That shrinks the page to 485,316 px
+    and a moved word's delta to well under 300 — so the gate would have passed exactly the change it
+    exists to catch, while claiming a 2x margin. (A whole-page *mean* tolerance of 2/255 fails the
+    same way for the same reason, which is why this is an absolute count.)
     """
     import numpy as np
     import pypdfium2 as pdfium
@@ -169,12 +186,16 @@ def test_scanned_regeneration_within_tolerance(tmp_path: Path) -> None:
                 committed_size = committed_page.get_size()
                 assert fresh_page.get_size() == pytest.approx(committed_size, rel=0.01)
 
-                committed_arr = np.asarray(committed_page.render(scale=1.0).to_pil().convert("L"))
-                fresh_arr = np.asarray(fresh_page.render(scale=1.0).to_pil().convert("L"))
+                committed_arr = np.asarray(
+                    committed_page.render(scale=RENDER_SCALE).to_pil().convert("L")
+                )
+                fresh_arr = np.asarray(fresh_page.render(scale=RENDER_SCALE).to_pil().convert("L"))
                 assert committed_arr.shape == fresh_arr.shape
                 diff = np.abs(committed_arr.astype(int) - fresh_arr.astype(int))
                 changed = int(np.count_nonzero(diff > 32))
-                assert changed <= 300, f"{fixture.name}: {changed} pixels differ by >32 levels"
+                assert changed <= MAX_CHANGED_PIXELS, (
+                    f"{fixture.name}: {changed} pixels differ by >32 levels"
+                )
         finally:
             committed_doc.close()
             fresh_doc.close()

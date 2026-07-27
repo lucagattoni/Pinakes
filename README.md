@@ -114,7 +114,10 @@ than one whose cost is known.
 ## Your data stays yours
 
 This repository contains the **engine only**. Real knowledge bases live outside it. The sole KB in
-this repo is a small synthetic corpus used for tests and retrieval benchmarking.
+this repo is a small synthetic corpus used for tests and retrieval benchmarking, and the only other
+committed content is `tests/pdf-corpus/` — 19 PDFs generated from scratch by a committed script, to
+exercise hard extraction cases. Neither was harvested from anywhere; no real-world document is
+committed here.
 
 `pnk init` ships a `.gitignore` covering `.pinakes/`, so your index — and, from v0.4, your spend
 ledger — never leaves your machine. Note that publishing a KB repo publishes `docs/` *and* every sidecar — titles, tags and

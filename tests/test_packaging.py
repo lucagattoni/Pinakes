@@ -48,6 +48,25 @@ def test_claude_extra_requires_pdf_extra() -> None:
     assert "pinakes[pdf]" in optional["claude"]
 
 
+def test_pillow_is_dev_only_never_core_and_never_an_extra() -> None:
+    """Pillow builds the corpus; it must never be something an *installed* pinakes pulls in.
+
+    Stated as a decision in I2 and relied on by `pdf_runnable()`, but until this test nothing
+    enforced it — adding `pillow` to `[project.dependencies]` or to the `pdf` extra left the whole
+    suite green, unlike the structurally identical pypdfium2/anthropic claim above.
+    """
+    project = _pyproject()["project"]
+    core = " ".join(project["dependencies"]).lower()
+    assert "pillow" not in core
+
+    for name, entries in project["optional-dependencies"].items():
+        joined = " ".join(entries).lower()
+        assert "pillow" not in joined, f"pillow leaked into the [{name}] extra"
+
+    dev = " ".join(_pyproject()["dependency-groups"]["dev"]).lower()
+    assert "pillow" in dev  # and it does have to be *somewhere*, or the corpus cannot regenerate
+
+
 @pytest.mark.skipif(find_spec("pypdfium2") is None, reason="pinakes[pdf] not installed")
 def test_pypdfium2_imports_without_a_warning() -> None:
     """`filterwarnings = ["error"]` (pyproject) turns any import-time warning into this failing."""
@@ -85,6 +104,12 @@ def test_pdf_runnable_requires_all_three_conditions(
 
     monkeypatch.setattr(conftest, "find_spec", _spec_present)
     assert conftest.pdf_runnable() is True  # all three hold
+
+    # Every clause must be *individually* load-bearing, so each is turned off on its own from the
+    # all-true state. Without this last case the corpus clause could be deleted outright and the
+    # walk above would still pass — the corpus was created early and never removed again.
+    corpus.rmdir()
+    assert conftest.pdf_runnable() is False  # both libraries, corpus gone
 
 
 def test_paid_runnable_requires_all_three_conditions(monkeypatch: pytest.MonkeyPatch) -> None:

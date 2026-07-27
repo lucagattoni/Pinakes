@@ -42,8 +42,15 @@ def epoch() -> int:
 def wrap(text: str, width_chars: int) -> list[str]:
     """Word-wrap only — `textwrap` knows nothing about PDF or fonts, so it decides nothing about
     the variable under test (reading order, table geometry, hyphenation placement); it just turns
-    one long string into lines whose *content* this module still fully authors and knows."""
-    return textwrap.wrap(text, width=width_chars, break_long_words=False)
+    one long string into lines whose *content* this module still fully authors and knows.
+
+    `break_on_hyphens=False` is load-bearing, not tidiness. Left at its default, `textwrap` splits
+    an existing compound word across lines ("spine-" / "out"), and the ground truth — which joins
+    lines with a single space — then reads "spine- out": a phantom space no correct extractor could
+    ever produce, in a corpus whose only job is trustworthy ground truth. Hyphenation is exercised
+    deliberately, by fixtures that place the hyphen themselves; it must never arrive by accident.
+    """
+    return textwrap.wrap(text, width=width_chars, break_long_words=False, break_on_hyphens=False)
 
 
 def column_of_lines(lines: list[str], *, x: float, top: float, size: float = BODY_SIZE) -> Page:
@@ -152,8 +159,10 @@ def build_two_column_c() -> tuple[list[Page], str]:
     lead = "The clerk opened the final ledger of the survey and began the last entry of the day"
     tail = "noting the shelf mark before closing the drawer for the evening."
     left_lines = wrap(lead, 34)
-    right_first = tail
-    right_lines = [right_first, *wrap(prose(3, start=2), 34)]
+    # `tail` is wrapped like every other multi-word line, not placed whole: at 66 characters it
+    # overran the right column and spilled ~7pt past the page's own MediaBox — the one line in the
+    # corpus that was not validly laid out on its own page.
+    right_lines = [*wrap(tail, 34), *wrap(prose(3, start=2), 34)]
     left_page = column_of_lines(left_lines, x=LEFT_X, top=PAGE_H - MARGIN)
     right_page = column_of_lines(right_lines, x=RIGHT_X, top=PAGE_H - MARGIN)
     page1 = Page(runs=left_page.runs + right_page.runs)
@@ -359,7 +368,12 @@ def build_hyphenation_soft() -> tuple[list[Page], str]:
     )
     lines2 = wrap(prose(3, start=7), 68)
     page2 = column_of_lines(lines2, x=MARGIN, top=PAGE_H - MARGIN)
-    expected = f"cooperation agreement under the archival index.\n{' '.join(lines2)}\n"
+    # The whole page, not just the joined word: the two hyphens differ deliberately — the line-break
+    # hyphen in "coopera-" is joined away, the soft hyphen inside "archive[U+00AD]al" is dropped in
+    # place. Both are on this page, and so is the "The clerk filed the " that opens it.
+    expected = (
+        f"The clerk filed the cooperation agreement under the archival index.\n{' '.join(lines2)}\n"
+    )
     return [page1, page2], expected
 
 

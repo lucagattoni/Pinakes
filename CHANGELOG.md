@@ -26,7 +26,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `[light,pdf,claude]`), and `check.sh` gains an `extras-not-core` gate.
 - **I2: the synthetic hard-case PDF corpus and its generator.** `tests/pdf-corpus/` holds 19
   committed fixtures across seven strata (two-column, tables, headers/footers, ligatures &
-  hyphenation, scanned, pathological, baseline) totalling 59 pages and ~370 KB, each paired with a
+  hyphenation, scanned, pathological, baseline) totalling 59 pages and 266 KiB of PDF against a
+  2 MiB budget (216 KiB of it the scanned stratum, against 1.5 MiB), each paired with a
   hand-authored `.expected.txt` written from the fixture's *spec* — never from an extractor's
   output, which would only prove an extractor agrees with itself. No real-world PDF is committed:
   a dependency-free PDF writer (`pdfwriter.py`) emits raw content streams using the base-14 fonts,

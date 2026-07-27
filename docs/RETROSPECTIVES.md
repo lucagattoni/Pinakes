@@ -606,3 +606,50 @@ does," were not — the exact class of drift a 0.1.2 audit already caught once f
 scope. *Lesson: "describes CI/build behaviour in prose" is as much a user-facing surface as a CLI
 flag — grep README.md and the Makefile for the thing that changed, not only `cli.py` and
 `DESIGN.md`.*
+
+## I2 — the synthetic PDF corpus (20260727 23:43)
+
+**HIGH — a gate rendered at a resolution that made its own threshold unreachable.** The scanned
+stratum's tolerance is "more than 300 pixels differing by more than 32 levels", derived for a page
+rastered at 150 dpi. The comparison called `page.render(scale=1.0)` — pdfium's default of 1 px per
+*point*, i.e. **72 dpi** — which downsamples the stored 150 dpi image ~2× before diffing. That
+shrinks the page from 2,105,025 px to 485,316 and a moved word's delta from several hundred pixels
+to well under a hundred: the gate would have passed exactly the change it exists to catch, while its
+docstring claimed a 2× margin. The docstring also named A4 (1240×1754) for a corpus that is US
+Letter throughout, so *both* factors in the derivation were wrong and they partly cancelled, which is
+why the number still looked plausible. *Lesson: a tolerance is meaningless without the resolution it
+is measured at — state both, and assert the comparison runs at the fixtures' own. When a derived
+constant is checked, re-derive it from the code that consumes it, not from the prose that
+introduced it.*
+
+**HIGH — `textwrap` invented a hyphen the ground truth then rendered as a phantom space.**
+`textwrap.wrap(..., break_long_words=False)` leaves `break_on_hyphens=True`, so it split the
+existing compound "spine-out" across two lines; the ground truth joins lines with a space, yielding
+"spine- out" — a string no correct extractor could ever produce, in the one file whose entire job is
+to be what a correct extractor produces. The same word appears correctly in 16 other places in the
+corpus, so the corpus contradicted itself. *Lesson: when a helper's default silently edits content,
+the edit shows up wherever the content is re-joined by a different rule. Hyphenation is exercised
+deliberately here by fixtures that place their own hyphens; it must never arrive by accident.*
+
+**HIGH — the soft-hyphen fixture's ground truth dropped the first four words of its own page.** The
+expected text began "cooperation agreement…" while the page reads "The clerk filed the coopera-
+tion agreement…". Written by hand while thinking about the *joined word*, not about the page. Every
+automated check still passed: the fixture had a ground truth, the counts matched, the bytes
+regenerated. *Lesson: nothing in a corpus's own test suite can tell you a ground truth is wrong —
+only reading it beside the page can. Budget for that reading explicitly; "the tests are green" is
+not evidence about the one thing tests cannot check.*
+
+**MEDIUM — two claims with no enforcement, in a file full of enforcement.** "Pillow is dev-only,
+never core, never an extra" was stated in the commit message, in `conftest.py` and in a test
+docstring — and adding Pillow to `[project.dependencies]` left the whole suite green, while the
+structurally identical claim for pypdfium2/anthropic *is* tested. Separately,
+`pdf_runnable()`'s three-part predicate had a test walking false→false→false→false→true that never
+turned the corpus clause off once both libraries were on, so deleting that clause entirely still
+passed. *Lesson: for an N-part predicate, assert each part is individually load-bearing by turning
+it off from the all-true state — a monotonic walk up to true proves only the last flip mattered.*
+
+**LOW — the same quantity was stated twice, differently, and neither figure was right.** The commit
+message said ~440 KB (that is `du`'s block-rounded disk usage of the whole directory), the CHANGELOG
+said ~370 KB (unreconstructable), and the budgeted quantity — the PDF bytes `test_byte_budget` sums
+— is 266 KiB. *Lesson: when a number appears in two documents, both are guesses unless one of them
+was measured; measure once and paste the same figure.*
