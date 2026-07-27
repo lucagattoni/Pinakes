@@ -9,6 +9,42 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Nothing yet.
 
+## [0.1.1] — 20260727 14:52
+
+Documentation, tooling and release plumbing. No change to installed behaviour: the wheel's code is
+identical to 0.1.0.
+
+### Added
+
+- **Graph-integration research** under [`docs/graph/`](docs/graph/) — fourteen investigation docs
+  (LightRAG, microsoft/graphrag, Graphiti, HippoRAG 2, fast-graphrag, Graph-R1, LinearRAG,
+  datastax/graph-rag, code-graph-rag, MiniRAG, Youtu-GraphRAG, LogicRAG, and ClaudeKB as the
+  in-house precedent) plus `GRAPH_RAG.md`, the research record, and `PINAKES_APPROACH.md`, which
+  turns them into a gated build order: free structural edges at sync, a staged expansion→PPR graph
+  channel behind `graph_channel` (default off), a typed and capped `pinakes_links` returning score
+  plus frontier, and a budgeted `--deep` loop whose discoveries are written back to sidecars. The
+  synthesis passed six adversarial review passes (27→7→8→5→1→0 findings).
+- **`Makefile`** — every target wraps the command CI actually runs, so a green `make check` locally
+  means what it means on the runner. `make help` lists them.
+
+### Changed
+
+- The PyPI upload in the release workflow is **gated on the `PUBLISH_TO_PYPI` repository variable**
+  and skipped rather than attempted while it is unset. Version/tag agreement, build and the
+  isolated wheel smoke test still run on every tag, so tagging is always safe and never produces a
+  red run for a reason the maintainer already knows about.
+- `CLAUDE.md`: the increment workflow is no longer v0.1-specific, and a new *Landing work* section
+  records the standing rule — always push to `origin/main`, always cut the release once the work
+  passes the SemVer table, never let complete work sit in `[Unreleased]`.
+- `test_version_is_set` asserts the version's *shape* (SemVer, never the `0.0.0` placeholder)
+  instead of a hard-coded literal, which made every release edit a test for no functional reason.
+
+### Fixed
+
+- Red `main`: `ruff format --check` covers Python fenced blocks **inside Markdown**, so a docs-only
+  merge failed the Format gate. The snippet is reformatted, and `CLAUDE.md` now says plainly that a
+  docs-only commit is still subject to the full gate.
+
 ## [0.1.0] — 20260725 15:27
 
 ### Added

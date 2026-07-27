@@ -3,6 +3,13 @@ name: Release
 # Publishing is deliberately manual: it runs only when a maintainer pushes a v* tag, never on a
 # merge. PyPI trusted publishing must be configured for this repository first — a human step that
 # cannot be automated from here (plans/v0.1.md, I15).
+#
+# Until that human step happens, the PyPI upload is *skipped rather than attempted*, gated on the
+# repository variable PUBLISH_TO_PYPI. Everything before it still runs on every tag — version/tag
+# agreement, build, and the isolated wheel smoke test — so a tag is fully validated even when
+# nothing is uploaded, and pushing one never produces a red run for a reason the maintainer
+# already knows about. To start publishing: configure trusted publishing on PyPI, then set the
+# variable (`gh variable set PUBLISH_TO_PYPI --body true`). Nothing else here changes.
 on:
   push:
     tags: ["v*"]
@@ -40,4 +47,11 @@ jobs:
           test -f /tmp/release-smoke/pinakes.toml
 
       - name: Publish to PyPI
+        if: vars.PUBLISH_TO_PYPI == 'true'
         run: uv publish
+
+      - name: Explain why nothing was published
+        if: vars.PUBLISH_TO_PYPI != 'true'
+        run: |
+          echo "::notice::PUBLISH_TO_PYPI is not 'true' — the wheel was built and smoke-tested but not uploaded."
+          echo "Configure PyPI trusted publishing, then: gh variable set PUBLISH_TO_PYPI --body true"

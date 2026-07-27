@@ -1,6 +1,7 @@
 """CLI contract: the surface is complete, the behaviour is honest, exit codes mean something."""
 
 import argparse
+import re
 
 import pytest
 
@@ -14,7 +15,11 @@ DESIGN_V01_COMMANDS = frozenset({"init", "sync", "search", "doctor", "install-ho
 
 
 def test_version_is_set() -> None:
-    assert __version__ == "0.1.0"
+    # Asserts the *shape*, not a literal: pinning the exact string made every release edit a test
+    # for no functional reason, and the release workflow already refuses a tag that disagrees with
+    # __version__. What still matters is that the 0.0.0 development placeholder never ships.
+    assert re.fullmatch(r"\d+\.\d+\.\d+", __version__), __version__
+    assert __version__ != "0.0.0"
 
 
 def test_surface_matches_the_design() -> None:

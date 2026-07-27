@@ -30,16 +30,18 @@ carries rules that change how you work.
 - **The free path stays free.** No code path may make a paid API call outside `pnk ask --deep`.
 - Index schema changes bump `schema_version` and require a rebuild. Never write a migration.
 
-## Building v0.1 — one increment at a time
+## Building a release — one increment at a time
 
-[`plans/v0.1.md`](plans/v0.1.md) is the build order (I1–I15). Never batch increments; each one is a
-separate, bisectable landing:
+Each version has a reviewed plan under [`plans/`](plans/) that is the build order (v0.1 shipped as
+I1–I15; the current plan is the newest file there). Never batch increments; each one is a separate,
+bisectable landing:
 
 1. Own worktree, branch `YYYYMMDD_HHMM-i<N>-<slug>`.
 2. Implement the increment **with its tests** — tests ship in the increment that introduces the
    behaviour, never deferred.
-3. Green before review: run `./check.sh` — it runs every gate under `set -e`, so a
-   failure is a non-zero exit rather than a line in a log that a pipe then swallows.
+3. Green before review: run `./check.sh` (or `make check`) — every gate under `set -e`, so a
+   failure is a non-zero exit rather than a line in a log that a pipe then swallows. It formats
+   Python **inside Markdown fences** too: a docs-only commit can still fail the gate.
 4. **Retrospective review** — a fresh adversarial pass over that increment's own diff, hunting for
    what is wrong, missed, or asserted without evidence. Fix findings, re-run the checks, repeat
    until a pass is clean. Findings and fixes are their own commit, separate from the implementation.
@@ -47,8 +49,24 @@ separate, bisectable landing:
    [`docs/RETROSPECTIVES.md`](docs/RETROSPECTIVES.md); a finding that becomes a durable rule is
    promoted into this file too. Trivia stays in the commit message.
 5. **CHANGELOG `[Unreleased]` entry in the same commit as the code** — one line per increment.
-   v0.1 stays unreleased until the whole slice is usable end to end (I15 cuts it).
 6. Merge to `main`, push, remove the worktree.
+
+## Landing work: always push, always release
+
+**Nothing is done until it is on `origin/main` and, when it completes a unit of work, tagged.**
+Work left local is invisible to every other agent, machine and scheduled run.
+
+- **Push every landing** to `origin/main` — never leave merged work sitting locally.
+- **Cut the release** as soon as the work passes the SemVer table in the global rules (feature =
+  MINOR, fix/docs/deps = PATCH, breaking = MAJOR). Complete work never lingers in `[Unreleased]`.
+- Release procedure: bump `__version__`, move `[Unreleased]` into a dated `[x.y.z] — YYYYMMDD HH:MM`
+  section, commit, then `git tag -a vx.y.z` and push the tag. The tag must equal `__version__` or
+  the workflow refuses it. `make release-check` prints both before you tag.
+- The tag builds and smoke-tests the wheel every time; the **PyPI upload is gated** on the repo
+  variable `PUBLISH_TO_PYPI` so tagging is always safe. Turn it on once trusted publishing exists
+  (`gh variable set PUBLISH_TO_PYPI --body true`).
+- Create the GitHub release with notes drawn from that CHANGELOG section.
+- After anything lands on `main`, fast-forward the primary checkout (`git pull --ff-only`).
 
 ## Tooling
 
