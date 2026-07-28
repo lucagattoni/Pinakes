@@ -180,6 +180,24 @@ def test_zero_page_file_is_an_error_not_an_empty_success(tmp_path: Path) -> None
         Pypdfium2Extractor().extract(path, ExtractionContext())
 
 
+def test_a_tj_string_authored_with_an_embedded_line_break_produces_no_double_newline() -> None:
+    """`generate.py`'s `column_of_lines` helper authors each visual line as its own `Tj` call, and
+    at least one line in this fixture's own content stream carries a trailing `\\r\\n` inside that
+    `Tj` string — pdfium reports it as a real, zero-width `CharSpan` sharing the line's own y0. Left
+    in, it would duplicate the single `\\n` `assemble()` already inserts between blocks, producing a
+    stray blank line at every such boundary. This gate is structural (the raw, unflattened text),
+    unlike every `quality.py` metric, which whitespace-flattens both extraction and ground truth
+    before scoring by design — reverting the `\\r`/`\\n` filter in `_block_from_run` passes the
+    entire `make pdf-eval` gate and every other test in this file unchanged, verified directly
+    before writing this test (docs/RETROSPECTIVES.md, I3b retrospective)."""
+    from pinakes.extract.pdfium import Pypdfium2Extractor
+
+    path = CORPUS_DIR / "baseline-1p.pdf"
+    result = Pypdfium2Extractor().extract(path, ExtractionContext())
+    assert "\n\n" not in result.text
+    assert result.text.count("\n") == 7
+
+
 def test_invisible_render_mode_fixture_yields_its_characters() -> None:
     """Text-rendering mode 3 (invisible) hides a glyph from *rendering*, not from *extraction* —
     pdfium's character-level API has no render-mode signal to filter on in the first place, so this
@@ -224,6 +242,31 @@ def test_slice_pages_clamps_a_range_that_runs_past_the_last_page() -> None:
         assert len(doc) == 2
     finally:
         doc.close()
+
+
+@pytest.mark.parametrize(
+    ("first", "last"),
+    [
+        (5, 2),  # reversed range
+        (100, 200),  # first entirely beyond the document
+        (20, 30),  # first beyond the document, past a clamped last too
+        (-1, 5),  # negative first
+    ],
+)
+def test_slice_pages_rejects_an_invalid_range_instead_of_returning_everything(
+    first: int, last: int
+) -> None:
+    """An empty `pages=[]` list is falsy in Python, and pypdfium2's own `import_pages` treats a
+    falsy/`None` list as "import every page" — verified against 5.12.1: before this check existed,
+    every case parametrized here silently returned the *entire* 12-page source document instead of
+    an error, which for a future paid-path caller computing a page window is a cost-control failure
+    (send everything, not a small slice), not merely a wrong answer (docs/RETROSPECTIVES.md, I3b
+    retrospective)."""
+    from pinakes.extract.pdfium import slice_pages
+
+    path = CORPUS_DIR / "baseline-12p.pdf"
+    with pytest.raises(ValueError):
+        slice_pages(path, first, last)
 
 
 def test_slice_pages_round_trip_preserves_bytes_that_reopen(tmp_path: Path) -> None:

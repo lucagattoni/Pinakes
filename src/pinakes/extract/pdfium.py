@@ -142,10 +142,26 @@ def slice_pages(path: Path, first: int, last: int) -> bytes:
     outright on any out-of-range index rather than tolerating or clamping one itself (verified
     against 5.12.1), so a range that runs past the end must be narrowed before it ever reaches
     that call, not after.
+
+    `first > last` (after clamping) raises `ValueError` rather than passing an empty page list
+    through — verified against 5.12.1 that pypdfium2's own `import_pages` treats an empty list as
+    falsy and silently imports *every* page, identically to passing `pages=None` ("all pages"),
+    which is the opposite of what an empty requested range should mean. Caught here, before that
+    call, since a future off-by-one computing a page window (e.g. the last window of a document
+    whose length isn't a multiple of the window size) would otherwise silently send the *whole*
+    document to a paid API instead of a small slice — a cost-control failure, not merely a wrong
+    answer (docs/RETROSPECTIVES.md, I3b retrospective).
     """
     src = _open(path)
     try:
+        if first < 0:
+            raise ValueError(f"slice_pages: first={first} must be >= 0")
         last_clamped = min(last, len(src) - 1)
+        if first > last_clamped:
+            raise ValueError(
+                f"slice_pages: first={first} is past last={last_clamped} "
+                f"(document has {len(src)} pages, requested last was {last})"
+            )
         dest = pdfium.PdfDocument.new()
         try:
             dest.import_pages(src, pages=list(range(first, last_clamped + 1)))

@@ -69,16 +69,21 @@ EXEMPTIONS: dict[str, dict[str, str]] = {
 class Rate:
     """A rate that carries its own denominator — `value` is `None`, never `0.0`, when the
     denominator is legitimately zero, so a declared "nothing to measure here" is never
-    indistinguishable from a measured, failing zero."""
+    indistinguishable from a measured, failing zero.
 
-    numerator: float
-    denominator: float
+    `numerator`/`denominator` are `int`, not `float`: every metric below counts characters, words,
+    or pairs, and `aggregate()` only ever sums those counts — there is no code path that produces a
+    genuinely fractional value for either field, so `int` is what they actually are, not a rounding
+    of something else (docs/RETROSPECTIVES.md, I3b retrospective)."""
+
+    numerator: int
+    denominator: int
 
     @property
     def value(self) -> float | None:
         return self.numerator / self.denominator if self.denominator else None
 
-    def as_dict(self) -> dict[str, float]:
+    def as_dict(self) -> dict[str, int]:
         return {"numerator": self.numerator, "denominator": self.denominator}
 
 
@@ -407,18 +412,44 @@ def fit_running_head_threshold(corpus_dir: Path) -> tuple[float, str]:
             else:
                 true_negative_fractions.append(fraction)
 
+    return threshold_from_fractions(
+        true_positive_fractions, true_negative_fractions, sample_size=len(headers_footers)
+    )
+
+
+def threshold_from_fractions(
+    true_positive_fractions: Sequence[float],
+    true_negative_fractions: Sequence[float],
+    *,
+    sample_size: int,
+) -> tuple[float, str]:
+    """The pure midpoint computation `fit_running_head_threshold` builds on, pulled apart from the
+    corpus I/O so both raise paths below are testable directly, on hand-built fraction lists,
+    without constructing a synthetic corpus directory just to exercise them.
+    """
     if not true_positive_fractions:
         raise ValueError(
             "no declared running-head signature (spec.py::KNOWN_RUNNING_HEAD_SIGNATURES) was ever "
             "observed recurring — the fit has no true positive to anchor on"
         )
+    if not true_negative_fractions:
+        # Silently falling back to 0.0 here would assume the best case (no decoy ever recurs) with
+        # no evidence for it — a *lower* threshold makes strip_running_heads more aggressive, so a
+        # missing lower bound is not something to guess at the same way a missing upper bound
+        # (`fit_text_yield_floor`'s scanned-yield fallback) legitimately can: 0 non-whitespace
+        # characters is the *true* value for "no native text layer," never an assumption
+        # (docs/RETROSPECTIVES.md, I3b retrospective).
+        raise ValueError(
+            "no non-running-head signature was ever observed recurring on 2+ pages — the fit has "
+            "no true negative to bound the threshold from below"
+        )
     min_true_positive = min(true_positive_fractions)
-    max_true_negative = max(true_negative_fractions) if true_negative_fractions else 0.0
+    max_true_negative = max(true_negative_fractions)
     threshold = (min_true_positive + max_true_negative) / 2
     justification = (
         f"midpoint of the lowest true-positive recurrence ({min_true_positive:.3f}) and the "
         f"highest true-negative recurrence ({max_true_negative:.3f}) observed across "
-        f"{len(headers_footers)} headers-footers fixtures"
+        f"{sample_size} headers-footers fixtures"
     )
     return threshold, justification
 

@@ -24,6 +24,7 @@ from pinakes.extract.quality import (
     order_fidelity,
     pair_adjacency,
     score_corpus,
+    threshold_from_fractions,
     word_coverage,
     write_baseline,
 )
@@ -112,6 +113,25 @@ def test_word_coverage_short_and_stopword_tokens_are_not_significant() -> None:
     only "catalogue" does."""
     rate = word_coverage("something else entirely", "the a in of catalogue")
     assert rate.denominator == 1
+
+
+def test_threshold_from_fractions_is_the_midpoint_of_the_two_bounds() -> None:
+    threshold, reason = threshold_from_fractions([1.0, 1.0], [0.333, 0.2], sample_size=3)
+    assert threshold == pytest.approx((1.0 + 0.333) / 2)
+    assert "1.000" in reason and "0.333" in reason
+
+
+def test_threshold_from_fractions_raises_without_a_true_positive() -> None:
+    with pytest.raises(ValueError, match="true positive"):
+        threshold_from_fractions([], [0.333], sample_size=1)
+
+
+def test_threshold_from_fractions_raises_without_a_true_negative() -> None:
+    """Silently falling back to 0.0 would assume the best case (no decoy ever recurs) with no
+    evidence for it — a *lower* threshold makes `strip_running_heads` more aggressive, so a missing
+    lower bound must fail loudly rather than guess (docs/RETROSPECTIVES.md, I3b retrospective)."""
+    with pytest.raises(ValueError, match="true negative"):
+        threshold_from_fractions([1.0], [], sample_size=1)
 
 
 def test_compare_to_baseline_flags_a_regression_beyond_tolerance() -> None:

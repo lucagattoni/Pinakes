@@ -33,16 +33,17 @@ _DIGITS = re.compile(r"\d+")
 # Lines on the same line of text land within this many points of each other's *bounding-box*
 # bottom — not the baseline itself, and the gap between those two is the reason this is 3.5, not a
 # tighter number a hand-built fixture would have suggested. A descender (g, y, q, j, p) genuinely
-# extends below the baseline its neighbours sit on: measured against real pdfium extraction of this
-# project's own base-14 corpus fonts, g/y/q/j/p's box-bottom sits 2.3-2.42 pt below the same line's
-# non-descender characters, consistently, at every line sampled. I3a's original 2.0 was tuned only
-# against `test_extract_layout.py`'s hand-built fixtures (zero measured descender depth, since
-# `mkchar`/`word` place every character at one shared `y`), so it silently split every descender
-# onto its own one-character "line" the first time real font geometry reached this function —
-# verified by reproducing it against `tests/pdf-corpus/baseline-1p.pdf` before this fix
-# (docs/RETROSPECTIVES.md, I3b). 3.5 clears the measured 2.42 pt worst case with margin and stays
-# far under any real line spacing (typically >=1.2x font size, i.e. several times this tolerance
-# even for a small font) — a `_LINE_TOLERANCE` this size cannot merge two genuinely different lines.
+# extends below the baseline its neighbours sit on: measured against real pdfium extraction across
+# every non-scanned fixture in this project's own corpus (not just one), the deepest descender's
+# box-bottom sits 2.299 pt below the same line's non-descender characters — a maximum, not a typical
+# case. I3a's original 2.0 was tuned only against `test_extract_layout.py`'s hand-built fixtures
+# (zero measured descender depth, since `mkchar`/`word` place every character at one shared `y`), so
+# it silently split every descender onto its own one-character "line" the first time real font
+# geometry reached this function — verified by reproducing it against
+# `tests/pdf-corpus/baseline-1p.pdf` before this fix (docs/RETROSPECTIVES.md, I3b). 3.5 clears the
+# measured 2.299 pt worst case with margin and stays far under any real line spacing (typically
+# >=1.2x font size, i.e. several times this tolerance even for a small font) — a `_LINE_TOLERANCE`
+# this size cannot merge two genuinely different lines.
 _LINE_TOLERANCE = 3.5
 # One shared constant for "this gap is column-sized", used both to split same-line characters into
 # separate Blocks (two columns printed at the same height must never read as one line spanning the
@@ -50,12 +51,6 @@ _LINE_TOLERANCE = 3.5
 # constants that happened to share a value would drift the moment either was fitted against real
 # documents without the other noticing — one name, one fit, everywhere it is used.
 _COLUMN_GAP = 20.0
-# A block whose own width reaches at least this fraction of the page's total content span (the
-# widest right edge minus the narrowest left edge, across every block) spans multiple columns and is
-# never a column member, whatever its `x0`. Measured, not guessed: `two-column-b.pdf`'s own caption
-# is 79% of the content span, every genuine column line on that page tops out at 42% — 0.6 sits with
-# comfortable margin on both sides of the real gap between them (docs/RETROSPECTIVES.md, I3b).
-_SPANNING_WIDTH_FRACTION = 0.6
 # How far apart two running-head candidates' y0 may land and still count as "the same" band. Not
 # `round()`: rounding to the nearest point puts a hard wall at every half-integer, so two instances
 # of one genuine running head at 750.4 and 750.6 — sub-point rendering jitter, smaller than any real
@@ -139,12 +134,14 @@ def blocks_from_chars(chars: Sequence[CharSpan], *, page_index: int = 0) -> list
     for char in ordered:
         placed = False
         for line in lines:
-            # Against *any* existing member, not only the first: a hyphen sits ~2.4 pt *above* its
-            # own line's baseline (vertically centred near x-height, never touching the baseline it
-            # separates two words on) while a descender sits ~2.3-2.42 pt *below* it — a ~4.7-4.8 pt
-            # spread neither `_LINE_TOLERANCE` alone nor a single fixed anchor can bridge if that
-            # anchor happens to be whichever of the two outliers the descending-y0 sort visits
-            # first. Matching any member works because most characters on a real line of prose sit
+            # Against *any* existing member, not only the first: a hyphen sits up to 2.365 pt
+            # *above* its own line's baseline (vertically centred near x-height, never touching the
+            # baseline it separates two words on) while a descender sits up to 2.299 pt *below* it
+            # — both maxima measured across every non-scanned fixture in this project's own corpus,
+            # a combined ~4.66 pt spread neither `_LINE_TOLERANCE` alone nor a single fixed anchor
+            # can bridge if that anchor happens to be whichever of the two outliers the
+            # descending-y0 sort visits first. Matching any member works because most characters
+            # on a real line of prose sit
             # exactly on the baseline (the majority, by character count) — once one has joined a
             # line, every outlier on either side matches *that* member independently, never needing
             # to match the outlier on the opposite side directly (verified by reproducing this
@@ -236,28 +233,41 @@ def reading_order(page: Page) -> Page:
     """Column-aware ordering: cluster blocks by `x0` gap, then top-to-bottom within each column,
     columns left to right. A single-column page is one cluster and this is a no-op beyond sorting.
 
-    A block wide enough to reach across most of the page's own content span
-    (`_SPANNING_WIDTH_FRACTION`) is never a column member, however its `x0` happens to line up: a
-    caption spanning two columns shares its `x0` with whichever column starts at the same margin,
-    and clustering it by that alone would read it as that column's own last line, immediately
-    after the line above it, rather than at its own correct position — after every column above
-    it, before every column below (`tests/pdf-corpus/two-column-b.pdf`'s own caption measures 79%
-    of the page's content span against a 42% maximum for any genuine column line — verified, not
-    assumed; docs/RETROSPECTIVES.md, I3b). Spanning blocks split the page into Y-ordered sections;
-    each section's non-spanning blocks are column-clustered exactly as a page with no spanning
-    blocks would be (`_columns_in_order`), and a spanning block is emitted between sections at its
-    own position.
+    A block that bridges from its own column's cluster into the *next* column's own territory
+    (`_spanning_blocks`) is never a column member, however its `x0` happens to line up: a caption
+    spanning two columns shares its `x0` with whichever column starts at the same margin, and
+    clustering it by that alone would read it as that column's own last line, immediately after
+    the line above it, rather than at its own correct position — after every column above it,
+    before every column below. Spanning blocks split the page into Y-ordered sections; each
+    section's non-spanning blocks are column-clustered exactly as a page with no spanning blocks
+    would be (`_columns_in_order`), and a spanning block is emitted between sections at its own
+    position.
+
+    **Not "wide relative to the page," which is not the same thing.** An earlier version of this
+    function flagged a block as spanning whenever its own width reached a fixed fraction
+    (`_SPANNING_WIDTH_FRACTION`) of the page's total content span — measured against
+    `tests/pdf-corpus/two-column-b.pdf`'s own caption (79% of the span) against that page's widest
+    genuine column line (42%). That measurement was real, but the fraction it produced was never
+    safe in general: a narrow sidebar beside a much wider main column (reproduced independently,
+    not hypothetical) put the main column's own lines at 77% of the page's content span with
+    nothing actually overlapping the sidebar at all, and the width-fraction check misread every one
+    of them as spanning, interleaving the two columns line by line. Bridging into the *next*
+    column's own `x0` is the geometric fact the caption case and the sidebar case actually differ
+    on — a caption's `x1` reaches past where the right column starts; a wide-but-legitimate
+    column's does not, because there is nothing to its own right to reach into
+    (docs/RETROSPECTIVES.md, I3b retrospective).
     """
     if len(page.blocks) < 2:
         return page
 
-    total_span = max(b.x1 for b in page.blocks) - min(b.x0 for b in page.blocks)
-    threshold = _SPANNING_WIDTH_FRACTION * total_span
+    spanning = _spanning_blocks(page.blocks)
+    if not spanning:
+        return Page(blocks=tuple(_columns_in_order(page.blocks)))
 
     ordered: list[Block] = []
     section: list[Block] = []
     for block in sorted(page.blocks, key=lambda b: -b.y0):
-        if total_span > 0 and (block.x1 - block.x0) >= threshold:
+        if block in spanning:
             ordered.extend(_columns_in_order(section))
             section = []
             ordered.append(block)
@@ -267,19 +277,19 @@ def reading_order(page: Page) -> Page:
     return Page(blocks=tuple(ordered))
 
 
-def _columns_in_order(blocks: Sequence[Block]) -> list[Block]:
-    """Cluster `blocks` into columns by `x0` gap, then read each column top to bottom, columns left
-    to right.
+def _cluster_by_x0(blocks: Sequence[Block]) -> list[list[Block]]:
+    """Group `blocks` into columns by `x0` gap — the clustering step both `_columns_in_order`'s
+    final ordering and `_spanning_blocks`' bridging check build on, so the two never disagree
+    about where one column ends and the next begins.
 
     Each candidate is compared against the column's own *start* (`columns[-1][0]`), never its most
     recently added member: comparing to the last-placed block lets a column's accepted range chain
     forward one small step at a time — each step individually under `_COLUMN_GAP`, the total drift
     from the column's start well past it — and, sorted by `x0`, can merge a genuine third column
-    into what should be its neighbour's cluster.
+    into what should be its neighbour's cluster. Sorting by `x0` alone, never `x1`: a block's own
+    width has no bearing on which bucket *it* joins or which bucket any *other* block joins, which
+    is what makes clustering safe to run before spanning blocks have even been identified.
     """
-    if not blocks:
-        return []
-
     by_x = sorted(blocks, key=lambda b: b.x0)
     columns: list[list[Block]] = [[by_x[0]]]
     for block in by_x[1:]:
@@ -287,9 +297,39 @@ def _columns_in_order(blocks: Sequence[Block]) -> list[Block]:
             columns.append([block])
         else:
             columns[-1].append(block)
+    return columns
 
+
+def _spanning_blocks(blocks: Sequence[Block]) -> set[Block]:
+    """Which blocks bridge from their own column's cluster into the very next column's territory.
+
+    A block is spanning if its `x1` reaches at or past the next column's own `x0` — genuinely
+    overlapping that column's space, not merely being wide. The last column has no "next" column to
+    bridge into, so nothing in it is ever spanning by this test alone (a page whose one real column
+    happens to be wide is not, on its own, evidence of anything spanning).
+    """
+    if len(blocks) < 2:
+        return set()
+    columns = _cluster_by_x0(blocks)
+    if len(columns) < 2:
+        return set()
+    column_starts = [column[0].x0 for column in columns]
+    spanning: set[Block] = set()
+    for index, column in enumerate(columns[:-1]):
+        next_start = column_starts[index + 1]
+        for block in column:
+            if block.x1 >= next_start:
+                spanning.add(block)
+    return spanning
+
+
+def _columns_in_order(blocks: Sequence[Block]) -> list[Block]:
+    """Cluster `blocks` into columns by `x0` gap, then read each column top to bottom, columns left
+    to right."""
+    if not blocks:
+        return []
     ordered: list[Block] = []
-    for column in columns:
+    for column in _cluster_by_x0(blocks):
         ordered.extend(sorted(column, key=lambda b: -b.y0))
     return ordered
 
