@@ -53,6 +53,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `pytest` runs with `-rs` in `check.sh` and CI, so a skipped gate prints its reason instead of
   reading as a pass.
 - `pyright` now type-checks `tools/` alongside `src/` and `tests/`.
+- Gate 4's runtime check matches paid modules on a dotted-prefix boundary against
+  `google.generativeai` in full, not on the bare root `google` — which would have made
+  `google.protobuf` (transitive via onnxruntime and grpc) a paid client and failed the flagship
+  safety gate for an unrelated reason on some future CI leg.
 
 ## [0.2.2] — 20260728 18:49
 

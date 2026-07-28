@@ -30,9 +30,23 @@ GATE_SCRIPT = REPO_ROOT / "tools" / "paid_path_gate.py"
 FREE_PATH_RUN = REPO_ROOT / "tests" / "free_path_run.py"
 ALLOWLIST = REPO_ROOT / ".paid-path-allowlist"
 
-# The module roots that cost money. Kept in step with `tools/paid_path_gate.py`'s PAID_CLIENTS,
-# minus the regex escaping — `test_the_two_paid_client_lists_agree` is what stops them drifting.
-PAID_CLIENT_ROOTS = frozenset({"anthropic", "openai", "cohere", "mistralai", "google"})
+# The modules that cost money, as `sys.modules` spells them. Kept in step with
+# `tools/paid_path_gate.py`'s PAID_CLIENTS minus the regex escaping —
+# `test_the_two_paid_client_lists_agree` is what stops the two drifting apart.
+#
+# **`google.generativeai` in full, never the bare root.** Matching on `name.split(".")[0]` would
+# make `google.protobuf` a paid client, and protobuf arrives transitively with onnxruntime, grpc
+# and half the ML ecosystem — so the flagship safety gate would fail on a platform where fastembed
+# happens to pull it in, for a reason having nothing to do with spending money. The repair a future
+# maintainer reaches for when a safety gate cries wolf is to weaken the gate.
+PAID_CLIENT_MODULES = ("anthropic", "openai", "cohere", "mistralai", "google.generativeai")
+
+
+def _is_paid_module(name: str) -> bool:
+    """`anthropic` and `anthropic.types` are the client; `anthropic_shim` and `google.protobuf`
+    are not. Submodule matching is on a dotted-prefix boundary, never `startswith` on the raw
+    string, which would swallow any module whose name merely begins with a paid one."""
+    return any(name == paid or name.startswith(f"{paid}.") for paid in PAID_CLIENT_MODULES)
 
 
 def _run_gate(root: Path) -> subprocess.CompletedProcess[str]:
@@ -201,17 +215,34 @@ def test_gate_2_matches_every_paid_client_and_ignores_lookalikes(tmp_path: Path)
 
 
 def test_the_two_paid_client_lists_agree() -> None:
-    """`PAID_CLIENT_ROOTS` here and `PAID_CLIENTS` in the gate script describe the same set — one
-    for `sys.modules` names, one for a regex. Adding a provider to one and not the other would
-    leave gate 2 or gate 4 quietly narrower than the other."""
+    """`PAID_CLIENT_MODULES` here and `PAID_CLIENTS` in the gate script name the same providers —
+    one as `sys.modules` keys, one as regex alternatives. Adding a provider to one and not the
+    other leaves gate 2 or gate 4 quietly narrower than its twin, and nothing else would notice."""
     text = GATE_SCRIPT.read_text(encoding="utf-8")
     line = next(line for line in text.splitlines() if line.startswith("PAID_CLIENTS = "))
     in_script = {
-        part.strip().strip("\"'r").replace("\\.", ".").split(".")[0]
+        part.strip().strip("r").strip("\"'").replace("\\.", ".")
         for part in line.split("(", 1)[1].rstrip(")").split(",")
         if part.strip()
     }
-    assert in_script == set(PAID_CLIENT_ROOTS)
+    assert in_script == set(PAID_CLIENT_MODULES)
+
+
+def test_the_paid_module_test_ignores_unrelated_namespace_packages() -> None:
+    """The false-positive direction, which matters as much as the true-positive one here.
+
+    `google.protobuf` travels with onnxruntime and grpc; `openai_shim` is an ordinary name. A gate
+    that flags either would be switched off the first time it cried wolf, and this gate is the last
+    thing standing between the free path and a paid client.
+    """
+    assert _is_paid_module("anthropic")
+    assert _is_paid_module("anthropic.types.beta")
+    assert _is_paid_module("google.generativeai")
+
+    assert not _is_paid_module("google")
+    assert not _is_paid_module("google.protobuf")
+    assert not _is_paid_module("openai_shim")
+    assert not _is_paid_module("anthropic_helpers")
 
 
 # --------------------------------------------------------------------------------------------
@@ -265,7 +296,7 @@ def _free_path_modules(tmp_path: Path, prelude: str = "") -> set[str]:
 
 def _assert_no_paid_client(modules: set[str]) -> None:
     """The checker itself, named so gate 4's negative test has something to make fail."""
-    found = sorted(name for name in modules if name.split(".")[0] in PAID_CLIENT_ROOTS)
+    found = sorted(name for name in modules if _is_paid_module(name))
     if found:
         raise AssertionError(f"the free path imported a paid client: {found}")
 

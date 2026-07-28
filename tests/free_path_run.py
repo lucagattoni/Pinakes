@@ -37,6 +37,7 @@ import numpy as np
 
 from pinakes.cli import main
 from pinakes.embed import ModelInfo, Vectors, register_embedding_backend, register_reranker
+from pinakes.manifest import load
 
 DIM = 3
 VOCABULARY = ("retrieval", "ranking", "sourdough")
@@ -111,6 +112,18 @@ def _build(root: Path, *, backend: str) -> Path:
     if main(["init", str(root)]) != 0:
         raise SystemExit(f"free-path run: `pnk init {root}` failed")
     _point_at_the_fake_backend(root / "pinakes.toml", backend=backend)
+
+    # Read the manifest back through the real loader and check it says what we meant. The whole
+    # value of the paid KB is that `extraction.backend` really is `claude-vision`; the first
+    # version of this script "configured" it with a `str.replace` that matched nothing, so the KB
+    # silently stayed free and the gate exercised none of the probes it exists to guard.
+    # A rewrite this load-bearing gets checked against the parser, not against its own intent.
+    configured = load(root).extraction.backend
+    if configured != backend:
+        raise SystemExit(
+            f"free-path run: asked for backend {backend!r}, manifest loads as {configured!r}"
+        )
+
     (root / "docs" / "a.md").write_text(
         "# Retrieval\n\nHybrid retrieval fuses lexical and dense candidates.\n", encoding="utf-8"
     )
@@ -122,8 +135,12 @@ def _run_free_surfaces(root: Path) -> None:
     `pnk doctor` legitimately returns non-zero on a WARN (an unpinned revision, a missing extra),
     and gate 4's claim is about the import graph, not about the health of a throwaway KB.
     """
-    main(["sync", "--kb", str(root)])
-    main(["search", "retrieval", "--kb", str(root)])
+    if main(["sync", "--kb", str(root)]) != 0:
+        raise SystemExit(f"free-path run: `pnk sync` failed on {root}")
+    if not (root / ".pinakes" / "index.db").is_file():
+        raise SystemExit(f"free-path run: `pnk sync` wrote no index under {root}")
+    if main(["search", "retrieval", "--kb", str(root)]) != 0:
+        raise SystemExit(f"free-path run: `pnk search` failed on {root}")
     main(["doctor", "--kb", str(root)])
 
 

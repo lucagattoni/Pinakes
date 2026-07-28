@@ -1064,6 +1064,69 @@ one code path between default and parsed value, which is why the bug was invisib
 that does not exist as configuration (`K` is a fixed constant). Every fix in this increment was
 confirmed to fail against the pre-fix code before landing.
 
+## I7a — the paid-path allowlist gate (20260728 19:25)
+
+**HIGH — the gate found two live paid-client imports on the free path, in code that had shipped.**
+`doctor._extraction` reported whether the configured extractor was available by calling
+`load_extractor(backend)`, and `sync._missing_pdf_extra` did the same to decide whether a skipped
+`.pdf` still needed an extra. The registry's factory imports the client (`extract/__init__.py`'s
+`_import`), so on a KB whose `[extraction] backend` is `claude-vision`, both `pnk doctor` and
+`pnk sync` pulled `anthropic` into a free-path process — doctor on *every* run. Neither was
+reachable from any test, because every test KB is configured for `pypdfium2`. Nothing could
+actually spend (the extractor is an I7b stub), so the cost was an import rather than a charge —
+but the invariant CLAUDE.md calls non-negotiable was already false when the gate arrived to check
+it. *Lesson: "does the free path import a paid client" is a question about a **running process**,
+not about the source text. A grep over `src/` was green the whole time both leaks existed, because
+neither leak is an import statement — it is an ordinary function call that reaches one.*
+
+**HIGH — the gate's own paid KB was silently never paid.** The free-path runner configures a second
+KB for `claude-vision`, since that is the only configuration where the two probes above fire. It
+did so with `text.replace('backend = "pypdfium2"', ...)` against a manifest template that has **no
+`[extraction]` section at all** — so the replace matched nothing, the KB stayed on the free
+backend, and the gate would have passed whether or not the leaks existed. Caught only because the
+run printed `pdf extractor: pypdfium2 importable` for a KB that was supposed to say
+`claude-vision`. Fixed by appending the section rather than replacing, by making every manifest
+rewrite a `_replace_once` that raises when it matches nothing, and by loading the manifest back
+through the real parser and asserting `extraction.backend` is what was asked for. *Lesson:
+`str.replace` returns the string unchanged when it matches nothing and reports it to no one — the
+perfect way to build a test fixture that does not test what its name says. A fixture whose whole
+purpose is to be in an unusual state must be **read back through the parser** and checked.*
+
+**MEDIUM — two of the first six mutations survived, and both survivals were the finding.**
+Mutating `is_backend_installed` to `return True` passed the entire suite: its only two callers are
+tested with it monkeypatched, so nothing exercised the function itself. And
+`test_a_directory_entry_fails_gate_1` asserted only a non-zero exit — which gate 2 produced anyway
+by reporting the planted import, so the test stayed green with gate 1's directory branch deleted.
+Fixed with three direct tests (including one whose probe module *raises on import*, so a
+regression to importing errors rather than fails quietly) and by asserting gate 1's specific
+message. *Lesson: a function whose every caller stubs it out has no test, only agreement; and an
+assertion on an exit code cannot tell which of two gates produced it.*
+
+**MEDIUM — the runtime checker would have flagged `google.protobuf` as a paid client.** Matching
+`sys.modules` names by root (`name.split(".")[0] in {"anthropic", …, "google"}`) makes every
+`google.*` module a hit, and protobuf arrives transitively with onnxruntime, grpc and much of the
+ML ecosystem. Not triggered on this platform today — verified, zero `google.*` modules in a
+free-path run — which is exactly what makes it dangerous: it would have fired first on some other
+CI leg, on a change having nothing to do with money, and the obvious repair for a safety gate that
+cries wolf is to weaken the gate. Now matched on a dotted-prefix boundary against
+`google.generativeai` in full. *Lesson: for a gate whose failure mode is "someone turns it off",
+the false-positive direction is as load-bearing as the true-positive one — and a latent false
+positive is worse than an active one, because it lands on an unrelated change.*
+
+**LOW, worth keeping — gate 2 cannot see a dynamic import, and that is deliberate.**
+`extract/__init__.py` calls `__import__("anthropic", …)` inside the `claude-vision` factory, which
+no import-statement grep will ever match, and it is not on the allowlist. Exempting the registry
+would exempt the one file where an accidental static import is most likely; the dynamic call only
+runs when a caller has explicitly *selected* a paid backend, which is an allowlisted entry point.
+The limit is written into the gate's own docstring, and gate 4 is what covers the direction gate 2
+cannot: no spelling of an import hides from `sys.modules`. *Recorded so the next reader does not
+"fix" gate 2 by widening the allowlist.*
+
+Also: `pnk doctor` no longer proves a paid backend's *adapter* constructs, only that its library is
+locatable — the necessary price of not importing it, and worth remembering at I7b, when
+`_load_claude_vision` stops being a stub. Every fix above was confirmed to fail against the pre-fix
+code: 10 mutations planted, 10 detected, including both fixes made during this review.
+
 ---
 
 ## Design review passes 1–7 (pre-implementation)
