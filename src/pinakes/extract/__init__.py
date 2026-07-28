@@ -180,7 +180,9 @@ def fingerprint(name: str) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _installed_version(distribution: str) -> str:
+def installed_version(distribution: str) -> str:
+    """A distribution's version, or `"not installed"`. Public because `extract/claude.py` builds
+    its own fingerprint inputs and needs the same answer, spelled the same way."""
     try:
         return importlib.metadata.version(distribution)
     except importlib.metadata.PackageNotFoundError:
@@ -212,7 +214,7 @@ def _pypdfium2_fingerprint_inputs() -> Mapping[str, str]:
     floors = load_floors()
     return {
         "backend": PYPDFIUM2,
-        "pypdfium2_version": _installed_version("pypdfium2"),
+        "pypdfium2_version": installed_version("pypdfium2"),
         "layout_version": str(LAYOUT_VERSION),
         "running_head_threshold": str(floors.running_head_threshold),
     }
@@ -227,7 +229,7 @@ def _load_claude_vision() -> Extractor:
 
 
 def _claude_vision_fingerprint_inputs() -> Mapping[str, str]:
-    return {"backend": CLAUDE_VISION, "anthropic_version": _installed_version("anthropic")}
+    return {"backend": CLAUDE_VISION, "anthropic_version": installed_version("anthropic")}
 
 
 _FAKE_PAGE_1 = (
