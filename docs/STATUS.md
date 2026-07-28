@@ -32,9 +32,9 @@
 | Extraction cache | shipped | `.pinakes/cache/extract/` |
 | Page provenance (`page_start`/`page_end`) | shipped in the **index** | not yet surfaced in results — I8 |
 | Extraction quality scoring | shipped | `make pdf-eval` against `tests/pdf-corpus/` |
-| **PDF ingest, paid path** (scanned PDFs) | **not built** | v0.2 · I7b. `claude-vision` is a stub that names its increment |
+| **PDF ingest, paid path** (scanned PDFs) | on `main`, unreleased | I7b. `claude-vision` is a real extractor. **Its output quality is not yet measured** — that run needs a key and is human-gated |
 | Budget estimator, caps, window aggregation | shipped 0.2.2, **inert** | I6a. The pure logic only — nothing calls it, so nothing can spend |
-| Budget ledger, `pnk budget`, the accountant | on `main`, unreleased | I6b. `ledger.jsonl`, the reservation/outcome protocol, and I6a's decisions read from it. **Still nothing calls it** — the paid extractor is I7b |
+| Budget ledger, `pnk budget`, the accountant | on `main`, unreleased | I6b. `ledger.jsonl`, the reservation/outcome protocol, and I6a's decisions read from it — now driven by I7b's extractor |
 | `path:page` citations | **not built** | v0.2 · I8 |
 | Cross-KB links (`pnk link`, `pinakes_links`) | **not built** | v0.3 |
 | `sqlite-vec` tier, template ecosystem | **not built** | v0.5 |
@@ -43,7 +43,7 @@
 `claude-vision` extractor, and it is a stub. See [DESIGN §5](DESIGN.md#5-cost-control).
 
 Since I7a (on `main`, unreleased) that is enforced rather than asserted: `.paid-path-allowlist`
-names every module permitted to import a paid client — empty until I7b — and four gates in
+names every module permitted to import a paid client — one line since I7b — and four gates in
 `check.sh` and CI hold it, the decisive one running the whole free path in a fresh subprocess and
 asserting no paid client reached `sys.modules`. It found two real leaks the day it landed: both
 `pnk doctor` and `pnk sync` reported a backend's availability by *loading* it, so a KB configured
@@ -88,7 +88,7 @@ landing with its own tests.
 | I6a | Budget core, pure — estimator, reservation, `prices.toml` | shipped 0.2.2 (inert) |
 | I6b | Budget I/O — ledger, prompt, `pnk budget`, hooks that cannot spend | on `main`, unreleased |
 | I7a | The paid-path allowlist gate and the invariant amendments | on `main`, unreleased |
-| I7b | The paid Claude-vision extractor — request shape, validation, retries | **planned** |
+| I7b | The paid Claude-vision extractor — request shape, validation, retries | on `main`, unreleased |
 | I7c | The completeness audit, staging, all-or-nothing commit | **planned** |
 | I8 | `pnk doctor` text yield, `path:page` citations on both surfaces | **planned** |
 | I9 | Docs sweep, template, CI | **planned** |
@@ -115,14 +115,20 @@ because it is the only thing keeping this out of a release:
 > lifts the moment *a user* calibrates. This one lifts only when *we* ship an increment. Making it
 > the headline of a MINOR would ship a command whose output nobody can affect.
 
-What is being traded away is small and named: `pnk init --ci` waits, and a user who wants it today
-can copy the workflow out of [CLI.md](CLI.md#pnk-init). The I7a import fixes and I6b's
-`--yes`/`--clear-cache=paid` change are latent by construction — every one of them only fires on a
-KB configured for a paid backend, which cannot work yet.
+**Superseded 20260729 by I7b landing — that reason has now expired, and one narrower one remains.**
+A user with a key can run a paid extraction today, so `pnk budget` reports real numbers and nothing
+in this release is structurally vacuous any more. What holds it is no longer honesty about an empty
+command but **safety**: I7c adds the completeness audit and the all-or-nothing commit, without
+which a partially-extracted document can land in the index as though it were whole. Shipping a
+spender before the thing that makes its output trustworthy is the wrong order, and it is the only
+remaining reason.
 
-**Trigger — if I7b slips or is deferred, cut `0.3.0` immediately**, with `pnk init --ci` as the
-headline and `pnk budget` documented as reporting a ledger nothing writes yet. This decision is a
-bet on I7b landing soon, not a standing policy, and it expires if that bet stops paying.
+The trade is unchanged and still named: `pnk init --ci` waits, and a user who wants it today can
+copy the workflow out of [CLI.md](CLI.md#pnk-init).
+
+**Trigger — if I7c slips or is deferred, cut `0.3.0` immediately**, documenting the audit's absence
+plainly. This is a bet on I7c landing soon, not a standing policy, and it expires if that bet stops
+paying.
 
 > ⚠️ **The number itself is unassigned, because `0.3` is already taken.** Every doc here — plus
 > `docs/graph/` and [DESIGN §8](DESIGN.md#8-delivery-plan) — uses **v0.3** to mean the cross-KB

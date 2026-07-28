@@ -58,7 +58,7 @@ it does not include `**/*.pdf` in `[sources]`.
 ```
 pnk sync [--kb PATH] [--rebuild] [--sidecars-only] [--index-only] [--stage]
          [--offline] [--force-unlock] [--extract BACKEND] [--force]
-         [--clear-cache[=paid]] [--yes] [-q]
+         [--estimate-only] [--clear-cache[=paid]] [--yes] [-q]
 ```
 
 The freshness primitive. Walks the sources, compares content hashes, re-processes only what changed.
@@ -74,6 +74,7 @@ corpus. Failures are recorded, the run continues, and sync exits non-zero listin
 | `--index-only` | Update the index; never write into `docs/`. The `post-commit` half |
 | `--stage` | With `--sidecars-only`: limit to staged files and `git add` them, so a document and its ID land in one commit |
 | `--extract BACKEND` | Override `[extraction] backend` for this run only. Validated against the registry *without importing* it, so an unknown name is a usage error before any extra could matter |
+| `--estimate-only` | Price what a paid run would cost and exit, extracting nothing. **A network call** — it measures the real first-slice request with the vendor's own token counter, so it needs a key. It generates nothing and bills no output. Refuses on a free backend |
 | `--force` | Meaningful **only** with an explicit free `--extract`: overwrite a paid extraction, printing what it discards. `--force` alone changes nothing |
 | `--clear-cache[=paid]` | Empty `cache/extract/` entirely — paid or free, active or orphaned — after printing the entry count and bytes and requiring a `y`. Never touches `ledger.jsonl`. `=paid` is the explicit authorisation to destroy entries a paid backend wrote. The bare form is `=all` spelled out — both clear the whole cache, so the value names what you are authorising, not what is removed |
 | `--yes` | Answer this run's confirmation prompts, for cron. **Raises no cap**, and does not authorise clearing paid cache entries — that needs `--clear-cache=paid` as well |
@@ -95,6 +96,13 @@ archives beside your notes never appear, and the suggested glob never leads to a
 breach one is refused before any confirmation is considered — and it does not authorise destroying
 paid cache entries. Unattended, `pnk sync --yes --clear-cache` on a cache holding paid work exits
 non-zero naming `--clear-cache=paid`, which no hook and no generated workflow ever writes.
+
+**Paid extraction never starts before the free checks finish.** Page count, encryption, the
+per-request size limit, the model's context window, and — the one that saves the most money — the
+free extractor's own text yield against the fitted floor: a PDF whose text layer is already healthy
+is **refused**, because paying to re-read text you already have is the likeliest way to lose money
+by accident. `--force` overrides it. Then the whole document is priced and checked against all
+three caps *before the first call*, and every individual call is reserved before it is made.
 
 **Locking.** `.pinakes/sync.lock` records pid, hostname and start time. A live holder on this host
 means a quiet exit 0 — hook-driven contention is normal, not an error. A dead pid is reclaimed with
@@ -218,7 +226,6 @@ Listed so the shape is known in advance; each names the increment that lands it
 
 | Surface | Increment | Adds |
 |---|---|---|
-| `pnk sync --estimate-only` | I7b | Builds the real request and counts tokens. **A network call**, not an offline estimate |
 | `path:page` citations | I8 | `docs/paper.pdf:7` / `:7-8` on both the CLI and MCP surfaces; page spans are already in the index |
 | `stale_extraction` on MCP results | I8 | The marker a paid-fingerprint mismatch sets, reaching the agent surface and not only the CLI |
 | `pnk ask --deep` | v0.4 | Bounded, budgeted synthesis for CLI and cron use, where no agent is present |

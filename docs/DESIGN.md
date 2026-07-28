@@ -586,6 +586,14 @@ touched, the same guarantee `--rebuild` already gives. Selective removal of paid
 `pnk sync` gains `--extract=BACKEND`, overriding `[extraction] backend` for that one run; the name is
 validated against the registered extractors the same way the manifest is — no importing either.
 
+`pnk sync --estimate-only` builds the **real** first-slice request and measures it with the
+vendor's own token counter, then extrapolates and exits without generating anything. It is
+therefore **a network call, not an offline estimate** — it needs a key, and both `--help` and the
+CLI reference say so, because "estimate" reads as free. It tightens the reservation constant at a
+fraction of a real run's cost, which is what makes it the documented first step before paying for
+one. It refuses on a free backend rather than reporting €0.00: "nothing to estimate" and "this run
+would cost nothing" are different answers.
+
 `pnk init --ci` drops a GitHub Actions workflow that syncs and caches `.pinakes/`. No daemon.
 
 **All four machine-driven callers — the three hooks and that workflow — write
@@ -768,7 +776,9 @@ absent — never silently, and never failing a `[light]`-only checkout.
   discovered one: the pathological stratum's invisible-render-mode fixture yields real characters
   while being useless text, and still needs the paid path. There is no `word_coverage` floor yet
   (decision 12, `plans/v0.2.md`): the correct pair to fit it against is (native layer → Claude's
-  output), and no Claude output exists before I7b.
+  output), and no *real* Claude output exists yet — the extractor ships, but its fixtures are
+  authored from the documented response shape, and only the human-gated run produces output worth
+  fitting a floor against.
 
 **A known, accepted limitation:** `reading_order`'s column detection is geometric (x-gap
 clustering), not structural — it has no notion of a table's rows and columns, so the free path reads
@@ -823,7 +833,7 @@ once, and a tool called `kb_search` is a collision waiting to happen. Every tool
 
 | Risk | Assessment |
 |---|---|
-| **PDF extraction quality** | The most likely source of silent quality loss (tables, multi-column, scans). Mitigated by a scored corpus of known-hard documents with its own committed baseline and gate (§7.1), and two floors fitted from that corpus rather than guessed. **Two limits stand today:** the free path's column detection is geometric, so tables read column-by-column; and scanned/image-only PDFs yield nothing at all, since the free path has no OCR. `plans/v0.2.md` decision 3 puts scanned PDFs in scope **via the paid path only** — ⏳ that extractor is increment **I7b** and is not built ([STATUS.md](STATUS.md)) |
+| **PDF extraction quality** | The most likely source of silent quality loss (tables, multi-column, scans). Mitigated by a scored corpus of known-hard documents with its own committed baseline and gate (§7.1), and two floors fitted from that corpus rather than guessed. **Two limits stand today:** the free path's column detection is geometric, so tables read column-by-column; and scanned/image-only PDFs yield nothing at all, since the free path has no OCR. `plans/v0.2.md` decision 3 puts scanned PDFs in scope **via the paid path only**; that extractor exists, and **the quality it actually achieves is not yet measured** — the run that would measure it needs a real key and is human-gated, so this row stays open until then ([STATUS.md](STATUS.md)) |
 | **Linear search at scale** | No tier is sublinear (§3.1). Mitigation: measured limits published, `pnk doctor` warns as the ceiling nears, splitting is the documented answer |
 | **Link coverage ceiling** | See §6.2. Measured and reported rather than hidden |
 | **Sidecar/document separation** | A user moving a file without its sidecar is the most likely real-world corruption. Mitigated by hash-based rename detection (§6.4) and `pnk doctor`; not eliminated |
