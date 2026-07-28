@@ -11,7 +11,7 @@ import yaml
 
 from pinakes import store
 from pinakes.embed import EmbeddingBackend, ModelInfo, Vectors
-from pinakes.errors import DuplicateIdsError, ExtractorMissingError
+from pinakes.errors import DuplicateIdsError
 from pinakes.extract import (
     ExtractedText,
     ExtractionContext,
@@ -1014,13 +1014,17 @@ def test_an_unmatched_pdf_names_the_extra_it_will_still_need(
     The extractor is forced *missing* rather than left to the environment: this repo's CI runs a
     three-leg extras matrix, so whether `pypdfium2` imports differs per leg, and a test that only
     asserts "the line agrees with the flag" agrees with itself under every leg while proving
-    nothing. Verified: that earlier shape survived deleting the whole feature."""
+    nothing. Verified: that earlier shape survived deleting the whole feature.
+
+    Forced through `is_backend_installed`, which is what `_missing_pdf_extra` probes since I7a —
+    it asks the registry whether the backend's module is importable rather than loading it, so a
+    paid backend cannot import its client here (gate 4)."""
     import pinakes.sync as sync_module
 
-    def missing(_backend: str) -> object:
-        raise ExtractorMissingError("pypdfium2", extra="pdf")
+    def not_installed(_backend: str) -> bool:
+        return False
 
-    monkeypatch.setattr(sync_module, "load_extractor", missing)
+    monkeypatch.setattr(sync_module, "is_backend_installed", not_installed)
     (kb / "docs" / "report.pdf").write_bytes(b"%PDF-1.4\n")
 
     report = run(kb)
@@ -1036,10 +1040,10 @@ def test_no_pdf_means_no_extra_hint(kb: Path, monkeypatch: pytest.MonkeyPatch) -
     for the same reason as above, so the assertion holds under every extras leg."""
     import pinakes.sync as sync_module
 
-    def missing(_backend: str) -> object:
-        raise ExtractorMissingError("pypdfium2", extra="pdf")
+    def not_installed(_backend: str) -> bool:
+        return False
 
-    monkeypatch.setattr(sync_module, "load_extractor", missing)
+    monkeypatch.setattr(sync_module, "is_backend_installed", not_installed)
     (kb / "docs" / "guide.rst").write_text("Body.\n", encoding="utf-8")
 
     report = run(kb)

@@ -34,7 +34,17 @@ KBs are created from **templates** (the "blueprint"), rebuilt **reproducibly** f
 
 The design has one organising principle: **the free path does the work.** Local embeddings, local
 lexical search, local reranking — the whole retrieval stack costs nothing to run, forever. Paid LLM
-reasoning is an explicit, budgeted opt-in, and the default agent surface never triggers it.
+work — reasoning *and* PDF extraction — is an explicit, budgeted opt-in.
+
+"The default agent surface never triggers it" is stated as an **enumerated allowlist of paid entry
+points** rather than as a convention, because a convention has nothing to check it against. Exactly
+two things may spend: `pnk sync` on a KB whose `[extraction] backend` is `claude-vision` (or a run
+passing `--extract=claude-vision`), and `pnk ask --deep`. Both go through §5's accountant. The list
+lives in `.paid-path-allowlist`; adding to it edits that file, this section and `CLAUDE.md`
+together. Everything else is free *by construction*: no module outside the allowlist may so much as
+import a paid client. What proves it is not a grep — a grep only ever knows the spellings someone
+thought of — but a run of the whole free path in a fresh process, asserting on what actually landed
+in `sys.modules`.
 
 ### Decisions taken (from requirements gathering)
 
@@ -46,7 +56,7 @@ reasoning is an explicit, budgeted opt-in, and the default agent surface never t
 | Build posture | Own the format + orchestration; reuse proven components |
 | Sources | Markdown / plain text / code, and PDF. **Not** Office, web, email, chat |
 | Scale | Scale-agnostic: exact and simple when small, memory-bounded upward (§3) |
-| Compute | Local embeddings (free, unlimited re-index) + Claude for reasoning only |
+| Compute | Local embeddings (free, unlimited re-index) + Claude for reasoning **and opt-in PDF extraction** — the two entries on §1's paid allowlist |
 | Embeddings | `sentence-transformers` default, installed via the `[st]` extra (§4.5) |
 | Budget | Pre-call reservation · hard cap per operation · rolling ledger (§5) |
 | Blueprint | Instantiable template **and** reproducible recipe |
@@ -764,7 +774,7 @@ cut, and [STATUS](STATUS.md#release-roadmap) is where the mapping lives.
 
 | Release | Why here |
 |---|---|
-| v0.2 — PDF extraction | Parsing is the single biggest quality risk (§9), so it is isolated from core-design feedback rather than mixed into it |
+| v0.2 — PDF extraction | Parsing is the single biggest quality risk (§9), so it is isolated from core-design feedback rather than mixed into it. Scope covers **both** paths: the free `pypdfium2` default, and the opt-in paid Claude-vision extractor that is the only answer to a scanned page (§9) — which is what drags the budget machinery into this release, per the governing rule below |
 | v0.3 — cross-KB links | Needs two populated KBs to be worth anything. Build order: [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
 | v0.3.x — graph channels | Each is **eval-gated rather than scheduled** — it ships only if the golden set justifies it (`graph/PINAKES_APPROACH.md` §9) |
 | v0.4 — `pnk ask --deep` | A paid loop and its guardrails ship together, never apart |
@@ -795,6 +805,10 @@ once, and a tool called `kb_search` is a collision waiting to happen. Every tool
 | **Scope creep via `--deep`** | The paid loop is where this design could grow a second, worse agent framework. Bounded by: same tools as MCP, hard caps, and no orchestration the free path doesn't have |
 | **Environment assumptions** | FTS5 and (for v0.5) loadable extensions are not universal in system Pythons. Probed by `pnk doctor` with a named remedy; uv-managed CPython is the supported baseline (§3.1) |
 | **Accidental publication** | Publishing a KB repo exposes `docs/` and every sidecar, provenance URLs included (§4.7). Mitigated by shipped `.gitignore`, an index/ledger that never leaves the machine, and explicit docs — not by anything the engine can enforce |
+| **The paid-path allowlist erodes, or its decisive gate is inert** | A one-line import in a new module quietly makes the free path paid; and a behavioural gate that asserts a package is *absent* is vacuously true wherever that package is not installed — the `false_abstain: 0.0` failure reappearing in the flagship safety check. Mitigated by one `.paid-path-allowlist` that `check.sh`, CI and the tests all read, so three copies cannot drift; the gate landed **before** the code it guards, and its first job was to fail on a planted violation. The check that decides runs the whole free path in a fresh subprocess and asserts no paid client reached `sys.modules` — it skips loudly where `[claude]` is absent, runs for real on CI's `[light,pdf,claude]` leg, and has a negative test that plants an import and asserts it fails. It caught two real leaks on the day it landed: `pnk doctor` and `pnk sync` both reported a backend's availability by *loading* it, which imports the client |
+| **Unbounded spend across invocations** | One `pnk sync` is capped; nothing caps the tenth. Freshness is hook-driven (§6.3), which makes `pnk sync` machine-driven, so a per-invocation cap is really an allowance renewed on every commit — the per-invocation framing hides that the invocations are the loop. Mitigated by making the cap arithmetic over a *running* total: `per_operation_eur`, `daily_eur` **and** `monthly_eur` are all checked before every call, aggregated in `[budget] timezone`. `monthly_eur` is **per KB**, so ten paid KBs are ten allowances; v0.2 adds no global cap and says so rather than letting a reader assume one. ⏳ the reservation arithmetic shipped inert (I6a); reading the ledger, forcing hooks and `pnk init --ci` onto the free backend, and the no-TTY abort are **I6b** and are not built ([STATUS.md](STATUS.md)) |
+| **Price-table staleness, and the USD→EUR rate inside it** | The manifest prices in EUR and the vendor bills in USD, so the rate is a second number that goes stale with nothing saying so — and a ledger recording only a EUR figure cannot be re-derived once it moves. Mitigated by giving `usd_per_eur` the same `as_of` as the model prices (both shipped in `prices.toml`), recording `cost_usd`, the rate and its `as_of` on every ledger line with EUR computed at read time, and refusing to estimate against prices older than `max_price_age_days` rather than guessing. Deliberately **not** a CI gate: a wall-clock gate fails a quiet weekend with no code change, so staleness is a `pnk doctor` WARN and a runtime refusal, while CI only checks the file is well-formed. ⏳ the ledger fields and the doctor WARN are **I6b** and are not built ([STATUS.md](STATUS.md)) |
+| **Scanned-PDF quality cannot be measured by the audit that measures everything else** | The completeness audit's witness is the page's native text layer, and a scanned page has none — so the gate is blind on precisely the stratum the paid feature exists for. Mitigated by reporting `exempt K of M` rather than scoring exempt pages as passing (a pass rate that counts unmeasurable pages as passes is the vacuous-metric failure §7 exists to avoid), and by hand-authoring the scanned stratum's ground truth from the generator's spec rather than from any extractor's output. ⏳ the audit is **I7c** and is not built; its measured numbers land in this section with date, model and euros actually spent, labelled as measured on synthetic rasters ([STATUS.md](STATUS.md)) |
 | **A paid extraction's text has no durable, cross-machine home (v0.2)** | The sidecar's `provenance.extraction` proves a file is *unchanged* since a paid extraction anywhere (§6.4) — but the extracted *text* itself lives only in one machine's `extract/cache.py` or `index.db`, both gitignored. A fresh clone's first sync over a KB whose paid PDFs were extracted elsewhere gets an honest `PaidExtractionUnavailableError`, never a false "content changed" claim, but also cannot avoid paying again without one of those two local stores. Accepted for v0.2, not solved: a shared or committed store for paid extraction results is a real design question (would it live in git, defeating "originals are the truth"? A remote cache?) deliberately deferred rather than answered under this increment's own scope |
 
 ---

@@ -36,6 +36,7 @@ can exercise chunking end to end without pypdfium2, `anthropic`, or a real docum
 
 import hashlib
 import importlib.metadata
+import importlib.util
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -47,6 +48,12 @@ from pinakes.errors import BackendUnknownError, ExtractionError, ExtractorMissin
 PYPDFIUM2 = "pypdfium2"
 CLAUDE_VISION = "claude-vision"
 FAKE = "fake"
+
+# `(module, extra)` per backend, named once and read by both the lazy factory and the registry
+# entry. Two literals would be two places for the extra to drift from the one a user is told to
+# install.
+_PYPDFIUM2_REQUIRES = ("pypdfium2", "pdf")
+_CLAUDE_VISION_REQUIRES = ("anthropic", "claude")
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +93,13 @@ class ExtractorEntry:
     """Whether this backend can spend money (§5's boundary) — declared at registration, never
     derived from importing the client, so I5's per-document coherence check can tell a free
     mismatch (refuse) from a paid one (warn and mark) without ever loading `anthropic`."""
+    requires: tuple[str, str] | None = None
+    """`(module, extra)` this backend needs, or `None` when it needs nothing (`fake`). Declared
+    here so `is_backend_installed` can answer "is it available?" through `importlib.util.find_spec`
+    — which, for a top-level module, adds nothing to `sys.modules`. `pnk doctor` reports a paid
+    backend's availability on every run, and doing that by *loading* the backend would import
+    `anthropic` on the free path (I7a gate 4). The factory below reads the same tuple, so the
+    module name a missing-extra error reports cannot drift from the one probed here."""
 
 
 _REGISTRY: dict[str, ExtractorEntry] = {}
@@ -122,6 +136,35 @@ def is_paid_backend(name: str) -> bool:
     return _entry(name).paid
 
 
+def backend_requirement(name: str) -> tuple[str, str] | None:
+    """The `(module, extra)` this backend needs, or `None` if it needs nothing."""
+    return _entry(name).requires
+
+
+def is_backend_installed(name: str) -> bool:
+    """Whether the backend's library is importable — **without importing it**.
+
+    `importlib.util.find_spec` locates a top-level module through the path finders and returns its
+    spec; it does not execute the module and adds nothing to `sys.modules`. That is what lets
+    `pnk doctor` report `claude-vision`'s availability on a KB configured for it while still
+    satisfying I7a's gate 4 ("after a full free-path run, `anthropic` is not in `sys.modules`").
+    Loading the extractor to find out — which is what doctor did before I7a — imported the paid
+    client on a command that can never spend.
+
+    A backend needing nothing is always installed. `find_spec` raises `ModuleNotFoundError` when a
+    *parent* package is missing and `ValueError` for a module with no spec; both mean "not usable
+    here", so both answer `False` rather than escaping as a traceback from a health check.
+    """
+    requires = _entry(name).requires
+    if requires is None:
+        return True
+    module, _extra = requires
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ModuleNotFoundError, ValueError):
+        return False
+
+
 def paid_backend_names() -> frozenset[str]:
     return frozenset(name for name in _REGISTRY if _REGISTRY[name].paid)
 
@@ -152,7 +195,7 @@ def _import(module: str, extra: str, name: str) -> Any:
 
 
 def _load_pypdfium2() -> Extractor:
-    _import("pypdfium2", "pdf", PYPDFIUM2)
+    _import(*_PYPDFIUM2_REQUIRES, PYPDFIUM2)
     from pinakes.extract.pdfium import Pypdfium2Extractor
 
     return Pypdfium2Extractor()
@@ -176,7 +219,7 @@ def _pypdfium2_fingerprint_inputs() -> Mapping[str, str]:
 
 
 def _load_claude_vision() -> Extractor:
-    _import("anthropic", "claude", CLAUDE_VISION)
+    _import(*_CLAUDE_VISION_REQUIRES, CLAUDE_VISION)
     raise ExtractionError(
         "the claude-vision extractor lands in I7b.",
         remedy="See plans/v0.2.md for the build order.",
@@ -213,9 +256,17 @@ def _fake_fingerprint_inputs() -> Mapping[str, str]:
     return {"backend": FAKE}
 
 
-register_extractor(PYPDFIUM2, ExtractorEntry(_load_pypdfium2, _pypdfium2_fingerprint_inputs))
+register_extractor(
+    PYPDFIUM2,
+    ExtractorEntry(_load_pypdfium2, _pypdfium2_fingerprint_inputs, requires=_PYPDFIUM2_REQUIRES),
+)
 register_extractor(
     CLAUDE_VISION,
-    ExtractorEntry(_load_claude_vision, _claude_vision_fingerprint_inputs, paid=True),
+    ExtractorEntry(
+        _load_claude_vision,
+        _claude_vision_fingerprint_inputs,
+        paid=True,
+        requires=_CLAUDE_VISION_REQUIRES,
+    ),
 )
 register_extractor(FAKE, ExtractorEntry(_load_fake, _fake_fingerprint_inputs))

@@ -25,8 +25,14 @@ from pinakes.errors import (
     ExtractorMissingError,
     PinakesError,
 )
+from pinakes.extract import (
+    backend_requirement,
+    is_backend_installed,
+    is_paid_backend,
+    load_extractor,
+    paid_backend_names,
+)
 from pinakes.extract import cache as extract_cache
-from pinakes.extract import load_extractor, paid_backend_names
 from pinakes.ids import DocId
 from pinakes.lock import LOCK_NAME, read_holder
 from pinakes.manifest import Manifest
@@ -183,19 +189,38 @@ def _could_match_pdf(include: Sequence[str]) -> bool:
     return any(probe.full_match(pattern) for pattern in include)
 
 
+def _not_installed(manifest: Manifest, backend: str, extra: str) -> Check:
+    """The one report for "the backend's library is absent", shared by both branches below."""
+    if _could_match_pdf(manifest.sources.include):
+        return Check(
+            "pdf extractor",
+            Status.WARN,
+            f"`include` can match .pdf, but {backend} is not installed",
+            f'Install it with `uv add "pinakes[{extra}]"`, or PDFs will fail to index.',
+        )
+    return Check("pdf extractor", Status.OK, f"{backend} not installed (no .pdf in `include`)")
+
+
 def _extraction(manifest: Manifest) -> Check:
     backend = manifest.extraction.backend
+
+    if is_paid_backend(backend):
+        # A paid backend is probed, never loaded. `load_extractor` runs the registry's factory,
+        # which imports the client — so on a KB configured for `claude-vision`, the old code made
+        # `pnk doctor` import `anthropic`, on a command that cannot spend and reports availability
+        # every run. That is precisely what I7a's gate 4 forbids, and doctor is in the gate's run
+        # list to keep it forbidden. `is_backend_installed` answers through `find_spec`, which for
+        # a top-level module adds nothing to `sys.modules`.
+        requires = backend_requirement(backend)
+        extra = requires[1] if requires is not None else backend
+        if not is_backend_installed(backend):
+            return _not_installed(manifest, backend, extra)
+        return Check("pdf extractor", Status.OK, f"{backend} importable")
+
     try:
         load_extractor(backend)
     except ExtractorMissingError as exc:
-        if _could_match_pdf(manifest.sources.include):
-            return Check(
-                "pdf extractor",
-                Status.WARN,
-                f"`include` can match .pdf, but {backend} is not installed",
-                f'Install it with `uv add "pinakes[{exc.extra}]"`, or PDFs will fail to index.',
-            )
-        return Check("pdf extractor", Status.OK, f"{backend} not installed (no .pdf in `include`)")
+        return _not_installed(manifest, backend, exc.extra)
     except ExtractionError:
         pass  # the library imported; the adapter just is not implemented yet (I1)
     return Check("pdf extractor", Status.OK, f"{backend} importable")

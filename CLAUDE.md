@@ -30,7 +30,14 @@ indexes the rest (which file owns which fact). This file only carries rules that
   `provenance.extraction` (docs/DESIGN.md §2.2) — never any other key, and never for a free
   extraction.
 - **`.pinakes/` is disposable except `ledger.jsonl`** — a rebuild must preserve spend history.
-- **The free path stays free.** No code path may make a paid API call outside `pnk ask --deep`.
+- **The free path stays free — paid entry points are an enumerated allowlist.** Exactly these may
+  spend: `pnk sync` with `[extraction] backend = "claude-vision"` or `--extract=claude-vision`;
+  `pnk ask --deep` (v0.4). Each goes through the §5 accountant. Adding an entry point edits this
+  list, `.paid-path-allowlist` and DESIGN §1 in the same commit. Four gates enforce it in
+  `check.sh` and CI (`tools/paid_path_gate.py`, `tests/test_paid_path.py`); the one that matters
+  runs the whole free path in a fresh subprocess and asserts no paid client reached `sys.modules`.
+  **Never probe a backend's availability by loading it** — `is_backend_installed` answers through
+  `find_spec`; `load_extractor` runs the factory, which imports the client.
 - **Money is `Decimal` end to end, quantised only once — at ledger-write time.** Convert a TOML
   float via `Decimal(str(value))`, never `Decimal(value)` directly: the latter reproduces float's
   own binary imprecision instead of the clean decimal a human wrote — verified directly,

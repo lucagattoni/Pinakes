@@ -1,6 +1,6 @@
 # Status — what ships today
 
-**Latest release: 0.2.2** · last reviewed 20260728 18:49
+**Latest release: 0.2.2** · last reviewed 20260728 19:16
 
 > **This file is the only place in the repo that says what is built.** Every other doc describes
 > *how* something works or *why* it was designed that way, and links here for whether you can use it
@@ -42,6 +42,14 @@
 **Nothing in the shipped surface can spend money.** The only paid code path in the design is the
 `claude-vision` extractor, and it is a stub. See [DESIGN §5](DESIGN.md#5-cost-control).
 
+Since I7a (on `main`, unreleased) that is enforced rather than asserted: `.paid-path-allowlist`
+names every module permitted to import a paid client — empty until I7b — and four gates in
+`check.sh` and CI hold it, the decisive one running the whole free path in a fresh subprocess and
+asserting no paid client reached `sys.modules`. It found two real leaks the day it landed: both
+`pnk doctor` and `pnk sync` reported a backend's availability by *loading* it, so a KB configured
+for `claude-vision` imported `anthropic` on commands that cannot spend (fixed in the same
+increment; no version ever shipped able to spend from them).
+
 ### Caveat: PDFs are off by default (but no longer silently)
 
 `pnk init` stamps `include = ["**/*.md", "**/*.txt"]`, so PDFs need one manifest edit: add
@@ -79,7 +87,7 @@ landing with its own tests.
 | I5 | PDF chunking, page provenance, backend-aware sync (`schema_version` 2) | shipped 0.2.0 |
 | I6a | Budget core, pure — estimator, reservation, `prices.toml` | shipped 0.2.2 (inert) |
 | I6b | Budget I/O — ledger, prompt, `pnk budget`, hooks that cannot spend | **planned** |
-| I7a | The paid-path allowlist gate and the invariant amendments | **planned** |
+| I7a | The paid-path allowlist gate and the invariant amendments | on `main`, unreleased |
 | I7b | The paid Claude-vision extractor — request shape, validation, retries | **planned** |
 | I7c | The completeness audit, staging, all-or-nothing commit | **planned** |
 | I8 | `pnk doctor` text yield, `path:page` citations on both surfaces | **planned** |
