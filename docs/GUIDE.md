@@ -21,15 +21,24 @@ For the flag-by-flag reference see [CLI.md](CLI.md); for every manifest and side
 
 ## Install
 
-Not on PyPI yet ([STATUS](STATUS.md#not-published-yet)) — install from git:
-
 ```bash
-uv add "pinakes[st] @ git+https://github.com/lucagattoni/Pinakes"          # default backend
-uv add "pinakes[light] @ git+https://github.com/lucagattoni/Pinakes"       # ONNX, no torch
-uv add "pinakes[light,pdf] @ git+https://github.com/lucagattoni/Pinakes"   # + PDF ingest
+uv add "pinakes[st]"          # default backend
+uv add "pinakes[light]"       # ONNX, no torch
+uv add "pinakes[light,pdf]"   # + PDF ingest
 ```
 
-Once published these shorten to `uv add "pinakes[st]"` and so on.
+Python 3.13+. To try it without installing anything:
+
+```bash
+uvx --from "pinakes[light]" pnk --version
+```
+
+**To install unreleased work from `main`** — a contributor, or anything in
+[STATUS](STATUS.md#the-surface-you-can-use-today) marked "on `main`, unreleased":
+
+```bash
+uv add "pinakes[light] @ git+https://github.com/lucagattoni/Pinakes"
+```
 
 | Extra | Pulls | Gives you |
 |---|---|---|
@@ -305,8 +314,7 @@ Or without installing anything:
   "mcpServers": {
     "pinakes": {
       "command": "uvx",
-      "args": ["--from", "pinakes[st] @ git+https://github.com/lucagattoni/Pinakes",
-               "pnk", "serve", "/path/to/my-kb"]
+      "args": ["--from", "pinakes[st]", "pnk", "serve", "/path/to/my-kb"]
     }
   }
 }
