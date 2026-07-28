@@ -79,7 +79,10 @@ class RecordedTransport:
     """Replays one fixture's script. Counts its own calls, so "every retry took its own
     reservation" is an observation rather than an inference."""
 
-    def __init__(self, *scripts: str) -> None:
+    def __init__(self, *scripts: str, on_call: Callable[[int], None] | None = None) -> None:
+        self.on_call = on_call
+        """Runs just before each reply — the seam for "something else spent while we were
+        backing off", which is not a hypothetical on a KB two processes share."""
         self.entries: list[dict[str, Any]] = []
         for name in scripts:
             responses: object = load_fixture(name)["responses"]
@@ -100,6 +103,8 @@ class RecordedTransport:
         entry = self.entries[self.calls]
         self.calls += 1
         self.requests.append(request)
+        if self.on_call is not None:
+            self.on_call(self.calls)
         if entry.get("kind") == "error":
             raise _replay_error(entry)
         return entry
@@ -665,3 +670,45 @@ def test_yes_answers_the_documents_confirmation(make_fake_kb: Callable[..., Path
     )
     decision = DocumentDecision(allowed=True, needs_confirmation=True)
     assert accountant.confirm_document(decision, Decimal("0.40"))
+
+
+def test_the_cap_is_rechecked_before_every_transport_attempt(
+    make_fake_kb: Callable[..., Path],
+) -> None:
+    """§5 says reserve before *each* call, and this is why it is not merely tidy: between a 429
+    and its backoff, another process syncing the same KB can spend the remaining headroom. A check
+    hoisted out of the retry loop would let the retry go out anyway — the loop's own attempts all
+    void at zero, so nothing *inside* it moves the total and the omission looks harmless."""
+    root = make_fake_kb(
+        extraction_backend=CLAUDE_VISION,
+        budget={"per_operation_eur": "50.00", "daily_eur": "0.05", "monthly_eur": "50.00"},
+    )
+    accountant = Accountant(load(root), prices=prices(), now=datetime.now(UTC))
+
+    def somebody_else_spends(call_number: int) -> None:
+        if call_number != 1:
+            return
+        other = Accountant(load(root), prices=prices(), now=datetime.now(UTC))
+        with other.paid_call(model=MODEL, reserved_eur=Decimal("0.04")) as call:
+            call.response_received()
+            call.reconcile(cost_usd=Decimal("0.0432"))
+
+    transport = RecordedTransport("rate-limited-then-success", on_call=somebody_else_spends)
+    with pytest.raises(BudgetRefusedError):
+        run_slice(accountant, transport)
+    assert transport.calls == 1, "the retry must never leave, because the day cap is gone"
+
+
+def test_the_semantic_budget_is_per_slice_not_per_document(accountant: Accountant) -> None:
+    """A document-wide counter would let slice 1's retries refuse slice 2 its *first* attempt —
+    silently, as an extraction failure indistinguishable from a genuine exhaustion. The tally is
+    pre-loaded here with an earlier slice's calls, which is exactly what slice 2 sees."""
+    already_spent = CallTally(calls=SEMANTIC_CALL_BUDGET - 1)
+    transport = RecordedTransport("schema-invalid-exhausted")
+
+    with pytest.raises(ExtractionError):
+        run_slice(accountant, transport, tally=already_spent)
+
+    assert transport.calls == SCHEMA_RETRIES + 1, (
+        "this slice gets its own full budget regardless of what earlier slices used"
+    )
