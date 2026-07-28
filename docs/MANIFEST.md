@@ -125,18 +125,27 @@ Consumed only when `[retrieval] rerank = "local"`. Mirrors `[embedding]`.
 
 ## `[budget]`
 
-Parsed and validated from v0.1 so a KB authored today stays valid later. **Nothing reads it yet** —
-see [STATUS](STATUS.md#the-surface-you-can-use-today).
+Parsed and validated from v0.1 so a KB authored today stays valid later. **Nothing spends against it
+yet** — see [STATUS](STATUS.md#the-surface-you-can-use-today).
 
 | Key | Default | Notes |
 |---|---|---|
-| `confirm_above_eur` | `0.01` | Prompt for confirmation (soft). Deliberately a *lower*, separate field from the hard cap |
-| `per_operation_eur` | `0.05` | Hard ceiling — never exceeded, never prompted past |
-| `monthly_eur` | `5.00` | |
-| `timezone` | `UTC` | Makes "daily"/"monthly" unambiguous |
+| `confirm_above_eur` | `0.01` | Prompt for confirmation (soft). Deliberately a *lower*, separate field from the hard caps, and evaluated **once per document**, never per request |
+| `per_operation_eur` | `0.05` | Hard ceiling for one invocation — never exceeded, never prompted past |
+| `daily_eur` | `1.00` | Hard ceiling per calendar day. A burst limiter between the per-operation and monthly caps: a per-operation cap alone bounds one run, not thirty of them |
+| `monthly_eur` | `5.00` | Hard ceiling per calendar month |
+| `max_price_age_days` | `30` | Refuse to estimate against bundled prices older than this. An estimate built on silently outdated prices is a liability |
+| `timezone` | `UTC` | Makes "daily"/"monthly" unambiguous. Any IANA zone; DST transitions are handled by conversion, not special-casing |
 | `on_exceed` | `abort` | `abort` or `partial` |
 
-`max_price_age_days` and `daily_eur` land with the budget core (I6a).
+**The three caps are independent and all three are checked**, in the order above — a run is refused
+by the first one it would breach, and a whole-document precheck names *every* blocked cap at once
+rather than making you raise one, retry, and discover the next. Raising a cap is a permanent,
+ongoing exposure; a one-run `--extract=<backend>` override is not.
+
+Every euro value is parsed as an exact `Decimal`, never a float — a hard cap compared against a
+binary approximation of the number you typed is not actually hard. Write them as ordinary TOML
+numbers (`0.05`); the exactness is on pinakes's side.
 
 ## `[[links.kb]]`
 

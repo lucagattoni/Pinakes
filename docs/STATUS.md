@@ -1,10 +1,15 @@
 # Status — what ships today
 
-**Installed version: 0.2.0** · last reviewed 20260728 16:40
+**Latest release: 0.2.1** · `main` carries unreleased work — see the [increment
+ledger](#v02-increment-ledger) · last reviewed 20260728 17:52
 
 > **This file is the only place in the repo that says what is built.** Every other doc describes
 > *how* something works or *why* it was designed that way, and links here for whether you can use it
 > yet. When an increment lands, flip its row below — no other doc should need a version edit.
+>
+> "Shipped" below means **released**; an increment merged to `main` but not yet in a release says so
+> explicitly. Installing from a tag and installing from `main` are different answers to "can I use
+> this yet", and this file is where that difference has to be visible.
 
 ---
 
@@ -29,7 +34,8 @@
 | Page provenance (`page_start`/`page_end`) | shipped in the **index** | not yet surfaced in results — I8 |
 | Extraction quality scoring | shipped | `make pdf-eval` against `tests/pdf-corpus/` |
 | **PDF ingest, paid path** (scanned PDFs) | **not built** | v0.2 · I7b. `claude-vision` is a stub that names its increment |
-| Budget ledger, reservations, caps | **not built** | v0.2 · I6a/I6b. `[budget]` is parsed and validated; nothing reads it |
+| Budget estimator, caps, window aggregation | **on `main`, unreleased** | I6a. The pure logic only — nothing calls it yet, so no behaviour changes |
+| Budget ledger, `pnk budget`, spend enforcement | **not built** | v0.2 · I6b. Reading `ledger.jsonl` and wiring I6a's decisions to a real call |
 | `path:page` citations | **not built** | v0.2 · I8 |
 | Cross-KB links (`pnk link`, `pinakes_links`) | **not built** | v0.3 |
 | `sqlite-vec` tier, template ecosystem | **not built** | v0.5 |
@@ -64,7 +70,7 @@ landing with its own tests.
 | I3b | The `pypdfium2` adapter, quality metrics, two fitted floors | shipped 0.2.0 |
 | I4 | The extraction cache | shipped 0.2.0 |
 | I5 | PDF chunking, page provenance, backend-aware sync (`schema_version` 2) | shipped 0.2.0 |
-| I6a | Budget core, pure — estimator, reservation, `prices.toml` | **planned** |
+| I6a | Budget core, pure — estimator, reservation, `prices.toml` | **on `main`, unreleased** |
 | I6b | Budget I/O — ledger, prompt, `pnk budget`, hooks that cannot spend | **planned** |
 | I7a | The paid-path allowlist gate and the invariant amendments | **planned** |
 | I7b | The paid Claude-vision extractor — request shape, validation, retries | **planned** |
@@ -72,10 +78,26 @@ landing with its own tests.
 | I8 | `pnk doctor` text yield, `path:page` citations on both surfaces | **planned** |
 | I9 | Docs sweep, template, CI | **planned** |
 
-**Open: I6–I9 have no version target.** `plans/v0.2.md` cuts 0.2.0 at the end of I9, but 0.2.0 was
-released after I5 — correctly, since I1–I5 is complete, self-contained, user-visible work that the
-project's own rule says must not sit in `[Unreleased]`. The remaining increments therefore need a
-new target (0.3.0, or 0.2.x each). Decide before I6a lands, and record it here.
+**Decided 20260728 17:52 — I6–I9 accumulate, and cut as one MINOR release.** `plans/v0.2.md`
+assumed a single release at I9; 0.2.0 was instead released after I5, correctly, since I1–I5 was
+complete, self-contained, user-visible work the project's rule forbids leaving in `[Unreleased]`.
+The remaining increments are **not** the same shape: I6a, I6b and I7a are each explicitly partial —
+the budget core is pure logic nothing calls, and I6b's own title is "hooks that *cannot* spend".
+None adds a capability a user can reach, so none passes the SemVer table on its own. They therefore
+stay in `[Unreleased]` until paid extraction is genuinely usable (I7b) and safe (I7c), and that
+lands as **one MINOR bump — never a 0.2.x patch**, since a KB that can spend money is new
+capability, not a fix. Patch releases in between remain available for work that stands alone (0.2.1,
+the documentation restructure, was exactly that).
+
+> ⚠️ **The number itself is unassigned, because `0.3` is already taken.** Every doc here — plus
+> `docs/graph/` and [DESIGN §8](DESIGN.md#8-delivery-plan) — uses **v0.3** to mean the cross-KB
+> links release. The next MINOR after 0.2.x is 0.3.0, so either paid extraction takes 0.3.0 and the
+> graph work shifts to 0.4 (cascading through `ask --deep` and templates), or the graph line keeps
+> its number and paid extraction takes something else. That is a roadmap decision, not a
+> documentation one, and renumbering ~15 committed references — including research documents — is
+> not something to do silently. **Resolve before cutting the release**, and per
+> [CLAUDE.md](../CLAUDE.md)'s rule, re-check what has landed on `main` at that moment rather than
+> trusting this note.
 
 ---
 
@@ -83,14 +105,19 @@ new target (0.3.0, or 0.2.x each). Decide before I6a lands, and record it here.
 
 Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 
+Rows below the released ones are **ordered scope, not assigned version numbers** — the `v0.x` labels
+are how the docs have long referred to each body of work, and one of them now collides with the next
+MINOR (see the warning above). A number belongs to a release when it is cut, not years ahead of it.
+
 | Release | Adds |
 |---|---|
 | **0.2.0** ✅ | Free PDF ingest, extraction cache, page provenance in the index, extraction-quality scoring |
-| v0.2 remainder | Budget machinery, the opt-in paid Claude-vision extractor, `path:page` citations |
-| v0.3 | `pnk link`, `pinakes_links`, cross-KB traversal, link-coverage reporting, free structural edges — build order in [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
-| v0.3.x | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
-| v0.4 | `pnk ask --deep` |
-| v0.5 | Template ecosystem, `pnk upgrade` migrations, the `sqlite-vec` tier |
+| **0.2.1** ✅ | Documentation restructure — one fact one home; three stale-claim fixes |
+| *next MINOR* | Budget machinery, the opt-in paid Claude-vision extractor, `path:page` citations (I6–I9) |
+| "v0.3" | `pnk link`, `pinakes_links`, cross-KB traversal, link-coverage reporting, free structural edges — build order in [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
+| "v0.3.x" | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
+| "v0.4" | `pnk ask --deep` |
+| "v0.5" | Template ecosystem, `pnk upgrade` migrations, the `sqlite-vec` tier |
 
 ## Measured numbers
 

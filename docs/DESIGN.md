@@ -418,32 +418,52 @@ state the exposure plainly. The engine repo itself contains no real KB: only the
 
 ## 5. Cost control
 
-**Nothing shipped today costs money — no paid path exists yet.** The budget system ships in the same
-release as the first thing that can spend, which is the honest ordering. `[budget]` is parsed and
-validated already, so a KB authored today stays valid; nothing reads it.
-
-> ⏳ **Pending amendment (noted 20260728 16:40).** This section still describes `pnk ask --deep` as
-> the first spender. `plans/v0.2.md` decision 2 moved that role to the **opt-in Claude-vision PDF
-> extractor**, which drags the whole budget machinery earlier with it — and adds `daily_eur` and
-> `max_price_age_days` to `[budget]`. That rewrite is assigned to increment **I6a** and lands with
-> it, not before: a spec describing a budget system that does not exist is exactly what the project's
-> docs rule forbids. See [STATUS.md](STATUS.md#v02-increment-ledger).
+**Nothing shipped today costs money.** The budget system ships in the same release as the first
+thing that can spend, which is the honest ordering — and the first spender is no longer
+`pnk ask --deep`. `plans/v0.2.md` decision 2 moved that role to the **opt-in Claude-vision PDF
+extractor**, dragging the whole budget machinery earlier with it. Field definitions and defaults are
+in [MANIFEST](MANIFEST.md#budget); whether any of it is wired up yet is in
+[STATUS](STATUS.md#the-surface-you-can-use-today).
 
 | Control | Mechanism |
 |---|---|
-| **Estimate before running** | Dry-run the plan, count input tokens locally, price from a versioned table, print `~€0.014`, and prompt above **`confirm_above_eur`** — a separate, lower field than the hard cap. Confirming at the same number that aborts would make the prompt unreachable |
-| **Hard cap per operation** | **Pre-call reservation.** Actual cost is only known from the response, so before each call the accountant reserves worst case = (counted input tokens + the request's output-token bound) × price. If spent + reserved > cap, **the call is never made**. The cap is therefore a real ceiling, at the price of slight over-reservation; the response's true usage is reconciled into the ledger afterwards |
-| **What "operation" means** | One user-facing invocation — a whole `pnk ask --deep`, not one API call. `--deep` is a loop, so the cap is a *running total* across every call it makes; the loop halts when the next reservation would breach it. A per-call cap would let an N-step loop spend N× the stated limit, which is the failure this control exists to prevent |
+| **Estimate before running** | Price a *worst case* locally from a versioned table, print it, and prompt above **`confirm_above_eur`** — a separate, lower field than the hard caps. Confirming at the same number that aborts would make the prompt unreachable, so the two thresholds are evaluated independently: a request sitting exactly at a cap is still allowed, and still asked about |
+| **Hard caps, checked before the call** | **Pre-call reservation.** Actual cost is only known from the response, so the accountant reserves worst case first. If `spent + reserved` exceeds any cap, **the call is never made** — a real ceiling, at the price of slight over-reservation, reconciled to true usage afterwards |
+| **Three windows, not one** | `per_operation_eur` bounds one invocation; `daily_eur` and `monthly_eur` bound *sequences* of them. A per-operation cap alone is no protection against a hook-driven KB syncing thirty times a day, which is the shape this project actually has |
+| **What "operation" means** | One user-facing invocation — a whole `pnk sync` or `pnk ask --deep`, not one API call. Both are loops, so the cap is a *running total* across every call made; the loop halts when the next reservation would breach it. A per-call cap would let an N-step loop spend N× the stated limit |
+| **The whole document is checked first** | Per-call reservation alone bounds each call and nothing else — a document that will certainly breach a window by call 15 is refused at call 0, with every blocked window named at once and the exact manifest edit that would admit the run. Discovering the real ceiling by raising one cap at a time is the failure this prevents |
 | **Rolling ledger** | `.pinakes/ledger.jsonl`, append-only. Windows computed in `[budget] timezone`. Each line is a single sub-4KB `O_APPEND` write, atomic on POSIX, so concurrent processes cannot interleave a record |
 | **Visibility** | `pnk budget` shows spend by day/month/operation. Real per-KB cost data, not vibes |
+
+**A request is the unit of estimation** — for the paid extractor, a fixed-size page slice, never a
+whole document and never a single page. The unit matters: a whole-document request makes input
+quadratic and stops fitting the context window past a few hundred pages, while a per-page request
+throws away the neighbouring context a table or a sentence spanning a page break needs. Because the
+slice size is part of what produced a given extraction's text, it is a semantic constant hashed into
+the extractor's request-shape version, not a tuning knob.
+
+**How a reservation and its outcome aggregate.** A reservation/reconciliation pair is *one* record,
+attributed to the **reservation's** timestamp — a call reserved at 23:59:58 and reconciled at
+00:00:03 belongs entirely to the first day, and attribution never moves afterwards. The
+reconciliation *supersedes* the reserved amount rather than adding to it; an unreconciled
+reservation counts at its reserved amount, so an in-flight or crashed call consumes headroom instead
+of vanishing; and a *void* record closes a reservation at zero, the one escape hatch for a call that
+never billed. Without that last one, a handful of transient failures would permanently consume
+budget with no way to release it.
+
+**Money is `Decimal` end to end, quantised exactly once**, when a record is written to the ledger. A
+cap compared against a float is not a cap: `0.05` has no exact binary representation, so the ceiling
+enforced would differ from the one configured by an amount nobody can predict or explain.
 
 **The ledger stores no query text and no document content** — timestamp, operation, model, token
 counts, cost, KB id, nothing more. It is diagnostics, not a transcript, and must never become an
 accidental log of what you asked.
 
-Pricing lives in a data file with an explicit `as_of` date; `pnk doctor` warns when it is stale, and
-`--deep` refuses to estimate against prices older than a configurable age. A cost estimator built on
-silently outdated prices is a liability.
+Pricing lives in a data file with an explicit `as_of` date, shipped as package data so an installed
+wheel and a source checkout price identically. `pnk doctor` warns when it is stale, and estimation
+*refuses* past `max_price_age_days` rather than quietly using numbers that may no longer be true.
+Staleness is deliberately **not** a CI gate: a wall-clock check would fail a quiet weekend with no
+code change at all.
 
 ---
 
@@ -732,7 +752,9 @@ Adding stable IDs to a populated KB later means either renumbering — breaking 
 or a migration this design deliberately has no machinery for. The same reasoning put `[budget]`'s
 schema in v0.1 and `page_start`/`page_end` in the index before anything displayed them.
 
-**Why the releases come in this order:**
+**Why the releases come in this order.** The labels below are the names this project has long used
+for each body of work, not committed version numbers — actual numbers are assigned when a release is
+cut, and [STATUS](STATUS.md#release-roadmap) is where the mapping lives.
 
 | Release | Why here |
 |---|---|
