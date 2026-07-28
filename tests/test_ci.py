@@ -96,3 +96,14 @@ def test_the_generated_workflow_is_valid_yaml(tmp_path: Path) -> None:
     assert "${{ runner.os }}" in cache["with"]["key"]
     assert "${{ hashFiles(" in cache["with"]["key"]
     assert cache["with"]["path"] == ".pinakes"
+
+
+def test_the_init_line_describes_the_workflow_not_the_hooks(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One notice, two writers. Printing "hooks run …" beneath a line announcing a workflow
+    describes a different file from the one just written."""
+    assert main(["init", str(tmp_path / "kb"), "--ci"]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert "workflow:" in out
+    assert "hooks" not in out

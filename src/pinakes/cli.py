@@ -99,7 +99,7 @@ def run_init(args: argparse.Namespace) -> int:
     print(f"  kb id: {result.kb_id}  (permanent — never edit it)")
     if result.workflow is not None:
         print(f"  workflow: {result.workflow.relative_to(result.root)}")
-        print(f"  {FREE_BACKEND_NOTICE}")
+        print(f"  it {FREE_BACKEND_NOTICE}")
     print("\nNext:")
     print(f"  1. put Markdown files in {result.root / 'docs'}")
     print("  2. `pnk sync` to index them, then commit the sidecars it writes")
@@ -291,7 +291,7 @@ def run_install_hooks(args: argparse.Namespace) -> int:
     for status in written:
         print(f"installed {status.name}")
     if written:
-        print(FREE_BACKEND_NOTICE)
+        print(f"each hook {FREE_BACKEND_NOTICE}")
     for status in refused:
         print(f"\nleft {status.path} alone — it is not ours, and editing it is not our call.")
         print("To wire pinakes in yourself, add this line:")

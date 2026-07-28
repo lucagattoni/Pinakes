@@ -96,6 +96,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`pnk budget` printed its windows in `[budget] timezone` and its operation list in the machine's
   local zone**, and `pnk doctor` printed a raw 28-digit `Decimal` division as a euro amount.
 
+- **`pnk init --ci` explained the git hooks instead of the workflow it had just written** — one
+  shared notice with a subject baked into it, printed by two callers.
+
 - **`pnk budget` truncated its operation list silently**, and `--clear-cache`'s bare form parsed to
   a value named `free` — which reads as "clear only the free entries" when both spellings clear the
   whole cache. The list now says how many it is not showing, and the bare form is `all`.

@@ -1183,6 +1183,16 @@ the free entries" when both spellings clear the *whole* cache; `argparse` valida
 `choices`, so a private sentinel is not available and the bare form has to be a real, honest word.
 It is now `all`, and the value names what is being authorised rather than what is removed.
 
+**LOW, third pass — the notice `init --ci` printed described a file it had not written.**
+`FREE_BACKEND_NOTICE` began "hooks run `pnk sync --extract=pypdfium2` …" and was printed by two
+callers: `install-hooks`, which writes hooks, and `init --ci`, which writes a workflow. So `pnk init
+--ci` announced `.github/workflows/pinakes.yml` and then explained what the *hooks* do. Every test
+asserted the flag and the phrase "can never spend", both of which were present and correct. Found
+only by running the command the docs tell a user to run — the constant is now subject-less and each
+caller supplies its own ("each hook …", "it …"). *Lesson: a shared string with a subject baked in is
+correct for exactly one caller. The tests all checked the part that was shared; the part that was
+wrong was the part no assertion mentioned.*
+
 Also: `doctor` printed `cost_eur` — a `Decimal` division — with a bare f-string, putting all 28
 significant digits into a health-check line; the `--resolve` record's `operation` field was
 documented as a value it never takes. Every fix above was confirmed to fail against the pre-fix

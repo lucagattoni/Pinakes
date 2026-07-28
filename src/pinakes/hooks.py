@@ -38,9 +38,12 @@ MARKER = "# installed by pinakes"
 #: workflow and the hooks cannot drift into disagreeing about which backend a machine may use.
 FREE_BACKEND_FLAG = f"--extract={PYPDFIUM2}"
 
+#: Deliberately subject-less, because two different things print it: `install-hooks` writes hooks
+#: and `init --ci` writes a workflow. A notice that says "hooks run …" beneath a line announcing a
+#: workflow describes the wrong file.
 FREE_BACKEND_NOTICE = (
-    f"hooks run `pnk sync {FREE_BACKEND_FLAG}`: a hook is non-interactive, so it forces the free "
-    "extractor and can never spend. Paid extraction stays a deliberate `pnk sync` you run."
+    f"forces the free extractor with `pnk sync {FREE_BACKEND_FLAG}`: it is non-interactive, so it "
+    "can never spend. Paid extraction stays a deliberate `pnk sync` you run."
 )
 
 HOOKS: dict[str, str] = {
@@ -57,7 +60,7 @@ SCRIPT = """\
 # Exits 0 even when pnk is missing: a hook that fails every commit because a virtualenv was not
 # activated only teaches you to use --no-verify, which disables the hooks you wanted.
 #
-# {notice}
+# This hook {notice}
 if ! command -v pnk >/dev/null 2>&1; then
   echo "pinakes: pnk is not on PATH, skipping {name}" >&2
   exit 0

@@ -27,8 +27,8 @@ _CACHE_KEY = "pinakes-${{ runner.os }}-${{ hashFiles('docs/**', 'pinakes.toml') 
 WORKFLOW = f"""\
 # Installed by `pnk init --ci`. Keeps the index fresh for a published KB.
 #
-# Runs `pnk sync {FREE_BACKEND_FLAG}`: CI is non-interactive and must never spend. Paid
-# extraction stays a deliberate `pnk sync` a human runs.
+# This workflow runs `pnk sync {FREE_BACKEND_FLAG}`: CI is non-interactive and must never spend.
+# Paid extraction stays a deliberate `pnk sync` a human runs.
 name: pinakes
 
 on:
