@@ -43,7 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from pinakes.errors import BackendUnknownError, ExtractionError, ExtractorMissingError
+from pinakes.errors import BackendUnknownError, ExtractorMissingError
 
 PYPDFIUM2 = "pypdfium2"
 CLAUDE_VISION = "claude-vision"
@@ -82,7 +82,11 @@ class Extractor(Protocol):
 
 
 type ExtractorFactory = Callable[[], Extractor]
-type FingerprintInputs = Callable[[], Mapping[str, str]]
+type FingerprintInputs = Callable[[str | None], Mapping[str, str]]
+"""Takes `[extraction] model`, because for a paid backend the model **is** part of what produced
+the text: without it, changing `model` would silently reuse a cache entry a different model wrote
+(plans/v0.2.md, I7b). Free backends ignore it — `pypdfium2` has no model — and it stays a plain
+string so this is still client-free."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +117,15 @@ def unregister_extractor(name: str) -> None:
     """`register_extractor`'s counterpart — for tests that register a temporary backend and must
     remove it again, without reaching into `_REGISTRY` directly from outside this module."""
     del _REGISTRY[name]
+
+
+def registered_entry(name: str) -> ExtractorEntry:
+    """The registered entry itself — for a test that swaps one out and must put it *back*.
+
+    `unregister_extractor` deletes; there is no undo for a name the package registered at import,
+    and a test that deletes one poisons every later test in the session (I7b review, pass 6).
+    """
+    return _entry(name)
 
 
 def registered_extractors() -> list[str]:
@@ -169,18 +182,22 @@ def paid_backend_names() -> frozenset[str]:
     return frozenset(name for name in _REGISTRY if _REGISTRY[name].paid)
 
 
-def fingerprint_inputs(name: str) -> Mapping[str, str]:
+def fingerprint_inputs(name: str, model: str | None = None) -> Mapping[str, str]:
     """The backend's declared inputs — never imports, so §4.4 can call this on every query."""
-    return _entry(name).fingerprint_inputs()
+    return _entry(name).fingerprint_inputs(model)
 
 
-def fingerprint(name: str) -> str:
+def fingerprint(name: str, model: str | None = None) -> str:
     """Hash a backend's inputs with one shared pure function, never a per-backend formula."""
-    canonical = json.dumps(dict(fingerprint_inputs(name)), sort_keys=True, ensure_ascii=False)
+    canonical = json.dumps(
+        dict(fingerprint_inputs(name, model)), sort_keys=True, ensure_ascii=False
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _installed_version(distribution: str) -> str:
+def installed_version(distribution: str) -> str:
+    """A distribution's version, or `"not installed"`. Public because `extract/claude.py` builds
+    its own fingerprint inputs and needs the same answer, spelled the same way."""
     try:
         return importlib.metadata.version(distribution)
     except importlib.metadata.PackageNotFoundError:
@@ -201,7 +218,7 @@ def _load_pypdfium2() -> Extractor:
     return Pypdfium2Extractor()
 
 
-def _pypdfium2_fingerprint_inputs() -> Mapping[str, str]:
+def _pypdfium2_fingerprint_inputs(_model: str | None = None) -> Mapping[str, str]:
     """Deliberately omits pypdfium2's bundled PDFium *build* number — see `pdfium.py`'s own
     docstring for why: it exists only as an attribute of the imported module, and this function
     must never import the backend it describes (`test_fingerprint_inputs_never_import_the_backend`,
@@ -212,22 +229,33 @@ def _pypdfium2_fingerprint_inputs() -> Mapping[str, str]:
     floors = load_floors()
     return {
         "backend": PYPDFIUM2,
-        "pypdfium2_version": _installed_version("pypdfium2"),
+        "pypdfium2_version": installed_version("pypdfium2"),
         "layout_version": str(LAYOUT_VERSION),
         "running_head_threshold": str(floors.running_head_threshold),
     }
 
 
 def _load_claude_vision() -> Extractor:
+    """Build the paid backend. The `anthropic` probe stays here — the adapter itself imports the
+    client lazily, so without this check a missing `[claude]` extra would surface as an
+    `ImportError` from deep inside a transport rather than as the exact `uv add` line."""
     _import(*_CLAUDE_VISION_REQUIRES, CLAUDE_VISION)
-    raise ExtractionError(
-        "the claude-vision extractor lands in I7b.",
-        remedy="See plans/v0.2.md for the build order.",
-    )
+    from pinakes.extract.claude import ClaudeVisionExtractor
+
+    return ClaudeVisionExtractor()
 
 
-def _claude_vision_fingerprint_inputs() -> Mapping[str, str]:
-    return {"backend": CLAUDE_VISION, "anthropic_version": _installed_version("anthropic")}
+def _claude_vision_fingerprint_inputs(model: str | None = None) -> Mapping[str, str]:
+    """Deferred to the adapter, which owns the versions that actually shape its output — and
+    imported lazily *here* rather than at module scope, because `claude.py` imports this module
+    (for `ExtractedText`) and a top-level import would close the cycle.
+
+    Still client-free: nothing on this path touches `anthropic`, which is what lets §4.4 hash a
+    paid backend's fingerprint on every query without importing a paid client (I7a, gate 4).
+    """
+    from pinakes.extract.claude import fingerprint_inputs as claude_fingerprint_inputs
+
+    return claude_fingerprint_inputs(model)
 
 
 _FAKE_PAGE_1 = (
@@ -252,7 +280,7 @@ def _load_fake() -> Extractor:
     return _FakeExtractor()
 
 
-def _fake_fingerprint_inputs() -> Mapping[str, str]:
+def _fake_fingerprint_inputs(_model: str | None = None) -> Mapping[str, str]:
     return {"backend": FAKE}
 
 

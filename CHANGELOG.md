@@ -56,6 +56,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Paid PDF extraction: the Claude-vision backend (I7b)** — `src/pinakes/extract/claude.py`, the
+  first and only module on `.paid-path-allowlist`. Reached only when the manifest says
+  `backend = "claude-vision"` or `pnk sync --extract=claude-vision` does, and **every free step
+  runs before any paid one**: page count, encryption, the per-request size limit, the context
+  window, and the free extractor's own text yield against I3b's fitted floor — a PDF whose text
+  layer is already healthy is refused outright, because paying to re-read text you already have is
+  the likeliest way to lose money by accident. `--force` overrides it; with no fitted floor
+  installed it refuses to spend at all rather than proceeding without its guard.
+
+  A request is a five-page slice, never a whole document and never a single page. **Two retry
+  budgets, not one**: six token-billed calls per slice, and inside each of those two transport
+  backoffs for 429/5xx — one shared counter would let two early 429s silently consume the
+  schema-retry budget. The branch order is load-bearing: a refusal is handled before `content` is
+  read at all, a context-window failure is hard with no retry, `max_tokens` is checked *before*
+  schema validation (a truncated body is invalid JSON and would otherwise be retried identically
+  three times, all paid), and then the page-count assertion that refuses to map a four-page
+  response onto a five-page slice — the failure that would shift every citation in a document with
+  nothing downstream able to see it.
+
+  Failures are classified by whether they **billed**, never by HTTP status: 429, 5xx, 4xx and
+  pre-response connection errors void their reservation; a timeout or a mid-response failure leaves
+  it open as `unknown outcome`, because the server may have generated. Every call — including every
+  retry — takes its own reservation and writes its own ledger pair.
+
+  Driven end to end by `tests/fixtures/claude/`, **with `anthropic` not installed**, which is what
+  proves the registry seam rather than asserting it. Those fixtures are hand-authored to the
+  documented response shape, not captured from a live API, and their README says so.
+
+- **`pnk sync --estimate-only`** — prices what a paid run would cost and exits, extracting nothing.
+  **A network call, not an offline estimate**: it measures the real first-slice request with the
+  vendor's own token counter, so it needs a key. It generates nothing and bills no output, and it
+  refuses on a free backend rather than reporting €0.00.
+
 - **Budget I/O: the ledger, `pnk budget`, and hooks that cannot spend (I6b)** —
   `.pinakes/ledger.jsonl` is append-only, one atomic sub-4KB `O_APPEND` write per record, fsynced.
   Three record kinds keyed by `call_id`: a **reservation** written *before* the call, then exactly
@@ -105,6 +138,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The extraction cache records the `operation_id` and `call_ids` behind a paid entry** — the join
+  key back to `ledger.jsonl` that DESIGN §6.3 promised and left `null` until something could
+  populate it. Consequently `pnk sync --yes --clear-cache` now refuses a cache holding paid entries
+  and names `--clear-cache=paid`: I6b's guard was correct from the day it landed and had no real
+  data to fire on until now.
+
 - **All four machine-driven callers force the free extractor.** The three git hooks and
   `pnk init --ci`'s workflow now write `pnk sync --extract=pypdfium2` explicitly, print one line
   saying so, and carry the same line as a comment in what they generate. All four are
@@ -142,6 +181,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **`pnk budget` printed its windows in `[budget] timezone` and its operation list in the machine's
   local zone**, and `pnk doctor` printed a raw 28-digit `Decimal` division as a euro amount.
+
+- **The paid extraction fingerprint omitted the model (I7b review)** — so changing
+  `[extraction] model` hit a cache entry a *different* model had written, with no miss and no
+  stale marker. The registry's fingerprint contract now carries the configured model; free
+  backends ignore it, so no existing index goes stale.
+
+- **A paid call's reconciliation recorded the reserved amount rather than what it cost (I7b
+  review)** — the protocol's shape was right and its content was the estimate again, so every
+  budget window would have charged worst-case forever with a reconciliation record present to make
+  it look settled.
+
+- **A transport failure would have crashed a whole sync.** `TransportError` and
+  `RequestTooLargeError` sat outside `PinakesError`, so an exhausted 429 or an oversized page
+  escaped the per-document isolation that keeps one broken PDF from blocking a corpus.
 
 - **`pnk init --ci` explained the git hooks instead of the workflow it had just written** — one
   shared notice with a subject baked into it, printed by two callers.

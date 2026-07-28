@@ -1,0 +1,11 @@
+{
+  "name": "timeout",
+  "branch": "timeout",
+  "why": "A timeout \u2014 billable-unknown. The server may have generated, so the reservation is left open rather than voided.",
+  "responses": [
+    {
+      "kind": "error",
+      "class": "timeout"
+    }
+  ]
+}

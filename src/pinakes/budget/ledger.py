@@ -495,7 +495,7 @@ class PaidCall:
         self._usd_per_eur = usd_per_eur
         self._prices_as_of = prices_as_of
         self._now = now
-        self._response_received = False
+        self._may_have_billed = False
         self._closed = False
 
     @property
@@ -537,7 +537,19 @@ class PaidCall:
         """Call this the instant the client returns, before any branching on the response. From
         here on the call is billable, so it can never be voided — only reconciled or left
         `unknown outcome`."""
-        self._response_received = True
+        self._may_have_billed = True
+
+    def may_have_billed(self) -> None:
+        """The other way a call becomes unvoidable: a **timeout**, or a connection error *mid*
+        response.
+
+        No response arrived, so `response_received()` would be a false statement — but the server
+        may have generated and billed, and voiding on that records €0 for money that left the
+        account. This closes the same door without claiming a response was seen. Two methods
+        rather than one because the facts differ: `response_received` is "I have a response",
+        this is "I cannot prove there is no charge", and only the second is what forbids the void.
+        """
+        self._may_have_billed = True
 
     def reconcile(
         self,
@@ -570,12 +582,12 @@ class PaidCall:
     def close_unfinished(self) -> None:
         """Close a call the body did not close, using the only fact that can decide it safely.
 
-        No response received → the call never billed → **void**. A response received → it billed,
-        whatever happened next → left `unknown outcome` for `pnk budget --resolve`, never voided.
+        Nothing may have billed → **void**. Anything may have — a response arrived, or a timeout
+        left it unprovable — → left `unknown outcome` for `pnk budget --resolve`, never voided.
         """
         if self._closed:
             return
-        if self._response_received:
+        if self._may_have_billed:
             return
         self._void()
 

@@ -170,7 +170,8 @@ def test_the_sweep_spares_paid_entries_and_reports_them(tmp_path: Path) -> None:
         fingerprint="fp2",
         extract=Spy(),
         operation_id="op-123",
-        call_ids=["call-1", "call-2"],
+        # A callable, because a call id does not exist until the call has been made.
+        call_ids=lambda: ["call-1", "call-2"],
     )
     extract_cache.get_or_extract(
         tmp_path,
@@ -332,3 +333,26 @@ def test_a_cache_write_failure_never_fails_an_already_successful_extraction(
         assert list(cache_dir.glob("*.json")) == []  # the write silently failed, as expected
     finally:
         cache_dir.chmod(0o700)  # restore so pytest's own tmp_path cleanup can remove it
+
+
+def test_call_ids_are_never_resolved_on_a_cache_hit(tmp_path: Path) -> None:
+    """The same reason `extract` is lazy. On a hit there was no call, so asking the accountant
+    which calls it made would be a ledger read for an answer nobody wants."""
+    resolutions = 0
+
+    def call_ids() -> list[str]:
+        nonlocal resolutions
+        resolutions += 1
+        return ["call-1"]
+
+    for _ in range(2):
+        extract_cache.get_or_extract(
+            tmp_path,
+            content_hash="sha256:once",
+            backend="claude-vision",
+            fingerprint="fp",
+            extract=Spy(),
+            operation_id="op-1",
+            call_ids=call_ids,
+        )
+    assert resolutions == 1, "resolved on the miss only"

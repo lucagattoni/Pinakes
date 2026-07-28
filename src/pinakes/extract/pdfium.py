@@ -135,6 +135,16 @@ class Pypdfium2Extractor:
         return assemble(tuple(pages), running_head_threshold=floors.running_head_threshold)
 
 
+def page_count(path: Path) -> int:
+    """How many pages, without extracting any of them — the free pre-check I7b sizes its slice
+    windows and its whole-document estimate from, before a single paid call is made."""
+    doc = _open(path)
+    try:
+        return len(doc)
+    finally:
+        doc.close()
+
+
 def slice_pages(path: Path, first: int, last: int) -> bytes:
     """A `[first, last]` (inclusive, 0-indexed) sub-document as bytes — I7b's request unit.
 

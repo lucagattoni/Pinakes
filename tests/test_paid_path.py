@@ -72,14 +72,29 @@ def _make_root(tmp_path: Path, *, allowlist: str, files: dict[str, str]) -> Path
 # --------------------------------------------------------------------------------------------
 
 
+#: Exactly the modules permitted to import a paid client, hard-coded rather than read from the
+#: allowlist: a test that reads the same file it checks would pass on any content at all.
+EXPECTED_ALLOWLIST = ("src/pinakes/extract/claude.py",)
+
+
 def test_the_allowlist_matches_the_source_tree() -> None:
-    """Gate 1 against the real repo. At I7a the allowlist is deliberately empty, so this asserts
-    the *shipped* state too: nothing under `src/` is exempt yet."""
+    """Gate 1 against the real repo, and against the *shipped* list.
+
+    The count is asserted as well as the exit code, because gate 1 passing says only that every
+    listed path exists — it says nothing about a path being quietly *added*. Widening the
+    allowlist is how a gate like this one dies, so it takes an edit here too.
+    """
     result = _run_gate(REPO_ROOT)
     assert result.returncode == 0, result.stderr
-    assert "0 exempt path(s)" in result.stdout, (
-        "the allowlist is meant to be empty until I7b creates src/pinakes/extract/claude.py"
+    assert f"{len(EXPECTED_ALLOWLIST)} exempt path(s)" in result.stdout
+    # Parsed here rather than through the gate's own `read_allowlist`: borrowing the parser under
+    # test would let a parser bug and a content change cancel out.
+    listed = tuple(
+        line.strip()
+        for line in (REPO_ROOT / ".paid-path-allowlist").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
     )
+    assert listed == EXPECTED_ALLOWLIST
 
 
 def test_a_stale_allowlist_entry_fails_gate_1(tmp_path: Path) -> None:

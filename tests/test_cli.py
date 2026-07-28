@@ -116,3 +116,18 @@ def test_unknown_extract_flag_is_rejected(
     """Rejected before anything is imported — even a KB with zero documents still refuses."""
     assert main(["sync", "--kb", str(kb_root), "--extract", "telepathy"]) == EXIT_FAILURE
     assert "telepathy" in capsys.readouterr().err
+
+
+def test_no_help_text_carries_markdown_emphasis(capsys: pytest.CaptureFixture[str]) -> None:
+    """`--help` renders in a terminal, where `**bold**` reaches the user as literal asterisks.
+
+    Checked against the *rendered* output — the artefact a user sees — rather than argparse's
+    internals. Backticks are deliberately allowed: `[extraction] backend` reads fine in a terminal
+    and is the convention this CLI already uses, so flagging them would be a style crusade over
+    pre-existing text rather than a defect.
+    """
+    for command in DESIGN_COMMANDS:
+        with pytest.raises(SystemExit):
+            main([command, "--help"])
+        rendered = capsys.readouterr().out
+        assert "**" not in rendered, f"`pnk {command} --help` shows literal asterisks"

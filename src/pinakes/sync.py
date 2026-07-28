@@ -23,8 +23,14 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pinakes import store
+
+if TYPE_CHECKING:  # `budget.accountant` reads the price table; a free sync must not pay for that
+    from pinakes.budget.accountant import Accountant
+    from pinakes.ids import OperationId
+
 from pinakes.chunk import PDF_SUFFIXES, assert_chunkable, chunk_document, source_type
 from pinakes.embed import EmbeddingBackend, load_backend
 from pinakes.errors import (
@@ -98,6 +104,18 @@ class SyncOptions:
     offline: bool = False
     force_unlock: bool = False
     extract: str | None = None  # overrides `[extraction] backend` for one run
+    estimate_only: bool = False
+    """Price the first slice against the real tokeniser and stop. **A network call**, not an
+    offline estimate — it needs a key, which is why `--help` says so: "estimate" reads as free."""
+    interactive: bool = False
+    """Whether a terminal is attached. Supplied by the caller, never probed here — `sync()` does no
+    I/O beyond the filesystem, which is what keeps it testable without a tty."""
+    ask: Callable[[str], str] | None = None
+    """How to put a `confirm_above_eur` question to the user. `cli.py` supplies `input`; a
+    non-interactive run supplies nothing and the accountant refuses instead (I6b)."""
+    operation_id: "OperationId | None" = None
+    """Set only when a caller needs the operation's ledger records to be findable afterwards —
+    a test, or a resumed run. `None` mints a fresh one, which is what an ordinary sync wants."""
     clear_cache: bool = False  # a standalone mode (I4): empties the extraction cache, nothing else
     clear_cache_paid: bool = False
     """`--clear-cache=paid` (I6b): authorises destroying entries a paid backend wrote. `yes` alone
@@ -146,6 +164,9 @@ class SyncReport:
     cache_clear_aborted: bool = False  # requested but not confirmed (no --yes)
     cache_pending_entries: int = 0  # what --clear-cache *would* remove, for the caller's prompt
     cache_pending_bytes: int = 0
+    estimates: tuple[tuple[str, int, int, int, str], ...] = ()
+    """`--estimate-only`'s result: `(path, pages, requests, measured input tokens, euros)` per
+    document. Its own field rather than a `failures` entry, because an estimate is an answer."""
     cache_pending_paid_entries: int = 0
     """How many of `cache_pending_entries` a paid backend wrote (I6b). Its own number because
     `--yes` alone must never authorise destroying paid extractions unattended — that needs the
@@ -488,6 +509,9 @@ def sync(
                 return SyncReport(busy=True)
             return _clear_cache(manifest, options)
 
+    if options.estimate_only:
+        return _estimate_only(manifest, options)
+
     # Resolved and validated before the lock is even taken: an unknown backend is a configuration
     # mistake, not a per-document failure, and it should fail the same way on a KB with zero PDFs
     # as on one full of them (I1's exit criterion).
@@ -501,6 +525,74 @@ def sync(
         report = SyncReport(reclaimed_lock=lock.outcome is LockOutcome.RECLAIMED)
         _run(manifest, options, backend_factory, stamp, report, extraction_backend)
         return report
+
+
+def _estimate_only(manifest: Manifest, options: SyncOptions) -> SyncReport:
+    """Price what a paid run would cost, without generating anything (I7b).
+
+    **A network call** — `count_tokens` measures the real request against the real tokeniser, which
+    is the whole point: it tightens the reservation constant at a fraction of a real run's cost.
+    It bills no output, and it takes no lock, because it changes nothing.
+
+    Refuses on a free backend rather than reporting €0.00: "nothing to estimate" and "this run
+    would cost nothing" are different answers, and only the first one is true.
+    """
+    from datetime import datetime as _datetime
+
+    from pinakes.budget.estimate import TIMESTAMP_FORMAT, estimate_document
+    from pinakes.budget.prices import load_prices
+    from pinakes.budget.summary import euros
+    from pinakes.extract.claude import default_transport, estimate_only
+
+    backend = options.extract or manifest.extraction.backend
+    if backend not in paid_backend_names():
+        raise SyncError(
+            f"--estimate-only has nothing to estimate: `{backend}` cannot spend.",
+            remedy="Pass `--extract=<paid-backend>`, or configure one in `[extraction] backend`.",
+        )
+
+    prices = load_prices()
+    files, _sidecars, _unmatched = walk_sources(manifest)
+    # Built on the first PDF, not up front: constructing the transport needs a key, and a KB with
+    # no PDFs at all has nothing to estimate and no business demanding one.
+    transport = None
+    lines: list[tuple[str, int, int, int, str]] = []
+    for walked in files:
+        # `WalkedFile.path` is the KB-relative string the index keys on, not a filesystem path.
+        source = manifest.root / walked.path
+        if source.suffix.lower() not in PDF_SUFFIXES:
+            continue
+        # `page_count` imports pypdfium2, and `default_transport` needs a key. Both are deferred
+        # to the first PDF for the same reason: a KB with none has nothing to estimate, and should
+        # not have to have the extra installed — or a key — to be told so.
+        from pinakes.extract.pdfium import page_count
+
+        pages = page_count(source)
+        if transport is None:
+            transport = default_transport()
+        measured, requests = estimate_only(
+            source,
+            transport=transport,
+            model=manifest.extraction.model,
+            pages_total=pages,
+        )
+        estimate = estimate_document(
+            pages=pages,
+            model=manifest.extraction.model,
+            prices=prices,
+            now=_datetime.now().strftime(TIMESTAMP_FORMAT),
+            max_price_age_days=manifest.budget.max_price_age_days,
+        )
+        lines.append(
+            (
+                walked.path,
+                pages,
+                requests,
+                measured,
+                euros(estimate.total_eur),
+            )
+        )
+    return SyncReport(estimates=tuple(lines))
 
 
 def _clear_cache(manifest: Manifest, options: SyncOptions) -> SyncReport:
@@ -1169,21 +1261,48 @@ def _extract_for_index(
             remedy="Run a normal `pnk sync` (without --index-only) to extract and record it.",
         )
 
+    # Built only for a paid run, and built *before* the cache lookup only in the sense that the
+    # closure below captures it — nothing reads the ledger or the price table on a cache hit.
+    accountant = _accountant_for(manifest, options) if effective_is_paid else None
+
     def _extract() -> ExtractedText:
         # Loading the extractor (importing pypdfium2, say) is deferred inside this closure, so a
         # cache hit never pays for it — only a miss does (I4).
-        ctx = ExtractionContext(model=manifest.extraction.model)
+        ctx = ExtractionContext(
+            model=manifest.extraction.model, force=options.force, accountant=accountant
+        )
         return load_extractor(extraction_backend).extract(source, ctx)
 
-    used_fingerprint = fingerprint(extraction_backend)
+    used_fingerprint = fingerprint(extraction_backend, manifest.extraction.model)
     extracted = extract_cache.get_or_extract(
         manifest.extract_cache_dir,
         content_hash=content_hash,
         backend=extraction_backend,
         fingerprint=used_fingerprint,
         extract=_extract,
+        operation_id=None if accountant is None else accountant.operation_id,
+        call_ids=None if accountant is None else accountant.call_ids_this_operation,
     )
     return extracted, extraction_backend, used_fingerprint
+
+
+def _accountant_for(manifest: Manifest, options: SyncOptions) -> "Accountant":
+    """One accountant per `pnk sync`, so `per_operation_eur` bounds the whole invocation.
+
+    Imported here rather than at module scope: `budget.accountant` reads the price table, and a
+    free sync must not pay for that (nor for anything else this branch reaches) on every run.
+    """
+    from pinakes.budget.accountant import Accountant
+    from pinakes.budget.prices import load_prices
+
+    return Accountant(
+        manifest,
+        prices=load_prices(),
+        operation_id=options.operation_id,
+        interactive=options.interactive,
+        ask=options.ask,
+        yes=options.yes,
+    )
 
 
 def _index_document(

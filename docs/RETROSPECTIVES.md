@@ -1205,6 +1205,134 @@ one was written for it.
 
 ---
 
+## I7b — the paid Claude-vision extractor (20260729 00:24)
+
+**HIGH — the reconciliation recorded the *reserved* amount, which makes the whole
+reservation/reconciliation protocol a no-op.** `_billed_call` closed each successful call with
+`cost_usd=reserved_eur * usd_per_eur` — the estimate again, not what the response said it cost. The
+shape was perfect: a reservation, then a reconciliation superseding it, exactly as I6b's protocol
+requires, with a ledger pair per call and every test about *pairing* passing. What it superseded the
+reservation with was the reservation. Every window would have charged worst-case forever, `pnk
+budget` would have reported an estimate as spend, and the reconciliation record's presence is
+precisely what would have made it look settled. Fixed with `actual_cost_usd`, derived from the
+response's own usage and the model's price. *Lesson: I6b's tests could only ever check that a
+reconciliation **exists** and supersedes; that it carries the **right number** is a claim only the
+increment that produces the number can make. A protocol test and a value test look alike and are
+not — and every mutation I planted over the retry logic passed straight through this, because the
+bug was in the one line none of them touched.*
+
+**HIGH — one bad PDF would have crashed a 1,000-document sync.** `TransportError` and
+`RequestTooLargeError` were plain `Exception`s. `sync` isolates each document behind
+`except (PinakesError, OSError, ValueError)`, so an exhausted 429, a 500, or an oversized page
+would have escaped that handler and taken the entire run down — the exact opposite of the
+per-document isolation §6.4 promises and `pnk sync`'s own "one broken PDF cannot block a
+1,000-document corpus". Not caught by any test, because every test called `extract_slice` directly
+and asserted `pytest.raises(TransportError)`, which passes identically whichever base class it has.
+*Lesson: an exception's **type** is part of its contract with a caller several layers up, and a
+test that catches the exception it just raised cannot see that contract at all.*
+
+**MEDIUM — two mutation survivors, both the finding.** A cap check hoisted out of the transport
+retry loop survived because every attempt inside that loop voids at zero: nothing the loop does
+moves the total, so the omission looks harmless. It is not — between a 429 and its backoff another
+process syncing the same KB can spend the headroom, and the retry would go out anyway. And the
+per-slice semantic budget survived because every test used a single slice, where "per slice" and
+"per document" are the same number; that was a defect I had found and fixed while writing the loop
+and then never put under tension. *Lesson: a bound that is only ever exercised at N = 1 is not
+tested, it is agreed with.*
+
+**MEDIUM — the module imported `pypdfium2` at module scope, which §4.4 cannot afford.** The
+fingerprint path reaches this module on *every query*, on whatever install the user has, so a
+top-level `pdfium` import made a coherence check on a `claude-vision` KB fail outright on a
+core-only install. Caught by `test_coherence_never_imports_a_paid_client` — a test written in I2 for
+a different reason, which happened to be the exact shape of this mistake. *Recorded because it is
+the second time this project has been saved by an import-graph test that nobody wrote for the case
+that caught them.*
+
+**LOW, worth keeping — the gate refused the commit, which is the gate working.**
+`.paid-path-allowlist` shipped empty at I7a specifically so that its first real entry would be
+*earned*, and it was: the commit creating `claude.py` failed until the line was added. Its test then
+turned out to assert only "0 exempt paths", which would have passed on any addition at all, so it
+now pins the expected contents — widening an allowlist is how a gate like this one dies. Two dead
+exception classes (`TruncatedResponseError`, `RefusalError`) were also removed: the `stop_reason`
+branches replaced them and nothing ever raised either.
+
+**LOW, second pass — `--estimate-only` demanded an API key from a KB with nothing to estimate.**
+The transport was built before the walk, so a KB with no PDFs failed on a missing key instead of
+reporting nothing. Built on the first PDF now. Also cleaned up in the same pass: an unreachable
+`except RequestTooLargeError` around `slice_pages` (only `build_request` raises it, and by then the
+call is committed — the size question belongs before anything is built), and a repeated
+`"claude-vision"` literal where the module already imports the constant.
+
+**HIGH, fourth pass — the paid fingerprint omitted the model, so changing it reused another
+model's text.** The plan states the inputs as "(backend name, **model id**, prompt version, schema
+version, request-shape version…)" and I wrote every one of those except the model. The cache key is
+`<content_hash>-<fingerprint>`, so editing `[extraction] model` would have hit an entry a
+*different* model wrote, with no miss, no warning and no stale marker — the §4.4 machinery intact
+and looking at the wrong key. The plan names two tests for exactly this
+(`test_changing_the_model_misses_the_cache`, `test_changing_k_misses_the_cache`) and I had written a
+placeholder for the first that only asserted two unrelated fields were non-empty, which is how it
+stayed invisible through three review passes and fifteen mutations. Fixing it meant threading
+`[extraction] model` through the registry's `FingerprintInputs` contract — two real callers, `sync`
+and the §4.4 coherence check — plus a test that the *free* backend's key is unperturbed by the new
+parameter, or every existing free KB's index would have gone stale the day it was added. *Lesson: a
+test written to a name from the plan, but not to the claim behind the name, is worse than a missing
+test — the plan's checklist reads as satisfied. The tell was there in the placeholder's own body:
+it asserted things that could not fail.*
+
+**MEDIUM, fifth pass — three of the plan's named tests had no implementation at all.** Auditing
+the plan's test list against the file (prompted by pass 4, since the same failure mode was in play)
+found the multi-slice document, the oversize-slice split, and the no-floor-installed refusal all
+missing — the first being where the slice-window arithmetic and the short final slice actually meet
+a real PDF, and where an off-by-one either drops pages or sends the whole document to a paid API.
+Writing them found nothing broken, which is the useful outcome to record: the code was right and
+unwitnessed. Two of them also had to be *sized from the fixture* rather than from a constant — a
+hard-coded byte threshold either never splits or recurses straight to the single-page failure, and
+which one it does is a property of the corpus, not of the code. `slice_windows` and `slice_bytes`
+lost their underscores in the process: they are the two things a reader most wants to check.
+
+**LOW, sixth pass — nothing drove `pnk sync` itself.** Every test exercised a piece: the slice
+loop, the ledger pairing, the cache's join key, the accountant's windows. The pieces were wired
+together across four modules, and "each part works" is not the claim "the parts are connected" —
+which is the seam an increment is most likely to get wrong. One end-to-end test now runs a real
+`pnk sync` over a paid KB and checks the whole chain: the document indexed under `claude-vision`,
+the ledger's call reconciled, and the cache entry carrying the `operation_id`/`call_ids` that §6.3
+left `null` until this increment. It passed first time — but writing it introduced the pass's
+one real defect, and only the `[claude]` leg saw it: the test swapped the registry entry and then
+called `unregister_extractor`, which *deletes*. There is no undo for a name the package registers
+at import, so two unrelated tests later in the session lost `claude-vision` entirely. Fixed with a
+`registered_entry` accessor and a re-register in the `finally`. *Lesson: a test that mutates
+process-global state needs to restore the previous value, not remove its own — and a suite that
+only ever runs on one CI leg will not show you which.*
+
+**MEDIUM, seventh pass — the `[light]` leg's green was partly an artefact, and I had not really
+run that leg at all.** `uv run --extra light` does **not** prune extras a previous
+`--extra pdf --extra claude` installed, so "all three CI legs pass" was one leg run three times. A
+real `uv sync --frozen --extra light` — what CI actually does — then showed the paid suite failing
+*on its own* while passing in a full run: `tests/test_extract.py` leaves a fake `pypdfium2` in
+`sys.modules`, and two `--estimate-only` tests were quietly relying on it. The underlying cause was
+mine: `_estimate_only` imported `page_count` before the walk, so a KB with no PDFs demanded the
+`[pdf]` extra to be told it had nothing to estimate — the same defect as pass 2's transport, one
+line above where I had fixed it. *Lesson: `uv run --extra X` is not `uv sync --extra X`; verifying a
+matrix means reproducing what the matrix does, not asking for the same set three times. And a suite
+that only ever runs after its neighbours cannot tell you what it depends on.*
+
+**LOW, third pass — markdown emphasis reached a terminal.** `--estimate-only`'s help text carried
+`**A network call**`, which argparse renders as literal asterisks: the emphasis was written for
+CLI.md and pasted into a surface that has no renderer. Now checked against every command's
+*rendered* `--help` output rather than argparse's internals — the artefact a user actually sees.
+Backticks are deliberately allowed, since `[extraction] backend` reads fine in a terminal and is
+the convention this CLI already used; flagging those too would have been a style crusade over
+pre-existing text rather than a defect.
+
+Also: `stubs/anthropic.pyi` joins `stubs/pypdfium2.pyi`, because the strict type gate runs on the
+`[light]` leg where the package is absent. It records the one relationship easy to get wrong from
+memory — `APIConnectionError` is a *sibling* of `APIStatusError`, and `APITimeoutError` a subclass
+of the former — because checking them in the wrong order classifies every timeout as a plain
+connection failure, which is the difference between recording €0 and admitting a possible charge.
+18 mutations planted in total, 18 detected once the survivors got tests.
+
+---
+
 ---
 
 ## Design review passes 1–7 (pre-implementation)
