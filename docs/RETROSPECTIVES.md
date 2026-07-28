@@ -850,3 +850,21 @@ not merely under tolerance, bit-for-bit identical. *Lesson: when a tolerance-bas
 floor turns out to be closer to its detection target than expected, re-measure what the tolerance
 would need to become and check that against the smallest real regression it's meant to catch,
 before touching the number — a gate that still passes is not evidence it still catches anything.*
+
+**MEDIUM, from independent review — the fix itself shipped with no regression test.** An
+adversarial re-verification (independently reproducing the pre-fix failure and the post-fix 0-pixel
+result in its own Docker run, and re-deriving the subset font byte-for-byte from a genuine Debian
+package to confirm `tests/pdf-corpus/fonts/README.md`'s recipe is real) found that nothing in the
+diff would have caught a future revert to bare base-14 fonts: the only guard was the pre-existing
+tolerance test, whose whole failure mode *is* passing locally and only failing on a second platform
+— exactly what let this bug live unnoticed for three merges. Fixed with a platform-independent test
+(`test_text_fixtures_embed_a_font_program`) asserting every non-scanned fixture's committed bytes
+contain `/FontFile2` and never a bare `/BaseFont /Helvetica` — verified to actually fail against
+`89d4fb5`'s committed fixtures before being trusted, and deliberately written with no `pypdfium2`
+dependency so it runs even on the `[light]`-only CI leg. The same pass found `_font_widths`'
+`first_char` hardcoded at `0x20` with no symmetric downward extension (unlike `last_char`), which
+would have indexed `_ASCII_WIDTHS` negatively for a hypothetical `differences` code below `0x20` —
+unreachable today (grepped every `Font(...)` call site) but fixed to be symmetric regardless. *Lesson:
+"the existing test would have caught this eventually, on some other platform" is not the same claim
+as "this increment shipped its own regression test" — a fix for a bug that was invisible on one
+platform needs a check that doesn't depend on which platform runs it.*

@@ -268,14 +268,20 @@ class _Writer:
 
 
 def _font_widths(font: Font) -> tuple[int, int, list[int]]:
-    """`/FirstChar`, `/LastChar` and `/Widths` covering 0x20-0x7E plus any `differences` codes."""
-    first_char = 0x20
+    """`/FirstChar`, `/LastChar` and `/Widths` covering 0x20-0x7E plus any `differences` codes.
+
+    `first_char`/`last_char` both extend outward for a `differences` code past either end —
+    symmetric, even though nothing in this corpus currently declares one below 0x20 — so a code
+    outside 0x20-0x7E that isn't a declared difference (the `else` below) can never be mistaken
+    for one inside it by `code - 0x20` indexing negatively into `_ASCII_WIDTHS`.
+    """
+    first_char = min((0x20, *font.differences))
     last_char = max((0x7E, *font.differences))
     widths: list[int] = []
     for code in range(first_char, last_char + 1):
         if code in font.differences:
             widths.append(_NAMED_GLYPH_WIDTHS[font.differences[code]])
-        elif code <= 0x7E:
+        elif 0x20 <= code <= 0x7E:
             widths.append(_ASCII_WIDTHS[code - 0x20])
         else:
             widths.append(0)  # Never shown: outside 0x20-0x7E and not a declared difference.
@@ -367,7 +373,7 @@ def _content_stream(page: Page) -> bytes:
 def write_text_pdf(
     pages: Sequence[Page], fonts: dict[str, Font], epoch: int, *, corrupt: bool = False
 ) -> bytes:
-    """Render a multi-page, base-14-font, no-dependency PDF from `Page`/`TextRun` descriptions."""
+    """Render a multi-page PDF with the embedded subset font from `Page`/`TextRun` descriptions."""
     writer = _Writer()
     date = pdf_date(epoch)
     info = writer.add_object(

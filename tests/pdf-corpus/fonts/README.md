@@ -13,6 +13,11 @@ across macOS and `ubuntu-latest`, which is why CI failed identically on every ru
 passing locally. Embedding the actual outlines removes the substitution step: every platform
 rasterizes the same glyph data.
 
+**Cost:** each text-layer fixture embeds its own copy of the ~10.5 KiB subset (not shared across
+files), so every one of the sixteen text-layer fixtures grew by roughly that much. `test_byte_budget`
+has ample headroom for this (well under half the 2 MiB corpus budget as of this fix) — noted here
+so a future contributor adding many more text fixtures knows where that per-file cost comes from.
+
 ## Provenance
 
 - Upstream: [liberation-fonts](https://github.com/liberationfonts/liberation-fonts) 2.1.5, via the
