@@ -1,5 +1,8 @@
 # Retrospectives
 
+> ℹ️ **Version numbers below reflect the convention in use when this was written.** Unbuilt
+> work is now **named, not numbered** ([STATUS.md](STATUS.md)). This record is left as it was.
+
 One section per increment of the project's build plans (`plans/`), written during that increment's
 retrospective review (the workflow is in [`CLAUDE.md`](../CLAUDE.md)). Only findings worth keeping
 land here: a real defect the review caught, or a fact that would be expensive to rediscover. Fixes

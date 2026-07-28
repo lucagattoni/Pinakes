@@ -236,10 +236,12 @@ def run_search(args: argparse.Namespace) -> int:
 
     print(f"confidence: {result.confidence} — {result.confidence_reason}")
     if result.confidence in ("low", "unknown"):
-        # Never advertise a command that does not exist yet: --deep lands in v0.4 (§4.2).
+        # Never advertise a command that does not exist yet: --deep lands in the deep
+        # release (§4.2).
         print(
-            "retrieval-only result. Paid synthesis (`pnk ask --deep`) is planned for v0.4; "
-            "until then, narrowing the query or adding a filter is the lever you have."
+            "retrieval-only result. Paid synthesis (`pnk ask --deep`) is planned for the "
+            "deep release; until then, narrowing the query or adding a filter is the lever "
+            "you have."
         )
     return EXIT_OK
 

@@ -23,7 +23,7 @@
 | `pnk install-hooks` | shipped | the three-hook split; all three force `--extract=pypdfium2` (on `main`, unreleased) |
 | `pnk serve` | shipped | MCP: `pinakes_search`, `pinakes_get`, `pinakes_list_kbs` |
 | `pnk budget` | on `main`, unreleased | I6b. Day/month/operation spend, `--resolve` for an unknown outcome |
-| `pnk ask --deep` | **not built** | v0.4 |
+| `pnk ask --deep` | **not built** | the deep release |
 
 | Capability | State | Notes |
 |---|---|---|
@@ -32,12 +32,12 @@
 | Extraction cache | shipped | `.pinakes/cache/extract/` |
 | Page provenance (`page_start`/`page_end`) | shipped in the **index** | not yet surfaced in results — I8 |
 | Extraction quality scoring | shipped | `make pdf-eval` against `tests/pdf-corpus/` |
-| **PDF ingest, paid path** (scanned PDFs) | **not built** | v0.2 · I7b. `claude-vision` is a stub that names its increment |
+| **PDF ingest, paid path** (scanned PDFs) | **not built** | I7b. `claude-vision` is a stub that names its increment |
 | Budget estimator, caps, window aggregation | shipped 0.2.2, **inert** | I6a. The pure logic only — nothing calls it, so nothing can spend |
 | Budget ledger, `pnk budget`, the accountant | on `main`, unreleased | I6b. `ledger.jsonl`, the reservation/outcome protocol, and I6a's decisions read from it. **Still nothing calls it** — the paid extractor is I7b |
-| `path:page` citations | **not built** | v0.2 · I8 |
-| Cross-KB links (`pnk link`, `pinakes_links`) | **not built** | v0.3 |
-| `sqlite-vec` tier, template ecosystem | **not built** | v0.5 |
+| `path:page` citations | **not built** | I8 |
+| Cross-KB links (`pnk link`, `pinakes_links`) | **not built** | the graph release |
+| `sqlite-vec` tier, template ecosystem | **not built** | the template release |
 
 **Nothing in the shipped surface can spend money.** The only paid code path in the design is the
 `claude-vision` extractor, and it is a stub. See [DESIGN §5](DESIGN.md#5-cost-control).
@@ -124,36 +124,55 @@ KB configured for a paid backend, which cannot work yet.
 headline and `pnk budget` documented as reporting a ledger nothing writes yet. This decision is a
 bet on I7b landing soon, not a standing policy, and it expires if that bet stops paying.
 
-> ⚠️ **The number itself is unassigned, because `0.3` is already taken.** Every doc here — plus
-> `docs/graph/` and [DESIGN §8](DESIGN.md#8-delivery-plan) — uses **v0.3** to mean the cross-KB
-> links release. The next MINOR after 0.2.x is 0.3.0, so either paid extraction takes 0.3.0 and the
-> graph work shifts to 0.4 (cascading through `ask --deep` and templates), or the graph line keeps
-> its number and paid extraction takes something else. That is a roadmap decision, not a
-> documentation one, and renumbering ~15 committed references — including research documents — is
-> not something to do silently. **Resolve before cutting the release**, and per
-> [CLAUDE.md](../CLAUDE.md)'s rule, re-check what has landed on `main` at that moment rather than
-> trusting this note.
+✅ **The `0.3` collision is resolved — see [the naming rule](#unbuilt-work-is-named-never-numbered)
+below.** Unbuilt work no longer carries a version number anywhere, so nothing competes for `0.3.0`
+and this release can be numbered whenever it is cut.
 
 ---
 
 ## Release roadmap
 
-Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
+> # 🚫 Unbuilt work is named, never numbered
+>
+> **A version number belongs to a release when it is cut — never before.**
+>
+> Bodies of work that do not exist yet are referred to **by name**:
+>
+> | Name | What it is |
+> |---|---|
+> | **the paid-extraction release** | Budget machinery, the opt-in paid Claude-vision extractor, `path:page` citations (I6–I9) |
+> | **the graph release** | `pnk link`, `pinakes_links`, cross-KB traversal, structural edges |
+> | **the deep release** | `pnk ask --deep` |
+> | **the template release** | Template ecosystem, `pnk upgrade`, the `sqlite-vec` tier |
+>
+> **Never write `v0.4` for something unbuilt** — not in docs, not in `--help`, not in an error
+> message, not in a code comment. Decided 20260729 00:09.
+>
+> **Why.** For months the docs used `v0.3` to mean the cross-KB links release. Then 0.2.2 shipped and
+> the *next* MINOR was numerically 0.3.0 — so one number meant two different releases, and picking
+> either one meant renumbering ~60 committed references, research records included. A number
+> promised years ahead is a promise about ordering that the ordering itself keeps breaking. A name
+> never collides, never needs renumbering, and says what the work *is* rather than when it arrives.
+>
+> Historical records (`CHANGELOG.md`, `docs/RETROSPECTIVES.md`, `plans/`, the dated research in
+> `docs/graph/`) keep the numbers they were written with — they are records of what was decided at a
+> time, and rewriting them would falsify that. Each carries a header note pointing here.
 
-Rows below the released ones are **ordered scope, not assigned version numbers** — the `v0.x` labels
-are how the docs have long referred to each body of work, and one of them now collides with the next
-MINOR (see the warning above). A number belongs to a release when it is cut, not years ahead of it.
+Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 
 | Release | Adds |
 |---|---|
 | **0.2.0** ✅ | Free PDF ingest, extraction cache, page provenance in the index, extraction-quality scoring |
 | **0.2.1** ✅ | Documentation restructure — one fact one home; three stale-claim fixes |
 | **0.2.2** ✅ | `pnk sync` names files skipped for want of an `include` glob; budget core (inert) |
-| *next MINOR* | Budget machinery, the opt-in paid Claude-vision extractor, `path:page` citations (I6–I9) |
-| "v0.3" | `pnk link`, `pinakes_links`, cross-KB traversal, link-coverage reporting, free structural edges — build order in [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
-| "v0.3.x" | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
-| "v0.4" | `pnk ask --deep` |
-| "v0.5" | Template ecosystem, `pnk upgrade` migrations, the `sqlite-vec` tier |
+| *the paid-extraction release* | Budget machinery, the opt-in paid Claude-vision extractor, `path:page` citations (I6–I9) |
+| *the graph release* | `pnk link`, `pinakes_links`, cross-KB traversal, link-coverage reporting, free structural edges — build order in [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
+| *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
+| *the deep release* | `pnk ask --deep` |
+| *the template release* | Template ecosystem, `pnk upgrade` migrations, the `sqlite-vec` tier |
+
+The order is a dependency order, not a schedule. Anything unreleased may be resequenced; only the
+✅ rows are facts.
 
 ## Measured numbers
 

@@ -9,7 +9,7 @@
 | [**DESIGN.md**](DESIGN.md) | *Why is it built this way?* Architecture, storage, sync semantics, concurrency, trade-offs |
 | [**RETROSPECTIVES.md**](RETROSPECTIVES.md) | *What did we learn?* Per-increment findings, and the design's own review passes |
 | [**KB-UPDATES.md**](KB-UPDATES.md) | *What happens to a KB somebody already has when pinakes changes?* Design note — **proposal, not built** |
-| [**graph/**](graph/) | Graph-retrieval research shaping v0.3 — fourteen investigations plus the synthesis |
+| [**graph/**](graph/) | Graph-retrieval research shaping the graph release — fourteen investigations plus the synthesis |
 
 Build plans live in [`plans/`](../plans/); the release history is [`CHANGELOG.md`](../CHANGELOG.md).
 
@@ -60,7 +60,24 @@ Another session or worktree may have cut a release since your branch started, so
 about to use — or the one a plan assumes — may already be taken. `plans/v0.2.md` assumed it would cut
 `0.2.0` at I9; `0.2.0` shipped after I5 and `0.2.1` after that.
 
+And **do not write a number for the release after this one** — name it (see Conventions below). That
+is what stops the next plan from assuming a number that a parallel session has already spent.
+
 ## Conventions
+
+> ### 🚫 Unbuilt work is named, never numbered
+>
+> **A version number belongs to a release when it is cut — never before.** Refer to unbuilt work by
+> name: **the paid-extraction release**, **the graph release**, **the deep release**, **the template
+> release**. Never write `v0.4` for something that does not exist — not in docs, not in `--help`, not
+> in an error message, not in a code comment.
+>
+> Decided 20260729 00:09, after `v0.3` came to mean two different releases at once and picking either
+> meaning would have renumbered ~60 committed references. Full rationale and the current mapping:
+> [STATUS.md § Release roadmap](STATUS.md#release-roadmap).
+>
+> Historical records (`CHANGELOG.md`, `RETROSPECTIVES.md`, `plans/`, the dated research in `graph/`)
+> keep the numbers they were written with and carry a header note pointing at STATUS.md.
 
 - **Every date carries a time**: `YYYYMMDD HH:MM`, local 24h. Several entries land per day, and a
   bare date loses their order and hides how fresh a "verified" claim is.

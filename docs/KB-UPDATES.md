@@ -15,7 +15,7 @@ rebuild, free and deterministic. `pinakes.toml`, `docs/` and the sidecars are **
 edited, and belong to the user; nothing may rewrite them casually.
 
 The design handles derived state well and committed state not at all. Every mechanism below exists
-for the first category. For the second there is one deferred command (`pnk upgrade`, v0.5) and no
+for the first category. For the second there is one deferred command (`pnk upgrade`, the template release) and no
 detection at all — while v0.2 is actively changing what the template ships.
 
 ## 2. The four drift axes
@@ -143,7 +143,7 @@ The gate runs at commit time, so it produces no warnings in any user's KB.
   floor reflects the last write. That is honest but means the field is a lower bound, not a promise.
 - **Should `doctor` report available template upgrades?** Detection is cheap and report-only; it
   would make the gap visible without waiting for `pnk upgrade`.
-- **Multi-template ecosystem** (v0.5) multiplies all of this by the number of templates.
+- **Multi-template ecosystem** (the template release) multiplies all of this by the number of templates.
 - Small follow-up: the unknown-key remedy still points at `docs/DESIGN.md §2.1`, whose field tables
   moved to [MANIFEST.md](MANIFEST.md) in 0.2.1.
 

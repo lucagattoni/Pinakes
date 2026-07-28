@@ -61,7 +61,7 @@ in `sys.modules`.
 | Budget | Pre-call reservation · hard cap per operation · rolling ledger (§5) |
 | Blueprint | Instantiable template **and** reproducible recipe |
 | Federation | Cross-KB links you can follow (no fan-out query in v1) |
-| Retrieval | Hybrid (BM25 + vector) + rerank · metadata filters · multi-hop (single-KB in v0.1, cross-KB in v0.3) |
+| Retrieval | Hybrid (BM25 + vector) + rerank · metadata filters · multi-hop (single-KB in v0.1, cross-KB in the graph release) |
 | Cost policy | Free path first; escalate only when it's insufficient |
 | Content vs repo | Engine public; real KBs live elsewhere; one synthetic demo KB in-repo |
 | Linking | Sidecar metadata files (originals never mutated) |
@@ -169,7 +169,7 @@ re-billed or silently overwritten by whatever free backend the manifest names. T
 explicitly discarded by `--force` (§6.4) — never for the common, no-money-involved case of an
 ordinary free extraction. The cost is real and accepted: PyYAML drops comments and re-sorts unknown
 keys on this one write, same as any other `write()` call would; a comment-preserving writer is `pnk
-link`'s problem (v0.3), not pulled forward here.
+link`'s problem (the graph release), not pulled forward here.
 
 Why sidecars rather than in-text links: a PDF cannot carry a wikilink without being rewritten, and
 mutating source documents breaks the "originals are the truth" contract. One mechanism that works
@@ -222,7 +222,7 @@ in an ANN index. `sqlite-vec` is also pre-v1 with breaking changes expected — 
 being reached above 50k chunks, with `vector_tier = "numpy"` supported as a config override.
 
 **What v0.1 actually ships:** the NumPy tier only, at *any* corpus size — the `sqlite-vec` tier lands
-in v0.5 (§8). NumPy does not fail above 50k, it just costs linear RAM (≈1.5 GB at 1M chunks × 384
+in the template release (§8). NumPy does not fail above 50k, it just costs linear RAM (≈1.5 GB at 1M chunks × 384
 dims); `pnk doctor` warns past the 50k threshold and names the tier that will fix it. Stating this
 matters because a table of three tiers reads as three *available* tiers.
 
@@ -286,7 +286,7 @@ Multi-hop is delivered by **making the tools composable rather than by building 
 Code already runs it in its own context on the caller's existing subscription.
 
 Scope, stated precisely: **v0.1 gives multi-hop within a single KB.** Cross-KB hops need
-`pinakes_links`, which ships in v0.3 (§8).
+`pinakes_links`, which ships in the graph release (§8).
 
 `pnk ask --deep` exists for CLI and cron use, where no agent is present. It runs a bounded version of
 the same loop with its own API key under the budget ledger (§5). Same tools, same evidence contract —
@@ -803,15 +803,15 @@ cut, and [STATUS](STATUS.md#release-roadmap) is where the mapping lives.
 
 | Release | Why here |
 |---|---|
-| v0.2 — PDF extraction | Parsing is the single biggest quality risk (§9), so it is isolated from core-design feedback rather than mixed into it. Scope covers **both** paths: the free `pypdfium2` default, and the opt-in paid Claude-vision extractor that is the only answer to a scanned page (§9) — which is what drags the budget machinery into this release, per the governing rule below |
-| v0.3 — cross-KB links | Needs two populated KBs to be worth anything. Build order: [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
-| v0.3.x — graph channels | Each is **eval-gated rather than scheduled** — it ships only if the golden set justifies it (`graph/PINAKES_APPROACH.md` §9) |
-| v0.4 — `pnk ask --deep` | A paid loop and its guardrails ship together, never apart — and the guardrails are already here: the §5 accountant, the ledger and all three enforced windows ship in v0.2 with the paid extractor, so v0.4 adds the loop, not the machinery |
-| v0.5 — templates, `sqlite-vec` | Generalisation, once real usage has shaped one template well |
+| PDF extraction (0.2.x, completed by the paid-extraction release) | Parsing is the single biggest quality risk (§9), so it is isolated from core-design feedback rather than mixed into it. Scope covers **both** paths: the free `pypdfium2` default, and the opt-in paid Claude-vision extractor that is the only answer to a scanned page (§9) — which is what drags the budget machinery into this release, per the governing rule below |
+| the graph release — cross-KB links | Needs two populated KBs to be worth anything. Build order: [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
+| the graph release (staged) — graph channels | Each is **eval-gated rather than scheduled** — it ships only if the golden set justifies it (`graph/PINAKES_APPROACH.md` §9) |
+| the deep release — `pnk ask --deep` | A paid loop and its guardrails ship together, never apart — and the guardrails are already here: the §5 accountant, the ledger and all three enforced windows ship with the paid extractor, so the deep release adds the loop, not the machinery |
+| the template release — templates, `sqlite-vec` | Generalisation, once real usage has shaped one template well |
 
 The governing rule across all of them: **the budget machinery ships in the same release as the first
-thing that can spend** (§5). That is what moved it out of v0.4 when the paid extractor was pulled
-into v0.2 — the design's own rule applied to a product decision, not scope creep.
+thing that can spend** (§5). That is what pulled the budget machinery forward when the paid extractor was
+scheduled ahead of `--deep` — the design's own rule applied to a product decision, not scope creep.
 
 **MCP tools are namespaced `pinakes_*`, not `kb_*`.** An agent commonly has several servers loaded at
 once, and a tool called `kb_search` is a collision waiting to happen. Every tool takes an explicit
@@ -828,11 +828,11 @@ once, and a tool called `kb_search` is a collision waiting to happen. Every tool
 | **Link coverage ceiling** | See §6.2. Measured and reported rather than hidden |
 | **Sidecar/document separation** | A user moving a file without its sidecar is the most likely real-world corruption. Mitigated by hash-based rename detection (§6.4) and `pnk doctor`; not eliminated |
 | **Confidence heuristic** | Uncalibrated abstention would be worse than none. Mitigated by golden-set calibration, `unknown` as an honest default, and a measured false-abstain rate. **Measured on the demo KB (20260725 18:55, bge-small + bge-reranker-base): false-abstain 0.03, false-confidence 0.25.** One no-answer question in four still gets a confident answer — the score distributions genuinely overlap. The number is small (8 no-answer questions) and the thresholds are fitted on the same set they are scored against, so treat it as a floor. This is the cost §4.2 said would be measured rather than assumed |
-| **`sqlite-vec` maturity** | Pre-v1, breaking changes expected. Contained: only reached above 50k chunks, deferred to v0.5, NumPy tier remains a supported override |
+| **`sqlite-vec` maturity** | Pre-v1, breaking changes expected. Contained: only reached above 50k chunks, deferred to the template release, NumPy tier remains a supported override |
 | **torch install weight** | ~2GB for the default backend, plus ~1.4GB of model weights (embedding + reranker). Contained by the extras split and the CI `HF_HOME` cache (§4.5); CI's `check` job is a three-leg matrix over `[light]`, `[light,pdf]` and `[light,pdf,claude]`, never `[st]` |
 | **Template versioning** | Migrations are shown, never auto-applied (§6.1); templates version independently of the package |
 | **Scope creep via `--deep`** | The paid loop is where this design could grow a second, worse agent framework. Bounded by: same tools as MCP, hard caps, and no orchestration the free path doesn't have |
-| **Environment assumptions** | FTS5 and (for v0.5) loadable extensions are not universal in system Pythons. Probed by `pnk doctor` with a named remedy; uv-managed CPython is the supported baseline (§3.1) |
+| **Environment assumptions** | FTS5 and (for the template release) loadable extensions are not universal in system Pythons. Probed by `pnk doctor` with a named remedy; uv-managed CPython is the supported baseline (§3.1) |
 | **Accidental publication** | Publishing a KB repo exposes `docs/` and every sidecar, provenance URLs included (§4.7). Mitigated by shipped `.gitignore`, an index/ledger that never leaves the machine, and explicit docs — not by anything the engine can enforce |
 | **The paid-path allowlist erodes, or its decisive gate is inert** | A one-line import in a new module quietly makes the free path paid; and a behavioural gate that asserts a package is *absent* is vacuously true wherever that package is not installed — the `false_abstain: 0.0` failure reappearing in the flagship safety check. Mitigated by one `.paid-path-allowlist` that `check.sh`, CI and the tests all read, so three copies cannot drift; the gate landed **before** the code it guards, and its first job was to fail on a planted violation. The check that decides runs the whole free path in a fresh subprocess and asserts no paid client reached `sys.modules` — it skips loudly where `[claude]` is absent, runs for real on CI's `[light,pdf,claude]` leg, and has a negative test that plants an import and asserts it fails. It caught two real leaks on the day it landed: `pnk doctor` and `pnk sync` both reported a backend's availability by *loading* it, which imports the client |
 | **Unbounded spend across invocations** | One `pnk sync` is capped; nothing caps the tenth. Freshness is hook-driven (§6.3), which makes `pnk sync` machine-driven, so a per-invocation cap is really an allowance renewed on every commit — the per-invocation framing hides that the invocations are the loop. Mitigated by making the cap arithmetic over a *running* total: `per_operation_eur`, `daily_eur` **and** `monthly_eur` are all checked before every call, aggregated in `[budget] timezone`. `monthly_eur` is **per KB**, so ten paid KBs are ten allowances; v0.2 adds no global cap and says so rather than letting a reader assume one. ⏳ the reservation arithmetic shipped inert (I6a); reading the ledger, forcing hooks and `pnk init --ci` onto the free backend, and the no-TTY abort are **I6b** and are not built ([STATUS.md](STATUS.md)) |

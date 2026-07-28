@@ -110,7 +110,7 @@ class RerankSection:
 @dataclass(frozen=True, slots=True)
 class BudgetSection:
     """Parsed and validated from v0.1; the caps are consumed by `budget.reserve` from I6a, the
-    ledger and `pnk ask --deep` itself still land later (I6b/v0.4).
+    ledger and `pnk ask --deep` itself still land later (I6b, then the deep release).
 
     All four caps are `Decimal`, not `float` (I6a): a reservation compared against a
     float-derived cap is a representation error wearing a different hat, and the boundary tests

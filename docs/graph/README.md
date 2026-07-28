@@ -1,7 +1,7 @@
 # Graph retrieval — research
 
 Fourteen investigations of the GraphRAG-family projects, plus the synthesis that turns them into a
-gated build order for **v0.3**. Research, not specification: where these disagree with
+gated build order for **the graph release**. Research, not specification: where these disagree with
 [`../DESIGN.md`](../DESIGN.md), DESIGN wins.
 
 Nothing here is built. See [`../STATUS.md`](../STATUS.md).
@@ -10,7 +10,7 @@ Nothing here is built. See [`../STATUS.md`](../STATUS.md).
 
 | Doc | What it is |
 |---|---|
-| [**PINAKES_APPROACH.md**](PINAKES_APPROACH.md) | **The synthesis.** The Pinakes graph: lazy, agent-driven, budget-tunable. §9 is the eval gate each channel must pass; §10 is the v0.3 build order. Six adversarial passes (27→7→8→5→1→0 findings) |
+| [**PINAKES_APPROACH.md**](PINAKES_APPROACH.md) | **The synthesis.** The Pinakes graph: lazy, agent-driven, budget-tunable. §9 is the eval gate each channel must pass; §10 is the the graph release build order. Six adversarial passes (27→7→8→5→1→0 findings) |
 | [**GRAPH_RAG.md**](GRAPH_RAG.md) | The research record — what the literature actually says about graphs, RAG and agents, and what pinakes should take from it |
 
 ## Investigations

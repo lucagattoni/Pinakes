@@ -1,5 +1,8 @@
 # Youtu-GraphRAG — investigation notes
 
+> ℹ️ **Version numbers below reflect the convention in use when this was written.** Unbuilt
+> work is now **named, not numbered** ([STATUS.md](../STATUS.md)). This record is left as it was.
+
 **Repo:** https://github.com/TencentCloudADP/youtu-graphrag · **Stars:** ~1.2k (1223, 183 forks) ·
 **License:** custom "Youtu-GraphRAG License" — **academic use only, commercial/production use forbidden**
 (the README's MIT badge is wrong; `LICENSE` is the truth) · **Investigated:** 20260726 08:52
