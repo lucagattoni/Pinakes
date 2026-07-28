@@ -87,11 +87,14 @@ def test_the_allowlist_matches_the_source_tree() -> None:
     result = _run_gate(REPO_ROOT)
     assert result.returncode == 0, result.stderr
     assert f"{len(EXPECTED_ALLOWLIST)} exempt path(s)" in result.stdout
-    sys.path.insert(0, str(REPO_ROOT / "tools"))
-    from paid_path_gate import read_allowlist
-
-    listed = read_allowlist(REPO_ROOT)
-    assert tuple(listed) == EXPECTED_ALLOWLIST
+    # Parsed here rather than through the gate's own `read_allowlist`: borrowing the parser under
+    # test would let a parser bug and a content change cancel out.
+    listed = tuple(
+        line.strip()
+        for line in (REPO_ROOT / ".paid-path-allowlist").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    )
+    assert listed == EXPECTED_ALLOWLIST
 
 
 def test_a_stale_allowlist_entry_fails_gate_1(tmp_path: Path) -> None:
