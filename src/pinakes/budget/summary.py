@@ -84,6 +84,8 @@ class Summary:
     caps: Caps
     windows: tuple[Window, ...]
     operations: tuple[Operation, ...]
+    operations_total: int = 0
+    """How many operations the ledger holds, against the at-most-`RECENT_OPERATIONS` shown."""
     reservations: int = 0
     reconciled: int = 0
     voided: int = 0
@@ -118,7 +120,9 @@ def _window(name: str, calls: list[Call], cap: Decimal) -> Window:
     return Window(name=name, spent_eur=total, cap_eur=cap, rates=rates, as_of=as_of)
 
 
-def _operations(calls: tuple[Call, ...]) -> tuple[Operation, ...]:
+def _operations(calls: tuple[Call, ...]) -> tuple[tuple[Operation, ...], int]:
+    """The most recent operations, and how many there are in total. Both, because a list capped at
+    `RECENT_OPERATIONS` and rendered without saying so reads as "this is all of them"."""
     grouped: dict[str, list[Call]] = {}
     for call in calls:
         grouped.setdefault(call.reservation.operation_id, []).append(call)
@@ -133,7 +137,7 @@ def _operations(calls: tuple[Call, ...]) -> tuple[Operation, ...]:
         for operation_id, members in grouped.items()
     ]
     operations.sort(key=lambda operation: operation.started, reverse=True)
-    return tuple(operations[:RECENT_OPERATIONS])
+    return tuple(operations[:RECENT_OPERATIONS]), len(operations)
 
 
 def summarise(
@@ -160,6 +164,7 @@ def summarise(
             month.append(call)
 
     unknown = [call for call in resolved.calls if call.state is CallState.UNKNOWN]
+    operations, operations_total = _operations(resolved.calls)
     return Summary(
         kb_name=kb_name,
         kb_id=kb_id,
@@ -169,7 +174,8 @@ def summarise(
             _window("today", today, caps.daily_eur),
             _window("this month", month, caps.monthly_eur),
         ),
-        operations=_operations(resolved.calls),
+        operations=operations,
+        operations_total=operations_total,
         reservations=len(resolved.calls),
         reconciled=sum(1 for call in resolved.calls if call.state is CallState.RECONCILED),
         voided=sum(1 for call in resolved.calls if call.state is CallState.VOIDED),
@@ -224,7 +230,13 @@ def render(summary: Summary) -> list[str]:
 
     if summary.operations:
         lines.append("")
-        lines.append("  recent operations:")
+        hidden = summary.operations_total - len(summary.operations)
+        lines.append(
+            f"  recent operations ({len(summary.operations)} of {summary.operations_total}, "
+            f"{hidden} older not shown):"
+            if hidden
+            else "  recent operations:"
+        )
         # Shown in `[budget] timezone`, the same zone the windows above are computed in. The
         # machine's own local zone would be a second, unlabelled clock in one report — and on a KB
         # synced from two machines it would make the same operation appear at two different times.

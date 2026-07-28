@@ -1175,6 +1175,14 @@ call is filed under would not match the timestamp beside it. *Recorded because t
 the class of bug is not: a report that derives one number from configuration and another from
 ambient state looks consistent on the machine it was written on.*
 
+**LOW, second pass — two flags that read as the opposite of what they do.** `pnk budget` listed the
+five most recent operations and stopped, with no line saying how many it had not shown — the
+silent-cap failure this plan's own ground rules name ("if a workflow bounds coverage, `log()` what
+was dropped"). And `--clear-cache`'s bare form parsed to the value `free`, which reads as "clear only
+the free entries" when both spellings clear the *whole* cache; `argparse` validates `const` against
+`choices`, so a private sentinel is not available and the bare form has to be a real, honest word.
+It is now `all`, and the value names what is being authorised rather than what is removed.
+
 Also: `doctor` printed `cost_eur` — a `Decimal` division — with a bare f-string, putting all 28
 significant digits into a health-check line; the `--resolve` record's `operation` field was
 documented as a value it never takes. Every fix above was confirmed to fail against the pre-fix

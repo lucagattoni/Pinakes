@@ -436,12 +436,15 @@ def _sync_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="with an explicit free --extract: overwrite a paid extraction (prints what it drops)",
     )
+    # `all` rather than `free` as the bare form's value: both spellings clear the *whole* cache, so
+    # a value named `free` would read as "clear only the free entries", which is not what either
+    # does. The value names what you are authorising, not what is removed.
     parser.add_argument(
         "--clear-cache",
         nargs="?",
-        const="free",
+        const="all",
         default=None,
-        choices=("free", "paid"),
+        choices=("all", "paid"),
         metavar="paid",
         help=(
             "empty the extraction cache, after confirming (never the ledger); "

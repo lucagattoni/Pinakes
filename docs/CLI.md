@@ -75,7 +75,7 @@ corpus. Failures are recorded, the run continues, and sync exits non-zero listin
 | `--stage` | With `--sidecars-only`: limit to staged files and `git add` them, so a document and its ID land in one commit |
 | `--extract BACKEND` | Override `[extraction] backend` for this run only. Validated against the registry *without importing* it, so an unknown name is a usage error before any extra could matter |
 | `--force` | Meaningful **only** with an explicit free `--extract`: overwrite a paid extraction, printing what it discards. `--force` alone changes nothing |
-| `--clear-cache[=paid]` | Empty `cache/extract/` entirely — paid or free, active or orphaned — after printing the entry count and bytes and requiring a `y`. Never touches `ledger.jsonl`. `=paid` is the explicit authorisation to destroy entries a paid backend wrote |
+| `--clear-cache[=paid]` | Empty `cache/extract/` entirely — paid or free, active or orphaned — after printing the entry count and bytes and requiring a `y`. Never touches `ledger.jsonl`. `=paid` is the explicit authorisation to destroy entries a paid backend wrote. The bare form is `=all` spelled out — both clear the whole cache, so the value names what you are authorising, not what is removed |
 | `--yes` | Answer this run's confirmation prompts, for cron. **Raises no cap**, and does not authorise clearing paid cache entries — that needs `--clear-cache=paid` as well |
 | `--force-unlock` | Take a lock held by another machine. Liveness cannot be checked across hosts, so this is deliberately a human decision |
 | `-q`, `--quiet` | Print only problems |

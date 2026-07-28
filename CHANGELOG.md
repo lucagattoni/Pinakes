@@ -96,6 +96,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`pnk budget` printed its windows in `[budget] timezone` and its operation list in the machine's
   local zone**, and `pnk doctor` printed a raw 28-digit `Decimal` division as a euro amount.
 
+- **`pnk budget` truncated its operation list silently**, and `--clear-cache`'s bare form parsed to
+  a value named `free` — which reads as "clear only the free entries" when both spellings clear the
+  whole cache. The list now says how many it is not showing, and the bare form is `all`.
+
 - **`pnk doctor` and `pnk sync` imported the paid API client on a KB configured for
   `claude-vision`.** Both reported a backend's availability by *loading* it —
   `doctor._extraction` on every run, and `sync._missing_pdf_extra` when building the "matched no

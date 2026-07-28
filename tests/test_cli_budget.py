@@ -526,3 +526,65 @@ def test_recent_operations_are_shown_in_the_configured_timezone(
     assert main(["budget", "--kb", str(root)]) == EXIT_OK
     out = capsys.readouterr().out
     assert "20260716 08:30" in out
+
+
+def test_the_operation_list_says_when_it_is_showing_only_the_recent_ones(
+    fake_kb: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A capped list rendered without saying so reads as "this is all of them" — the silent-cap
+    failure the plan's own ground rules call out."""
+    from pinakes.budget.summary import RECENT_OPERATIONS
+
+    loaded = load(fake_kb)
+    total = RECENT_OPERATIONS + 3
+    for index in range(total):
+        append(
+            ledger_of(fake_kb),
+            entry(
+                RecordKind.RESERVATION,
+                call_id=f"C{index}",
+                kb_id=loaded.kb.id,
+                at=datetime(2026, 7, 15, 10, index, tzinfo=UTC),
+                cost_usd="0.01",
+                operation_id=f"OP{index}",
+            ),
+        )
+
+    assert main(["budget", "--kb", str(fake_kb)]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert f"recent operations ({RECENT_OPERATIONS} of {total}, 3 older not shown)" in out
+
+
+def test_the_operation_list_is_unqualified_when_it_is_complete(
+    fake_kb: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    loaded = load(fake_kb)
+    append(
+        ledger_of(fake_kb),
+        entry(
+            RecordKind.RESERVATION,
+            call_id="C0",
+            kb_id=loaded.kb.id,
+            at=datetime(2026, 7, 15, 10, 0, tzinfo=UTC),
+            cost_usd="0.01",
+        ),
+    )
+    assert main(["budget", "--kb", str(fake_kb)]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert "recent operations:" in out
+    assert "not shown" not in out
+
+
+def test_the_bare_clear_cache_value_does_not_read_as_free_only(
+    fake_kb: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Both spellings clear the *whole* cache, so a value named `free` would say the opposite of
+    what it does. `--clear-cache` and `--clear-cache=all` are the same request."""
+    free_cache_entry(fake_kb, "free-one")
+    assert main(["sync", "--kb", str(fake_kb), "--clear-cache=all", "--yes"]) == EXIT_OK
+
+    free_cache_entry(fake_kb, "free-two")
+    with pytest.raises(SystemExit) as exc_info:
+        main(["sync", "--kb", str(fake_kb), "--clear-cache=free", "--yes"])
+    assert exc_info.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
