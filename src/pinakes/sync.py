@@ -104,6 +104,9 @@ class SyncOptions:
     offline: bool = False
     force_unlock: bool = False
     extract: str | None = None  # overrides `[extraction] backend` for one run
+    estimate_only: bool = False
+    """Price the first slice against the real tokeniser and stop. **A network call**, not an
+    offline estimate — it needs a key, which is why `--help` says so: "estimate" reads as free."""
     interactive: bool = False
     """Whether a terminal is attached. Supplied by the caller, never probed here — `sync()` does no
     I/O beyond the filesystem, which is what keeps it testable without a tty."""
@@ -161,6 +164,9 @@ class SyncReport:
     cache_clear_aborted: bool = False  # requested but not confirmed (no --yes)
     cache_pending_entries: int = 0  # what --clear-cache *would* remove, for the caller's prompt
     cache_pending_bytes: int = 0
+    estimates: tuple[tuple[str, int, int, int, str], ...] = ()
+    """`--estimate-only`'s result: `(path, pages, requests, measured input tokens, euros)` per
+    document. Its own field rather than a `failures` entry, because an estimate is an answer."""
     cache_pending_paid_entries: int = 0
     """How many of `cache_pending_entries` a paid backend wrote (I6b). Its own number because
     `--yes` alone must never authorise destroying paid extractions unattended — that needs the
@@ -503,6 +509,9 @@ def sync(
                 return SyncReport(busy=True)
             return _clear_cache(manifest, options)
 
+    if options.estimate_only:
+        return _estimate_only(manifest, options)
+
     # Resolved and validated before the lock is even taken: an unknown backend is a configuration
     # mistake, not a per-document failure, and it should fail the same way on a KB with zero PDFs
     # as on one full of them (I1's exit criterion).
@@ -516,6 +525,66 @@ def sync(
         report = SyncReport(reclaimed_lock=lock.outcome is LockOutcome.RECLAIMED)
         _run(manifest, options, backend_factory, stamp, report, extraction_backend)
         return report
+
+
+def _estimate_only(manifest: Manifest, options: SyncOptions) -> SyncReport:
+    """Price what a paid run would cost, without generating anything (I7b).
+
+    **A network call** — `count_tokens` measures the real request against the real tokeniser, which
+    is the whole point: it tightens the reservation constant at a fraction of a real run's cost.
+    It bills no output, and it takes no lock, because it changes nothing.
+
+    Refuses on a free backend rather than reporting €0.00: "nothing to estimate" and "this run
+    would cost nothing" are different answers, and only the first one is true.
+    """
+    from datetime import datetime as _datetime
+
+    from pinakes.budget.estimate import TIMESTAMP_FORMAT, estimate_document
+    from pinakes.budget.prices import load_prices
+    from pinakes.budget.summary import euros
+    from pinakes.extract.claude import default_transport, estimate_only
+    from pinakes.extract.pdfium import page_count
+
+    backend = options.extract or manifest.extraction.backend
+    if backend not in paid_backend_names():
+        raise SyncError(
+            f"--estimate-only has nothing to estimate: `{backend}` cannot spend.",
+            remedy="Pass `--extract=<paid-backend>`, or configure one in `[extraction] backend`.",
+        )
+
+    prices = load_prices()
+    transport = default_transport()
+    files, _sidecars, _unmatched = walk_sources(manifest)
+    lines: list[tuple[str, int, int, int, str]] = []
+    for walked in files:
+        # `WalkedFile.path` is the KB-relative string the index keys on, not a filesystem path.
+        source = manifest.root / walked.path
+        if source.suffix.lower() not in PDF_SUFFIXES:
+            continue
+        pages = page_count(source)
+        measured, requests = estimate_only(
+            source,
+            transport=transport,
+            model=manifest.extraction.model,
+            pages_total=pages,
+        )
+        estimate = estimate_document(
+            pages=pages,
+            model=manifest.extraction.model,
+            prices=prices,
+            now=_datetime.now().strftime(TIMESTAMP_FORMAT),
+            max_price_age_days=manifest.budget.max_price_age_days,
+        )
+        lines.append(
+            (
+                walked.path,
+                pages,
+                requests,
+                measured,
+                euros(estimate.total_eur),
+            )
+        )
+    return SyncReport(estimates=tuple(lines))
 
 
 def _clear_cache(manifest: Manifest, options: SyncOptions) -> SyncReport:
@@ -1218,9 +1287,14 @@ def _accountant_for(manifest: Manifest, options: SyncOptions) -> "Accountant":
     from pinakes.budget.accountant import Accountant
     from pinakes.budget.prices import load_prices
 
-    if options.operation_id is not None:
-        return Accountant(manifest, prices=load_prices(), operation_id=options.operation_id)
-    return Accountant(manifest, prices=load_prices())
+    return Accountant(
+        manifest,
+        prices=load_prices(),
+        operation_id=options.operation_id,
+        interactive=options.interactive,
+        ask=options.ask,
+        yes=options.yes,
+    )
 
 
 def _index_document(

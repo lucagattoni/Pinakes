@@ -59,7 +59,13 @@ class Accountant:
         operation: str = "sync",
         operation_id: OperationId | None = None,
         now: datetime | None = None,
+        interactive: bool = False,
+        ask: Callable[[str], str] | None = None,
+        yes: bool = False,
     ) -> None:
+        self.yes = yes
+        self.interactive = interactive
+        self.ask = ask
         self.manifest = manifest
         self.prices = prices
         self.operation = operation
@@ -120,6 +126,23 @@ class Accountant:
             for call in resolved.calls
             if call.reservation.operation_id == self.operation_id
         )
+
+    def confirm_document(self, decision: DocumentDecision, estimate_eur: Decimal) -> bool:
+        """Put `confirm_above_eur`'s question, if this run owes one.
+
+        On the accountant rather than in `sync.py` because the estimate it is about is computed
+        here, and a second computation of the same number in the caller is a second thing that can
+        disagree with the one the cap was checked against.
+        """
+        outcome = resolve_confirmation(
+            decision,
+            estimate_eur=estimate_eur,
+            threshold_eur=self.manifest.budget.confirm_above_eur,
+            interactive=self.interactive,
+            yes=self.yes,
+            ask=self.ask,
+        )
+        return outcome.proceed
 
     @contextmanager
     def paid_call(

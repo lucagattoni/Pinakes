@@ -432,6 +432,14 @@ def _sync_arguments(parser: argparse.ArgumentParser) -> None:
         help="override `[extraction] backend` for this run only",
     )
     parser.add_argument(
+        "--estimate-only",
+        action="store_true",
+        help=(
+            "price the first slice against the real tokeniser and exit without extracting. "
+            "**A network call** — it needs a key; it generates nothing and bills no output"
+        ),
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="with an explicit free --extract: overwrite a paid extraction (prints what it drops)",
@@ -500,8 +508,25 @@ def run_sync(args: argparse.Namespace) -> int:
             force_unlock=args.force_unlock,
             extract=args.extract,
             force=args.force,
+            estimate_only=args.estimate_only,
+            yes=args.yes,
+            # The terminal facts belong to the caller: `sync()` does no I/O beyond the
+            # filesystem, so it is told whether one is attached rather than probing for it.
+            interactive=sys.stdin.isatty(),
+            ask=input,
         ),
     )
+
+    if report.estimates:
+        print("estimate only — nothing was extracted, and no output tokens were billed:")
+        for path, pages, requests, tokens, eur in report.estimates:
+            print(
+                f"  {path}: {pages} page(s), {requests} request(s), {tokens:,} input tokens →€{eur}"
+            )
+        return EXIT_OK
+    if args.estimate_only:
+        print("estimate only: no PDF in this KB would be extracted by the configured backend.")
+        return EXIT_OK
 
     if report.busy:
         if not args.quiet:

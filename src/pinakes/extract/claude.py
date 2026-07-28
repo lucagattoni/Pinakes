@@ -714,6 +714,14 @@ def extract_document(
     upfront = accountant.check_document(estimate)
     if not upfront.allowed:
         raise BudgetRefusedError(upfront.message or "refused by the budget")
+    # Evaluated **once, against the whole-document estimate** — never per call. A per-call reading
+    # against a several-cent slice would prompt dozens of times for one multi-page document, which
+    # is how a confirmation becomes something a user learns to hold `y` through.
+    if not accountant.confirm_document(upfront, estimate.total_eur):
+        raise ExtractionError(
+            f"{path.name}: not confirmed, so nothing was spent.",
+            remedy="Re-run and answer `y`, or pass `--yes` to authorise the estimate up front.",
+        )
 
     tally = CallTally()
     page_texts: list[str] = []
@@ -847,6 +855,16 @@ def fingerprint_inputs() -> Mapping[str, str]:
     }
 
 
+def default_transport() -> Transport:
+    """The one place production builds a transport.
+
+    A module-level factory rather than a constructor call at each site, so a test can replace the
+    whole transport for `pnk sync --estimate-only` — which otherwise reaches `AnthropicTransport`
+    through two layers of CLI and could only be tested with a real key.
+    """
+    return AnthropicTransport()
+
+
 class ClaudeVisionExtractor:
     """The registered `claude-vision` backend.
 
@@ -881,7 +899,7 @@ class ClaudeVisionExtractor:
 
         extracted, _tally = extract_document(
             path,
-            transport=self._transport or AnthropicTransport(),
+            transport=self._transport or default_transport(),
             accountant=accountant,
             model=ctx.model,
             pages_total=page_count(path),

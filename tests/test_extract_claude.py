@@ -563,3 +563,105 @@ def test_force_is_what_overrides_the_healthy_pdf_refusal() -> None:
     survey = check_worth_paying_for(CORPUS / "baseline-12p.pdf", force=True)
     assert survey.pages_total == 12
     assert not survey.needs_the_paid_path
+
+
+# --- `--estimate-only`, which must never generate ----------------------------------------------
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_estimate_only_makes_no_generation_call(
+    make_fake_kb: Callable[..., Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`count_tokens` measures; `messages.create` generates and bills. The whole value of the flag
+    is that it does the first and never the second, so the spy counts both."""
+    import shutil
+
+    from pinakes.cli import EXIT_OK, main
+    from pinakes.extract import claude as claude_module
+
+    root = make_fake_kb(extraction_backend=CLAUDE_VISION)
+    manifest_path = root / "pinakes.toml"
+    manifest_path.write_text(
+        manifest_path.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md", "**/*.txt"]', 'include = ["**/*.pdf"]'
+        ),
+        encoding="utf-8",
+    )
+    shutil.copyfile(CORPUS / "baseline-12p.pdf", root / "docs" / "scan.pdf")
+
+    transport = RecordedTransport("happy-five-page-slice")
+    monkeypatch.setattr(claude_module, "default_transport", lambda: transport)
+
+    assert main(["sync", "--kb", str(root), "--estimate-only"]) == EXIT_OK
+
+    assert transport.calls == 0, "a generation call would have billed for output"
+    assert transport.token_counts == 1
+    out = capsys.readouterr().out
+    assert "nothing was extracted" in out
+    assert "12 page(s), 3 request(s)" in out
+
+
+def test_estimate_only_refuses_a_free_backend(make_fake_kb: Callable[..., Path]) -> None:
+    """ "Nothing to estimate" and "this run would cost nothing" are different answers, and only
+    the first one is true on a free backend."""
+    from pinakes.errors import SyncError
+    from pinakes.sync import SyncOptions, sync
+
+    root = make_fake_kb()
+    with pytest.raises(SyncError) as exc_info:
+        sync(load(root), options=SyncOptions(estimate_only=True))
+    assert "nothing to estimate" in exc_info.value.message
+
+
+# --- the confirmation, evaluated once against the whole document -------------------------------
+
+
+def test_a_confirmation_is_owed_once_for_a_document_not_once_per_call(
+    make_fake_kb: Callable[..., Path],
+) -> None:
+    """A per-call reading against a several-cent slice would prompt dozens of times for one
+    multi-page document, which is how a confirmation becomes something a user holds `y` through."""
+    from pinakes.budget.estimate import estimate_document
+
+    root = make_fake_kb(
+        extraction_backend=CLAUDE_VISION,
+        budget={
+            "confirm_above_eur": "0.01",
+            "per_operation_eur": "50.00",
+            "daily_eur": "50.00",
+            "monthly_eur": "50.00",
+        },
+    )
+    asked: list[str] = []
+    accountant = Accountant(
+        load(root),
+        prices=prices(),
+        now=datetime.now(UTC),
+        interactive=True,
+        ask=lambda prompt: (asked.append(prompt), "y")[1],
+    )
+    estimate = estimate_document(
+        pages=12,
+        model=MODEL,
+        prices=prices(),
+        now=datetime.now().strftime("%Y%m%d %H:%M"),
+        max_price_age_days=30,
+    )
+    decision = accountant.check_document(estimate)
+    assert decision.needs_confirmation
+    assert accountant.confirm_document(decision, estimate.total_eur)
+    assert len(asked) == 1, "one question for the whole document"
+
+
+def test_yes_answers_the_documents_confirmation(make_fake_kb: Callable[..., Path]) -> None:
+    from pinakes.budget.reserve import DocumentDecision
+
+    root = make_fake_kb(extraction_backend=CLAUDE_VISION)
+    accountant = Accountant(
+        load(root), prices=prices(), now=datetime.now(UTC), interactive=False, yes=True
+    )
+    decision = DocumentDecision(allowed=True, needs_confirmation=True)
+    assert accountant.confirm_document(decision, Decimal("0.40"))
