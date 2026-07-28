@@ -7,6 +7,62 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A documentation structure built for continuous development.** Each fact now has exactly one
+  home, so landing an increment edits one file instead of four. New:
+  [`docs/GUIDE.md`](docs/GUIDE.md) (how to use it, task by task — install, first KB, PDFs, search,
+  calibration, git hooks, MCP setup, troubleshooting), [`docs/CLI.md`](docs/CLI.md) (every command,
+  flag and exit code, plus a *Planned* table naming the increment behind each unbuilt surface),
+  [`docs/MANIFEST.md`](docs/MANIFEST.md) (every manifest and sidecar field with its default, read
+  from `manifest.py` rather than restated), [`docs/STATUS.md`](docs/STATUS.md) (**the only place in
+  the repo that says what is built**, carrying the v0.2 increment ledger and the measured numbers),
+  [`docs/README.md`](docs/README.md) (the index, a *where does a fact live* routing table, and a
+  *landing a new increment* checklist) and [`docs/graph/README.md`](docs/graph/README.md) (an index
+  for the fifteen research documents, with each project's licence and the three that may never be
+  copied from).
+- Every command in `docs/GUIDE.md` was **run against 0.2.0 before it was written up**, per the
+  repo's own rule that docs are checked by running what they show. That is how the two caveats below
+  were found.
+
+### Fixed
+
+- **`docs/DESIGN.md` §4.6 stated a span invariant that is false for PDFs.** `plans/v0.2.md`
+  assigned the correction to I5, which shipped in 0.2.0 without it, so the released design claimed
+  every citation "can be located exactly in the original file". It cannot for a PDF: the offsets
+  address the *pinned extraction*, not the file, and what a PDF citation locates is a page. The
+  invariant is now stated as `chunk.text == indexed_text[char_start:char_end]` with the two source
+  types' consequences distinguished.
+- **`pnk search --source-type` help hid a working filter.** It read "markdown, text or code" while
+  `chunk.source_type` has returned `"pdf"` since I5 — the filter worked and was undiscoverable.
+- The `notes` template's `[budget]` comment promised "nothing spends money before v0.4", which
+  `plans/v0.2.md` decision 2 falsified by moving the first paid path into v0.2. It is now
+  version-free and points at `docs/STATUS.md`.
+- `docs/DESIGN.md`'s status line still read "v0.1.1 shipped", two releases stale. The document no
+  longer carries a version at all — it is rationale, and `docs/STATUS.md` owns release state.
+- The README described v0.1: no mention of PDF ingest, no `[pdf]`/`[claude]` install lines, a KB
+  diagram with the one file type v0.1 could not read removed from it, and `make corpus` /
+  `make pdf-eval` undocumented. It is now **deliberately version-free**, so it cannot drift again.
+
+### Changed
+
+- `docs/DESIGN.md` is specification and rationale only. Its manifest and sidecar field tables moved
+  to `docs/MANIFEST.md`, its release table to `docs/STATUS.md` (the *why this order* reasoning
+  stays), and its §10 iteration log to `docs/RETROSPECTIVES.md`, where all project history now
+  lives. 879 → 783 lines with nothing lost.
+- Three DESIGN sections whose amendments belong to unshipped increments (§5 budget, §4.7 agent
+  surface, §9 scanned OCR) now carry dated **⏳ pending** notes naming the increment, rather than
+  either describing unbuilt behaviour or silently contradicting the plan.
+
+### Known issues surfaced (not fixed here)
+
+- **A PDF dropped into a fresh KB is silently skipped.** `pnk init` stamps
+  `include = ["**/*.md", "**/*.txt"]`, so v0.2's headline feature is off by default and sync reports
+  `0 indexed` explaining nothing. Adding the commented-out `**/*.pdf` line is `plans/v0.2.md`
+  decision 6, owned by I9; documented as a caveat in `docs/STATUS.md` and `docs/GUIDE.md` meanwhile.
+- **I6–I9 have no version target.** The plan cuts 0.2.0 at the end of I9; it was released after I5.
+  Recorded as an open question in `docs/STATUS.md`.
+
 ## [0.2.0] — 20260728 14:05
 
 ### Added

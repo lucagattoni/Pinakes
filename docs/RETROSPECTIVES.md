@@ -11,6 +11,9 @@ land in one day, and a bare date loses their order.
 Severity follows the design review's scale: **HIGH** — wrong behaviour or false confidence;
 **MEDIUM** — would block or mislead; **LOW** — worth remembering, not urgent.
 
+The seven **pre-implementation** design review passes are at the foot of this file:
+[Design review passes 1–7](#design-review-passes-17-pre-implementation).
+
 ## I1 — Package skeleton, errors, CLI dispatch (20260725 13:40)
 
 **MEDIUM — `PinakesError` could not be pickled, so an error crossing a process boundary raised
@@ -1004,3 +1007,118 @@ superseded by the `doc_id` keying above once the rename/clone findings required 
 redesign), with its own regression test. *Lesson: a value that is "usually unique in practice" is
 not a key — `content_hash` was never meant to identify one document, only to detect whether one
 had changed; this table's actual primary key was sitting right there the whole time.*
+
+---
+
+## Design review passes 1–7 (pre-implementation)
+
+Seven adversarial passes over [`DESIGN.md`](DESIGN.md) **before any code was written** — 58 findings
+resolved (11 HIGH, 32 MEDIUM, 15 LOW). Moved here 20260728 16:40 from DESIGN.md §10, so that all
+project history lives in one file and the design document is specification only.
+
+The headline lesson, visible only across the whole sequence: **passes 2 and 4 fixed defects that
+passes 1 and 3 had themselves introduced.** That is the argument for looping a review rather than
+running it once — and the same argument the per-increment retrospectives above rest on.
+
+**Pass 1** — 6 HIGH, 15 MEDIUM, 5 LOW resolved.
+*HIGH:* `sqlite-vec` wrongly described as an ANN index (verified false upstream — §3.1 rewritten and
+the tiering rationale corrected to bounded memory); reverse cross-KB links specified against the
+other KB's gitignored index, impossible after clone (now scans committed sidecars, §6.2);
+`pnk://` URIs used local aliases, breaking on share (now KB ULIDs, §2.2); rename/orphan/duplicate-ID
+sync semantics unspecified (§6.4 added); per-operation budget cap claimed a guarantee it could not
+deliver post-hoc (now pre-call reservation, §5); v0.1 omitted `pnk sync`, `pnk doctor` and hooks
+though every other section depended on them (§8).
+*MEDIUM:* MCP tools renamed `kb_*` → `pinakes_*` for namespace safety; multi-hop scope stated as
+single-KB in v0.1; "no network" qualified against first-use model download and weights moved to the
+shared HF cache; embedding storage described two ways, unified on a float32 BLOB; confidence signal
+recast as calibrated with term-coverage demoted to a tiebreak; token limits validated against the
+model's own tokenizer; template versioning decoupled from package version; install line corrected to
+`uvx --from "pinakes[st]" pnk` with core-only behaviour defined; sync partial-failure semantics and
+`failures` table added; WAL/read-only/lock concurrency policy added (§6.5); orphaned-sidecar deletion
+made opt-in; paths fixed as KB-root-relative; index migration policy stated as rebuild-only; ledger
+privacy and append atomicity specified; `pnk build` unified into `pnk sync --rebuild`.
+*LOW:* budget window timezone; FTS5 external-content triggers; RRF k=60; latency claim replaced with
+a measured 2.25 ms at 50k×384; golden-set size and coverage targets.
+
+**Pass 2** — 1 HIGH, 7 MEDIUM, 5 LOW resolved. Several were introduced *by* pass 1's fixes, which is
+the argument for looping rather than reviewing once.
+*HIGH:* the `--rebuild` swap added in pass 1 renamed a WAL-mode database without checkpointing,
+leaving a stale `-wal` beside a new `index.db` — a corrupt read. Now checkpoint-truncate, clean
+close, then rename (§6.5).
+*MEDIUM:* "operation" undefined for the per-op cap, letting an N-step `--deep` loop spend N× the
+limit (§5); §4.2 referenced calibration thresholds the manifest had no field for (§2.1); the `links`
+schema could not represent a reverse link, whose source doc lives in another KB (`src_kb_id` +
+`origin` enum added); §3.1 presented three tiers as if all shipped, with v0.1 behaviour above 50k
+chunks undefined; duplicate-content files made hash-based rename detection ambiguous with no
+tie-break (§6.4); MCP server boundary and prompt-injection posture unstated (§4.7); FTS5 /
+`enable_load_extension` treated as universally available — verified present on uv-managed CPython
+3.13, now probed by `pnk doctor`.
+*LOW:* a single `top_k` covered three different cut-offs (split into `candidates_per_source` /
+`fusion_top_k` / `final_k`); `max_tokens` sat under `[embedding]` though §4.6 treats it as chunking;
+`[[links.kb]]` present from v0.1 but unused until v0.3, now labelled; what publishing a KB repo
+exposes; reverse-link origin provenance.
+
+**Pass 3** — 1 HIGH, 3 MEDIUM, 4 LOW resolved.
+*HIGH:* §6.3 said `--rebuild` "discards `.pinakes/`", which would delete `ledger.jsonl` — the spend
+history §5's rolling budget is computed from. A routine maintenance command would have silently reset
+the budget. Rebuild now replaces `index.db` only; `cache/` clearing is opt-in.
+*MEDIUM:* the server's staleness check read `meta.build_id` through its own open connection, which
+after a rename still points at the old inode and would report the old id forever — replaced with a
+per-request `stat()` on the path (§6.5); `per_operation_eur` served as both the confirm threshold and
+the hard ceiling, making the confirmation prompt unreachable (split into `confirm_above_eur` +
+`per_operation_eur`, §2.1/§5); §6.4 framed pairing as ordered per-file rules, but rename and
+duplicate detection require the whole before/after set — restated as an explicit two-phase algorithm.
+*LOW:* v0.1's `pnk doctor` list omitted the environment probe §3.1 depends on, and `pnk serve` was
+referenced in §4.5 but absent from the release list; "aliases … never stored" contradicted the
+manifest that stores them (clarified: never inside a URI); the reservation formula reused the name
+`max_tokens`, which `[chunking]` already claims; "not in v0.1 but present from day one" reworded.
+
+**Pass 4** — 2 MEDIUM resolved, both self-inflicted by pass 3.
+The rebuild bullet still ended "readers detect the new `build_id` and reopen" — directly contradicting
+the `stat()`-based detection added three lines above it in the same pass (§6.5, now reconciled;
+`build_id` is retained for provenance only). And `pnk://self/…` was left unexpanded, so a sidecar
+copied into another KB would silently retarget its link at the *new* KB — `self` is now expanded to
+the owning KB's ULID on write, like every other alias (§2.2). A grep sweep confirmed no stale
+`kb_*` tool names, `pnk build`, or bare `top_k` references survive outside the log.
+
+**Pass 5** — 0 findings. Verified by re-reading §§1–10 in full and grepping for every identifier
+renamed across passes 1–4. No section contradicts another; every external claim (`sqlite-vec` is
+exhaustive not ANN, FTS5 + extension loading on uv-managed CPython 3.13, `pinakes` free on PyPI,
+2.25 ms at 50k×384) was measured or fetched in-session rather than recalled; every locked constraint
+is honoured; every capability in §1 maps to a release in §8. Review complete.
+
+**Pass 6** (20260725 09:28, implementation-readiness review) — 2 HIGH, 2 MEDIUM, 1 LOW resolved; the two
+product calls were decided by the user, not the review.
+*HIGH:* the reranker was simultaneously a v0.1 default (`rerank = "local"` in §2.1, "on by default"
+in §4.1, its scores the substrate of §4.2's confidence signal, "rerank precision" in §7's v0.1 CI)
+and a v0.5 deliverable in §8 — a freshly-inited KB would have defaulted to a stage that didn't
+exist, and v0.1 would have shipped with no defined confidence signal. Resolved: the reranker ships
+in v0.1; default `BAAI/bge-reranker-base` (user decision — same id on both backends beats the
+smaller ms-marco model's provider-specific ids), a `[rerank]` manifest block mirroring
+`[embedding]`, `fitted_for` added to `[retrieval.confidence]`, and a CI `HF_HOME` cache so ~1.4GB
+of weights download per cache key, not per job (§2.1, §4.5, §8). And §8's v0.1 had no CLI query
+surface at all — `pnk search` existed in §4.2's escalation story, the CLI stub and the README, but
+not in the release that claims "end to end". Added explicitly (§8).
+*MEDIUM:* the `post-commit` hook wrote sidecars, dirtying the tree it had just committed — every
+document commit would trail an untracked `.pnk.yaml` forever. Resolved with a three-hook split:
+`pre-commit` mints and stages sidecars for staged documents only, `post-commit`/`post-merge` touch
+the index only (§6.3). And a stale `sync.lock` from a killed sync silently disabled hook-driven
+freshness forever ("a second sync exits immediately" had no liveness story). Resolved: the lock
+records pid/host/start-time; dead-pid locks are reclaimed with a warning, cross-host locks refuse
+with `--force-unlock` as the human path, `pnk doctor` reports held locks (§6.5).
+*LOW:* the sidecar's `content_hash` duplicated `documents.content_hash`, was read by nothing, and
+guaranteed a two-file diff on every document edit while going stale whenever sync hadn't run —
+dropped from the sidecar (user decision); change detection is index-only, stated in §2.2.
+
+**Pass 7** (20260725 09:52, surfaced while adversarially reviewing `plans/v0.1.md` — the implementation
+plan's review loop reads the design fresh each pass, which is how these escaped passes 1–6).
+*HIGH:* §4.5 claimed model weights go to the shared HF cache on both backends — false for fastembed,
+which defaults to `$TMPDIR/fastembed_cache` (verified upstream): CI's `HF_HOME` cache would never
+hit and `pnk doctor`'s weights check would probe the wrong directory. The fastembed backend now
+passes an explicit cache dir under `HF_HOME`, making the claim true by construction.
+*MEDIUM:* a sidecar-only edit (tags/title/links changed, document untouched) fell through §6.4's
+"path and hash unchanged → Skip" and was never re-indexed — `documents.sidecar_hash` added (§3) and
+the sidecar-only change class stated (§6.4); soft delete left chunks and embeddings searchable —
+removal on soft delete stated, identity row retained (§6.4); rename+edit in one sync had both the
+adoption and deletion rows firing for the same ID with no stated winner — sidecar adoption now wins,
+no soft delete emitted, and the sidecar-didn't-travel case is reported at sync time (§6.4).
