@@ -69,11 +69,15 @@ def get_or_extract(
     fingerprint: str,
     extract: Callable[[], ExtractedText],
     operation_id: str | None = None,
-    call_ids: Sequence[str] | None = None,
+    call_ids: Callable[[], Sequence[str]] | None = None,
 ) -> ExtractedText:
     """Return the cached `ExtractedText` if the key matches; otherwise call `extract`, cache its
     result, and return that. `extract` is called lazily — never on a hit — so a cache hit never
     pays for loading the backend (importing pypdfium2, say) at all, only for reading a JSON file.
+
+    `call_ids` is a **callable**, resolved after the extraction rather than passed in with it: a
+    call id does not exist until the call has been made, so there is nothing to hand over up
+    front. It is never called on a hit, for the same reason `extract` is not.
     """
     path = entry_path(cache_dir, content_hash=content_hash, fingerprint=fingerprint)
     cached = _read(path)
@@ -90,7 +94,7 @@ def get_or_extract(
             fingerprint=fingerprint,
             extracted=extracted,
             operation_id=operation_id,
-            call_ids=call_ids,
+            call_ids=None if call_ids is None else call_ids(),
         )
     return extracted
 

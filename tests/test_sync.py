@@ -4,6 +4,7 @@ import shutil
 import subprocess
 from collections.abc import Iterator, Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -117,7 +118,9 @@ def write(kb: Path, name: str, text: str) -> Path:
     return path
 
 
-def run(kb: Path, *, extract: str | None = None, **options: bool) -> SyncReport:
+def run(kb: Path, *, extract: str | None = None, **options: Any) -> SyncReport:
+    """`**options` is `Any` rather than `bool` because `SyncOptions` carries non-bool fields
+    (`ask`, `operation_id`); pyright checks a `**kwargs` annotation against *every* parameter."""
     return sync(
         load(kb),
         options=SyncOptions(extract=extract, **options),
@@ -669,7 +672,13 @@ def test_a_rebuild_after_clear_cache_still_preserves_it(kb: Path, fake_paid: str
     before = index(kb)[0]
     assert _cache_files(kb)  # confirm there is something for --clear-cache to actually remove
 
-    cleared = sync(load(kb), options=SyncOptions(clear_cache=True, yes=True))
+    # `--yes` alone is not enough now that the entry really is paid: I7b makes sync record an
+    # `operation_id` on paid cache entries, so I6b's guard finally has real data to fire on.
+    refused = sync(load(kb), options=SyncOptions(clear_cache=True, yes=True))
+    assert refused.cache_clear_aborted
+    assert refused.cache_pending_paid_entries == 1
+
+    cleared = sync(load(kb), options=SyncOptions(clear_cache=True, clear_cache_paid=True, yes=True))
     assert cleared.cache_cleared == 1
     assert _cache_files(kb) == []
 

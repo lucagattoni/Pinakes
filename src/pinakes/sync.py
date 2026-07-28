@@ -23,8 +23,14 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pinakes import store
+
+if TYPE_CHECKING:  # `budget.accountant` reads the price table; a free sync must not pay for that
+    from pinakes.budget.accountant import Accountant
+    from pinakes.ids import OperationId
+
 from pinakes.chunk import PDF_SUFFIXES, assert_chunkable, chunk_document, source_type
 from pinakes.embed import EmbeddingBackend, load_backend
 from pinakes.errors import (
@@ -98,6 +104,15 @@ class SyncOptions:
     offline: bool = False
     force_unlock: bool = False
     extract: str | None = None  # overrides `[extraction] backend` for one run
+    interactive: bool = False
+    """Whether a terminal is attached. Supplied by the caller, never probed here — `sync()` does no
+    I/O beyond the filesystem, which is what keeps it testable without a tty."""
+    ask: Callable[[str], str] | None = None
+    """How to put a `confirm_above_eur` question to the user. `cli.py` supplies `input`; a
+    non-interactive run supplies nothing and the accountant refuses instead (I6b)."""
+    operation_id: "OperationId | None" = None
+    """Set only when a caller needs the operation's ledger records to be findable afterwards —
+    a test, or a resumed run. `None` mints a fresh one, which is what an ordinary sync wants."""
     clear_cache: bool = False  # a standalone mode (I4): empties the extraction cache, nothing else
     clear_cache_paid: bool = False
     """`--clear-cache=paid` (I6b): authorises destroying entries a paid backend wrote. `yes` alone
@@ -1169,10 +1184,16 @@ def _extract_for_index(
             remedy="Run a normal `pnk sync` (without --index-only) to extract and record it.",
         )
 
+    # Built only for a paid run, and built *before* the cache lookup only in the sense that the
+    # closure below captures it — nothing reads the ledger or the price table on a cache hit.
+    accountant = _accountant_for(manifest, options) if effective_is_paid else None
+
     def _extract() -> ExtractedText:
         # Loading the extractor (importing pypdfium2, say) is deferred inside this closure, so a
         # cache hit never pays for it — only a miss does (I4).
-        ctx = ExtractionContext(model=manifest.extraction.model)
+        ctx = ExtractionContext(
+            model=manifest.extraction.model, force=options.force, accountant=accountant
+        )
         return load_extractor(extraction_backend).extract(source, ctx)
 
     used_fingerprint = fingerprint(extraction_backend)
@@ -1182,8 +1203,24 @@ def _extract_for_index(
         backend=extraction_backend,
         fingerprint=used_fingerprint,
         extract=_extract,
+        operation_id=None if accountant is None else accountant.operation_id,
+        call_ids=None if accountant is None else accountant.call_ids_this_operation,
     )
     return extracted, extraction_backend, used_fingerprint
+
+
+def _accountant_for(manifest: Manifest, options: SyncOptions) -> "Accountant":
+    """One accountant per `pnk sync`, so `per_operation_eur` bounds the whole invocation.
+
+    Imported here rather than at module scope: `budget.accountant` reads the price table, and a
+    free sync must not pay for that (nor for anything else this branch reaches) on every run.
+    """
+    from pinakes.budget.accountant import Accountant
+    from pinakes.budget.prices import load_prices
+
+    if options.operation_id is not None:
+        return Accountant(manifest, prices=load_prices(), operation_id=options.operation_id)
+    return Accountant(manifest, prices=load_prices())
 
 
 def _index_document(
