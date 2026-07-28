@@ -5,6 +5,7 @@
 > *The* Pinakes *were Callimachus's catalogue of the Library of Alexandria — the first known index
 > of a body of knowledge.*
 
+[![PyPI](https://img.shields.io/pypi/v/pinakes.svg)](https://pypi.org/project/pinakes/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/)
 
@@ -58,11 +59,9 @@ unmeasured is worse than one whose cost is known.
 
 ## Quickstart
 
-**Not yet on PyPI** — install from source:
-
 ```bash
-uv add "pinakes[st] @ git+https://github.com/lucagattoni/Pinakes"     # default backend
-uv add "pinakes[light] @ git+https://github.com/lucagattoni/Pinakes"  # fastembed, no torch
+uv add "pinakes[st]"                  # default backend
+uv add "pinakes[light]"               # fastembed, no torch
 ```
 
 ```bash
@@ -71,7 +70,7 @@ pnk sync                              # index what changed (git-hook friendly)
 pnk search "hybrid retrieval"         # free: BM25 + vector + rerank
 pnk doctor                            # environment, coherence, orphans, link coverage
 
-uvx --from "git+https://github.com/lucagattoni/Pinakes" pnk serve     # MCP server
+uvx --from "pinakes[st]" pnk serve    # MCP server, nothing installed
 ```
 
 ⚠️ Two things `pnk init` cannot know, each needing one manifest edit: on a `[light]` install set

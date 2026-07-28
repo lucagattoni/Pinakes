@@ -12,6 +12,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **pinakes is on PyPI, and every install line in the docs now says so.** `PUBLISH_TO_PYPI` was set
+  `true` at 20260728 17:15 UTC and **0.2.2 uploaded 108 seconds later** — the first and, so far,
+  only published version: 0.2.0 and 0.2.1 predate publishing and cannot be installed by pin.
+
+  Verified rather than assumed, per the repo's own rule that docs are checked by running what they
+  show: `pinakes[light]` was installed from the published wheel into an empty venv and driven
+  through `init` → `sync` → `search` (20260729 01:01). All four extras (`st`, `light`, `pdf`,
+  `claude`) resolve from the index, and `requires-python` is `>=3.13`.
+
+  Every `git+https://…` install line becomes `uv add "pinakes[st]"`; the MCP `uvx` example loses its
+  git URL; the README gains a PyPI version badge; and `docs/STATUS.md`'s *Not published yet* section
+  is now *Published on PyPI*, carrying the published-version caveat. One git install line is kept on
+  purpose, relabelled — it is how a contributor installs unreleased work sitting on `main`.
+
+  **`CLAUDE.md` gains the consequence, because it changes how releases must be done:** a tag is no
+  longer a safe rehearsal. It publishes, and PyPI does not allow re-uploading a version, so
+  `make release-check` runs *before* pushing a tag rather than after.
 - **🚫 Unbuilt work is named, never numbered — a project-wide convention, and a rule other agents
   will meet in `CLAUDE.md`.** A version number now belongs to a release only when it is cut. Unbuilt
   bodies of work are **the paid-extraction release**, **the graph release**, **the deep release** and

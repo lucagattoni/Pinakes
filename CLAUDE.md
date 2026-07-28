@@ -122,9 +122,11 @@ Work left local is invisible to every other agent, machine and scheduled run.
 - **Never run `git merge` from inside the feature worktree.** Merging a branch into itself reports
   "Already up to date", the following push reports "Everything up-to-date", and a tag created there
   points off-`main` — three successful commands, nothing landed.
-- The tag builds and smoke-tests the wheel every time; the **PyPI upload is gated** on the repo
-  variable `PUBLISH_TO_PYPI` so tagging is always safe. Turn it on once trusted publishing exists
-  (`gh variable set PUBLISH_TO_PYPI --body true`).
+- **A tag now publishes to PyPI.** `PUBLISH_TO_PYPI` has been `true` since 20260728 17:15, so
+  pushing a tag uploads a release the world can install — and PyPI does not allow re-uploading a
+  version. The build and wheel smoke test still run first, and the workflow still refuses a tag
+  disagreeing with `__version__`, but the safety net that made a bad tag merely embarrassing is
+  gone. Run `make release-check` **before** pushing the tag, never after.
 - Create the GitHub release with notes drawn from that CHANGELOG section.
 - After anything lands on `main`, fast-forward the primary checkout (`git pull --ff-only`).
 

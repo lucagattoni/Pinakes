@@ -124,7 +124,7 @@ KB configured for a paid backend, which cannot work yet.
 headline and `pnk budget` documented as reporting a ledger nothing writes yet. This decision is a
 bet on I7b landing soon, not a standing policy, and it expires if that bet stops paying.
 
-✅ **The `0.3` collision is resolved — see [the naming rule](#unbuilt-work-is-named-never-numbered)
+✅ **The `0.3` collision is resolved — see [the naming rule](#release-roadmap)
 below.** Unbuilt work no longer carries a version number anywhere, so nothing competes for `0.3.0`
 and this release can be numbered whenever it is cut.
 
@@ -193,9 +193,22 @@ so treat it as a floor rather than an estimate. Publishing it is the point:
 [DESIGN §4.2](DESIGN.md#42-escalation--free-path-first) commits to measuring the heuristic's cost
 rather than assuming it away.
 
-## Not published yet
+## Published on PyPI
 
-The package is **not on PyPI** — trusted publishing is unconfigured, so the release workflow's
-upload step is gated on the `PUBLISH_TO_PYPI` repository variable and skipped while it is unset.
-Tagging is always safe: version/tag agreement, the build and an isolated wheel smoke test still run.
-Install from git until then ([GUIDE](GUIDE.md#install)).
+**[`pinakes` is on PyPI](https://pypi.org/project/pinakes/).** `uv add "pinakes[light]"` works —
+verified 20260729 01:01 by installing the published wheel into an empty venv and running
+`init` → `sync` → `search`.
+
+| | |
+|---|---|
+| Published version | **0.2.2 only.** 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails |
+| First upload | 20260728 17:16 UTC |
+| Extras available | `st`, `light`, `pdf`, `claude` — all four |
+| `requires-python` | `>=3.13` |
+
+`PUBLISH_TO_PYPI` is now `true` (set 20260728 17:15 UTC), so **every tag publishes from here on**.
+Tagging stays safe by construction: version/tag agreement, the build and an isolated wheel smoke
+test all run before the upload step is reached.
+
+Install lines are in the [GUIDE](GUIDE.md#install). Installing from git still works and remains what
+you want for unreleased work sitting on `main`.
