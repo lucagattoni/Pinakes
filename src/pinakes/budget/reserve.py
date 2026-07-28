@@ -129,10 +129,18 @@ def _refusal_message(
     edits: list[str] = []
     for cap_attr, _spent_attr, name, cap, already in blocked:
         headroom = cap - already
+        # Negative when a cap was lowered below already-recorded spend for this window (the cap
+        # check itself never lets `already` alone exceed a cap that held for the whole window) —
+        # "headroom €-1.00" reads as a typo, not as already being over.
+        headroom_text = (
+            f"headroom €{_display(headroom)}"
+            if headroom >= 0
+            else f"already €{_display(-headroom)} over cap"
+        )
         minimum_cap = (already + estimate.total_eur).quantize(_CENT, rounding=ROUND_CEILING)
         lines.append(
             f"  - {name}: cap €{_display(cap)}, already spent €{_display(already)} this window, "
-            f"headroom €{_display(headroom)} — this run needs €{_display(estimate.total_eur)}."
+            f"{headroom_text} — this run needs €{_display(estimate.total_eur)}."
         )
         edits.append(f"{cap_attr} = {minimum_cap}")
     lines.append("The complete manifest edit that would admit this run:")

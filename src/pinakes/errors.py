@@ -419,9 +419,10 @@ class ContextWindowExceededError(PinakesError):
             f"a single request's input ({request_tokens:,} tokens) would exceed {model}'s "
             f"documented maximum input ({max_input_tokens:,} tokens).",
             remedy=(
-                "Lower `[chunking]`-equivalent slice size K, or check the manifest's extraction "
-                "model — this should not fire under the shipped constants; if it does, the "
-                "document's own request shape has grown past what any model here accepts."
+                "This should not fire under the shipped constants — K is a fixed request-shape "
+                "constant (I6a decision 8), not a configurable knob. If it does, either the "
+                "model's documented context window shrank or the page-token ceiling grew past "
+                "what any model here accepts; report this as a pinakes defect."
             ),
         )
         self.request_tokens = request_tokens

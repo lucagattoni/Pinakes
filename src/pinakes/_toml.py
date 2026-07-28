@@ -119,10 +119,15 @@ class Table:
         value = self._take(key, required=default is None)
         if value is None:
             assert default is not None  # `required=True` above already raised otherwise
-            return default
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            raise self._fail(f"`{key}` must be a number, found {type(value).__name__}")
-        decimal_value = Decimal(str(value))
+            decimal_value = default
+        else:
+            if isinstance(value, bool) or not isinstance(value, int | float):
+                raise self._fail(f"`{key}` must be a number, found {type(value).__name__}")
+            decimal_value = Decimal(str(value))
+        # Checked on both paths, not only the TOML-sourced one — `integer()`/`number()` above
+        # validate their own defaults for free, since they share one type with the parsed value;
+        # `decimal()`'s default is already a `Decimal` rather than a parsed float, so an early
+        # return here would let a below-`minimum` default slip past unminded.
         if minimum is not None and decimal_value < minimum:
             raise self._fail(f"`{key}` must be >= {minimum}, found {decimal_value}")
         return decimal_value

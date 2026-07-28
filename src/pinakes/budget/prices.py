@@ -16,7 +16,7 @@ intermediary altogether, rather than reconstructing it from `str(float(...))` th
 
 import tomllib
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from importlib import resources
 from typing import Any, cast
 
@@ -70,5 +70,12 @@ def load_prices() -> Prices:
             usd_per_eur=Decimal(str(data["usd_per_eur"])),
             models=models,
         )
-    except (tomllib.TOMLDecodeError, KeyError, TypeError, ValueError) as exc:
+    except (
+        tomllib.TOMLDecodeError,  # syntax
+        KeyError,  # a required key absent
+        TypeError,  # a value the wrong shape (e.g. `models` not a table)
+        ValueError,
+        InvalidOperation,  # `Decimal(str(x))` on an unparsable value, e.g. "5,00" or "TBD"
+        AttributeError,  # `models` present but not a table (`raw_models.items()` on a str/int)
+    ) as exc:
         raise PricesMissingError(reason=f"malformed prices.toml ({exc})") from exc

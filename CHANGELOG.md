@@ -102,6 +102,44 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that the new gate's own snippet is genuinely present in `check.sh` — nothing else would notice if
   it were quietly deleted, since neither `ruff` nor `pyright` parse shell.
 
+  **An independent adversarial review before this reached a commit found two real defects and
+  three test-coverage gaps, all fixed here** (a `docs/RETROSPECTIVES.md` entry is owed once the
+  parallel documentation pass reaches it — recorded here in full for now, per this round's scope):
+
+  - `prices.py`'s malformed-file handling caught TOML *syntax* errors but not value-level ones:
+    `Decimal(str(x))` raises `decimal.InvalidOperation`, not the `ValueError` `floors.py`'s
+    `float(x)` raises for the same mistake, so a one-typo price (a European "5,00", an unfilled
+    "TBD") or a wrong-shaped `models` table crashed uncaught instead of raising the documented
+    `PricesMissingError`. Both exceptions are now caught.
+  - `window.py`'s entire reason to exist — converting a differently-zoned input into `[budget]
+    timezone` before comparing — was completely unexercised: every test constructed
+    `reserved_at`/`now` already in the target zone, where `.astimezone()` is a no-op, so mutating
+    the conversion away entirely still passed every test. A new test aggregates a UTC-stamped
+    record against a Berlin-configured window (2026-03-15 23:30 UTC is the *next* calendar day,
+    00:30, in Berlin) and catches exactly that regression.
+  - `estimate_document` had no validation on `pages`/`pages_estimated`: `pages=0` divides by zero
+    computing `per_request_eur`, and a negative `pages_estimated` produced a *negative*
+    `total_eur` — the one direction a budget guard must never move, since it understates real
+    spend rather than overstating it. Both now raise `ValueError` before any arithmetic runs.
+  - `Table.decimal()`'s default path returned early, skipping its own `minimum` check — unlike
+    `integer()`/`number()`, which validate their defaults for free by sharing one code path with
+    the parsed value — so a below-`minimum` default would have silently passed. Restructured to
+    check `minimum` on both paths.
+  - `reserve_document`'s "every blocked window is named" claim and `reserve()`'s "first breach
+    wins, in order" claim were each tested only where every window breached at once (or where
+    only one *could*), so neither a partial breach nor a genuine two-window tie was ever
+    exercised. `confirm_above_eur`'s exact boundary (`>`, not `>=`) had only an incidental test,
+    never a dedicated one. Three new tests pin all of this down.
+  - Two low-severity fixes: `ContextWindowExceededError`'s remedy suggested lowering a
+    "`[chunking]`-equivalent slice size K" that does not exist as a configurable knob (`K` is a
+    fixed constant); and a cap lowered mid-window below already-recorded spend printed a negative
+    "headroom €-X.XX" in a refusal message, now rendered as "already €X.XX over cap" instead.
+
+  One review finding was **not** acted on here: `docs/DESIGN.md`'s own "⏳ pending amendment" note
+  (§5) promises the `daily_eur`/`max_price_age_days` rewrite "lands with I6a" — it does not, since
+  documentation for this round is deliberately deferred to the parallel pass (below). Flagged for
+  whoever reconciles that pass with this entry, not silently left contradicted.
+
   **Documentation for this increment (`docs/DESIGN.md` §2.1/§5/§8, `README.md`) is being amended in
   a parallel, independent pass and is deliberately not touched here** — this entry is the complete
   record of what shipped until that pass lands.

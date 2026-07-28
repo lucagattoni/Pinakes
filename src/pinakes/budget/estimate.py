@@ -104,13 +104,20 @@ def estimate_document(
     a caller estimating only a remaining slice of a larger document may pass a smaller value, with
     `pages` still naming the document's true total.
     """
+    if pages < 1:
+        raise ValueError(f"estimate_document: pages={pages} must be >= 1")
+    estimated = pages if pages_estimated is None else pages_estimated
+    if not 1 <= estimated <= pages:
+        raise ValueError(
+            f"estimate_document: pages_estimated={estimated} must be between 1 and pages={pages}"
+        )
+
     as_of = datetime.strptime(prices.as_of, _TIMESTAMP_FORMAT)
     current = datetime.strptime(now, _TIMESTAMP_FORMAT)
     if (current - as_of).days > max_price_age_days:
         raise StalePricesError(as_of=prices.as_of, max_age_days=max_price_age_days)
 
     model_price = prices.for_model(model)
-    estimated = pages if pages_estimated is None else pages_estimated
 
     request_input_tokens = K * PAGE_TOKEN_CEILING + PROMPT_TOKENS
     max_input = MAX_INPUT_TOKENS.get(model)

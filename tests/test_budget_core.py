@@ -8,7 +8,7 @@ import ast
 import importlib.resources
 import tomllib
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -125,6 +125,35 @@ def test_a_prices_toml_missing_a_required_field_is_a_startup_error(
         load_prices()  # no usd_per_eur at all
 
 
+def test_a_prices_toml_with_an_unparsable_decimal_value_is_a_startup_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`Decimal(str(x))` raises `decimal.InvalidOperation` on a bad value — not the `ValueError`
+    `floors.py`'s `float(x)` would raise for the same mistake, since this file parses via `Decimal`
+    from the start (module docstring). A one-typo value like a European "5,00" or an unfilled "TBD"
+    must still be a named `PricesMissingError`, never a bare `InvalidOperation`."""
+    broken = (
+        'as_of = "20260728 16:31"\nusd_per_eur = "1.08"\n'
+        '[models.claude-opus-5]\ninput_per_mtok_usd = "5,00"\noutput_per_mtok_usd = "25.00"\n'
+    )
+    monkeypatch.setattr(prices_module.resources, "files", _fake_files(broken))
+    with pytest.raises(PricesMissingError) as exc_info:
+        load_prices()
+    assert "malformed" in exc_info.value.message
+
+
+def test_a_prices_toml_with_a_wrong_shaped_models_table_is_a_startup_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`models` present but not a table (a plausible authoring slip) must not crash with a bare
+    `AttributeError` from `.items()` — still a named `PricesMissingError`."""
+    broken = 'as_of = "20260728 16:31"\nusd_per_eur = "1.08"\nmodels = "oops"\n'
+    monkeypatch.setattr(prices_module.resources, "files", _fake_files(broken))
+    with pytest.raises(PricesMissingError) as exc_info:
+        load_prices()
+    assert "malformed" in exc_info.value.message
+
+
 # --- estimate.py -------------------------------------------------------------------------------
 
 
@@ -168,6 +197,30 @@ def test_exactly_at_the_max_price_age_boundary_still_estimates() -> None:
         pages=5, model=MODEL, prices=prices(as_of=as_of), now=now_at_boundary, max_price_age_days=30
     )
     assert est.requests == 1
+
+
+@pytest.mark.parametrize("pages", [0, -1])
+def test_zero_or_negative_pages_is_rejected(pages: int) -> None:
+    """`pages=0` would otherwise divide by zero computing `per_request_eur` (`requests=0`); a
+    negative `pages` would silently propagate. Neither is a real document."""
+    with pytest.raises(ValueError, match="pages"):
+        estimate_document(pages=pages, model=MODEL, prices=prices(), now=NOW, max_price_age_days=30)
+
+
+@pytest.mark.parametrize("pages_estimated", [0, -5, 11])
+def test_pages_estimated_outside_one_to_pages_is_rejected(pages_estimated: int) -> None:
+    """A negative or zero slice makes no sense, and a slice bigger than the document's own total
+    is impossible. Left unchecked, a negative `pages_estimated` produces a *negative* `total_eur`
+    — the one direction a budget guard must never move, since it would understate real spend."""
+    with pytest.raises(ValueError, match="pages_estimated"):
+        estimate_document(
+            pages=10,
+            model=MODEL,
+            prices=prices(),
+            now=NOW,
+            max_price_age_days=30,
+            pages_estimated=pages_estimated,
+        )
 
 
 def test_the_context_window_precheck_names_its_limit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -251,6 +304,22 @@ def test_a_pair_straddling_a_dst_transition_is_attributed_correctly() -> None:
     totals = aggregate([record], now=now_after_dst, timezone=BERLIN)
     assert totals.day == Decimal("3.00")
     assert totals.month == Decimal("3.00")
+
+
+def test_aggregation_converts_a_differently_zoned_input_before_comparing() -> None:
+    """Every test above constructs `reserved_at` and `now` already in the target `timezone`, where
+    `astimezone()` is a no-op — mutating either conversion away entirely (`local_now = now`, or
+    `local = record.reserved_at`) still passes every one of them. A ledger storing UTC timestamps
+    (plausible for I6b) aggregated under `[budget] timezone = "Europe/Berlin"` is the real case this
+    guards: 2026-03-15 23:30 UTC is 2026-03-16 00:30 in Berlin — the *next* calendar day locally,
+    even though the UTC date is still the 15th."""
+    record = CallRecord(
+        reserved_at=datetime(2026, 3, 15, 23, 30, 0, tzinfo=UTC), reserved_eur=Decimal("4.00")
+    )
+    now_utc = datetime(2026, 3, 16, 0, 0, 0, tzinfo=UTC)  # 01:00 in Berlin
+    totals = aggregate([record], now=now_utc, timezone=BERLIN)
+    assert totals.day == Decimal("4.00")  # same Berlin calendar day (the 16th), not the UTC one
+    assert totals.month == Decimal("4.00")
 
 
 def test_an_unreconciled_reservation_counts_at_its_reserved_amount() -> None:
@@ -346,6 +415,20 @@ def test_the_operation_cap_passes_but_the_month_cap_does_not() -> None:
     assert decision.blocked_by == "monthly_eur"
 
 
+def test_when_two_windows_breach_together_the_earlier_one_in_order_is_named() -> None:
+    """`reserve()`'s docstring promises checking `per_operation_eur`, then `daily_eur`, then
+    `monthly_eur`, and naming "the first window it would breach". Every boundary test above sets
+    two of the three caps to a generous 100, so only one window can ever be the true breach —
+    this one breaches `daily_eur` *and* `monthly_eur` together and pins down which one wins."""
+    caps = Caps(
+        per_operation_eur=Decimal("100"), daily_eur=Decimal("1.00"), monthly_eur=Decimal("1.00")
+    )
+    spent = WindowTotals(operation=Decimal("0"), day=Decimal("0.60"), month=Decimal("0.60"))
+    decision = reserve(Decimal("0.50"), caps, spent)  # 1.10 > 1.00 for both day and month
+    assert not decision.allowed
+    assert decision.blocked_by == "daily_eur"
+
+
 def test_confirm_threshold_and_hard_cap_are_independent_boundaries() -> None:
     """A request landing exactly at the hard cap must still be allowed (`<=`, not `<`), and must
     still be flagged for confirmation if it clears `confirm_above_eur` — the two thresholds are
@@ -368,6 +451,28 @@ def test_confirm_threshold_and_hard_cap_are_independent_boundaries() -> None:
     assert decision.needs_confirmation
 
 
+def test_confirm_above_eur_is_a_strict_boundary() -> None:
+    """ "Confirm **above**" names a strict `>`: a document landing exactly at the threshold must
+    not need confirmation, only one cent over should. Asserted only incidentally by the test
+    above until now — this pins down the exact boundary the hard-cap test already gets for `<=`."""
+    est = estimate_document(pages=5, model=MODEL, prices=prices(), now=NOW, max_price_age_days=30)
+    generous_caps = Caps(
+        per_operation_eur=Decimal("100"), daily_eur=Decimal("100"), monthly_eur=Decimal("100")
+    )
+    zero_spent = WindowTotals(operation=Decimal("0"), day=Decimal("0"), month=Decimal("0"))
+
+    at_the_threshold = reserve_document(
+        est, generous_caps, zero_spent, confirm_above_eur=est.total_eur
+    )
+    assert at_the_threshold.allowed
+    assert not at_the_threshold.needs_confirmation, "exactly at the threshold must not confirm"
+
+    one_cent_above = reserve_document(
+        est, generous_caps, zero_spent, confirm_above_eur=est.total_eur - Decimal("0.01")
+    )
+    assert one_cent_above.needs_confirmation
+
+
 def test_the_refusal_names_all_three_windows() -> None:
     est = estimate_document(pages=5, model=MODEL, prices=prices(), now=NOW, max_price_age_days=30)
     zero_caps = Caps(
@@ -382,6 +487,49 @@ def test_the_refusal_names_all_three_windows() -> None:
     assert "monthly_eur" in decision.message
     assert "[budget]" in decision.message  # the complete manifest edit is printed
     assert "--extract=" in decision.message  # the ongoing-exposure line
+
+
+def test_a_partial_breach_names_only_the_windows_actually_blocked() -> None:
+    """The test above breaches all three windows at once, so it cannot tell "every blocked window
+    is named" apart from "every window is always named regardless of whether it's blocked". This
+    breaches only `monthly_eur` and asserts the other two are absent from the message — a
+    regression reintroducing over-reporting would mislead a user into raising caps they don't
+    need to."""
+    est = estimate_document(pages=5, model=MODEL, prices=prices(), now=NOW, max_price_age_days=30)
+    caps = Caps(
+        per_operation_eur=Decimal("100"),
+        daily_eur=Decimal("100"),
+        monthly_eur=est.total_eur - Decimal("0.01"),  # only this one is breached
+    )
+    zero_spent = WindowTotals(operation=Decimal("0"), day=Decimal("0"), month=Decimal("0"))
+    decision = reserve_document(est, caps, zero_spent, confirm_above_eur=Decimal("0.01"))
+    assert not decision.allowed
+    assert decision.message is not None
+    assert "monthly_eur" in decision.message
+    assert "per_operation_eur" not in decision.message
+    assert "daily_eur" not in decision.message
+
+
+def test_a_cap_lowered_below_already_recorded_spend_reads_as_over_not_negative() -> None:
+    """A cap can be lowered mid-window (a manifest edit) below what an earlier call in that same
+    window already recorded — `headroom` then goes negative. "headroom €-1.00" reads as a typo;
+    the message should say the window is already over instead."""
+    est = estimate_document(pages=5, model=MODEL, prices=prices(), now=NOW, max_price_age_days=30)
+    caps = Caps(
+        per_operation_eur=Decimal("100"),
+        daily_eur=Decimal("100"),
+        monthly_eur=Decimal("1.00"),  # lowered below what's already spent this month
+    )
+    already_over_cap_spent = WindowTotals(
+        operation=Decimal("0"), day=Decimal("0"), month=Decimal("2.00")
+    )
+    decision = reserve_document(
+        est, caps, already_over_cap_spent, confirm_above_eur=Decimal("0.01")
+    )
+    assert not decision.allowed
+    assert decision.message is not None
+    assert "over cap" in decision.message
+    assert "headroom €-" not in decision.message
 
 
 def test_an_unaffordable_document_is_refused_before_the_first_call() -> None:
