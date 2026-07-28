@@ -921,3 +921,86 @@ variant that lands with I7c's ledger reader, which can price what it would be de
 selective removal before that reader exists would mean guessing at a cost nothing can yet compute.
 Confirmed live: an injected paid orphan was removed by `pnk sync --clear-cache --yes` along with
 every other entry, consistent with `clear_all`'s own docstring and `docs/DESIGN.md`'s description.
+
+## I5 — PDF chunking, page provenance, and a backend-aware sync (20260728 13:59)
+
+**CRITICAL — decision 9's "never silently downgraded" guarantee held for a same-path sync and for
+`--rebuild`, and silently did not for everything in between: a rename, or a document's first sync
+on a machine that never extracted it.** The initial design protected a paid extraction two ways:
+`pairing.py`'s own comparison when a document keeps its path, and `--rebuild`'s copy-forward from
+the old index. Neither covers `Adopt`/`Rename` outside a rebuild, which instead fell through to
+`_extract_for_index`'s only remaining signal — an `extract/cache.py` hit. A cache *miss* was then
+read as "content changed", which is a false equivalence: a `--clear-cache` immediately before a
+rename, or the first sync of a KB whose paid PDFs were extracted on a different machine (`docs/`
+committed, `.pinakes/` gitignored — the ordinary shape of a clone), miss the cache identically
+without the file having changed at all. Confirmed live, both ways: (1) paid-index a PDF,
+`--clear-cache`, rename it with its sidecar travelling, sync — landed a `PaidExtractionRequiredError`
+falsely claiming changed content, and left the index describing the *old*, now-nonexistent path,
+since the failed transaction rolled back before the rename could be recorded; (2) paid-index a PDF,
+`rm -rf .pinakes` (index *and* cache, simulating a fresh clone), first sync — identical false
+failure on a document that had never changed at all. An independent adversarial review (a fresh
+subagent, unanchored on this increment's own design reasoning) found and reproduced both.
+
+Fixed by moving the "has this changed" decision off the cache entirely: the sidecar's own
+`provenance.extraction` gained a fourth field, `content_hash` — the file's hash *at the moment of
+that specific paid extraction*, distinct from the general change-detection hash `docs/DESIGN.md`
+§2.2 already refuses to store, since this one changes only when a fresh paid extraction runs.
+Comparing it directly against the current file's hash answers "changed?" without consulting any
+cache or index at all. Getting the actual *text* without paying again is a separate question, now
+answered in a fixed order: this same sync's own connection (covers a rename — the row is still
+there under its old path), the old index during a `--rebuild` (unchanged from the original design,
+now keyed on `doc_id` rather than `content_hash`+`path`, since a rename's action only ever carries
+its *current* path and the old index's row still has the old one), then `extract/cache.py`. Only
+when none of the three has an answer does it fail — and now with a *new*, distinct error
+(`PaidExtractionUnavailableError`) naming the file unchanged but its text simply not present on this
+machine, never conflated with "content changed" (`PaidExtractionRequiredError`) again. The
+cross-machine case (2) is not solved by this — there is genuinely no durable, shared home for a
+paid extraction's text yet — but the failure is now honest about which situation it is, which
+`docs/DESIGN.md` §9 records as an accepted, disclosed limitation rather than a silently discovered
+one. *Lesson: a mechanism justified as "the answer must not depend on the cache" (the `--rebuild` +
+`--clear-cache` case this increment was explicitly designed around) needs that property checked
+against every path that can reach the same decision, not just the one path the design started
+from — `pairing.py`'s own decision table has four ways into "paid, free-effective, unchanged", and
+only one of them was ever traced all the way through.*
+
+**HIGH — `--rebuild` turned "a paid document's content changed" into "the document vanishes from
+the index", where a normal sync leaves it stale but searchable.** `pair()`'s `PaidExtractionRequired`
+action (decision 14) can only ever fire against a populated `before`, so it can never fire during a
+rebuild at all (`before` is empty by construction) — meaning a changed-hash paid document reaching
+`--rebuild` fell through to `_extract_for_index`'s ordinary raise, caught by `_apply`'s generic
+exception handler, which never inserted a row for it in the first place. Confirmed live: paid-index
+a PDF, change its bytes, `pnk sync --rebuild` — `report.ok` correctly `False`, but the document was
+gone from the rebuilt index entirely (zero chunks), not merely flagged. A normal (non-rebuild) sync
+hitting the identical case leaves the *old* row, chunks and embeddings untouched instead. Fixed by
+extending the rebuild copy-forward to the changed-hash case too: the stale row is copied forward at
+its *old* content_hash regardless of whether the current file still matches, and a `failures` entry
+is recorded only when it does not — so a rebuild now reaches the same outcome a normal sync already
+gives this exact case, rather than a harsher one purely as a side effect of which command happened
+to run. *Lesson: `--rebuild` is documented as "free, deterministic, cron-safe" — exactly the
+description that invites treating it as interchangeable with a normal sync. Any new failure mode
+this increment gives normal sync a considered answer for needs the identical question asked of
+`--rebuild` explicitly, since its empty `before` makes "the same case" arrive by a structurally
+different path that is easy to reason about in isolation and forget to reconcile.*
+
+**MEDIUM — a fresh paid-provenance write left the very next sync one `RefreshMetadata` cycle away
+from settling.** `_index_document` decides `sidecar_hash` from the walk, before it rewrites the
+sidecar with fresh `provenance.extraction` a few lines later in the same call — so the hash it
+writes into `documents.sidecar_hash` was already stale the moment the write happened. Confirmed
+live: three consecutive syncs of a freshly paid-extracted PDF produced `embedded=1`, then
+`refreshed=1` (unexpected — nothing the user did changed), then finally `skipped=1`. Fixed by
+recomputing `sidecar_hash` from the file just written, whenever a write happened, before it reaches
+the `documents` INSERT. *Lesson: any function that both decides a hash-like value from an earlier
+read *and* has the power to invalidate that exact read later in its own body needs the value
+recomputed after the write, not carried from before it — "I already have this value" stops being
+true the moment code between the read and its use can change what it should have been.*
+
+**Caught live, during the adversarial review itself, not by this increment's own author:** two
+different documents can share one `content_hash` with only one of them ever paid-extracted (a
+second document minted later for identical bytes gets its own ordinary free extraction). The
+original rebuild copy-forward keyed its survivor lookup on `content_hash` alone, which would have
+let the free twin's own rebuild incorrectly inherit the paid one's chunks, embeddings and backend
+label. Found and fixed inline by the reviewing subagent (re-keying on `(content_hash, path)`, later
+superseded by the `doc_id` keying above once the rename/clone findings required a broader
+redesign), with its own regression test. *Lesson: a value that is "usually unique in practice" is
+not a key — `content_hash` was never meant to identify one document, only to detect whether one
+had changed; this table's actual primary key was sitting right there the whole time.*

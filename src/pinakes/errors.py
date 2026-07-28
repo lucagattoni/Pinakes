@@ -9,7 +9,7 @@ Subclasses are added by the increment that first raises them; an empty hierarchy
 would be a guess about failures that do not exist yet.
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 
@@ -224,6 +224,35 @@ class CoherenceError(PinakesError):
         self.differences = dict(differences)
 
 
+class ExtractionCoherenceError(PinakesError):
+    """A *free*-backend extraction is stale (§4.4, decision 13). A paid mismatch only WARNs and
+    marks affected results `stale_extraction` — extracted text does not go meaningless the way an
+    embedding under the wrong model does, and a free re-extraction costs nothing to just run — so
+    only the free direction refuses the whole query.
+    """
+
+    def __init__(
+        self,
+        backend: str,
+        *,
+        stored_fingerprint: str,
+        current_fingerprint: str,
+        paths: Sequence[str],
+    ) -> None:
+        sample = ", ".join(sorted(paths)[:3])
+        more = len(paths) - 3
+        super().__init__(
+            f"{len(paths)} document(s) extracted with `{backend}` (fingerprint "
+            f"{stored_fingerprint}) no longer match its current fingerprint "
+            f"({current_fingerprint}): {sample}" + (f" and {more} more" if more > 0 else ""),
+            remedy="Run `pnk sync --rebuild` to re-extract with the current backend.",
+        )
+        self.backend = backend
+        self.stored_fingerprint = stored_fingerprint
+        self.current_fingerprint = current_fingerprint
+        self.paths = tuple(paths)
+
+
 class ExtractorMissingError(PinakesError):
     """The library a registered extractor needs is not installed. A supported state (§4.5)."""
 
@@ -241,6 +270,52 @@ class ExtractorMissingError(PinakesError):
 
 class ExtractionError(PinakesError):
     """A registered extractor could not produce text from this document."""
+
+
+class PaidExtractionRequiredError(PinakesError):
+    """A paid-extracted document's content changed under a free-effective run (I5, decision 14).
+
+    Neither silently re-extracting with the downgraded free backend nor silently leaving the now
+    stale text indexed is honest; the remedy is a deliberate, paid re-extraction. The content-hash
+    comparison this raises on comes from the sidecar's own recorded `provenance.extraction.
+    content_hash`, not from any cache or index lookup — so this fires the same way whether the
+    cache is warm, cold, or the KB was just cloned.
+    """
+
+    def __init__(self, path: str, *, recorded_backend: str) -> None:
+        super().__init__(
+            f"{path} was extracted with the paid `{recorded_backend}` backend, but its content "
+            "has changed since.",
+            remedy=f"Run `pnk sync --extract={recorded_backend}` to pay for a fresh extraction, "
+            "matching what the sidecar already records.",
+        )
+        self.path = path
+        self.recorded_backend = recorded_backend
+
+
+class PaidExtractionUnavailableError(PinakesError):
+    """A paid-extracted document's content is *unchanged* (the sidecar's own recorded content_hash
+    still matches), but the extracted text itself is not available anywhere on this machine: no
+    cache entry, and this exact document was never indexed here before (I5) — the common case is
+    a fresh clone of a KB whose paid PDFs were extracted on a different machine, or a rename
+    reaching this document for the first time after `--clear-cache`.
+
+    Distinct from `PaidExtractionRequiredError`: nothing about the file changed, so silently
+    treating this as "requires paying again for a changed file" would be a false claim. This is
+    an honest "cannot re-derive it for free from what's here" instead.
+    """
+
+    def __init__(self, path: str, *, recorded_backend: str) -> None:
+        super().__init__(
+            f"{path} was extracted with the paid `{recorded_backend}` backend, and its content is "
+            "unchanged, but that extraction's text is not available on this machine (no cache "
+            "entry, and it has not been indexed here before).",
+            remedy=f"Run `pnk sync --extract={recorded_backend}` to pay for a fresh extraction — "
+            "or sync once on a machine or clone that already has it cached or indexed, if one "
+            "exists.",
+        )
+        self.path = path
+        self.recorded_backend = recorded_backend
 
 
 class FloorsMissingError(PinakesError):

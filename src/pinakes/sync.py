@@ -30,6 +30,8 @@ from pinakes.errors import (
     BackendUnknownError,
     ExtractionError,
     ExtractorMissingError,
+    PaidExtractionRequiredError,
+    PaidExtractionUnavailableError,
     PinakesError,
     SyncError,
 )
@@ -38,6 +40,7 @@ from pinakes.extract import (
     ExtractionContext,
     fingerprint,
     load_extractor,
+    paid_backend_names,
     registered_extractors,
 )
 from pinakes.extract import cache as extract_cache
@@ -51,6 +54,7 @@ from pinakes.pairing import (
     IndexedDocument,
     IndexSnapshot,
     Mint,
+    PaidExtractionRequired,
     Reembed,
     RefreshMetadata,
     Rename,
@@ -65,9 +69,12 @@ from pinakes.sidecar import (
     SIDECAR_SUFFIX,
     Sidecar,
     document_for,
+    extraction_provenance,
     is_sidecar,
     sidecar_path,
     skeleton,
+    with_extraction_provenance,
+    without_extraction_provenance,
 )
 from pinakes.sidecar import (
     read as read_sidecar,
@@ -90,6 +97,9 @@ class SyncOptions:
     extract: str | None = None  # overrides `[extraction] backend` for one run
     clear_cache: bool = False  # a standalone mode (I4): empties the extraction cache, nothing else
     yes: bool = False  # skip --clear-cache's confirmation (cron use)
+    force: bool = False
+    """Only meaningful together with an explicit `extract=` naming a *free* backend (I5): the one
+    combination allowed to overwrite a paid extraction. `--force` alone changes nothing."""
 
 
 @dataclass(slots=True)
@@ -106,6 +116,12 @@ class SyncReport:
     ambiguities: tuple[Ambiguity, ...] = ()
     orphaned_sidecars: tuple[str, ...] = ()
     moved_without_sidecar: tuple[str, ...] = ()
+    paid_extraction_protected: tuple[str, ...] = ()
+    """Kept at their paid extraction despite a free-effective run — printed once, not per path
+    (I5, decision 9)."""
+    paid_extraction_overwritten: tuple[str, ...] = ()
+    """`--force` plus an explicit free `--extract` discarded these paid extractions — named, not
+    just counted, since discarding paid work is the one thing this design must never do quietly."""
     busy: bool = False
     reclaimed_lock: bool = False
     # --clear-cache's own outcome; None on every other run (see `sync()`'s early return for it).
@@ -129,6 +145,16 @@ class SyncReport:
             f"{self.deleted} removed",
         ]
         lines = [", ".join(summary)]
+        for path in self.paid_extraction_overwritten:
+            lines.append(f"paid extraction discarded (--force --extract): {path}")
+        if self.paid_extraction_protected:
+            sample = ", ".join(self.paid_extraction_protected[:3])
+            more = len(self.paid_extraction_protected) - 3
+            lines.append(
+                f"{len(self.paid_extraction_protected)} paid extraction(s) kept as-is "
+                f"(this run's backend would have downgraded them): {sample}"
+                + (f" and {more} more" if more > 0 else "")
+            )
         for path in self.moved_without_sidecar:
             lines.append(f"moved without its sidecar, so a new id was minted: {path}")
         for ambiguity in self.ambiguities:
@@ -214,7 +240,9 @@ def _excluded(relative: str, patterns: Sequence[str], root: Path, candidate: Pat
 
 
 def read_index_snapshot(connection: sqlite3.Connection) -> IndexSnapshot:
-    rows = connection.execute("SELECT id, path, content_hash, sidecar_hash, state FROM documents")
+    rows = connection.execute(
+        "SELECT id, path, content_hash, sidecar_hash, state, extraction_backend FROM documents"
+    )
     return IndexSnapshot(
         tuple(
             IndexedDocument(
@@ -223,6 +251,9 @@ def read_index_snapshot(connection: sqlite3.Connection) -> IndexSnapshot:
                 content_hash=str(row["content_hash"]),
                 sidecar_hash=None if row["sidecar_hash"] is None else str(row["sidecar_hash"]),
                 state=str(row["state"]),
+                extraction_backend=(
+                    None if row["extraction_backend"] is None else str(row["extraction_backend"])
+                ),
             )
             for row in rows
         )
@@ -300,6 +331,16 @@ def _run(
         return
 
     index_path = manifest.index_path
+    protected_by_hash = (
+        _paid_rebuild_survivors(
+            manifest,
+            effective_backend=extraction_backend,
+            force=options.force,
+            explicit_extract=options.extract is not None,
+        )
+        if options.rebuild
+        else {}
+    )
     target = index_path.with_suffix(".db.new") if options.rebuild else index_path
     if options.rebuild:
         target.unlink(missing_ok=True)
@@ -312,10 +353,19 @@ def _run(
     active_hashes: set[str] | None = None
     try:
         before = read_index_snapshot(connection)
-        result = pair(before, WalkSnapshot(tuple(files), tuple(sidecars)))
+        result = pair(
+            before,
+            WalkSnapshot(tuple(files), tuple(sidecars)),
+            effective_backend=extraction_backend,
+            paid_backend_names=paid_backend_names(),
+            force=options.force,
+            explicit_extract=options.extract is not None,
+        )
         report.ambiguities = result.ambiguities
         report.orphaned_sidecars = result.orphaned_sidecars
         report.moved_without_sidecar = result.moved_without_sidecar
+        report.paid_extraction_protected = result.paid_extraction_protected
+        report.paid_extraction_overwritten = result.paid_extraction_overwritten
 
         backend = _backend_if_needed(manifest, options, result.actions, backend_factory)
         sidecar_by_document = {sidecar.document_path: sidecar for sidecar in sidecars}
@@ -331,6 +381,7 @@ def _run(
                 stamp=stamp,
                 report=report,
                 extraction_backend=extraction_backend,
+                protected_by_hash=protected_by_hash,
             )
 
         store.set_meta(
@@ -399,6 +450,7 @@ def _apply(
     stamp: str,
     report: SyncReport,
     extraction_backend: str,
+    protected_by_hash: dict[DocId, tuple[str, str]],
 ) -> None:
     match action:
         case Skip():
@@ -415,6 +467,22 @@ def _apply(
             connection.commit()
             report.refreshed += 1
             return
+        case PaidExtractionRequired(path=path, recorded_backend=recorded_backend):
+            # Decision 14: neither a Reembed nor a silent Skip is honest here — the file changed
+            # under a run whose effective backend cannot honour what was paid for. Decided by
+            # pairing.py directly, not raised, so it is recorded the same way any other failure
+            # is, with no extraction ever attempted.
+            error = (
+                f"PaidExtractionRequiredError: {path} was extracted with the paid "
+                f"`{recorded_backend}` backend, but its content changed."
+            )
+            remedy = f"Run `pnk sync --extract={recorded_backend}` to pay for a fresh extraction."
+            store.record_failure(
+                connection, path=path, stage="extract", error=error, happened=stamp
+            )
+            connection.commit()
+            report.failures.append((path, error, remedy))
+            return
         case Reembed() | Rename() | Adopt() | Mint():
             pass
 
@@ -423,21 +491,88 @@ def _apply(
     try:
         if doc_id is None:
             doc_id, sidecar_hash = _mint(manifest, path, options, stamp, report)
-        _index_document(
-            manifest=manifest,
-            connection=connection,
-            backend=backend,
-            doc_id=doc_id,
-            path=path,
-            content_hash=content_hash,
-            sidecar_hash=sidecar_hash,
-            sidecar_by_document=sidecar_by_document,
-            extraction_backend=extraction_backend,
+        override = options.force and options.extract is not None
+        survivor = protected_by_hash.get(doc_id)
+        in_place_backend = (
+            _paid_survivor_in_current_index(connection, doc_id=doc_id, content_hash=content_hash)
+            if survivor is None and extraction_backend not in paid_backend_names() and not override
+            else None
         )
+        if survivor is not None:
+            # `--rebuild` only: the file's own old row in the index being replaced proves a paid
+            # extraction, without touching the (possibly just-cleared) extraction cache at all
+            # (`_paid_rebuild_survivors`'s own docstring). Copied forward at its *old* content_hash
+            # regardless of whether the file has since changed — see below.
+            recorded_backend, old_content_hash = survivor
+            _copy_forward_protected_document(
+                manifest,
+                connection,
+                old_index_path=manifest.index_path,
+                old_doc_id=str(doc_id),
+                new_doc_id=doc_id,
+                path=path,
+                content_hash=old_content_hash,
+                sidecar_hash=sidecar_hash,
+            )
+            if old_content_hash == content_hash:
+                report.paid_extraction_protected = (*report.paid_extraction_protected, path)
+            else:
+                # Decision 14, reached the moment `--rebuild` is what happens to run into it:
+                # `pair()`'s own `PaidExtractionRequired` action can never fire here (`before` is
+                # empty, so nothing looks "changed" to it) — this applies the identical guarantee
+                # from what `_paid_rebuild_survivors` already proved by reading the *old* index.
+                # The document stays searchable at its last paid extraction, exactly as a normal
+                # sync leaves it, rather than vanishing the instant a rebuild hits this case.
+                error = (
+                    f"PaidExtractionRequiredError: {path} was extracted with the paid "
+                    f"`{recorded_backend}` backend, but its content has changed since; kept at "
+                    "its last paid extraction rather than dropped from the index."
+                )
+                remedy = (
+                    f"Run `pnk sync --extract={recorded_backend}` to pay for a fresh extraction."
+                )
+                store.record_failure(
+                    connection, path=path, stage="extract", error=error, happened=stamp
+                )
+                report.failures.append((path, error, remedy))
+        elif in_place_backend is not None:
+            # Not a rebuild: `doc_id` is already an active, paid-recorded row in *this*
+            # connection, same content_hash — a rename, or an `Adopt` reaching the same document
+            # some other way. `_paid_survivor_in_current_index`'s own docstring explains why this
+            # cannot be left to `_extract_for_index`'s cache-based fallback alone.
+            _reindex_paid_document_in_place(
+                manifest,
+                connection,
+                doc_id=doc_id,
+                path=path,
+                content_hash=content_hash,
+                sidecar_hash=sidecar_hash,
+            )
+            report.paid_extraction_protected = (*report.paid_extraction_protected, path)
+        else:
+            _index_document(
+                manifest=manifest,
+                connection=connection,
+                backend=backend,
+                doc_id=doc_id,
+                path=path,
+                content_hash=content_hash,
+                sidecar_hash=sidecar_hash,
+                sidecar_by_document=sidecar_by_document,
+                extraction_backend=extraction_backend,
+                options=options,
+                stamp=stamp,
+            )
         connection.commit()
     except (PinakesError, OSError, ValueError) as exc:
         connection.rollback()
-        stage = "extract" if isinstance(exc, ExtractionError | ExtractorMissingError) else "index"
+        extract_stage = (
+            ExtractionError
+            | ExtractorMissingError
+            | PaidExtractionRequiredError
+            | PaidExtractionUnavailableError
+        )
+        stage = "extract" if isinstance(exc, extract_stage) else "index"
         remedy = exc.remedy if isinstance(exc, PinakesError) else ""
         error = f"{type(exc).__name__}: {exc}"
         store.record_failure(connection, path=path, stage=stage, error=error, happened=stamp)
@@ -445,7 +580,9 @@ def _apply(
         report.failures.append((path, error, remedy))
         return
 
-    if is_rename:
+    if survivor is not None or in_place_backend is not None:
+        report.skipped += 1
+    elif is_rename:
         report.renamed += 1
     else:
         report.embedded += 1
@@ -579,6 +716,262 @@ def _replace_links(
         )
 
 
+def _paid_survivor_in_current_index(
+    connection: sqlite3.Connection, *, doc_id: DocId, content_hash: str
+) -> str | None:
+    """The recorded backend, if `doc_id` is already an *active* row in this same connection with
+    this exact `content_hash` and a paid `extraction_backend` — i.e., nothing about its paid text
+    needs to change, only bookkeeping like `path` might (a rename, or an `Adopt` reaching the same
+    document some other way).
+
+    Returns `None` when `doc_id` has no row yet at all — the ordinary case for a genuinely new
+    document, and also the case that matters most: the *first* sync of a document in a freshly
+    cloned KB, where nothing about it has ever been indexed on this machine before (I5's own
+    retrospective finding — `_extract_for_index`'s cache-based check alone cannot tell "just
+    renamed" or "just cloned" apart from "content actually changed", because a cache miss looks
+    identical in all three cases; this check answers the question a different way, from data this
+    same sync already has open, before ever reaching that cache-dependent code path at all).
+    """
+    paid_names = paid_backend_names()
+    row = connection.execute(
+        "SELECT content_hash, extraction_backend FROM documents WHERE id = ? AND state = 'active'",
+        (doc_id,),
+    ).fetchone()
+    if row is None or str(row["content_hash"]) != content_hash:
+        return None
+    backend = row["extraction_backend"]
+    if backend is None or str(backend) not in paid_names:
+        return None
+    return str(backend)
+
+
+def _reindex_paid_document_in_place(
+    manifest: Manifest,
+    connection: sqlite3.Connection,
+    *,
+    doc_id: DocId,
+    path: str,
+    content_hash: str,
+    sidecar_hash: str | None,
+) -> None:
+    """A rename (or an `Adopt` reaching the same conclusion some other way) of a paid-protected,
+    content-unchanged PDF: the document's chunks and embeddings, already sitting in this same
+    connection under this same `doc_id`, remain exactly correct as they are — only `documents`'
+    own bookkeeping needs to move to the new path. No extraction, no re-chunking, no re-embedding,
+    and no sidecar rewrite (the provenance it already carries is still accurate)."""
+    source = manifest.root / path
+    parsed = _read_sidecar_for(manifest, path)
+    connection.execute(
+        "UPDATE documents SET path = ?, content_hash = ?, sidecar_hash = ?, mtime = ?, "
+        "title = ?, metadata = ?, state = 'active' WHERE id = ?",
+        (
+            path,
+            content_hash,
+            sidecar_hash,
+            source.stat().st_mtime,
+            parsed.title if parsed else None,
+            store.dumps_metadata(_metadata(parsed)),
+            doc_id,
+        ),
+    )
+    _replace_links(connection, manifest, doc_id, parsed)
+
+
+def _paid_rebuild_survivors(
+    manifest: Manifest, *, effective_backend: str, force: bool, explicit_extract: bool
+) -> dict[DocId, tuple[str, str]]:
+    """`doc_id` -> (recorded_backend, old_content_hash) for every actively-indexed, paid-extracted
+    document in the index `--rebuild` is about to replace.
+
+    Keyed on `doc_id` alone — this table's own primary key, therefore unique by construction —
+    not on content_hash or path, for two independent reasons: (1) two *different* documents can
+    legitimately share one content_hash with only one of them paid, and a content_hash-only key
+    would let the free one's rebuild incorrectly inherit the paid one's chunks, embeddings and
+    backend label; (2) `--rebuild`'s own `before` is empty (module docstring), so pairing can never
+    detect a rename *as* a rename during a rebuild — the action reaching `_apply` for a renamed
+    document only ever carries its *current* path, which the old index's own recorded path would
+    no longer match. `doc_id` is the one identifier a renamed sidecar still carries unchanged, so
+    it is the only key that survives both cases correctly.
+
+    Read *before* anything is unlinked or created, while `manifest.index_path` still holds the
+    database `_run` is discarding (module docstring: the swap is atomic and happens last) — this is
+    deliberately independent of `extract/cache.py`: a `--clear-cache` immediately before
+    `--rebuild` empties the cache but never touches the index file, so relying on the old index
+    itself (rather than the cache) is what lets a rebuild survive that sequence without either
+    downgrading a paid extraction or wrongly demanding to pay for it again.
+
+    Empty whenever there is nothing to protect: this run's own effective backend is already paid,
+    `--force` with an explicit free `--extract` says to override anyway (decision 9), or no prior
+    index exists yet.
+    """
+    if effective_backend in paid_backend_names() or (force and explicit_extract):
+        return {}
+    old_path = manifest.index_path
+    if not old_path.exists():
+        return {}
+    try:
+        connection = store.connect_ro(old_path)
+    except PinakesError:
+        # Most commonly a pre-I5 (schema_version 1) index: it never tracked paid extractions at
+        # all, so there is nothing here to carry forward — not a reason to fail the rebuild.
+        return {}
+    try:
+        rows = connection.execute(
+            "SELECT id, content_hash, extraction_backend FROM documents "
+            "WHERE state = 'active' AND extraction_backend IS NOT NULL"
+        ).fetchall()
+    finally:
+        connection.close()
+    paid_names = paid_backend_names()
+    return {
+        DocId(str(row["id"])): (str(row["extraction_backend"]), str(row["content_hash"]))
+        for row in rows
+        if str(row["extraction_backend"]) in paid_names
+    }
+
+
+def _copy_forward_protected_document(
+    manifest: Manifest,
+    connection: sqlite3.Connection,
+    *,
+    old_index_path: Path,
+    old_doc_id: str,
+    new_doc_id: DocId,
+    path: str,
+    content_hash: str,
+    sidecar_hash: str | None,
+) -> None:
+    """Populate one document's row, chunks and embeddings straight from the index `--rebuild` is
+    replacing — never re-extracted, never re-embedded, because `_paid_rebuild_survivors` already
+    proved nothing about its paid extraction needs to change. Title, tags and links still come from
+    the *current* sidecar (not the old row): those can have changed even when the file's content,
+    and hence its extraction, has not.
+    """
+    source = manifest.root / path
+    parsed = _read_sidecar_for(manifest, path)
+    connection.execute("ATTACH DATABASE ? AS old_index", (str(old_index_path),))
+    try:
+        old_row = connection.execute(
+            "SELECT source_type, extraction_backend, extraction_fingerprint "
+            "FROM old_index.documents WHERE id = ?",
+            (old_doc_id,),
+        ).fetchone()
+        assert old_row is not None, "content_hash lookup that found this id proves the row exists"
+        connection.execute(
+            "INSERT INTO documents (id, path, content_hash, sidecar_hash, mtime, source_type, "
+            "title, metadata, state, extraction_backend, extraction_fingerprint) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?) "
+            "ON CONFLICT (id) DO UPDATE SET path = excluded.path, "
+            "content_hash = excluded.content_hash, sidecar_hash = excluded.sidecar_hash, "
+            "mtime = excluded.mtime, source_type = excluded.source_type, "
+            "title = excluded.title, metadata = excluded.metadata, state = 'active', "
+            "extraction_backend = excluded.extraction_backend, "
+            "extraction_fingerprint = excluded.extraction_fingerprint",
+            (
+                new_doc_id,
+                path,
+                content_hash,
+                sidecar_hash,
+                source.stat().st_mtime,
+                old_row["source_type"],
+                parsed.title if parsed else None,
+                store.dumps_metadata(_metadata(parsed)),
+                old_row["extraction_backend"],
+                old_row["extraction_fingerprint"],
+            ),
+        )
+        connection.execute(
+            "INSERT INTO chunks (doc_id, ordinal, text, char_start, char_end, token_count, "
+            "heading_path, page_start, page_end) "
+            "SELECT ?, ordinal, text, char_start, char_end, token_count, heading_path, "
+            "page_start, page_end FROM old_index.chunks WHERE doc_id = ? ORDER BY ordinal",
+            (new_doc_id, old_doc_id),
+        )
+        connection.execute(
+            "INSERT INTO embeddings (chunk_id, vector) "
+            "SELECT c.id, oe.vector FROM chunks c "
+            "JOIN old_index.chunks oc ON oc.doc_id = ? AND oc.ordinal = c.ordinal "
+            "JOIN old_index.embeddings oe ON oe.chunk_id = oc.id "
+            "WHERE c.doc_id = ?",
+            (old_doc_id, new_doc_id),
+        )
+    finally:
+        connection.commit()
+        connection.execute("DETACH DATABASE old_index")
+    _replace_links(connection, manifest, new_doc_id, parsed)
+
+
+def _extract_for_index(
+    *,
+    manifest: Manifest,
+    source: Path,
+    path: str,
+    content_hash: str,
+    extraction_backend: str,
+    sidecar: Sidecar | None,
+    options: SyncOptions,
+) -> tuple[ExtractedText, str, str]:
+    """Extract a PDF, honouring decision 9's paid-protection rule: a document whose sidecar
+    records a *paid* extraction is never silently re-extracted with a *free* effective backend,
+    unless `--force` and an explicit free `--extract` both say so.
+
+    Returns the extracted text plus the backend/fingerprint that actually produced it — which is
+    not always `extraction_backend`: when a paid original is preserved, both name the *recorded*
+    backend instead, so `documents.extraction_backend` never claims a downgrade that did not
+    happen.
+    """
+    paid_names = paid_backend_names()
+    effective_is_paid = extraction_backend in paid_names
+    override = options.force and options.extract is not None
+
+    recorded = extraction_provenance(sidecar) if sidecar is not None else None
+    if recorded is not None and not effective_is_paid and not override:
+        recorded_backend, recorded_fingerprint, recorded_content_hash = recorded
+        if recorded_backend in paid_names:
+            if recorded_content_hash != content_hash:
+                raise PaidExtractionRequiredError(path, recorded_backend=recorded_backend)
+            # Unchanged since the paid extraction — decided directly from the sidecar's own
+            # recorded content_hash, never from a cache lookup (I5's own retrospective finding: a
+            # cache-miss is not proof of a content change — a `--clear-cache`, a rename, or a
+            # first sync after a fresh clone all miss the cache without the file having changed at
+            # all). Whether the *text* is still available locally, to avoid paying again, is a
+            # separate question the cache can still answer when it's warm:
+            cached = extract_cache.peek(
+                manifest.extract_cache_dir,
+                content_hash=content_hash,
+                fingerprint=recorded_fingerprint,
+            )
+            if cached is not None:
+                return cached, recorded_backend, recorded_fingerprint
+            raise PaidExtractionUnavailableError(path, recorded_backend=recorded_backend)
+
+    if options.index_only and effective_is_paid:
+        # `--index-only` never writes into `docs/` (`_mint` already honours this for a brand new
+        # document) — and recording a paid extraction's provenance requires exactly that write.
+        # Refusing costs nothing: `--index-only` is what the post-commit/post-merge hooks run, and
+        # I6b already forbids hooks from spending.
+        raise SyncError(
+            f"{path}: a paid extraction cannot run under --index-only.",
+            remedy="Run a normal `pnk sync` (without --index-only) to extract and record it.",
+        )
+
+    def _extract() -> ExtractedText:
+        # Loading the extractor (importing pypdfium2, say) is deferred inside this closure, so a
+        # cache hit never pays for it — only a miss does (I4).
+        ctx = ExtractionContext(model=manifest.extraction.model)
+        return load_extractor(extraction_backend).extract(source, ctx)
+
+    used_fingerprint = fingerprint(extraction_backend)
+    extracted = extract_cache.get_or_extract(
+        manifest.extract_cache_dir,
+        content_hash=content_hash,
+        backend=extraction_backend,
+        fingerprint=used_fingerprint,
+        extract=_extract,
+    )
+    return extracted, extraction_backend, used_fingerprint
+
+
 def _index_document(
     *,
     manifest: Manifest,
@@ -590,30 +983,67 @@ def _index_document(
     sidecar_hash: str | None,
     sidecar_by_document: dict[str, WalkedSidecar],
     extraction_backend: str,
+    options: SyncOptions,
+    stamp: str,
 ) -> None:
     if backend is None:  # pragma: no cover — only when nothing needed embedding
         raise SyncError("no embedding backend was loaded.", remedy="This is a bug; report it.")
 
     source = manifest.root / path
     kind = source_type(path)
+    parsed = _read_sidecar_for(manifest, path)
+    page_spans: Sequence[tuple[int, int]] | None = None
+    used_backend: str | None = None
+    used_fingerprint: str | None = None
+    fresh_sidecar_hash: str | None = None
     if kind == "pdf":
-        # Loading the extractor (importing pypdfium2, say) is deferred inside this closure, so a
-        # cache hit never pays for it — only a miss does (I4).
-        def _extract() -> ExtractedText:
-            ctx = ExtractionContext(model=manifest.extraction.model)
-            return load_extractor(extraction_backend).extract(source, ctx)
-
-        extracted = extract_cache.get_or_extract(
-            manifest.extract_cache_dir,
+        extracted, used_backend, used_fingerprint = _extract_for_index(
+            manifest=manifest,
+            source=source,
+            path=path,
             content_hash=content_hash,
-            backend=extraction_backend,
-            fingerprint=fingerprint(extraction_backend),
-            extract=_extract,
+            extraction_backend=extraction_backend,
+            sidecar=parsed,
+            options=options,
         )
         text = extracted.text
+        page_spans = extracted.page_spans
+
+        # Additive read-merge-write, only when something about the recorded provenance actually
+        # changes: a paid extraction is a human invocation, and only a genuinely fresh one is
+        # worth the sidecar losing its comments over (module docstring; not the mere fact that a
+        # paid backend happens to be in effect this run, e.g. an unchanged, cache-preserved hit).
+        recorded = extraction_provenance(parsed) if parsed is not None else None
+        used_is_paid = used_backend in paid_backend_names()
+        changed = recorded != (used_backend, used_fingerprint, content_hash)
+        if parsed is not None and changed and used_is_paid:
+            target = sidecar_path(source)
+            write_sidecar(
+                target,
+                with_extraction_provenance(
+                    parsed,
+                    backend=used_backend,
+                    fingerprint=used_fingerprint,
+                    extracted=stamp,
+                    content_hash=content_hash,
+                ),
+            )
+            # `sidecar_hash` was decided from the walk, before this write happened — recompute it
+            # from the file we just wrote, or the very next sync would see a "changed" sidecar
+            # hash it did not expect and spend a whole extra cycle on a spurious
+            # `RefreshMetadata` before it settles.
+            fresh_sidecar_hash = hash_file(target)
+        elif parsed is not None and changed and recorded is not None:
+            # The only way a *paid*-recorded document reaches here with a *free* `used_backend` is
+            # `--force` plus an explicit free `--extract` (decision 9's override) — the sidecar's
+            # claim is now false and must be cleared, not left to mislead a later sync (or a
+            # different clone reading the same committed sidecar) into thinking it is still
+            # paid-protected.
+            target = sidecar_path(source)
+            write_sidecar(target, without_extraction_provenance(parsed))
+            fresh_sidecar_hash = hash_file(target)
     else:
         text = source.read_text(encoding="utf-8")
-    parsed = _read_sidecar_for(manifest, path)
 
     chunks = chunk_document(
         text,
@@ -621,24 +1051,36 @@ def _index_document(
         max_tokens=manifest.chunking.max_tokens,
         overlap=manifest.chunking.overlap,
         kind=kind,
+        page_spans=page_spans,
     )
 
     connection.execute(
         "INSERT INTO documents (id, path, content_hash, sidecar_hash, mtime, source_type, title, "
-        "metadata, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active') "
+        "metadata, state, extraction_backend, extraction_fingerprint) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?) "
         "ON CONFLICT (id) DO UPDATE SET path = excluded.path, content_hash = excluded.content_hash,"
         " sidecar_hash = excluded.sidecar_hash, mtime = excluded.mtime, "
         "source_type = excluded.source_type, title = excluded.title, "
-        "metadata = excluded.metadata, state = 'active'",
+        "metadata = excluded.metadata, state = 'active', "
+        "extraction_backend = excluded.extraction_backend, "
+        "extraction_fingerprint = excluded.extraction_fingerprint",
         (
             doc_id,
             path,
             content_hash,
-            sidecar_hash if sidecar_hash is not None else _sidecar_hash(sidecar_by_document, path),
+            fresh_sidecar_hash
+            if fresh_sidecar_hash is not None
+            else (
+                sidecar_hash
+                if sidecar_hash is not None
+                else _sidecar_hash(sidecar_by_document, path)
+            ),
             source.stat().st_mtime,
             kind,
             parsed.title if parsed else None,
             store.dumps_metadata(_metadata(parsed)),
+            used_backend,
+            used_fingerprint,
         ),
     )
     _replace_links(connection, manifest, doc_id, parsed)

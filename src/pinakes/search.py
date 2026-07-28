@@ -25,7 +25,9 @@ import numpy as np
 
 from pinakes import store
 from pinakes.embed import EmbeddingBackend, Reranker
-from pinakes.errors import CoherenceError
+from pinakes.errors import CoherenceError, ExtractionCoherenceError
+from pinakes.extract import fingerprint as extraction_fingerprint
+from pinakes.extract import is_paid_backend, registered_extractors
 from pinakes.ids import DocId
 from pinakes.manifest import Manifest
 
@@ -60,6 +62,10 @@ class Passage:
     vector_rank: int | None
     fused_score: float
     rerank_score: float | None
+    stale_extraction: str | None = None
+    """The recorded fingerprint, when this document's *paid* extraction backend has since moved
+    on (§4.4, decision 13) — the text is still correct, merely older, so the result stands and is
+    only marked, never withheld the way a free-backend mismatch (`ExtractionCoherenceError`) is."""
 
     def citation(self) -> str:
         where = f"{self.path}:{self.char_start}-{self.char_end}"
@@ -76,8 +82,11 @@ class SearchResult:
     filters: Filters = field(default_factory=Filters)
 
 
-def check_coherence(connection: sqlite3.Connection, manifest: Manifest) -> None:
-    """Refuse to query an index built by a different model. Silence here returns garbage (§4.4)."""
+def check_coherence(connection: sqlite3.Connection, manifest: Manifest) -> dict[DocId, str]:
+    """Refuse to query an index built by a different model (unchanged, §4.4) or extracted by a
+    free backend whose fingerprint has since moved on. Returns the doc_ids whose *paid* extraction
+    is stale instead of refusing for them — the caller marks affected passages, never withholds
+    them (decision 13)."""
     meta = store.get_meta(connection)
     expected = {
         "embedding_provider": manifest.embedding.provider,
@@ -94,6 +103,44 @@ def check_coherence(connection: sqlite3.Connection, manifest: Manifest) -> None:
     }
     if differences:
         raise CoherenceError(differences)
+
+    return _check_extraction_coherence(connection)
+
+
+def _check_extraction_coherence(connection: sqlite3.Connection) -> dict[DocId, str]:
+    stale_paid: dict[DocId, str] = {}
+    known = set(registered_extractors())
+    rows = connection.execute(
+        "SELECT DISTINCT extraction_backend, extraction_fingerprint FROM documents "
+        "WHERE state = 'active' AND extraction_backend IS NOT NULL"
+    )
+    for row in rows:
+        backend = str(row["extraction_backend"])
+        stored = str(row["extraction_fingerprint"])
+        if backend not in known:
+            # A future version's KB, or an extra no longer installed — cannot compare what cannot
+            # be computed. `pnk doctor` WARNs about this separately; a query must still proceed,
+            # because refusing every query on an otherwise-healthy KB over one unrecognised name
+            # is a worse failure than the one this check exists to prevent.
+            continue
+        current = extraction_fingerprint(backend)
+        if current == stored:
+            continue
+        affected = connection.execute(
+            "SELECT id, path FROM documents "
+            "WHERE state = 'active' AND extraction_backend = ? AND extraction_fingerprint = ?",
+            (backend, stored),
+        ).fetchall()
+        if is_paid_backend(backend):
+            stale_paid.update((DocId(str(r["id"])), stored) for r in affected)
+        else:
+            raise ExtractionCoherenceError(
+                backend,
+                stored_fingerprint=stored,
+                current_fingerprint=current,
+                paths=[str(r["path"]) for r in affected],
+            )
+    return stale_paid
 
 
 def escape_fts(query: str) -> str:
@@ -228,7 +275,7 @@ def search(
     filters: Filters | None = None,
     limit: int | None = None,
 ) -> SearchResult:
-    check_coherence(connection, manifest)
+    stale_paid = check_coherence(connection, manifest)
     filters = filters or Filters()
     settings = manifest.retrieval
     final_k = limit or settings.final_k
@@ -268,6 +315,7 @@ def search(
             vector_rank=vector_positions.get(row.id),
             fused_score=fused[row.id],
             rerank_score=None,
+            stale_extraction=stale_paid.get(row.doc_id),
         )
         for row in rows
     ]

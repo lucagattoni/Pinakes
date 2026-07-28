@@ -1,6 +1,8 @@
 """Retrieval: the pipeline narrows correctly, refuses incoherent indexes, and never guesses."""
 
 import sqlite3
+import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -9,7 +11,8 @@ import pytest
 
 from pinakes import store
 from pinakes.embed import EmbeddingBackend, ModelInfo, Vectors
-from pinakes.errors import CoherenceError
+from pinakes.errors import CoherenceError, ExtractionCoherenceError
+from pinakes.ids import DocId
 from pinakes.manifest import Manifest, load
 from pinakes.search import (
     HIGH,
@@ -243,6 +246,95 @@ def test_an_incoherent_index_refuses_to_answer(kb: Path) -> None:
         assert "embedding_model" in exc_info.value.message
     finally:
         connection.close()
+
+
+def _mark_extracted(kb: Path, path: str, *, backend: str, fingerprint: str) -> DocId:
+    """Simulate a document indexed by `backend`/`fingerprint` — a raw DB write, not a real PDF
+    extraction, since I5's coherence check only ever reads these two columns and does not care
+    what produced them (that is `sync.py`'s job, covered in `test_sync.py`)."""
+    connection = store.connect_rw(kb / ".pinakes" / "index.db")
+    try:
+        row = connection.execute("SELECT id FROM documents WHERE path = ?", (path,)).fetchone()
+        doc_id = DocId(str(row["id"]))
+        connection.execute(
+            "UPDATE documents SET extraction_backend = ?, extraction_fingerprint = ? WHERE id = ?",
+            (backend, fingerprint, doc_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    return doc_id
+
+
+def test_a_changed_free_fingerprint_refuses_the_query(kb: Path) -> None:
+    """Every document matches its own recorded backend, so the query works fine, until one
+    free-backend document's stored fingerprint stops matching pypdfium2's current one."""
+    _mark_extracted(kb, "docs/baking.md", backend="pypdfium2", fingerprint="stale-fp")
+
+    connection = connect(kb)
+    try:
+        with pytest.raises(ExtractionCoherenceError) as exc_info:
+            search(connection, load(kb), "sourdough", backend=KeywordBackend())
+        assert "docs/baking.md" in exc_info.value.message
+        assert "pypdfium2" in exc_info.value.message
+        assert "--rebuild" in exc_info.value.remedy
+    finally:
+        connection.close()
+
+
+def test_a_changed_paid_fingerprint_warns_and_marks(kb: Path) -> None:
+    """A paid mismatch never refuses — the text is still correct, merely older — but every
+    affected passage is marked so a caller can show it."""
+    doc_id = _mark_extracted(kb, "docs/baking.md", backend="claude-vision", fingerprint="stale-fp")
+
+    connection = connect(kb)
+    try:
+        result = search(connection, load(kb), "sourdough", backend=KeywordBackend())
+        assert result.passages  # not refused, not withheld
+        marked = [p for p in result.passages if p.doc_id == doc_id]
+        assert marked and all(p.stale_extraction == "stale-fp" for p in marked)
+        unmarked = [p for p in result.passages if p.doc_id != doc_id]
+        assert all(p.stale_extraction is None for p in unmarked)
+    finally:
+        connection.close()
+
+
+def test_an_unrecognised_backend_name_warns_and_does_not_refuse(kb: Path) -> None:
+    """A KB written by a future pinakes version, or one whose extra was uninstalled: a fingerprint
+    that cannot be computed cannot be compared, so the query proceeds rather than refuse an
+    otherwise-healthy KB over one name nothing here recognises."""
+    _mark_extracted(kb, "docs/baking.md", backend="some-future-backend", fingerprint="whatever")
+
+    connection = connect(kb)
+    try:
+        result = search(connection, load(kb), "sourdough", backend=KeywordBackend())
+        assert result.passages
+    finally:
+        connection.close()
+
+
+def test_coherence_never_imports_a_paid_client(kb: Path) -> None:
+    """I7a's gate 4 (never import a paid client on every query) checked one path; a KB actually
+    holding a paid-extracted document is the case it did not cover. Run in a fresh subprocess so
+    an import anywhere else in the test session cannot mask the assertion."""
+    _mark_extracted(kb, "docs/baking.md", backend="claude-vision", fingerprint="stale-fp")
+
+    script = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from pinakes import store\n"
+        "from pinakes.manifest import load\n"
+        "from pinakes.search import check_coherence\n"
+        f"connection = store.connect_ro(Path(r'{kb / '.pinakes' / 'index.db'}'))\n"
+        f"check_coherence(connection, load(Path(r'{kb}')))\n"
+        "assert 'anthropic' not in sys.modules, sorted(sys.modules)\n"
+        "print('OK')\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "OK" in completed.stdout
 
 
 def _with_confidence(kb: Path, block: str) -> Manifest:

@@ -25,7 +25,7 @@ import numpy as np
 
 from pinakes.errors import IndexSchemaError, StoreError
 
-SCHEMA_VERSION: Final = 1
+SCHEMA_VERSION: Final = 2
 BUSY_TIMEOUT_MS: Final = 5_000
 VECTOR_DTYPE: Final = np.float32
 
@@ -36,15 +36,20 @@ LINK_ORIGINS: Final = ("sidecar", "reverse-scan")
 
 SCHEMA: Final = """
 CREATE TABLE documents (
-    id            TEXT PRIMARY KEY,
-    path          TEXT NOT NULL UNIQUE,        -- KB-root-relative, POSIX separators
-    content_hash  TEXT NOT NULL,
-    sidecar_hash  TEXT,                        -- lets §6.4 notice a sidecar-only edit
-    mtime         REAL NOT NULL,
-    source_type   TEXT NOT NULL,
-    title         TEXT,
-    metadata      TEXT NOT NULL DEFAULT '{}',  -- JSON: tags, provenance, user keys
-    state         TEXT NOT NULL DEFAULT 'active' CHECK (state IN ('active', 'deleted'))
+    id                     TEXT PRIMARY KEY,
+    path                   TEXT NOT NULL UNIQUE,        -- KB-root-relative, POSIX separators
+    content_hash           TEXT NOT NULL,
+    sidecar_hash           TEXT,                        -- lets §6.4 notice a sidecar-only edit
+    mtime                  REAL NOT NULL,
+    source_type            TEXT NOT NULL,
+    title                  TEXT,
+    metadata               TEXT NOT NULL DEFAULT '{}',  -- JSON: tags, provenance, user keys
+    state                  TEXT NOT NULL DEFAULT 'active' CHECK (state IN ('active', 'deleted')),
+    -- NULL for a non-extracted source (markdown/text/code). The index's own *cache* of the
+    -- sidecar's `provenance.extraction` (I5) — reseeded from there on a rebuild, since this row
+    -- does not survive one. §4.4 re-derives each backend's current fingerprint and compares.
+    extraction_backend     TEXT,
+    extraction_fingerprint TEXT
 );
 
 CREATE INDEX documents_state ON documents (state);
@@ -61,6 +66,8 @@ CREATE TABLE chunks (
     char_end     INTEGER NOT NULL,
     token_count  INTEGER NOT NULL,
     heading_path TEXT,
+    page_start   INTEGER,  -- 1-indexed, NULL for a non-paged source (I5)
+    page_end     INTEGER,  -- >= page_start; a chunk may legitimately span two pages
     UNIQUE (doc_id, ordinal)
 );
 
@@ -307,8 +314,9 @@ def loads_metadata(raw: str) -> dict[str, Any]:
     return cast(dict[str, Any], parsed)
 
 
-type ChunkRow = tuple[str, int, int, int, str | None]
-"""(text, char_start, char_end, token_count, heading_path) — typed so a misordered field fails."""
+type ChunkRow = tuple[str, int, int, int, str | None, int | None, int | None]
+"""(text, char_start, char_end, token_count, heading_path, page_start, page_end) — typed so a
+misordered field fails. The last two are always `None` for a non-paged source (I5)."""
 
 
 def replace_chunks(
@@ -325,7 +333,7 @@ def replace_chunks(
     for ordinal, chunk in enumerate(chunks):
         cursor = connection.execute(
             "INSERT INTO chunks (doc_id, ordinal, text, char_start, char_end, token_count, "
-            "heading_path) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "heading_path, page_start, page_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (doc_id, ordinal, *chunk),
         )
         ids.append(int(cursor.lastrowid or 0))

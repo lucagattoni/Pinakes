@@ -216,7 +216,7 @@ def test_an_unbroken_token_dense_run_is_cut_by_characters() -> None:
 def test_as_row_matches_the_store_signature(counter: TokenCounter) -> None:
     chunk = chunked("# H\n\nbody text\n", counter)[0]
     row = chunk.as_row()
-    assert row == (chunk.text, chunk.char_start, chunk.char_end, chunk.token_count, "H")
+    assert row == (chunk.text, chunk.char_start, chunk.char_end, chunk.token_count, "H", None, None)
 
 
 def test_token_counts_come_from_the_counter(counter: TokenCounter) -> None:

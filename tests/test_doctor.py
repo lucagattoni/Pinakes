@@ -1,11 +1,13 @@
 """`pnk doctor`: the checks that make the design's stated limits visible instead of mysterious."""
 
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
 
 import numpy as np
 import pytest
+import yaml
 
 from pinakes import store
 from pinakes.doctor import Status, diagnose, prune
@@ -113,6 +115,117 @@ def _add_pdf(kb: Path) -> None:
         + '\n[extraction]\nbackend = "fake"\n',
         encoding="utf-8",
     )
+
+
+def _mark_paid(
+    kb: Path, name: str, *, backend: str = "claude-vision", fingerprint: str = "fp1"
+) -> None:
+    """Simulate a prior paid extraction directly — `claude-vision`'s own loader is a permanent
+    I7b stub, so no real one exists yet to sync through. Writes exactly what a real paid sync
+    would have: the sidecar's `provenance.extraction` and the index's own two columns."""
+    sidecar_file = kb / "docs" / f"{name}{SIDECAR_SUFFIX}"
+    data = yaml.safe_load(sidecar_file.read_text(encoding="utf-8"))
+    data.setdefault("provenance", {})["extraction"] = {
+        "backend": backend,
+        "fingerprint": fingerprint,
+        "extracted": "20260725 17:31",
+    }
+    sidecar_file.write_text(yaml.safe_dump(data), encoding="utf-8")
+    connection = store.connect_rw(kb / ".pinakes" / "index.db")
+    try:
+        connection.execute(
+            "UPDATE documents SET extraction_backend = ?, extraction_fingerprint = ? "
+            "WHERE path = ?",
+            (backend, fingerprint, f"docs/{name}"),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _set_extraction_backend(kb: Path, backend: str) -> None:
+    path = kb / "pinakes.toml"
+    text = path.read_text(encoding="utf-8")
+    if "[extraction]" in text:
+        text = re.sub(r'backend = ".*"', f'backend = "{backend}"', text)
+    else:
+        text += f'\n[extraction]\nbackend = "{backend}"\n'
+    path.write_text(text, encoding="utf-8")
+
+
+def test_extraction_coherence_is_ok_with_nothing_stale(kb: Path) -> None:
+    _add_pdf(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"placeholder")
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+
+    assert checks(kb)["extraction coherence"] == (Status.OK, "none stale")
+
+
+def test_extraction_coherence_warns_on_a_stale_paid_backend(kb: Path) -> None:
+    """Decision 13: a paid mismatch warns and marks — it must never refuse the whole KB, unlike a
+    free mismatch (`test_search.py` covers the free-refuses half directly)."""
+    _add_pdf(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"placeholder")
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    _mark_paid(kb, "a.pdf", fingerprint="a-fingerprint-claude-vision-no-longer-has")
+
+    status, detail = checks(kb)["extraction coherence"]
+    assert status is Status.WARN
+    assert "stale paid extraction" in detail
+
+
+def test_awaiting_paid_extraction_lists_a_free_indexed_pdf_when_manifest_wants_paid(
+    kb: Path,
+) -> None:
+    _add_pdf(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"placeholder")
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")  # indexed free, via "fake"
+
+    _set_extraction_backend(kb, "claude-vision")  # manifest now wants paid — no sync run yet
+
+    found = next(c for c in diagnose(load(kb)).checks if c.name == "awaiting paid extraction")
+    assert found.status is Status.WARN
+    assert "docs/a.pdf" in found.detail
+    assert found.remedy is not None and "pnk sync" in found.remedy
+
+    # The counterpart stays green: a free-indexed document is not "kept at a paid extraction".
+    assert checks(kb)["paid extraction not requested"] == (Status.OK, "none")
+
+
+def test_paid_extraction_not_requested_lists_a_paid_indexed_pdf_when_manifest_wants_free(
+    kb: Path,
+) -> None:
+    """Decision 9 in `pnk doctor`'s own words: this one must stay green even though it lists a
+    path, since it reports the protection working, not a problem (`_extraction_backend_drift`'s
+    own docstring)."""
+    _add_pdf(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"placeholder")
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    _mark_paid(kb, "a.pdf")  # manifest's own backend stays "fake" (free)
+
+    found = next(c for c in diagnose(load(kb)).checks if c.name == "paid extraction not requested")
+    assert found.status is Status.WARN
+    assert "docs/a.pdf" in found.detail
+    assert found.remedy is not None
+    assert "Nothing to do" in found.remedy
+    assert "--force" in found.remedy
+
+    assert checks(kb)["awaiting paid extraction"] == (Status.OK, "none")
+
+
+def test_paid_extraction_stale_lists_a_changed_file(kb: Path) -> None:
+    _add_pdf(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"original content")
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    _mark_paid(kb, "a.pdf")
+
+    (kb / "docs" / "a.pdf").write_bytes(b"changed, invalidating the paid extraction")
+
+    found = next(c for c in diagnose(load(kb)).checks if c.name == "paid extraction stale")
+    assert found.status is Status.WARN
+    assert "docs/a.pdf" in found.detail
+    assert found.remedy is not None
+    assert "pnk sync --extract=" in found.remedy
 
 
 def test_extraction_cache_check_is_ok_with_nothing_orphaned(kb: Path) -> None:
