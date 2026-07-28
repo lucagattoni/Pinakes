@@ -1,0 +1,207 @@
+# Manifest and sidecar reference
+
+The two files you edit by hand. Field-by-field, with defaults taken from `manifest.py` at 0.2.0
+(20260728 16:40).
+
+*Why* the format is shaped this way is in [DESIGN §2](DESIGN.md#2-anatomy-of-a-kb); how to use it
+is in [GUIDE.md](GUIDE.md). This file is the reference — if a field's default is stated anywhere
+else in the repo, that copy is the stale one.
+
+- [`pinakes.toml`](#pinakestoml) — [`[kb]`](#kb) · [`[sources]`](#sources) · [`[embedding]`](#embedding) · [`[extraction]`](#extraction) · [`[chunking]`](#chunking) · [`[retrieval]`](#retrieval) · [`[rerank]`](#rerank) · [`[budget]`](#budget) · [`[[links.kb]]`](#linkskb)
+- [The sidecar](#the-sidecar--filepnkyaml)
+
+## Validation rules that apply everywhere
+
+- **Unknown keys are a hard error**, never a silent default. So is the retired `top_k`, rejected by
+  name.
+- **An explicit empty string is an error**, not a request for the default. Silently substituting one
+  hides a mistake until it fails somewhere far away.
+- Cross-key invariants are checked at read time, not at use time:
+  - widths must narrow: `final_k <= fusion_top_k <= candidates_per_source`
+  - `confirm_above_eur <= per_operation_eur`, or the confirmation prompt is unreachable
+  - `overlap < max_tokens`
+  - confidence thresholds must be ordered, and `fitted_for` is required whenever they are present
+
+---
+
+# `pinakes.toml`
+
+## `[kb]`
+
+**Required.** Identity — nothing can sensibly default it.
+
+| Key | Required | Notes |
+|---|---|---|
+| `name` | ✅ | Local, human-facing. Rename freely; nothing depends on it |
+| `id` | ✅ | ULID. **Permanent.** The authority in every `pnk://` URI. Never edit, never regenerate |
+| `template` | | The blueprint and its own version, e.g. `notes@1.0` — the *template's* version, not the package's |
+| `created` | | `YYYYMMDD HH:MM` |
+
+## `[sources]`
+
+What gets indexed. Paths are always relative to the KB root, POSIX separators.
+
+| Key | Default | Notes |
+|---|---|---|
+| `roots` | `["docs/"]` | |
+| `include` | `["**/*.md", "**/*.txt"]` | **Add `"**/*.pdf"` yourself** to index PDFs — the shipped template omits it ([GUIDE](GUIDE.md#indexing-pdfs)) |
+| `exclude` | `[]` | Applied after `include` |
+
+Sidecars are never ingested as documents, whatever your globs say.
+
+## `[embedding]`
+
+**Required** (`provider`, `model`, `dim`) — the index *is* this model's output, so it cannot be
+defaulted.
+
+| Key | Required | Notes |
+|---|---|---|
+| `provider` | ✅ | `sentence-transformers` or `fastembed`. `init` always stamps the former ([GUIDE](GUIDE.md#choosing-a-backend)) |
+| `model` | ✅ | e.g. `BAAI/bge-small-en-v1.5`. **The default model ids are identical on both providers** |
+| `dim` | ✅ | Must match the model's real width, or it is a hard error at sync |
+| `revision` | | HF commit sha. Pin it once settled; the index refuses to load on a mismatch |
+
+Changing any of these invalidates the index: queries refuse to run and name the remedy. Rebuilding
+is free, so this is a stop rather than a cost.
+
+## `[extraction]`
+
+Optional. Governs PDFs only.
+
+| Key | Default | Notes |
+|---|---|---|
+| `backend` | `pypdfium2` | `pypdfium2` (free) or `claude-vision` (paid, [not built](STATUS.md)). Validated against the registry **without importing either**, so an unknown name is rejected before an extra could matter |
+| `model` | | Consulted only when `backend = "claude-vision"` |
+
+Override for one run with `pnk sync --extract=BACKEND`.
+
+## `[chunking]`
+
+| Key | Default | Notes |
+|---|---|---|
+| `strategy` | `structural` | Headings and paragraphs, not blind character windows. The only value |
+| `max_tokens` | `510` | Counted with **the embedding model's own tokenizer**, and validated against its `max_seq_length` minus special tokens. Asking for more is a hard error, not a silent truncation |
+| `overlap` | `64` | Must be `< max_tokens` |
+
+Oversize text is **split, never trimmed** — a truncated chunk has an unsearchable tail and nothing
+in the output would reveal it.
+
+## `[retrieval]`
+
+| Key | Default | Notes |
+|---|---|---|
+| `candidates_per_source` | `50` | BM25 top-N *and* vector top-N, before fusion |
+| `fusion` | `rrf` | Reciprocal rank fusion, k=60. The only value |
+| `fusion_top_k` | `20` | Survivors handed to the reranker |
+| `final_k` | `8` | Passages actually returned. `pnk search -k` overrides per query |
+| `rerank` | `local` | `local` or `none` |
+| `vector_tier` | `auto` | `auto`, `numpy` or `sqlite-vec`. **Only the NumPy tier is built** — `sqlite-vec` is v0.5 |
+
+Three separate widths rather than one `top_k`, because they are three different cut-offs.
+
+### `[retrieval.confidence]`
+
+Absent by default, and **the shipped template comments it out on purpose**: thresholds fitted
+against someone else's corpus are not a calibration. While absent, every result reports
+`confidence: unknown`.
+
+| Key | Notes |
+|---|---|
+| `fitted_for` | `model@revision` of the **reranker** the thresholds were fitted against. On mismatch, `unknown` is reported rather than a wrong number |
+| `low_below` | Below this, low confidence |
+| `high_above` | Above this, high confidence |
+
+Fit them with `pinakes.calibrate`, which *prints* a block to paste and never writes one.
+
+## `[rerank]`
+
+Consumed only when `[retrieval] rerank = "local"`. Mirrors `[embedding]`.
+
+| Key | Default | Notes |
+|---|---|---|
+| `provider` | | `sentence-transformers` or `fastembed` — set this too on a `[light]` install |
+| `model` | `BAAI/bge-reranker-base` | ~1.04 GB of weights. Same id on both providers |
+| `revision` | | HF commit sha |
+
+## `[budget]`
+
+Parsed and validated from v0.1 so a KB authored today stays valid later. **Nothing reads it yet** —
+see [STATUS](STATUS.md#the-surface-you-can-use-today).
+
+| Key | Default | Notes |
+|---|---|---|
+| `confirm_above_eur` | `0.01` | Prompt for confirmation (soft). Deliberately a *lower*, separate field from the hard cap |
+| `per_operation_eur` | `0.05` | Hard ceiling — never exceeded, never prompted past |
+| `monthly_eur` | `5.00` | |
+| `timezone` | `UTC` | Makes "daily"/"monthly" unambiguous |
+| `on_exceed` | `abort` | `abort` or `partial` |
+
+`max_price_age_days` and `daily_eur` land with the budget core (I6a).
+
+## `[[links.kb]]`
+
+Connected KBs. The schema ships today because IDs cannot be retrofitted; traversal is v0.3.
+
+| Key | Notes |
+|---|---|
+| `id` | The connected KB's ULID — **canonical** |
+| `name` | A local alias. Machine-local convenience only |
+| `path` | Where it lives on *this* machine |
+
+Aliases live here and **never inside a `pnk://` URI** — a URI carrying an alias would break the
+moment the KB reached a machine where that alias means something else.
+
+---
+
+# The sidecar — `<file>.pnk.yaml`
+
+One per document, auto-created at first ingest for **every** document, not only linked ones: the
+document ID lives here, and an ID that appears only once a doc is linked is an ID you cannot rely
+on.
+
+```yaml
+id: 01JQ8ZC4V7K2N…            # ULID, assigned once, never regenerated
+title: "Attention Is All You Need"
+tags: [transformers, architecture]
+created: 20260725 09:14
+links:
+  - to: pnk://01JQ8ZM7…/01JQ8ZD9M…   # <kb-ulid>/<doc-ulid>
+    rel: cites
+  - to: pnk://self/01JQ8ZE1P…        # `self` is accepted on input, expanded on write
+    rel: supersedes
+provenance:
+  source: https://arxiv.org/abs/1706.03762
+  ingested: 20260725 09:14
+```
+
+| Key | Written by | Notes |
+|---|---|---|
+| `id` | sync, once | ULID. **Permanent.** A hand-broken one errors with "restore the original", never a renumber |
+| `title` | you | Shown in results |
+| `tags` | you | What `pnk search --tag` filters on |
+| `created` | sync | Optional; date filters use the document's mtime instead, since every document has one |
+| `links[].to` | you / `pnk link` (v0.3) | A `pnk://` URI. Aliases and `self` are resolved to ULIDs **on write**, so what reaches disk survives being shared |
+| `links[].rel` | you | Free-form relation, e.g. `cites`, `supersedes` |
+| `provenance.source` | you | Where the document came from |
+| `provenance.extraction` | **sync, paid PDFs only** | `{backend, fingerprint, extracted, content_hash}` |
+
+**Your unknown keys round-trip untouched.** The file belongs to you; normalising your fields away
+would be data loss.
+
+**Sidecars carry no general content hash**, deliberately: one would dirty two files on every
+document edit and go stale whenever a document changed without a sync in between. Change detection
+belongs to the index.
+
+`provenance.extraction.content_hash` is the narrow exception — it records the file's hash *at the
+moment a specific paid extraction ran*, changes only when a fresh paid extraction does, and exists
+so a later sync can answer "has this changed since" without depending on any local cache still
+existing. It lives in the sidecar rather than the index because `pnk sync --rebuild` reads its
+"before" from an empty database, so a backend recorded only in `index.db` is invisible at exactly
+the moment a rebuild needs it.
+
+**Sync writes `provenance.extraction` and nothing else into your sidecars**, and only when a paid
+extraction actually ran or `--force` discarded one — never for the routine free case. The write is
+additive; existing keys survive. It is the one place a machine writes into `docs/`.
+
+Writes are atomic (write beside, then rename): a truncated sidecar would lose a permanent ULID and
+every inbound link with it.

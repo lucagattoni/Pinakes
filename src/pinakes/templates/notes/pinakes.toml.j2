@@ -41,8 +41,8 @@ provider = "{{ rerank_provider }}"
 model    = "{{ rerank_model }}"
 
 [budget]
-confirm_above_eur = 0.01          # nothing spends money before v0.4; validated so a KB written
-per_operation_eur = 0.05          # today keeps working when `pnk ask --deep` arrives
+confirm_above_eur = 0.01          # no shipped code path spends money; validated so a KB written
+per_operation_eur = 0.05          # today stays valid when a paid path arrives (docs/STATUS.md)
 monthly_eur       = 5.00
 timezone          = "UTC"
 on_exceed         = "abort"

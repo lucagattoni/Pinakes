@@ -111,7 +111,7 @@ def _search_arguments(parser: argparse.ArgumentParser) -> None:
         help="only documents whose path starts with this",
     )
     parser.add_argument(
-        "--source-type", default=None, metavar="TYPE", help="markdown, text or code"
+        "--source-type", default=None, metavar="TYPE", help="markdown, text, code or pdf"
     )
     parser.add_argument(
         "--modified-after",

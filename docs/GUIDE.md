@@ -1,0 +1,331 @@
+# Guide — using pinakes
+
+How to build, feed, search and share a knowledge base. Every command here was run against 0.2.0
+(20260728 16:40); the output shown is real.
+
+For the flag-by-flag reference see [CLI.md](CLI.md); for every manifest and sidecar field see
+[MANIFEST.md](MANIFEST.md); for whether a feature exists yet see [STATUS.md](STATUS.md).
+
+- [Install](#install)
+- [Your first KB](#your-first-kb)
+- [Choosing a backend](#choosing-a-backend)
+- [Indexing PDFs](#indexing-pdfs)
+- [Searching](#searching)
+- [Keeping the index fresh](#keeping-the-index-fresh)
+- [Using it from an agent](#using-it-from-an-agent)
+- [Health checks](#health-checks)
+- [Moving, sharing and publishing a KB](#moving-sharing-and-publishing-a-kb)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Install
+
+Not on PyPI yet ([STATUS](STATUS.md#not-published-yet)) — install from git:
+
+```bash
+uv add "pinakes[st] @ git+https://github.com/lucagattoni/Pinakes"          # default backend
+uv add "pinakes[light] @ git+https://github.com/lucagattoni/Pinakes"       # ONNX, no torch
+uv add "pinakes[light,pdf] @ git+https://github.com/lucagattoni/Pinakes"   # + PDF ingest
+```
+
+Once published these shorten to `uv add "pinakes[st]"` and so on.
+
+| Extra | Pulls | Gives you |
+|---|---|---|
+| *(none)* | — | Parsing, FTS5, storage, MCP, CLI. **Cannot embed** — a supported state, not a broken one |
+| `[st]` | `sentence-transformers` (~2 GB, torch) | Default backend; widest model choice |
+| `[light]` | `fastembed` (~100 MB, ONNX) | Same default models, no torch |
+| `[pdf]` | `pypdfium2` | Free PDF text extraction |
+| `[claude]` | Anthropic SDK — **requires `[pdf]`** | The opt-in paid extractor. [Not built yet](STATUS.md) |
+
+Extras compose: `pinakes[light,pdf]` is a normal install. A core-only install fails with the exact
+extra to add, rather than a traceback:
+
+```
+error: the `sentence-transformers` backend is not installed.
+Install it with `uv add "pinakes[st]"`. A core-only install can index and search nothing that
+needs embeddings — that is expected, not a fault.
+```
+
+Model weights are a separate, one-time **download**, not part of the install: about 1.4 GB for the
+default embedding + reranker pair, cached in the shared `HF_HOME` so every KB on the machine shares
+one copy.
+
+## Your first KB
+
+```bash
+pnk init my-kb --name "My notes"
+```
+
+```
+created /path/to/my-kb from notes@1.0
+  kb id: 01KYMJMH8ECH945D5056CJD72V  (permanent — never edit it)
+
+Next:
+  1. put Markdown files in /path/to/my-kb/docs
+  2. `pnk sync` to index them, then commit the sidecars it writes
+  3. `pnk search "…"` to search, for free, offline
+```
+
+You get:
+
+```
+my-kb/
+├── pinakes.toml     # the manifest — sources, models, chunking, budget
+├── docs/            # SOURCE OF TRUTH: your files, never modified
+└── .gitignore       # ships covering .pinakes/
+```
+
+**That KB id is permanent.** Every cross-KB link ever written to this KB resolves through it, and
+there is no migration machinery by design. Never edit or regenerate it.
+
+Drop a file in and index it:
+
+```bash
+echo '# Retrieval notes
+
+Hybrid retrieval fuses BM25 with dense vectors using reciprocal rank fusion.' > my-kb/docs/retrieval.md
+
+pnk sync --kb my-kb
+```
+
+```
+1 indexed, 0 renamed, 0 metadata-only, 0 unchanged, 0 removed
+```
+
+Sync also wrote `docs/retrieval.md.pnk.yaml` — the **sidecar**, holding that document's permanent
+ULID, its title, tags and links. Commit it alongside the document; the ID is the thing every inbound
+link depends on. ([MANIFEST §sidecar](MANIFEST.md#the-sidecar--filepnkyaml))
+
+`pnk sync` is incremental and free. It compares content hashes and re-processes only what changed,
+so running it on every commit costs nothing.
+
+## Choosing a backend
+
+`pnk init` always stamps `sentence-transformers`, because it cannot see which extra you installed.
+**On a `[light]` install, edit `pinakes.toml` before your first sync** — set `provider` in *both*
+blocks:
+
+```toml
+[embedding]
+provider = "fastembed"                 # was "sentence-transformers"
+model    = "BAAI/bge-small-en-v1.5"
+dim      = 384
+
+[rerank]
+provider = "fastembed"                 # this one too
+model    = "BAAI/bge-reranker-base"
+```
+
+The model **ids are identical on both backends**, so only `provider` changes. Skip this and the
+first sync stops with the core-only error above — accurate, but an avoidable wall.
+
+Changing the embedding model later invalidates the index: queries refuse to run rather than return
+garbage, and `pnk doctor` names the mismatch. `pnk sync --rebuild` fixes it, and costs nothing.
+
+## Indexing PDFs
+
+Needs `pinakes[pdf]`. **PDFs are not indexed by default** — the shipped template does not include
+them, and a PDF dropped into a fresh KB is silently skipped:
+
+```
+0 indexed, 0 renamed, 0 metadata-only, 1 unchanged, 0 removed
+```
+
+Add the glob to your manifest yourself:
+
+```toml
+[sources]
+roots   = ["docs/"]
+include = ["**/*.md", "**/*.txt", "**/*.pdf"]   # ← add the PDF glob
+```
+
+Then `pnk sync` extracts, chunks and indexes it like any other document. Extracted text is cached
+under `.pinakes/cache/extract/`, keyed on the file's content hash and the extractor's fingerprint —
+so a `--rebuild` re-indexes without re-extracting.
+
+What the free path does and does not do:
+
+| | |
+|---|---|
+| ✅ | Text-layer PDFs: columns, running heads stripped, hyphenation joined across line and page breaks |
+| ✅ | Page spans recorded per chunk in the index |
+| ⚠️ | **Tables are read column by column, not row by row.** Column detection is geometric, not structural — a disclosed limitation, measured by `pair_adjacency` in the quality harness |
+| ❌ | **Scanned / image-only PDFs.** The free path yields nothing. Needs the paid extractor, [not built yet](STATUS.md) |
+| ❌ | `path:page` citations in results — page spans are in the index but not yet in output ([I8](STATUS.md#v02-increment-ledger)) |
+
+Filter to PDFs with `--source-type pdf`.
+
+## Searching
+
+```bash
+pnk search "how are dense and lexical results combined" --kb my-kb
+```
+
+```
+[1] docs/retrieval.md — Retrieval notes
+    # Retrieval notes
+
+    Hybrid retrieval fuses BM25 with dense vectors using reciprocal rank fusion.
+    (docs/retrieval.md:0-95 (Retrieval notes))
+
+confidence: unknown — no calibrated thresholds in the manifest ([retrieval.confidence])
+retrieval-only result. Paid synthesis (`pnk ask --deep`) is planned for v0.4; until then,
+narrowing the query or adding a filter is the lever you have.
+```
+
+Free, offline, and unlimited. The pipeline is BM25 (FTS5) + dense vectors, fused with reciprocal
+rank fusion, then reranked by a local cross-encoder — all on your CPU.
+
+**Filters** narrow before retrieval, and compose:
+
+```bash
+pnk search "conservation" --tag policy --tag draft     # repeatable; documents carrying the tag
+pnk search "conservation" --path-prefix docs/policies/ # by path
+pnk search "conservation" --source-type pdf            # markdown, text, code or pdf
+pnk search "conservation" --modified-after 20260101    # by document mtime
+pnk search "conservation" -k 20 --json                 # more passages, machine-readable
+```
+
+Tags come from the sidecar, so tagging a document means editing its `.pnk.yaml` — sync picks the
+change up without re-embedding anything.
+
+### About that `confidence: unknown`
+
+It is the honest default, not a bug. Cross-encoder scores are not comparable across queries, so an
+absolute threshold is meaningless until it is **fitted against a golden set for your own corpus**.
+Thresholds fitted on someone else's corpus are not a calibration, so the template ships
+`[retrieval.confidence]` commented out.
+
+To calibrate: write questions with known-correct sources in `eval/questions.yaml`, then run
+`pinakes.calibrate`, which *prints* a `[retrieval.confidence]` block for you to paste — it never
+writes one. Until you do, every result reports `unknown`.
+
+The cost of the heuristic once calibrated is published rather than hidden: measured false-confidence
+on the demo corpus is **0.25** ([STATUS](STATUS.md#measured-numbers)).
+
+## Keeping the index fresh
+
+A KB is normally a git repo, and freshness is git-triggered:
+
+```bash
+pnk install-hooks --kb my-kb
+```
+
+Three hooks, split by what each is allowed to touch:
+
+| Hook | Runs | Why the split |
+|---|---|---|
+| `pre-commit` | `pnk sync --sidecars-only --stage` | Mints IDs for **staged** documents and `git add`s the sidecars, so a document and its permanent ID land in the *same commit*. The only hook that writes into `docs/` |
+| `post-commit` | `pnk sync --quiet` | Index only |
+| `post-merge` | `pnk sync --quiet` | Index only |
+
+Sidecars are authored at pre-commit time precisely so `post-commit` never dirties the tree it just
+committed. `git commit --no-verify` is the escape hatch.
+
+An existing hook that is not ours is left untouched and printed with the line to add. A hook that
+cannot find `pnk` warns and exits 0 — a hook that fails every commit only teaches `--no-verify`.
+
+No hooks? `pnk sync` from cron or CI works identically. It is safe to run concurrently: a second
+sync finding a live lock exits 0 quietly, and `pnk doctor` reports any held lock with its age.
+
+## Using it from an agent
+
+`pnk serve` speaks MCP. Point it at one or more KBs:
+
+```bash
+pnk serve /path/to/my-kb /path/to/other-kb
+```
+
+For Claude Code, add it to `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "pinakes": {
+      "command": "pnk",
+      "args": ["serve", "/path/to/my-kb"]
+    }
+  }
+}
+```
+
+Or without installing anything:
+
+```json
+{
+  "mcpServers": {
+    "pinakes": {
+      "command": "uvx",
+      "args": ["--from", "pinakes[st] @ git+https://github.com/lucagattoni/Pinakes",
+               "pnk", "serve", "/path/to/my-kb"]
+    }
+  }
+}
+```
+
+Three tools, namespaced so they cannot collide with another KB server the agent has loaded:
+
+| Tool | Does |
+|---|---|
+| `pinakes_search` | Ranked, cited passages with a confidence signal |
+| `pinakes_get` | A document by ULID |
+| `pinakes_list_kbs` | The KBs this server was pointed at |
+
+**Multi-hop falls out of composition.** `pinakes_search → pinakes_get → pinakes_search` *is* a
+plan-retrieve-read-refine loop, and your agent already runs it in its own context — on reasoning you
+are already paying for. There is no second agent framework here, and the KB never spends your money.
+
+Two boundaries worth knowing: the server answers **only** about the KBs named on its command line —
+no tool argument accepts a filesystem path — and retrieved text comes back inside a delimited
+evidence field stating it is data to reason about, never instructions to follow. A KB whose
+documents say "ignore previous instructions" is a KB, not an exploit.
+
+## Health checks
+
+```bash
+pnk doctor --kb my-kb
+```
+
+Checks the environment (SQLite version, FTS5, loadable extensions), the backend and whether weights
+are cached, template drift, index/model coherence, calibration validity, orphaned sidecars,
+duplicate IDs, dangling links and link coverage, recorded failures, the extraction cache, the
+50k-chunk NumPy-tier threshold, a held sync lock, and hook status.
+
+Every non-OK check carries a remedy. `--prune` is the only thing that changes anything, and it
+prints every path before removing it.
+
+## Moving, sharing and publishing a KB
+
+A KB is a directory. Move it, copy it, commit it, hand it to someone — `.pinakes/` is derived state
+and rebuilds for free with `pnk sync --rebuild`.
+
+**Commit `docs/`, `pinakes.toml` and every sidecar. Never commit `.pinakes/`** — the shipped
+`.gitignore` already covers it, which is what keeps your index (and, once it exists, your spend
+ledger) off any remote.
+
+⚠️ **Publishing a KB repo publishes every sidecar**, not just your documents — titles, tags and
+`provenance.source` URLs included. Those routinely carry more signal than people expect. The engine
+cannot enforce anything here; check before you push.
+
+Links between KBs use `pnk://<kb-ulid>/<doc-ulid>` — ULIDs, never aliases — so they survive renames,
+moves, and being shared with someone whose local alias for your KB is different. Authoring and
+traversing them lands in v0.3; the *schema* ships today precisely because IDs cannot be retrofitted.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `the sentence-transformers backend is not installed` | `[light]` install, default manifest | Set `provider = "fastembed"` in `[embedding]` **and** `[rerank]` |
+| A PDF syncs as `0 indexed` | `**/*.pdf` missing from `[sources] include` | Add the glob ([above](#indexing-pdfs)) |
+| A PDF indexes with no text | Scanned / image-only — the free path has no OCR | Needs the paid extractor, [not built yet](STATUS.md) |
+| `no extractor for .pdf` | `[pdf]` extra missing | `uv add "pinakes[pdf]"` |
+| Queries refuse to run, naming a model mismatch | Embedding model changed since the index was built | `pnk sync --rebuild` — free |
+| Index refuses to open, naming `schema_version` | Index predates 0.2.0 | `pnk sync --rebuild`. There are no migrations, by design |
+| `confidence: unknown` on every search | No fitted `[retrieval.confidence]` | Expected. Calibrate against your own golden set ([above](#about-that-confidence-unknown)) |
+| Sync exits non-zero listing documents | Per-document failures, isolated by design | `pnk doctor` lists them with the error; the rest of the corpus indexed fine |
+| A sync seems stuck behind a lock | A killed sync, or another machine | `pnk doctor` reports the holder and age; `pnk sync --force-unlock` if it is not this host |
+| Searches slow past ~50k chunks | NumPy tier is exact, not sublinear | Expected; `pnk doctor` warns. The `sqlite-vec` tier is v0.5 — splitting the KB is the honest answer |
+
+Nothing here spends money, and nothing can: see [STATUS](STATUS.md#the-surface-you-can-use-today).
