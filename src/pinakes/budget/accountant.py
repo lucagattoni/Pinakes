@@ -106,6 +106,21 @@ class Accountant:
             confirm_above_eur=self.manifest.budget.confirm_above_eur,
         )
 
+    def call_ids_this_operation(self) -> tuple[str, ...]:
+        """Every `call_id` this operation reserved, in file order — the extraction cache's join
+        key back to the ledger.
+
+        Read from the ledger rather than accumulated in a counter the caller threads back out:
+        the ledger already holds it, keyed by `operation_id`, and a second copy travelling
+        alongside is a second thing that can disagree.
+        """
+        resolved = ledger.resolve(ledger.read(self.path).records)
+        return tuple(
+            call.call_id
+            for call in resolved.calls
+            if call.reservation.operation_id == self.operation_id
+        )
+
     @contextmanager
     def paid_call(
         self, *, model: str, reserved_eur: Decimal, call_id: CallId | None = None

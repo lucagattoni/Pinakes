@@ -43,7 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from pinakes.errors import BackendUnknownError, ExtractionError, ExtractorMissingError
+from pinakes.errors import BackendUnknownError, ExtractorMissingError
 
 PYPDFIUM2 = "pypdfium2"
 CLAUDE_VISION = "claude-vision"
@@ -221,15 +221,26 @@ def _pypdfium2_fingerprint_inputs() -> Mapping[str, str]:
 
 
 def _load_claude_vision() -> Extractor:
+    """Build the paid backend. The `anthropic` probe stays here — the adapter itself imports the
+    client lazily, so without this check a missing `[claude]` extra would surface as an
+    `ImportError` from deep inside a transport rather than as the exact `uv add` line."""
     _import(*_CLAUDE_VISION_REQUIRES, CLAUDE_VISION)
-    raise ExtractionError(
-        "the claude-vision extractor lands in I7b.",
-        remedy="See plans/v0.2.md for the build order.",
-    )
+    from pinakes.extract.claude import ClaudeVisionExtractor
+
+    return ClaudeVisionExtractor()
 
 
 def _claude_vision_fingerprint_inputs() -> Mapping[str, str]:
-    return {"backend": CLAUDE_VISION, "anthropic_version": installed_version("anthropic")}
+    """Deferred to the adapter, which owns the versions that actually shape its output — and
+    imported lazily *here* rather than at module scope, because `claude.py` imports this module
+    (for `ExtractedText`) and a top-level import would close the cycle.
+
+    Still client-free: nothing on this path touches `anthropic`, which is what lets §4.4 hash a
+    paid backend's fingerprint on every query without importing a paid client (I7a, gate 4).
+    """
+    from pinakes.extract.claude import fingerprint_inputs as claude_fingerprint_inputs
+
+    return claude_fingerprint_inputs()
 
 
 _FAKE_PAGE_1 = (

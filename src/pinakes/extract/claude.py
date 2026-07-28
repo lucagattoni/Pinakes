@@ -26,6 +26,11 @@ whether the call was billed, and that — never a bare `finally` — is what dec
   **unresolved**: the server may have generated and billed. `pnk budget --resolve` is the
   documented way out, and it is deliberately not automatic.
 
+**Nothing here is imported eagerly that a *free* command would pay for.** `anthropic` is imported
+inside `AnthropicTransport`, and `pypdfium2` inside the two functions that slice or count pages —
+because §4.4 reaches this module on every query, through `fingerprint_inputs`, on installs with no
+extras at all.
+
 **The transport is a seam.** `Transport` returns plain mappings, so the recorded-fixture suite
 the whole extractor with `anthropic` absent — which is what proves the registry seam rather than
 asserting it. `anthropic` is imported lazily, inside `AnthropicTransport`, for the same reason.
@@ -62,7 +67,6 @@ from pinakes.budget.estimate import MAX_TOKENS, TIMESTAMP_FORMAT, K, estimate_do
 from pinakes.errors import ExtractionError, ExtractorMissingError
 from pinakes.extract import ExtractedText, ExtractionContext
 from pinakes.extract.floors import load_floors
-from pinakes.extract.pdfium import slice_pages
 from pinakes.extract.quality import text_yield
 from pinakes.extract.textpolicy import TEXT_POLICY_VERSION, normalise
 
@@ -660,6 +664,8 @@ def _slice_bytes(
     path and the size. **Reducing K is deliberately not an option** — K is hashed into the
     fingerprint, so a smaller slice would silently be a different extraction.
     """
+    from pinakes.extract.pdfium import slice_pages
+
     try:
         raw = slice_pages(path, first, last)
         encoded_len = len(base64.standard_b64encode(raw))
@@ -757,7 +763,15 @@ class AnthropicTransport:
         except ImportError as exc:  # pragma: no cover - exercised by the `[light]` CI leg
             raise ExtractorMissingError("claude-vision", extra="claude") from exc
         self._anthropic = anthropic
-        self._client = anthropic.Anthropic(timeout=timeout, **build_client_kwargs())
+        kwargs = build_client_kwargs()
+        self._max_retries = kwargs["max_retries"]
+        self._client = anthropic.Anthropic(timeout=timeout, **kwargs)
+
+    @property
+    def max_retries(self) -> int:
+        """What the constructed client actually carries — the `paid`-marked half of the
+        SDK-retry test reads this rather than reaching into a private attribute."""
+        return self._max_retries
 
     def create(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
         try:
@@ -831,3 +845,66 @@ def fingerprint_inputs() -> Mapping[str, str]:
         "text_policy_version": str(TEXT_POLICY_VERSION),
         "pypdfium2_version": installed_version("pypdfium2"),
     }
+
+
+class ClaudeVisionExtractor:
+    """The registered `claude-vision` backend.
+
+    `transport` is injectable so the recorded-fixture suite drives the *whole* extractor — every
+    branch, every retry, every ledger pair — with `anthropic` absent. That is what proves the
+    registry seam rather than asserting it, and it is why nothing here constructs a client until
+    a call is actually about to be made.
+    """
+
+    def __init__(self, transport: Transport | None = None) -> None:
+        self._transport = transport
+
+    def extract(self, path: Path, ctx: ExtractionContext) -> ExtractedText:
+        accountant = ctx.accountant
+        if not isinstance(accountant, Accountant):
+            # Not a defensive check — the accountant is what enforces §5's three ceilings, so a
+            # paid extraction reaching this point without one would be an unbounded spender. It
+            # refuses rather than defaulting to some cap of its own.
+            raise ExtractionError(
+                f"{path.name}: a paid extraction was requested with no accountant.",
+                remedy=(
+                    "This is a pinakes defect, not a configuration problem: the paid path may "
+                    "only run through `pnk sync`, which builds one. Please report it."
+                ),
+            )
+        if not ctx.model:
+            raise ExtractionError(
+                f"{path.name}: `[extraction] model` names no model.",
+                remedy='Set `model` in the manifest\'s `[extraction]` table, e.g. "claude-opus-5".',
+            )
+        from pinakes.extract.pdfium import page_count
+
+        extracted, _tally = extract_document(
+            path,
+            transport=self._transport or AnthropicTransport(),
+            accountant=accountant,
+            model=ctx.model,
+            pages_total=page_count(path),
+            force=ctx.force,
+        )
+        return extracted
+
+
+def estimate_only(
+    path: Path, *, transport: Transport, model: str, pages_total: int
+) -> tuple[int, int]:
+    """Measure the first slice's exact input tokens, and extrapolate the document's request count.
+
+    **A network call, not an offline estimate** — it needs a key, and `--help` says so, because
+    "estimate" reads as free. It generates nothing: `count_tokens` bills no output, which is what
+    makes it the cheap way to tighten the reservation constant before a real run.
+    """
+    from pinakes.extract.pdfium import slice_pages
+
+    first, last = _slice_windows(pages_total)[0]
+    request = build_request(
+        model=model,
+        pdf_bytes=slice_pages(path, first, last),
+        pages_in_slice=last - first + 1,
+    )
+    return transport.count_tokens(request), len(_slice_windows(pages_total))

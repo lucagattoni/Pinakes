@@ -1,0 +1,22 @@
+{
+  "name": "server-error-exhausted",
+  "branch": "500",
+  "why": "Three 500s: the initial attempt plus both transport backoffs, all voided.",
+  "responses": [
+    {
+      "kind": "error",
+      "class": "status",
+      "status": 500
+    },
+    {
+      "kind": "error",
+      "class": "status",
+      "status": 500
+    },
+    {
+      "kind": "error",
+      "class": "status",
+      "status": 500
+    }
+  ]
+}

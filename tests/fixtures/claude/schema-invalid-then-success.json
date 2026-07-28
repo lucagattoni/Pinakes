@@ -1,0 +1,37 @@
+{
+  "name": "schema-invalid-then-success",
+  "branch": "schema-invalid",
+  "why": "A response whose text is not JSON at all, then a clean one.",
+  "responses": [
+    {
+      "kind": "response",
+      "stop_reason": "end_turn",
+      "model": "claude-opus-5-20260401",
+      "content": [
+        {
+          "type": "text",
+          "text": "I'm happy to help! Here are the pages:"
+        }
+      ],
+      "usage": {
+        "input_tokens": 30300,
+        "output_tokens": 9
+      }
+    },
+    {
+      "kind": "response",
+      "stop_reason": "end_turn",
+      "model": "claude-opus-5-20260401",
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"pages\": [{\"page\": 1, \"text\": \"Page 1 of the slice.\\nSome transcribed prose.\"}, {\"page\": 2, \"text\": \"Page 2 of the slice.\\nSome transcribed prose.\"}, {\"page\": 3, \"text\": \"Page 3 of the slice.\\nSome transcribed prose.\"}, {\"page\": 4, \"text\": \"Page 4 of the slice.\\nSome transcribed prose.\"}, {\"page\": 5, \"text\": \"Page 5 of the slice.\\nSome transcribed prose.\"}]}"
+        }
+      ],
+      "usage": {
+        "input_tokens": 30300,
+        "output_tokens": 90
+      }
+    }
+  ]
+}

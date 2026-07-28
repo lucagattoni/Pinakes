@@ -1,0 +1,27 @@
+{
+  "name": "refusal-twice",
+  "branch": "refusal",
+  "why": "Two refusals: retried once, then recorded as a failure.",
+  "responses": [
+    {
+      "kind": "response",
+      "stop_reason": "refusal",
+      "model": "claude-opus-5-20260401",
+      "content": [],
+      "usage": {
+        "input_tokens": 30300,
+        "output_tokens": 0
+      }
+    },
+    {
+      "kind": "response",
+      "stop_reason": "refusal",
+      "model": "claude-opus-5-20260401",
+      "content": [],
+      "usage": {
+        "input_tokens": 30300,
+        "output_tokens": 0
+      }
+    }
+  ]
+}

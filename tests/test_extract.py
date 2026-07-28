@@ -8,7 +8,7 @@ from types import ModuleType
 
 import pytest
 
-from pinakes.errors import BackendUnknownError, ExtractionError, ExtractorMissingError
+from pinakes.errors import BackendUnknownError, ExtractorMissingError
 from pinakes.extract import (
     CLAUDE_VISION,
     FAKE,
@@ -122,14 +122,28 @@ def test_a_missing_extra_names_the_install_command(
     assert f'uv add "pinakes[{extra}]"' in exc_info.value.remedy
 
 
-def test_claude_vision_stub_names_its_own_landing_increment(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The one remaining stub — pypdfium2 stopped being one in I3b (below)."""
+def test_claude_vision_is_a_real_extractor_not_a_stub(monkeypatch: pytest.MonkeyPatch) -> None:
+    """I7b's own landing: `load_extractor(CLAUDE_VISION)` used to raise, naming this increment,
+    the moment `anthropic` imported cleanly — now it must return a working `Extractor`. No stub
+    remains in the registry."""
     monkeypatch.setattr(builtins, "__import__", _faking("anthropic"))
-    with pytest.raises(ExtractionError) as exc_info:
-        load_extractor(CLAUDE_VISION)
-    assert "I7b" in exc_info.value.message
+    extractor = load_extractor(CLAUDE_VISION)
+    assert hasattr(extractor, "extract")
+
+
+def test_the_paid_backends_fingerprint_needs_no_extra_installed() -> None:
+    """§4.4 hashes a backend's fingerprint on *every query*, on whatever install the user has.
+
+    The paid adapter reaches `pypdfium2` (to slice) and `anthropic` (to call), and importing
+    either from module scope would make a coherence check on a `claude-vision` KB fail outright on
+    a core-only install — or, worse, succeed while pulling a paid client into a free process.
+    """
+    inputs = fingerprint_inputs(CLAUDE_VISION)
+    assert inputs["backend"] == CLAUDE_VISION
+    assert "request_shape_version" in inputs
+    assert "text_policy_version" in inputs
+    # LAYOUT_VERSION is excluded on purpose: this backend genuinely never runs `layout.py`.
+    assert "layout_version" not in inputs
 
 
 def test_pypdfium2_is_a_real_extractor_not_a_stub(monkeypatch: pytest.MonkeyPatch) -> None:
