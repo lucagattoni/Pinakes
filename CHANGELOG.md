@@ -111,6 +111,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   correct pair to fit it against is (native layer → Claude's output), and no Claude output exists
   before I7b.
 
+### Fixed
+
+- **`main` had been CI-red since I2's first scanned-corpus run — through I3a and I3b — on a
+  cross-platform rendering bug nobody had checked GitHub Actions for.** `test_scanned_regeneration_
+  within_tolerance` failed deterministically on the `check (light pdf)` / `check (light pdf
+  claude)` jobs with the identical signature every time: `scanned-clean: 8006 pixels differ by >32
+  levels`. `pdfwriter.py` wrote every text fixture as `/BaseFont /Helvetica` with no embedded font
+  program, relying on the PDF reader's own substitution — and pypdfium2's prebuilt binaries
+  substitute a *different* font per platform (macOS has a real Helvetica; `ubuntu-latest` doesn't).
+  Same word-wrap, same layout, different glyph outlines, so the scanned stratum (rasterized through
+  pdfium at fixture-generation time) baked in whatever glyphs the generating machine's pdfium
+  substituted. Confirmed directly, not just theorized: an `ubuntu:24.04` Docker container
+  reproduced CI's exact number (8,006 px) on the first try, and a diff heatmap showed every changed
+  pixel sitting exactly on a glyph edge — same text, same positions, different anti-aliasing.
+  Measured cross-platform noise across all ten scanned pages ranged 507-8,262 px, which ruled out
+  simply raising `MAX_CHANGED_PIXELS`: the test's own docstring establishes its detection target as
+  a single moved word, plausibly smaller than that noise floor, so a threshold wide enough to
+  absorb it would likely have gone blind to the exact defect class the test exists to catch. Fixed
+  at the root: `pdfwriter.py` now embeds a subsetted, real TrueType font
+  (`tests/pdf-corpus/fonts/LiberationSans-Subset.ttf`, SIL OFL 1.1 — the project's first and only
+  third-party binary asset, chosen for Helvetica/Arial metric compatibility so none of
+  `generate.py`'s hand-placed coordinates needed to change) instead of a bare base-14 name, so
+  every platform rasterizes the same glyph outlines. Re-ran the same Docker reproduction after the
+  fix: 0 pixels changed across every scanned page, not merely under tolerance. `Font` drops its now
+  always-"Helvetica" `base_font` field; `_font_object` gained a real `/FontDescriptor`/`/FontFile2`/
+  `/Widths` embed, derived from the subset's own hmtx/head/hhea/OS2 tables (documented, reproducible
+  commands in `tests/pdf-corpus/fonts/README.md`) rather than assumed. All nineteen fixtures were
+  regenerated; no `.expected.txt` changed, confirming the font swap altered no extracted character.
+
 ## [0.1.4] — 20260727 21:19
 
 ### Added

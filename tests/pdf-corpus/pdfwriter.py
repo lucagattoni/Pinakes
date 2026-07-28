@@ -1,18 +1,33 @@
-"""A minimal, dependency-free PDF writer.
+"""A minimal PDF writer with exactly one third-party asset: an embedded subsetted font.
 
 Rule 11/decision from `plans/v0.2.md` I2: the sixteen text-layer fixtures are raw content streams,
 no layout engine, so nothing here hides the coordinates under a library's own line-breaking or
 kerning decisions. This module is the whole PDF object model the generator needs and nothing more:
-objects, an xref table, a trailer, page trees, base-14 font resources (optionally with a custom
-`/Encoding /Differences` array and a `/ToUnicode` CMap, for ligatures and the soft hyphen), simple
-line/rectangle drawing for table borders, and Flate-compressed grayscale image XObjects for the
-scanned stratum.
+objects, an xref table, a trailer, page trees, an embedded TrueType font resource (optionally with
+a custom `/Encoding /Differences` array and a `/ToUnicode` CMap, for ligatures and the soft hyphen),
+simple line/rectangle drawing for table borders, and Flate-compressed grayscale image XObjects for
+the scanned stratum.
 
-**Verified, not assumed (this increment):** Pillow's own `Image.save(path, "PDF", ...)` always
-writes grayscale/RGB images through `/DCTDecode` (JPEG) — there is no parameter to force a lossless
-filter. The plan's own text says Pillow "writes the image-only PDF... Flate-compressed", which is
-not achievable through Pillow's PDF plugin as shipped (checked against its `PdfImagePlugin.py`
-source, Pillow 12.3.0). So Pillow supplies pixel manipulation only (rendering via pypdfium2, then
+**Why embedded, not base-14 (post-I3b fix, 20260728):** every text fixture used to reference
+`/BaseFont /Helvetica` with no embedded program, relying on the PDF reader's own font substitution.
+pypdfium2 ships platform-specific prebuilt binaries, and its substitute for a non-embedded
+"Helvetica" differs by platform (macOS has a real Helvetica; the `ubuntu-latest` CI runner doesn't,
+so pdfium falls back to its own bundled font). Same word-wrap, same layout, different glyph outlines
+— `test_scanned_regeneration_within_tolerance` rasterizes the scanned stratum through pdfium at
+generation time, baking that platform's substitute glyphs into the committed fixture, so CI's
+regeneration (on a different platform) never matched. Confirmed directly (not just theorized): a
+Docker `ubuntu:24.04` render of `scanned-clean` against the macOS-committed one showed 6,500-8,262
+changed pixels per page, concentrated exactly on glyph edges (docs/RETROSPECTIVES.md). Embedding the
+actual glyph outlines removes the platform-dependent substitution step entirely — every platform
+rasterizes the same outlines. See `tests/pdf-corpus/fonts/README.md` for the font's provenance,
+license (SIL OFL 1.1 — the project's only third-party binary asset) and how to regenerate the
+subset.
+
+**Verified, not assumed (I2):** Pillow's own `Image.save(path, "PDF", ...)` always writes
+grayscale/RGB images through `/DCTDecode` (JPEG) — there is no parameter to force a lossless filter.
+The plan's own text says Pillow "writes the image-only PDF... Flate-compressed", which is not
+achievable through Pillow's PDF plugin as shipped (checked against its `PdfImagePlugin.py` source,
+Pillow 12.3.0). So Pillow supplies pixel manipulation only (rendering via pypdfium2, then
 `Image.rotate`/`ImageEnhance.Contrast`); this module writes the final PDF, compressing the raw
 pixel bytes with `zlib` directly — which is exactly what PDF's `/FlateDecode` filter is.
 
@@ -26,8 +41,125 @@ import datetime
 import zlib
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 PRODUCER = "pinakes-pdf-corpus-generator"
+
+_FONTS_DIR = Path(__file__).parent / "fonts"
+_EMBEDDED_FONT_PATH = _FONTS_DIR / "LiberationSans-Subset.ttf"
+_SUBSET_TAG = "PNKSUB"  # PDF convention: 6 uppercase letters + "+" + the original PostScript name.
+
+# `/FontDescriptor` metrics, scaled from the subset's own 2048 unitsPerEm to PDF's 1000-unit glyph
+# space (`round(value * 1000 / 2048)`), read from `LiberationSans-Subset.ttf`'s head/hhea/OS2 tables
+# — see tests/pdf-corpus/fonts/README.md for the exact fontTools introspection command.
+_FONT_BBOX = (-544, -303, 1302, 980)
+_ASCENT = 905
+_DESCENT = -212
+_CAP_HEIGHT = 688
+_ITALIC_ANGLE = 0
+_FLAGS = 32  # Nonsymbolic (bit 6): a plain Latin text font using standard encoding.
+_STEM_V = 88  # Conventional Regular-weight-sans estimate, not measured: FontFile2 supplies the
+# real outlines, so this PDF-spec-required-but-informational field never affects rendering.
+
+# `/Widths` for codes 0x20-0x7E, this subset's own hmtx advance widths (same scale as above).
+_ASCII_WIDTHS = [
+    278,
+    278,
+    355,
+    556,
+    556,
+    889,
+    667,
+    191,
+    333,
+    333,
+    389,
+    584,
+    278,
+    333,
+    278,
+    278,
+    556,
+    556,
+    556,
+    556,
+    556,
+    556,
+    556,
+    556,
+    556,
+    556,
+    278,
+    278,
+    584,
+    584,
+    584,
+    556,
+    1015,
+    667,
+    667,
+    722,
+    722,
+    667,
+    611,
+    778,
+    722,
+    278,
+    500,
+    667,
+    556,
+    833,
+    722,
+    778,
+    667,
+    778,
+    722,
+    667,
+    611,
+    722,
+    667,
+    944,
+    667,
+    667,
+    611,
+    278,
+    278,
+    278,
+    469,
+    556,
+    333,
+    556,
+    556,
+    500,
+    556,
+    556,
+    278,
+    556,
+    556,
+    222,
+    222,
+    500,
+    222,
+    833,
+    556,
+    556,
+    556,
+    556,
+    333,
+    500,
+    278,
+    556,
+    500,
+    722,
+    500,
+    500,
+    500,
+    334,
+    260,
+    334,
+    584,
+]
+_NAMED_GLYPH_WIDTHS = {"fi": 500, "fl": 500}  # Only names ever placed via `Font.differences`.
 
 
 def pdf_date(epoch: int) -> str:
@@ -43,7 +175,10 @@ def escape_pdf_string(raw: bytes) -> bytes:
 
 @dataclass(frozen=True, slots=True)
 class Font:
-    """One `/Font` resource: a base-14 name, optionally a custom encoding and ToUnicode map.
+    """One `/Font` resource: the embedded subset, optionally a custom encoding and ToUnicode map.
+
+    Every instance embeds the same `LiberationSans-Subset.ttf` — there is only one physical
+    typeface in this corpus, so unlike everything else `Font` carries no per-instance face choice.
 
     `differences`: {byte_code: glyph_name} for codes that need a non-standard glyph (ligatures).
     `to_unicode`: {byte_code: codepoint} for codes whose Unicode value the default encoding gets
@@ -52,14 +187,13 @@ class Font:
     """
 
     name: str
-    base_font: str = "Helvetica"
     differences: dict[int, str] = field(default_factory=dict[int, str])
     to_unicode: dict[int, int] = field(default_factory=dict[int, int])
 
 
 @dataclass(frozen=True, slots=True)
 class TextRun:
-    """One `Tj` placement: base-14 font, size, baseline origin, and the literal bytes to show."""
+    """One `Tj` placement: font resource name, size, baseline origin, and the bytes to show."""
 
     font: str
     size: float
@@ -133,14 +267,28 @@ class _Writer:
         return b"".join(parts)
 
 
-def _font_object(writer: _Writer, font: Font) -> int:
-    if not font.differences and not font.to_unicode:
-        header = (
-            f"<< /Type /Font /Subtype /Type1 /BaseFont /{font.base_font} "
-            f"/Encoding /WinAnsiEncoding >>"
-        ).encode()
-        return writer.add_object(header)
+def _font_widths(font: Font) -> tuple[int, int, list[int]]:
+    """`/FirstChar`, `/LastChar` and `/Widths` covering 0x20-0x7E plus any `differences` codes.
 
+    `first_char`/`last_char` both extend outward for a `differences` code past either end —
+    symmetric, even though nothing in this corpus currently declares one below 0x20 — so a code
+    outside 0x20-0x7E that isn't a declared difference (the `else` below) can never be mistaken
+    for one inside it by `code - 0x20` indexing negatively into `_ASCII_WIDTHS`.
+    """
+    first_char = min((0x20, *font.differences))
+    last_char = max((0x7E, *font.differences))
+    widths: list[int] = []
+    for code in range(first_char, last_char + 1):
+        if code in font.differences:
+            widths.append(_NAMED_GLYPH_WIDTHS[font.differences[code]])
+        elif 0x20 <= code <= 0x7E:
+            widths.append(_ASCII_WIDTHS[code - 0x20])
+        else:
+            widths.append(0)  # Never shown: outside 0x20-0x7E and not a declared difference.
+    return first_char, last_char, widths
+
+
+def _font_object(writer: _Writer, font: Font) -> int:
     encoding_ref = None
     if font.differences:
         diffs = " ".join(f"{code} /{name}" for code, name in sorted(font.differences.items()))
@@ -161,7 +309,26 @@ def _font_object(writer: _Writer, font: Font) -> int:
         full_to_unicode = {byte: byte for byte in range(0x20, 0x7F)} | font.to_unicode
         tounicode_ref = writer.add_object(*_to_unicode_stream(full_to_unicode))
 
-    parts = [f"/Type /Font /Subtype /Type1 /BaseFont /{font.base_font}"]
+    font_bytes = _EMBEDDED_FONT_PATH.read_bytes()
+    font_file_ref = writer.add_object(
+        (f"<< /Length {len(font_bytes)} /Length1 {len(font_bytes)} >>").encode(), font_bytes
+    )
+    base_font = f"{_SUBSET_TAG}+LiberationSans"
+    descriptor_header = (
+        f"<< /Type /FontDescriptor /FontName /{base_font} /Flags {_FLAGS} "
+        f"/FontBBox [{_FONT_BBOX[0]} {_FONT_BBOX[1]} {_FONT_BBOX[2]} {_FONT_BBOX[3]}] "
+        f"/ItalicAngle {_ITALIC_ANGLE} /Ascent {_ASCENT} /Descent {_DESCENT} "
+        f"/CapHeight {_CAP_HEIGHT} /StemV {_STEM_V} /FontFile2 {font_file_ref} 0 R >>"
+    ).encode()
+    descriptor_ref = writer.add_object(descriptor_header)
+
+    first_char, last_char, widths = _font_widths(font)
+    widths_str = " ".join(str(w) for w in widths)
+    parts = [
+        f"/Type /Font /Subtype /TrueType /BaseFont /{base_font}",
+        f"/FirstChar {first_char} /LastChar {last_char} /Widths [{widths_str}]",
+        f"/FontDescriptor {descriptor_ref} 0 R",
+    ]
     parts.append(f"/Encoding {encoding_ref} 0 R" if encoding_ref else "/Encoding /WinAnsiEncoding")
     if tounicode_ref:
         parts.append(f"/ToUnicode {tounicode_ref} 0 R")
@@ -206,7 +373,7 @@ def _content_stream(page: Page) -> bytes:
 def write_text_pdf(
     pages: Sequence[Page], fonts: dict[str, Font], epoch: int, *, corrupt: bool = False
 ) -> bytes:
-    """Render a multi-page, base-14-font, no-dependency PDF from `Page`/`TextRun` descriptions."""
+    """Render a multi-page PDF with the embedded subset font from `Page`/`TextRun` descriptions."""
     writer = _Writer()
     date = pdf_date(epoch)
     info = writer.add_object(

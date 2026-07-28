@@ -209,3 +209,25 @@ def test_corrupt_header_fixture_fails_closed() -> None:
 
     with pytest.raises(pdfium.PdfiumError):
         pdfium.PdfDocument(str(CORPUS_DIR / "pathological-corrupt-header.pdf"))
+
+
+def test_text_fixtures_embed_a_font_program() -> None:
+    """Every text-layer fixture must carry its own `/FontFile2`, never a bare base-14 `/BaseFont`.
+
+    Guards the fix for the cross-platform rendering bug (docs/RETROSPECTIVES.md, 20260728): a
+    non-embedded `/BaseFont /Helvetica` let pypdfium2 substitute a different font per platform,
+    which `test_scanned_regeneration_within_tolerance` only catches on a *second* platform (it
+    passes on whichever platform generated the committed fixtures in the first place — originally
+    macOS, for three merges nobody had checked CI on). A future revert to a bare base-14 name would
+    be invisible to that test locally for the same reason; this one is platform-independent by
+    only ever reading committed bytes, no rendering involved.
+
+    No `pdf_runnable()`/`pypdfium2` needed — this is a byte-level check straight against what's
+    already committed, so it also runs on the `[light]`-only CI leg with no `[pdf]` extra at all.
+    """
+    fixtures = [f for f in _spec_module().FIXTURES if not f.scanned]
+    assert fixtures, "expected at least one text-layer fixture"
+    for fixture in fixtures:
+        data = (CORPUS_DIR / f"{fixture.name}.pdf").read_bytes()
+        assert b"/FontFile2" in data, f"{fixture.name}: no embedded font program"
+        assert b"/BaseFont /Helvetica" not in data, f"{fixture.name}: reverted to bare base-14"

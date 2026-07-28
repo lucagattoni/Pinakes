@@ -799,3 +799,72 @@ word, and pair counts, and sums of the same) — corrected to `int`, the type th
 no behavioural effect found. *Lesson, shared: "does this test still pass if I break the thing it
 claims to guard" is a cheap, five-minute check worth running on every new test before trusting it —
 two of these three would have shipped a false sense of coverage without it.*
+
+## Cross-platform scanned-fixture rendering — `main` CI-red since I2, unnoticed for three pushes (20260728 08:13)
+
+**HIGH — `./check.sh` passing locally was silently substituted for "CI is green," and nobody was
+checking which one had actually been verified.** I2's merge, I3a's merge, and I3b's merge each
+pushed to `main` believing the suite was green, because each one *was* green — on macOS, the only
+platform any of them had run on. `gh run list` (prompted by the user asking to check GitHub
+Actions, not by any check of my own) showed all three runs had actually failed on
+`check (light pdf)` / `check (light pdf claude)`, with the identical signature every time:
+`test_scanned_regeneration_within_tolerance` — `scanned-clean: 8006 pixels differ by >32 levels`.
+Three consecutive merges landed on a red `main` and every one of them was reported to the user as
+successfully shipped. *Lesson: "the local gate is green" and "CI is green" are different claims —
+one is evidence for the other, not a substitute for it, and the project's own standing rule (check
+actual CI status before building on top of a branch) applies with equal force to checking it after
+pushing to one.*
+
+**Root cause, confirmed empirically rather than assumed.** Every text fixture referenced `/BaseFont
+/Helvetica` with no embedded font program (`pdfwriter.py`, since I2), relying on the PDF reader's
+own substitution for a font it doesn't have. pypdfium2 ships platform-specific prebuilt binaries;
+macOS has a real Helvetica installed, `ubuntu-latest` does not, so pdfium substitutes a different
+font on each — metrically compatible (identical word-wrap, identical line breaks) but with
+different glyph outlines. The scanned stratum rasterizes `baseline-12p` through pdfium *at
+fixture-generation time*, baking whichever platform generated it into the committed PDF, so CI's
+own regeneration (on a different platform) could never match. Confirmed, not theorized: a Docker
+`ubuntu:24.04` container reproduced CI's exact number (8,006 px) on the first attempt, and a diff
+heatmap of the two renders showed every changed pixel sitting exactly on a glyph edge — same text,
+same word positions, same line breaks, different anti-aliasing. Measuring all ten scanned pages
+found cross-platform noise ranging 507-8,262 px depending on how much text and how much the
+contrast reduction already suppressed it (`scanned-low-contrast` came in far lower than
+`scanned-clean`, consistent with the tolerance test's own documented noise-floor behavior).
+
+**The obvious fix (raise the tolerance) was rejected on evidence, not instinct.** The measured
+noise ceiling (8,262 px) sits far closer to the test's stated detection target — a single moved
+word, "a small fraction of a page" per the test's own docstring — than to the documented
+whole-page-shift signal (33,451 px) the 300 px threshold was originally sized against. Raising
+`MAX_CHANGED_PIXELS` above the noise ceiling would have unblocked CI immediately, but a real
+single-word regression is plausibly smaller than 8,262 px, meaning a tolerance wide enough to
+absorb cross-platform noise would very likely also have absorbed exactly the class of regression
+this test exists to catch — silently, with no way to tell from a green gate. Presented three
+options (raise the tolerance / scope the test to one platform / embed a real font) with honest
+pros and cons rather than picking unilaterally, since it's a public-repo, shared-CI-affecting
+change to a previously "verified" threshold. Fixed at the root instead: `pdfwriter.py` now embeds
+a subsetted TrueType font (`tests/pdf-corpus/fonts/LiberationSans-Subset.ttf`, SIL OFL 1.1 —
+Liberation Sans specifically for its Helvetica/Arial metric compatibility, so none of
+`generate.py`'s hand-placed coordinates needed to change) instead of a bare base-14 name, so every
+platform rasterizes the same outlines regardless of what fonts it has installed. Re-running the
+identical Docker reproduction after the fix measured 0 pixels changed across every scanned page —
+not merely under tolerance, bit-for-bit identical. *Lesson: when a tolerance-based test's noise
+floor turns out to be closer to its detection target than expected, re-measure what the tolerance
+would need to become and check that against the smallest real regression it's meant to catch,
+before touching the number — a gate that still passes is not evidence it still catches anything.*
+
+**MEDIUM, from independent review — the fix itself shipped with no regression test.** An
+adversarial re-verification (independently reproducing the pre-fix failure and the post-fix 0-pixel
+result in its own Docker run, and re-deriving the subset font byte-for-byte from a genuine Debian
+package to confirm `tests/pdf-corpus/fonts/README.md`'s recipe is real) found that nothing in the
+diff would have caught a future revert to bare base-14 fonts: the only guard was the pre-existing
+tolerance test, whose whole failure mode *is* passing locally and only failing on a second platform
+— exactly what let this bug live unnoticed for three merges. Fixed with a platform-independent test
+(`test_text_fixtures_embed_a_font_program`) asserting every non-scanned fixture's committed bytes
+contain `/FontFile2` and never a bare `/BaseFont /Helvetica` — verified to actually fail against
+`89d4fb5`'s committed fixtures before being trusted, and deliberately written with no `pypdfium2`
+dependency so it runs even on the `[light]`-only CI leg. The same pass found `_font_widths`'
+`first_char` hardcoded at `0x20` with no symmetric downward extension (unlike `last_char`), which
+would have indexed `_ASCII_WIDTHS` negatively for a hypothetical `differences` code below `0x20` —
+unreachable today (grepped every `Font(...)` call site) but fixed to be symmetric regardless. *Lesson:
+"the existing test would have caught this eventually, on some other platform" is not the same claim
+as "this increment shipped its own regression test" — a fix for a bug that was invisible on one
+platform needs a check that doesn't depend on which platform runs it.*
