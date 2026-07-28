@@ -60,9 +60,9 @@ LEDGER_NAME: Final = "ledger.jsonl"
 #: Bumped only if a *reader* would misread an older line. New optional keys do not bump it.
 LEDGER_SCHEMA_VERSION: Final = 1
 
-#: One record must fit a single atomic append. Well above any line this module writes (~350 bytes);
-#: the check exists so a future field cannot silently cross the boundary the atomicity claim rests
-#: on.
+#: One record must fit a single atomic append. Well above any line this module writes — measured at
+#: 375 bytes with real ULIDs and every optional field populated (20260728) — so the check exists
+#: only so a future field cannot silently cross the boundary the atomicity claim rests on.
 MAX_RECORD_BYTES: Final = 4096
 
 #: The one place money is quantised — see the module docstring for why this is not the cent.
