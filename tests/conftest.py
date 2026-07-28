@@ -5,13 +5,17 @@ the documented example drift apart, these tests are where it shows up.
 """
 
 import os
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Sequence
 from importlib.util import find_spec
 from pathlib import Path
 
+import numpy as np
 import pytest
 
+from pinakes.embed import ModelInfo, Vectors, register_embedding_backend, register_reranker
 from pinakes.ids import mint_kb_id
+from pinakes.init import init
 
 # Pinned once, here, for whatever fixture-generation code reads it (I2's corpus generator).
 # Only its stability matters, not its value: set 20260727 21:40, changing it invalidates nothing
@@ -119,6 +123,95 @@ def kb_root(tmp_path: Path) -> Path:
     (root / "docs").mkdir(parents=True)
     (root / "pinakes.toml").write_text(VALID_MANIFEST.format(kb_id=mint_kb_id()), encoding="utf-8")
     return root
+
+
+FAKE_DIM = 3
+
+
+class _FakeBackend:
+    """Instant and deterministic — the tests using this are about money, not embeddings."""
+
+    def embed(self, texts: Sequence[str]) -> Vectors:
+        rows = list(texts)
+        if not rows:
+            return np.zeros((0, FAKE_DIM), dtype=np.float32)
+        return np.ascontiguousarray(
+            np.vstack([np.ones(FAKE_DIM, dtype=np.float32) for _ in rows]), dtype=np.float32
+        )
+
+    def count_tokens(self, text: str) -> int:
+        return len(text.split())
+
+    def info(self) -> ModelInfo:
+        return ModelInfo("fake", "fake-model", "rev1", FAKE_DIM, 512)
+
+
+class _FakeReranker:
+    def score(self, query: str, passages: Sequence[str]) -> list[float]:
+        return [0.0] * len(passages)
+
+    def info(self) -> ModelInfo:
+        return ModelInfo("fake", "fake-reranker", "v1", 0, 512)
+
+
+def _rewrite(text: str, pattern: str, replacement: str) -> str:
+    """Substitute once, refusing a no-op. `str.replace` and `re.sub` both return the string
+    unchanged when they match nothing and report it to nobody — which is exactly how I7a built a
+    "paid" KB that was never paid (docs/RETROSPECTIVES.md, 20260728)."""
+    edited, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
+    if count != 1:
+        raise AssertionError(f"manifest rewrite matched nothing: {pattern!r}")
+    return edited
+
+
+@pytest.fixture
+def make_fake_kb(tmp_path: Path) -> Callable[..., Path]:
+    """Build a real KB from the shipped template, with instant fake models.
+
+    A factory rather than a KB, so a test can vary the one thing it is about — the extraction
+    backend, `[budget] timezone`, a cap — without hand-stamping a manifest that then quietly
+    diverges from the template the product actually writes.
+    """
+    register_embedding_backend("fake", lambda section, offline: _FakeBackend())
+    register_reranker("fake", lambda section, offline: _FakeReranker())
+
+    counter = {"n": 0}
+
+    def _make(
+        *, extraction_backend: str | None = None, budget: dict[str, str] | None = None
+    ) -> Path:
+        counter["n"] += 1
+        result = init(tmp_path / f"fake-kb{counter['n']}", now="20260728 12:00")
+        path = result.root / "pinakes.toml"
+        text = path.read_text(encoding="utf-8")
+        for pattern, replacement in (
+            (r'^provider = "sentence-transformers"$', 'provider = "fake"'),
+            (r'^model    = "BAAI/bge-small-en-v1\.5"$', 'model    = "fake-model"'),
+            (r"^dim      = 384$", f"dim      = {FAKE_DIM}"),
+            (r'^model    = "BAAI/bge-reranker-base"$', 'model    = "fake-reranker"'),
+        ):
+            text = _rewrite(text, pattern, replacement)
+        # `[budget]` already exists in the template, so its keys are edited in place: a second
+        # `[budget]` table is a TOML duplicate-key error, not an override. A key the template does
+        # not stamp (it omits `daily_eur`, leaving the parser's default) is inserted into the
+        # existing table instead of replaced.
+        for key, value in (budget or {}).items():
+            if re.search(rf"^{key}\s*=", text, flags=re.MULTILINE):
+                text = _rewrite(text, rf"^{key}\s*=.*$", f"{key} = {value}")
+            else:
+                text = _rewrite(text, r"^\[budget\]$", f"[budget]\n{key} = {value}")
+        # `[extraction]` does not exist in the template, so it is appended.
+        if extraction_backend is not None:
+            text += f'\n[extraction]\nbackend = "{extraction_backend}"\nmodel   = "claude-opus-5"\n'
+        path.write_text(text, encoding="utf-8")
+        return result.root
+
+    return _make
+
+
+@pytest.fixture
+def fake_kb(make_fake_kb: Callable[..., Path]) -> Path:
+    return make_fake_kb()
 
 
 @pytest.fixture

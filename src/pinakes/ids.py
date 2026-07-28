@@ -23,6 +23,15 @@ KbId = NewType("KbId", str)
 DocId = NewType("DocId", str)
 """A document's permanent identity, living in its sidecar."""
 
+OperationId = NewType("OperationId", str)
+"""One user-facing invocation — a whole `pnk sync`, a whole `pnk ask --deep`. The unit
+`[budget] per_operation_eur` bounds (I6b). Not permanent: it identifies a run, not a thing."""
+
+CallId = NewType("CallId", str)
+"""One API call. The unit a ledger reservation/outcome pair keys on, and what an extraction cache
+entry joins against (I6b). Distinct from `OperationId` because one operation makes many calls, and
+one word for both made `per_operation_eur` ambiguous by a factor of forty."""
+
 ID_LENGTH = 26
 
 
@@ -32,6 +41,14 @@ def mint_kb_id() -> KbId:
 
 def mint_doc_id() -> DocId:
     return DocId(str(ULID()))
+
+
+def mint_operation_id() -> OperationId:
+    return OperationId(str(ULID()))
+
+
+def mint_call_id() -> CallId:
+    return CallId(str(ULID()))
 
 
 def _parse(raw: str, *, kind: str) -> str:

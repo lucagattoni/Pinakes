@@ -9,6 +9,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Budget I/O: the ledger, `pnk budget`, and hooks that cannot spend (I6b)** —
+  `.pinakes/ledger.jsonl` is append-only, one atomic sub-4KB `O_APPEND` write per record, fsynced.
+  Three record kinds keyed by `call_id`: a **reservation** written *before* the call, then exactly
+  one **reconciliation** or **void**. A void closes a reservation at zero and is written **only
+  when no response was received** — never from a bare `finally`, which cannot tell "the call never
+  happened" from "the call returned and then something else raised", and in the second case would
+  record €0 for money that left the account, permanently, in a file nothing can edit. A reservation
+  with neither successor is reported as `unknown outcome`, never dropped and never counted as zero.
+
+  Every line carries `cost_usd`, the `usd_per_eur` rate and the price table's `as_of`; EUR is
+  computed at read time. Two identifiers, `operation_id` and `call_id`, because one word for both
+  made `per_operation_eur` ambiguous by a factor of forty. **No query text and no document
+  content** — asserted by running a sentinel through the call protocol and grepping the whole file.
+
+  `pnk budget` shows day and month spend against their caps with the rate behind each total (and
+  says so when a window spans two), the reconciled/voided/unknown counts, and the exact
+  `pnk budget --resolve <call_id> --actual <eur>` line that closes a timeout — an **append**, never
+  an edit. `pnk doctor` gains a price-table age check and an unknown-outcome check that warns past
+  a quarter of a window. `make budget` wraps the command.
+
+  I6a's pure arithmetic is now wired to a real ledger by `budget/accountant.py`, and the wiring is
+  tested rather than assumed: a KB holding €4.99 of a €5.00 month refuses the next call with an
+  untouched per-operation cap. **Nothing calls any of it yet** — the paid extractor is I7b.
+
+- **`pnk init --ci`** — writes `.github/workflows/pinakes.yml`, designed in DESIGN §6.3 and never
+  built in v0.1. It refuses to overwrite an existing workflow, the same trust rule `install-hooks`
+  applies to a foreign git hook.
+
 - **The paid-path allowlist gate (I7a)** — `.paid-path-allowlist` names every module under `src/`
   permitted to import a paid-API client, and `check.sh`, CI and `tests/test_paid_path.py` all read
   that one file, so three copies cannot drift. It ships **empty**: the gate lands before
@@ -28,7 +56,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   This replaces the unconditional `grep` that lived only in CI's `build` job. Unconditional admits
   no exceptions, so it would have turned `main` red on every commit from I7b onward.
 
+### Changed
+
+- **All four machine-driven callers force the free extractor.** The three git hooks and
+  `pnk init --ci`'s workflow now write `pnk sync --extract=pypdfium2` explicitly, print one line
+  saying so, and carry the same line as a comment in what they generate. All four are
+  non-interactive: without the flag, a KB configured for a paid backend would abort on every commit
+  for want of a terminal to confirm from; with a `--yes` in the hook it would spend afresh on every
+  commit. The test **executes** each hook against a `claude-vision` KB and asserts the free backend
+  extracted and no ledger was written, with a control that strips the flag and shows the same hook
+  failing — asserting the string is *present* passes on a hook that never runs.
+
+- **`--yes` no longer authorises destroying paid cache entries.** `pnk sync --yes --clear-cache` in
+  a cron job could have thrown away paid extractions unattended, which is exactly what that
+  guarantee claims to forbid. Clearing a cache holding paid entries non-interactively now requires
+  `--clear-cache=paid` as well, which no hook and no generated workflow writes. `--yes`'s `--help`
+  now states what it authorises: this run's prompts, no cap raised.
+
 ### Fixed
+
+- **The budget accountant handed out a `PaidCall` instead of a context manager (I6b review).** That
+  put the void-vs-unknown decision and the closing write back in the caller's hands — undoing the
+  one guarantee `budget/ledger.py` exists to enforce, for the caller it was written for (I7b's
+  retry loop).
+
+- **A ledger line with a `usd_per_eur` of `0` crashed `pnk budget`.** Every euro figure is a
+  division computed lazily, so the `DivisionByZero` escaped the malformed-line counting whose whole
+  purpose is that one bad line cannot take the report down. Rates are validated positive at parse
+  time.
+
+- **The first reservation a KB ever wrote was not durable.** `fsync` on the file does not make its
+  *directory entry* durable, so a crash could lose it entirely while every later record survived.
+
+- **`pnk doctor` was blind to hooks inside a git worktree**, where `.git` is a file pointing
+  elsewhere: both hook checks read `root/.git/hooks` directly rather than through
+  `hooks.hooks_dir`, which has resolved that since v0.1. It reported "0 of 3 installed" on a KB
+  whose hooks were installed and running.
+
+- **`pnk budget` printed its windows in `[budget] timezone` and its operation list in the machine's
+  local zone**, and `pnk doctor` printed a raw 28-digit `Decimal` division as a euro amount.
+
+- **`pnk init --ci` explained the git hooks instead of the workflow it had just written** — one
+  shared notice with a subject baked into it, printed by two callers.
+
+- **`pnk budget` truncated its operation list silently**, and `--clear-cache`'s bare form parsed to
+  a value named `free` — which reads as "clear only the free entries" when both spellings clear the
+  whole cache. The list now says how many it is not showing, and the bare form is `all`.
 
 - **`pnk doctor` and `pnk sync` imported the paid API client on a KB configured for
   `claude-vision`.** Both reported a backend's availability by *loading* it —

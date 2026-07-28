@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 from pinakes import store
+from pinakes.budget.prices import Prices, load_prices
 from pinakes.doctor import Status, diagnose, prune
 from pinakes.embed import (
     ModelInfo,
@@ -417,3 +418,154 @@ def test_every_problem_carries_a_remedy(kb: Path) -> None:
     for check in diagnose(load(kb)).checks:
         if check.status is not Status.OK:
             assert check.remedy, f"{check.name} has no remedy"
+
+
+# --- the budget checks (I6b) -----------------------------------------------------------------
+
+
+def test_the_price_table_is_reported_with_its_date(kb: Path) -> None:
+    status, detail = checks(kb)["price table"]
+    assert status is Status.OK
+    assert "dated " in detail
+
+
+def test_a_stale_price_table_warns_and_names_the_setting(
+    kb: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Staleness is a WARN here and a refusal at estimate time — deliberately never a CI gate, or
+    a quiet weekend with no code change would fail the build.
+
+    The shipped table is current by construction, so the *table* is aged rather than the clock:
+    moving `max_price_age_days` cannot reach this branch (its minimum is 1 day and today's table
+    is 0 days old), and freezing the clock would test a mock rather than the comparison.
+    """
+    import pinakes.doctor as doctor_module
+
+    current = load_prices()
+    aged = Prices(as_of="20200101 00:00", usd_per_eur=current.usd_per_eur, models=current.models)
+    monkeypatch.setattr(doctor_module, "load_prices", lambda: aged)
+
+    status, detail = checks(kb)["price table"]
+    assert status is Status.WARN
+    assert "max_price_age_days" in detail
+    assert "20200101 00:00" in detail
+
+
+def test_a_ledger_with_no_unknown_outcomes_is_quiet(kb: Path) -> None:
+    status, detail = checks(kb)["unknown outcomes"]
+    assert status is Status.OK
+    assert detail == "none"
+
+
+def _reserve(kb: Path, *, call_id: str, cost_usd: str, rate: str = "1.00") -> None:
+    from datetime import UTC, datetime
+    from decimal import Decimal
+
+    from pinakes.budget.ledger import Record, RecordKind, append, ledger_path
+
+    append(
+        ledger_path(kb / ".pinakes"),
+        Record(
+            kind=RecordKind.RESERVATION,
+            at=datetime.now(UTC),
+            operation_id="OP1",
+            call_id=call_id,
+            operation="sync",
+            kb_id=load(kb).kb.id,
+            model="claude-opus-5",
+            cost_usd=Decimal(cost_usd),
+            usd_per_eur=Decimal(rate),
+            prices_as_of="20260728 12:00",
+        ),
+    )
+
+
+def test_an_unknown_outcome_is_warned_about_with_the_way_out(kb: Path) -> None:
+    _reserve(kb, call_id="C1", cost_usd="0.01")
+    status, detail = checks(kb)["unknown outcomes"]
+    assert status is Status.WARN
+    assert "1 call(s)" in detail
+
+    remedy = {c.name: c.remedy for c in diagnose(load(kb)).checks}["unknown outcomes"]
+    assert remedy is not None and "pnk budget --resolve" in remedy
+
+
+def test_unknown_outcomes_past_a_quarter_of_a_window_say_which_one(kb: Path) -> None:
+    """Three timeouts consume a €1.00 day; sixteen consume a €5.00 month. The threshold is what
+    turns "there are some unknowns" into "this is about to lock you out"."""
+    path = kb / "pinakes.toml"
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace("[budget]", "[budget]\ndaily_eur = 1.00"), encoding="utf-8")
+    _reserve(kb, call_id="C1", cost_usd="0.30")
+
+    status, detail = checks(kb)["unknown outcomes"]
+    assert status is Status.WARN
+    assert "over a quarter of daily_eur" in detail
+    assert "monthly_eur" not in detail  # €0.30 is well under a quarter of €5.00
+
+
+def test_a_free_backend_reports_nothing_to_explain_about_machine_driven_spend(kb: Path) -> None:
+    status, detail = checks(kb)["machine-driven spend"]
+    assert status is Status.OK
+    assert "cannot spend" in detail
+
+
+def test_a_paid_backend_with_hooks_says_the_hooks_force_the_free_one(kb: Path) -> None:
+    """The split is deliberate and invisible: a user who configured `claude-vision` and installed
+    hooks would otherwise have no way to know why commits never produce a paid extraction."""
+    from pinakes.extract import CLAUDE_VISION
+    from pinakes.hooks import FREE_BACKEND_FLAG, install
+
+    path = kb / "pinakes.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + f'\n[extraction]\nbackend = "{CLAUDE_VISION}"\nmodel   = "claude-opus-5"\n',
+        encoding="utf-8",
+    )
+    (kb / ".git").mkdir()
+    install(kb)
+
+    status, detail = checks(kb)["machine-driven spend"]
+    assert status is Status.OK
+    assert FREE_BACKEND_FLAG in detail
+    assert CLAUDE_VISION in detail
+
+
+def test_a_paid_backend_without_hooks_says_no_automatic_sync_runs(kb: Path) -> None:
+    from pinakes.extract import CLAUDE_VISION
+
+    path = kb / "pinakes.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + f'\n[extraction]\nbackend = "{CLAUDE_VISION}"\nmodel   = "claude-opus-5"\n',
+        encoding="utf-8",
+    )
+    status, detail = checks(kb)["machine-driven spend"]
+    assert status is Status.OK
+    assert "no pinakes hooks installed" in detail
+
+
+def test_hooks_are_found_inside_a_git_worktree(kb: Path, tmp_path: Path) -> None:
+    """In a worktree or submodule `.git` is a *file* pointing elsewhere. Probing
+    `root/.git/hooks` directly names a directory that does not exist, so every hook reads as
+    absent and both hook checks quietly report the wrong thing on exactly the layout this
+    project's own CLAUDE.md mandates for every change."""
+    from pinakes.hooks import install
+
+    real_gitdir = tmp_path / "real-gitdir"
+    real_gitdir.mkdir()
+    (kb / ".git").write_text(f"gitdir: {real_gitdir}\n", encoding="utf-8")
+    install(kb)
+    assert (real_gitdir / "hooks" / "pre-commit").is_file()
+
+    status, detail = checks(kb)["git hooks"]
+    assert status is Status.OK, detail
+
+
+def test_the_unknown_outcome_total_is_formatted_not_a_raw_decimal(kb: Path) -> None:
+    """`cost_eur` is a division: $0.10 at 1.08 is €0.0925925925925925925925925926, and a bare
+    f-string puts all 28 significant digits into a health-check line."""
+    _reserve(kb, call_id="C1", cost_usd="0.10", rate="1.08")
+    _status, detail = checks(kb)["unknown outcomes"]
+    assert "€0.0926" in detail
+    assert "0.09259259" not in detail

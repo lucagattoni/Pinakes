@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from pinakes import template
+from pinakes.ci import write_workflow
 from pinakes.errors import InitError
 from pinakes.ids import KbId, mint_kb_id
 from pinakes.manifest import MANIFEST_NAME
@@ -31,6 +32,9 @@ class InitResult:
     kb_id: KbId
     template: str
     created: list[Path]
+    workflow: Path | None = None
+    """The GitHub Actions workflow `--ci` wrote, or `None`. Returned rather than merely created so
+    the CLI can say, in one line, that it forces the free extractor (§6.3)."""
 
 
 def init(
@@ -39,6 +43,7 @@ def init(
     name: str | None = None,
     template_name: str = template.DEFAULT_TEMPLATE,
     now: str | None = None,
+    ci: bool = False,
 ) -> InitResult:
     info = template.describe(template_name)
     root = root.resolve()
@@ -72,7 +77,12 @@ def init(
     gitignore.write_text(GITIGNORE, encoding="utf-8")
 
     created = [manifest_path, gitignore, root / "docs", *template.copy_extras(template_name, root)]
-    return InitResult(root=root, kb_id=kb_id, template=info.reference, created=created)
+    workflow = write_workflow(root) if ci else None
+    if workflow is not None:
+        created.append(workflow)
+    return InitResult(
+        root=root, kb_id=kb_id, template=info.reference, created=created, workflow=workflow
+    )
 
 
 def _check_target(root: Path) -> None:

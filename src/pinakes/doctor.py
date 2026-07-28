@@ -13,17 +13,30 @@ orphaned sidecars, after printing every path it is about to remove (§6.4).
 import sqlite3
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path, PurePosixPath
+from zoneinfo import ZoneInfo
 
 from pinakes import store, template
+from pinakes.budget.estimate import TIMESTAMP_FORMAT as PRICE_TIMESTAMP_FORMAT
+from pinakes.budget.ledger import CallState, ledger_path
+from pinakes.budget.ledger import read as read_ledger
+from pinakes.budget.ledger import resolve as ledger_resolve
+from pinakes.budget.prices import load_prices
+from pinakes.budget.summary import euros
+from pinakes.budget.window import in_window
 from pinakes.embed import hf_cache_dir, load_backend, load_reranker
 from pinakes.errors import (
     CoherenceError,
     ExtractionCoherenceError,
     ExtractionError,
     ExtractorMissingError,
+    HookError,
+    LedgerError,
     PinakesError,
+    PricesMissingError,
 )
 from pinakes.extract import (
     backend_requirement,
@@ -33,6 +46,7 @@ from pinakes.extract import (
     paid_backend_names,
 )
 from pinakes.extract import cache as extract_cache
+from pinakes.hooks import FREE_BACKEND_FLAG, HOOKS, hooks_dir
 from pinakes.ids import DocId
 from pinakes.lock import LOCK_NAME, read_holder
 from pinakes.manifest import Manifest
@@ -89,6 +103,9 @@ def diagnose(manifest: Manifest) -> Report:
     checks.extend(_index(manifest))
     checks.append(_lock(manifest))
     checks.append(_hooks(manifest))
+    checks.append(_machine_driven_split(manifest))
+    checks.append(_prices(manifest))
+    checks.append(_unknown_outcomes(manifest))
     return Report(tuple(checks), tuple(orphans))
 
 
@@ -525,7 +542,6 @@ def _lock(manifest: Manifest) -> Check:
 
 
 def _hooks(manifest: Manifest) -> Check:
-    hooks = manifest.root / ".git" / "hooks"
     if not (manifest.root / ".git").exists():
         return Check(
             "git hooks",
@@ -533,18 +549,146 @@ def _hooks(manifest: Manifest) -> Check:
             "not a git repository",
             "Freshness is git-triggered by design; a loose folder needs manual or cron `pnk sync`.",
         )
-    installed = [
-        name
-        for name in ("pre-commit", "post-commit", "post-merge")
-        if (hooks / name).is_file() and HOOK_MARKER in (hooks / name).read_text(encoding="utf-8")
-    ]
-    if len(installed) == 3:
+    installed = _installed_hooks(manifest)
+    if len(installed) == len(HOOKS):
         return Check("git hooks", Status.OK, "pre-commit, post-commit and post-merge installed")
     return Check(
         "git hooks",
         Status.WARN,
-        f"{len(installed)} of 3 installed",
+        f"{len(installed)} of {len(HOOKS)} installed",
         "Run `pnk install-hooks` to keep the index fresh automatically.",
+    )
+
+
+def _installed_hooks(manifest: Manifest) -> list[str]:
+    """Which of our hooks are installed. Resolved through `hooks.hooks_dir`, not
+    `root/.git/hooks`: inside a git worktree or submodule `.git` is a *file* pointing elsewhere, so
+    the naive path names a directory that does not exist and every hook reads as absent."""
+    try:
+        directory = hooks_dir(manifest.root)
+    except HookError:
+        return []
+    return [
+        name
+        for name in HOOKS
+        if (directory / name).is_file()
+        and HOOK_MARKER in (directory / name).read_text(encoding="utf-8", errors="replace")
+    ]
+
+
+def _machine_driven_split(manifest: Manifest) -> Check:
+    """Make the paid/free split visible rather than surprising (I6b, §6.3).
+
+    On a KB configured for a paid backend, every machine-driven sync — the three hooks and the
+    `pnk init --ci` workflow — forces `--extract=pypdfium2`. That is deliberate and it is also
+    invisible: a user who configured `claude-vision` and installed hooks would otherwise have no
+    way to know why their commits never produce a paid extraction. The count of documents this
+    leaves waiting is already reported by the `awaiting paid extraction` check, which is why it is
+    named here rather than recomputed.
+    """
+    backend = manifest.extraction.backend
+    if not is_paid_backend(backend):
+        return Check("machine-driven spend", Status.OK, "the configured backend cannot spend")
+    installed = _installed_hooks(manifest)
+    if not installed:
+        return Check(
+            "machine-driven spend",
+            Status.OK,
+            f"{backend} configured; no pinakes hooks installed, so no automatic sync runs",
+        )
+    return Check(
+        "machine-driven spend",
+        Status.OK,
+        f"{backend} configured, but {len(installed)} hook(s) force {FREE_BACKEND_FLAG} — a hook "
+        "is non-interactive and can never spend",
+        "Paid extraction is a `pnk sync` you run. See `awaiting paid extraction` above for how "
+        "many documents that leaves.",
+    )
+
+
+def _prices(manifest: Manifest) -> Check:
+    """Staleness is a WARN here and a refusal at estimate time — deliberately never a CI gate, or a
+    quiet weekend with no code change would fail the build (plans/v0.2.md, I6a)."""
+    try:
+        prices = load_prices()
+    except PricesMissingError as exc:
+        return Check("price table", Status.FAIL, exc.message, exc.remedy)
+    try:
+        as_of = datetime.strptime(prices.as_of, PRICE_TIMESTAMP_FORMAT)
+    except ValueError:
+        return Check(
+            "price table",
+            Status.FAIL,
+            f"as_of {prices.as_of!r} is not a {PRICE_TIMESTAMP_FORMAT} timestamp",
+            "This is a packaging defect in pinakes itself; report it.",
+        )
+    age = (datetime.now() - as_of).days
+    limit = manifest.budget.max_price_age_days
+    if age > limit:
+        return Check(
+            "price table",
+            Status.WARN,
+            f"prices.toml is dated {prices.as_of}, {age} days old "
+            f"(`[budget] max_price_age_days` is {limit})",
+            "Upgrade pinakes to refresh the bundled prices. Past this age estimation refuses "
+            "outright rather than quietly using numbers that may no longer be true.",
+        )
+    return Check("price table", Status.OK, f"dated {prices.as_of}, {age} day(s) old")
+
+
+def _unknown_outcomes(manifest: Manifest) -> Check:
+    """A reservation with neither a reconciliation nor a void counts at its reserved amount
+    forever (I6a's rule), so unknowns quietly eat the windows they belong to. Compared against the
+    day and month caps only, and each against the unknowns that actually fall in *that* window —
+    a per-operation cap bounds the run in progress, which past operations' unknowns do not touch.
+    """
+    path = ledger_path(manifest.state_dir)
+    try:
+        resolved = ledger_resolve(read_ledger(path).records)
+    except LedgerError as exc:
+        return Check("unknown outcomes", Status.FAIL, exc.message, exc.remedy)
+
+    unknown = [call for call in resolved.calls if call.state is CallState.UNKNOWN]
+    if not unknown:
+        return Check("unknown outcomes", Status.OK, "none")
+
+    now = datetime.now(UTC)
+    timezone = ZoneInfo(manifest.budget.timezone)
+    day_total = Decimal("0")
+    month_total = Decimal("0")
+    for call in unknown:
+        in_day, in_month = in_window(call.reservation.at, now=now, timezone=timezone)
+        if in_day:
+            day_total += call.effective_eur
+        if in_month:
+            month_total += call.effective_eur
+
+    breached = [
+        name
+        for name, total, cap in (
+            ("daily_eur", day_total, manifest.budget.daily_eur),
+            ("monthly_eur", month_total, manifest.budget.monthly_eur),
+        )
+        if total * 4 > cap
+    ]
+    # Formatted, never printed raw: `cost_eur` is a division, so a bare f-string renders it at
+    # `Decimal`'s full 28 significant digits.
+    detail = (
+        f"{len(unknown)} call(s) neither reconciled nor voided — €{euros(month_total)} of this "
+        f"month's budget, €{euros(day_total)} of today's"
+    )
+    remedy = (
+        "`pnk budget` lists them; check the vendor's usage dashboard and close each with "
+        "`pnk budget --resolve <call_id> --actual <eur>`, which appends a reconciliation rather "
+        "than editing the ledger."
+    )
+    if not breached:
+        return Check("unknown outcomes", Status.WARN, detail, remedy)
+    return Check(
+        "unknown outcomes",
+        Status.WARN,
+        f"{detail}; over a quarter of {', '.join(breached)}",
+        remedy,
     )
 
 

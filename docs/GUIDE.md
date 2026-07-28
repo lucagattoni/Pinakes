@@ -225,18 +225,57 @@ Three hooks, split by what each is allowed to touch:
 
 | Hook | Runs | Why the split |
 |---|---|---|
-| `pre-commit` | `pnk sync --sidecars-only --stage` | Mints IDs for **staged** documents and `git add`s the sidecars, so a document and its permanent ID land in the *same commit*. The only hook that writes into `docs/` |
-| `post-commit` | `pnk sync --quiet` | Index only |
-| `post-merge` | `pnk sync --quiet` | Index only |
+| `pre-commit` | `pnk sync --sidecars-only --stage --extract=pypdfium2` | Mints IDs for **staged** documents and `git add`s the sidecars, so a document and its permanent ID land in the *same commit*. The only hook that writes into `docs/` |
+| `post-commit` | `pnk sync --index-only --extract=pypdfium2` | Index only |
+| `post-merge` | `pnk sync --index-only --extract=pypdfium2` | Index only |
 
 Sidecars are authored at pre-commit time precisely so `post-commit` never dirties the tree it just
 committed. `git commit --no-verify` is the escape hatch.
+
+**Every hook forces the free extractor**, and `install-hooks` says so when it writes them. A hook is
+non-interactive: on a KB configured for a paid backend, a hook without that flag would either abort
+on every commit (nothing to confirm an estimate from) or spend afresh on every commit. A scanned PDF
+committed this way is indexed with its empty free extraction and left *stale*, so a later
+`pnk sync --extract=<paid-backend>` you run yourself picks it up — never skipped forever. `pnk
+doctor` reports the combination and how many documents are waiting.
+
+`pnk init --ci` writes a GitHub Actions workflow that does the same thing, for the same reason.
 
 An existing hook that is not ours is left untouched and printed with the line to add. A hook that
 cannot find `pnk` warns and exits 0 — a hook that fails every commit only teaches `--no-verify`.
 
 No hooks? `pnk sync` from cron or CI works identically. It is safe to run concurrently: a second
 sync finding a live lock exits 0 quietly, and `pnk doctor` reports any held lock with its age.
+
+## Watching what it costs
+
+Nothing in the shipped surface spends money yet — but the accounting is already there, and
+`pnk budget` reads it:
+
+```bash
+pnk budget --kb my-kb
+```
+
+It prints today's and this month's spend against their caps, how many calls were reconciled, voided
+or left with an **unknown outcome**, and the last few operations. On a KB that has never spent it
+prints zeros; it can only ever read.
+
+Caps live in `[budget]` ([MANIFEST](MANIFEST.md#budget)) and there are three, all enforced before
+every call: `per_operation_eur` bounds one `pnk sync`, while `daily_eur` and `monthly_eur` bound
+*sequences* of them — a per-operation cap alone is no protection against a hook-driven KB syncing
+thirty times a day. **They are per KB**: ten paid KBs have ten monthly allowances, and there is no
+global cap in this release.
+
+An `unknown outcome` is a call that timed out: it may or may not have billed, so it keeps consuming
+its reserved amount until you check the vendor's dashboard and close it:
+
+```bash
+pnk budget --kb my-kb --resolve <call_id> --actual 0.043
+```
+
+That **appends** a reconciliation — `.pinakes/ledger.jsonl` is append-only, survives every
+`--rebuild` and every `--clear-cache`, and is the one thing in `.pinakes/` that cannot be
+recomputed. Never edit it by hand.
 
 ## Using it from an agent
 

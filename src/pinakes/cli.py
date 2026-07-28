@@ -83,14 +83,23 @@ def _init_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("path", type=Path, help="directory to create the KB in")
     parser.add_argument("--name", default=None, help="human-facing name (default: the directory)")
     parser.add_argument("--template", default="notes", help="blueprint to stamp from")
+    parser.add_argument(
+        "--ci",
+        action="store_true",
+        help="also write a GitHub Actions workflow that syncs with the free extractor",
+    )
 
 
 def run_init(args: argparse.Namespace) -> int:
+    from pinakes.hooks import FREE_BACKEND_NOTICE
     from pinakes.init import init
 
-    result = init(args.path, name=args.name, template_name=args.template)
+    result = init(args.path, name=args.name, template_name=args.template, ci=args.ci)
     print(f"created {result.root} from {result.template}")
     print(f"  kb id: {result.kb_id}  (permanent — never edit it)")
+    if result.workflow is not None:
+        print(f"  workflow: {result.workflow.relative_to(result.root)}")
+        print(f"  it {FREE_BACKEND_NOTICE}")
     print("\nNext:")
     print(f"  1. put Markdown files in {result.root / 'docs'}")
     print("  2. `pnk sync` to index them, then commit the sidecars it writes")
@@ -274,19 +283,97 @@ def _install_hooks_arguments(parser: argparse.ArgumentParser) -> None:
 def run_install_hooks(args: argparse.Namespace) -> int:
     """`pnk install-hooks`. Exits 1 if any existing hook was left alone rather than clobbered."""
     from pinakes import manifest as manifest_module
-    from pinakes.hooks import install, suggestion
+    from pinakes.hooks import FREE_BACKEND_NOTICE, install, suggestion
 
     loaded = manifest_module.discover(args.kb)
     written, refused = install(loaded.root)
 
     for status in written:
         print(f"installed {status.name}")
+    if written:
+        print(f"each hook {FREE_BACKEND_NOTICE}")
     for status in refused:
         print(f"\nleft {status.path} alone — it is not ours, and editing it is not our call.")
         print("To wire pinakes in yourself, add this line:")
         print(f"    {suggestion(status.name)}")
 
     return EXIT_FAILURE if refused else EXIT_OK
+
+
+def _budget_arguments(parser: argparse.ArgumentParser) -> None:
+    _kb_argument(parser)
+    parser.add_argument(
+        "--resolve",
+        default=None,
+        metavar="CALL_ID",
+        help="close an `unknown outcome` call by appending a reconciliation (needs --actual)",
+    )
+    parser.add_argument(
+        "--actual",
+        default=None,
+        metavar="EUR",
+        help="with --resolve: what the call actually cost, in euros, from the vendor's dashboard",
+    )
+
+
+def run_budget(args: argparse.Namespace) -> int:
+    """`pnk budget`. Reads the ledger; `--resolve` appends to it and never edits it.
+
+    Money arrives from the command line as a string and is parsed with `Decimal(text)` directly —
+    never through `float` — for the reason CLAUDE.md states: `Decimal(0.05)` is not
+    `Decimal("0.05")`, and a ledger written from the first carries an imprecision nobody can
+    explain later.
+    """
+    from datetime import UTC, datetime
+    from decimal import Decimal, InvalidOperation
+    from zoneinfo import ZoneInfo
+
+    from pinakes import manifest as manifest_module
+    from pinakes.budget import ledger as ledger_module
+    from pinakes.budget.accountant import caps_of
+    from pinakes.budget.summary import euros, render, summarise
+
+    loaded = manifest_module.discover(args.kb)
+    path = ledger_module.ledger_path(loaded.state_dir)
+
+    if args.resolve is not None:
+        if args.actual is None:
+            raise PinakesError(
+                "--resolve needs --actual.",
+                remedy="`pnk budget --resolve <call_id> --actual <eur>`, from the vendor's usage "
+                "dashboard. Guessing would defeat the point of resolving it.",
+            )
+        try:
+            actual = Decimal(args.actual)
+        except InvalidOperation as exc:
+            raise PinakesError(
+                f"--actual {args.actual!r} is not a number.",
+                remedy="Use a plain decimal in euros, for example 0.043.",
+            ) from exc
+        record = ledger_module.resolve_unknown(path, call_id=args.resolve, actual_eur=actual)
+        print(f"resolved {record.call_id} at €{euros(record.cost_eur)} (appended, nothing edited).")
+        return EXIT_OK
+    if args.actual is not None:
+        raise PinakesError(
+            "--actual only means something with --resolve.",
+            remedy="`pnk budget --resolve <call_id> --actual <eur>`.",
+        )
+
+    summary = summarise(
+        path,
+        kb_name=loaded.kb.name,
+        kb_id=loaded.kb.id,
+        caps=caps_of(loaded.budget),
+        timezone=ZoneInfo(loaded.budget.timezone),
+        now=datetime.now(UTC),
+    )
+    for line in render(summary):
+        print(line)
+    print(
+        "\n`monthly_eur` is per KB: ten paid KBs have ten monthly allowances. "
+        "There is no global cap in this release."
+    )
+    return EXIT_OK
 
 
 def _serve_arguments(parser: argparse.ArgumentParser) -> None:
@@ -349,13 +436,28 @@ def _sync_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="with an explicit free --extract: overwrite a paid extraction (prints what it drops)",
     )
+    # `all` rather than `free` as the bare form's value: both spellings clear the *whole* cache, so
+    # a value named `free` would read as "clear only the free entries", which is not what either
+    # does. The value names what you are authorising, not what is removed.
     parser.add_argument(
         "--clear-cache",
-        action="store_true",
-        help="empty the extraction cache, after confirming (never the ledger)",
+        nargs="?",
+        const="all",
+        default=None,
+        choices=("all", "paid"),
+        metavar="paid",
+        help=(
+            "empty the extraction cache, after confirming (never the ledger); "
+            "=paid also authorises destroying entries a paid backend wrote"
+        ),
     )
     parser.add_argument(
-        "--yes", action="store_true", help="skip --clear-cache's confirmation prompt (cron use)"
+        "--yes",
+        action="store_true",
+        help=(
+            "answer this run's confirmation prompts (cron use). Raises no cap, and does not "
+            "authorise clearing paid cache entries — that needs --clear-cache=paid as well"
+        ),
     )
     parser.add_argument("-q", "--quiet", action="store_true", help="print only problems")
 
@@ -384,7 +486,7 @@ def run_sync(args: argparse.Namespace) -> int:
 
     loaded = manifest_module.discover(args.kb)
 
-    if args.clear_cache:
+    if args.clear_cache is not None:
         return _run_clear_cache(loaded, args)
 
     report = sync(
@@ -419,10 +521,20 @@ def run_sync(args: argparse.Namespace) -> int:
 def _run_clear_cache(loaded: Manifest, args: argparse.Namespace) -> int:
     """`sync()` never prompts (it does no I/O beyond the filesystem, like every other function in
     that module) — this is the one place that reads a TTY and asks, then re-calls with `yes=True`
-    once confirmed."""
+    once confirmed.
+
+    Two authorisations (I6b). `--yes` answers the entry-count prompt. Entries a paid backend wrote
+    need a second, explicit one: either `--clear-cache=paid`, or an interactive `y` to a prompt
+    that names the paid count. What is forbidden is the unattended case — `--yes` alone, no
+    terminal, paid entries present — because that is the line a cron job or a hook could carry.
+    """
     from pinakes.sync import SyncOptions, sync
 
-    report = sync(loaded, options=SyncOptions(clear_cache=True, yes=args.yes))
+    paid_authorised = args.clear_cache == "paid"
+    report = sync(
+        loaded,
+        options=SyncOptions(clear_cache=True, clear_cache_paid=paid_authorised, yes=args.yes),
+    )
     if report.busy:
         print("another sync is already running; nothing to do.")
         return EXIT_OK
@@ -432,14 +544,20 @@ def _run_clear_cache(loaded: Manifest, args: argparse.Namespace) -> int:
             f"this will remove {report.cache_pending_entries} cache entries "
             f"({report.cache_pending_bytes} bytes)."
         )
+        paid = report.cache_pending_paid_entries
+        if paid:
+            print(f"{paid} of them were written by a paid backend and cannot be re-created free.")
         if not sys.stdin.isatty():
-            print("no terminal to confirm from; re-run with --yes.", file=sys.stderr)
+            flags = "--yes --clear-cache=paid" if paid else "--yes"
+            print(f"no terminal to confirm from; re-run with {flags}.", file=sys.stderr)
             return EXIT_FAILURE
         answer = input("proceed? [y/N] ").strip().lower()
         if answer != "y":
             print("aborted; nothing removed.")
             return EXIT_OK
-        report = sync(loaded, options=SyncOptions(clear_cache=True, yes=True))
+        report = sync(
+            loaded, options=SyncOptions(clear_cache=True, clear_cache_paid=True, yes=True)
+        )
 
     print(f"removed {report.cache_cleared} entries ({report.cache_cleared_bytes} bytes).")
     return EXIT_OK
@@ -482,6 +600,13 @@ COMMANDS: tuple[Command, ...] = (
         "I12",
         runner=lambda args: run_install_hooks(args),
         arguments=_install_hooks_arguments,
+    ),
+    Command(
+        "budget",
+        "Show spend by day, month and operation (--resolve closes an unknown outcome)",
+        "I6b",
+        runner=lambda args: run_budget(args),
+        arguments=_budget_arguments,
     ),
     Command(
         "serve",
