@@ -1,0 +1,18 @@
+# Fitted by `make pdf-eval` (`pinakes.extract.quality.fit_running_head_threshold` /
+# `fit_text_yield_floor`) against `tests/pdf-corpus/`. `fitted_on` names the increment that produced
+# this fit and when, since re-fitting is never automatic (plans/v0.2.md, I3b) and this file can go
+# stale in place while still reading as evidence.
+#
+# running_head_threshold (T): midpoint of the lowest true-positive recurrence (1.000 -- both
+# "PINAKES ARCHIVE REVIEW" on headers-repeating's 10 pages and the digit-normalised "Page #" on
+# footers-pagenum's 3) and the highest true-negative recurrence (0.333 -- every ordinary body line
+# in this stratum recurs on exactly 1 of its own fixture's pages; declared per fixture in
+# tests/pdf-corpus/spec.py::KNOWN_RUNNING_HEAD_SIGNATURES).
+#
+# text_yield_floor: non-whitespace characters per page. Midpoint of the highest scanned-stratum
+# yield (0.0 -- no native text layer exists to extract) and the lowest non-scanned yield (131.5,
+# hyphenation-soft's own two short pages). Separates empty from non-empty and nothing finer
+# (decision 12) -- not a quality bar.
+running_head_threshold = 0.666667
+text_yield_floor = 65.75
+fitted_on = "I3b, 20260728 01:54"

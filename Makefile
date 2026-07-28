@@ -11,7 +11,7 @@ SHELL := /bin/sh
 DEMO_KB := tests/demo-kb
 
 .PHONY: help install check fmt fmt-check lint types types-fast test test-model eval demo doctor \
-        corpus build smoke clean release-check
+        corpus pdf-eval build smoke clean release-check
 
 help:  ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -55,6 +55,10 @@ eval:  ## Golden-set evaluation against the baseline (needs `make demo` first)
 
 corpus:  ## Regenerate tests/pdf-corpus/ in place — review with `git diff` before committing
 	SOURCE_DATE_EPOCH=1785181219 uv run --frozen python3 tests/pdf-corpus/generate.py
+
+pdf-eval:  ## Extraction-quality baseline + floor-drift check against tests/pdf-corpus (needs [pdf])
+	uv run --frozen python -m pinakes.extract.quality tests/pdf-corpus \
+		--check-floors src/pinakes/extract/floors.toml
 
 build:  ## Build wheel and sdist
 	uv build

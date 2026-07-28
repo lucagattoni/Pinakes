@@ -151,7 +151,15 @@ def _font_object(writer: _Writer, font: Font) -> int:
 
     tounicode_ref = None
     if font.to_unicode:
-        tounicode_ref = writer.add_object(*_to_unicode_stream(font.to_unicode))
+        # A *partial* ToUnicode CMap breaks pdfium's fallback for every byte it doesn't cover —
+        # verified against 5.12.1 (I3b): mapping only 0xAD (soft hyphen) left the *ordinary* ASCII
+        # hyphen ('-', 0x2D) in the same string reporting as U+FFFE, not its own U+002D, the moment
+        # this font's text was ever run through real character-level extraction. WinAnsiEncoding
+        # matches ASCII exactly across 0x20-0x7E, so every printable ASCII byte gets an identity
+        # mapping here unless the caller's own override claims it — `font.to_unicode` states only
+        # the bytes that need to differ from that default, never the ones that don't.
+        full_to_unicode = {byte: byte for byte in range(0x20, 0x7F)} | font.to_unicode
+        tounicode_ref = writer.add_object(*_to_unicode_stream(full_to_unicode))
 
     parts = [f"/Type /Font /Subtype /Type1 /BaseFont /{font.base_font}"]
     parts.append(f"/Encoding {encoding_ref} 0 R" if encoding_ref else "/Encoding /WinAnsiEncoding")

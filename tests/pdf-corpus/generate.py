@@ -351,26 +351,54 @@ def build_ligatures_a() -> tuple[list[Page], str]:
 
 
 def build_hyphenation_soft() -> tuple[list[Page], str]:
-    """Uses `SOFT_HYPHEN_FONT` (passed in by `build_all`'s `emit`) for the U+00AD ToUnicode map."""
-    line1 = b"The clerk filed the coopera-"
-    line2 = b"tion agreement under the archive" + bytes([0xAD]) + b"al index."
+    """Uses `SOFT_HYPHEN_FONT` (passed in by `build_all`'s `emit`) for the U+00AD ToUnicode map.
+
+    Two pages, the ordinary line-break hyphen at the very end of page 1 and its continuation at the
+    very start of page 2 — not two text-showing operations on one shared page, which is what the
+    original, single-page version of this fixture did. Verified against pdfium 5.12.1: whenever a
+    text-showing operation ending in an ordinary hyphen is *immediately* followed by another one
+    starting lowercase on the *same page*, pdfium's own text-extraction reconstruction reports that
+    hyphen as U+FFFE instead of U+002D — reproduced across every construction tried in between (one
+    shared `BT`/`ET` block, separate blocks, a `Td` or `T*` between the two `Tj` calls) before
+    finding the one pattern that never triggers it: the identical hyphen-then-lowercase shape split
+    across a *page* boundary, exactly what `build_hyphenation_page_break` already does safely a few
+    fixtures below (docs/RETROSPECTIVES.md, I3b). The soft hyphen inside "archive[U+00AD]al"
+    was never affected — it sits mid-run, inside one continuous `Tj` string, never at a text-object
+    boundary — so only where the *ordinary* hyphen falls needed to move.
+    """
     page1 = Page(
         runs=(
-            TextRun(font=FONT_NAME, size=BODY_SIZE, x=MARGIN, y=PAGE_H - MARGIN, text=line1),
             TextRun(
                 font=FONT_NAME,
                 size=BODY_SIZE,
                 x=MARGIN,
-                y=PAGE_H - MARGIN - LINE_HEIGHT,
-                text=line2,
+                y=PAGE_H - MARGIN,
+                text=b"The clerk filed the coopera-",
             ),
         )
     )
+    # "archiv" + U+00AD + "al", not "archive" + U+00AD + "al" — dropping the soft hyphen must spell
+    # "archival", and "archive" + "al" spells "archiveal" (I3b: this typo predates the fix that
+    # finally made the soft hyphen's removal visible in the extracted text at all).
+    continuation = b"tion agreement under the archiv" + bytes([0xAD]) + b"al index."
     lines2 = wrap(prose(3, start=7), 68)
-    page2 = column_of_lines(lines2, x=MARGIN, top=PAGE_H - MARGIN)
-    # The whole page, not just the joined word: the two hyphens differ deliberately — the line-break
-    # hyphen in "coopera-" is joined away, the soft hyphen inside "archive[U+00AD]al" is dropped in
-    # place. Both are on this page, and so is the "The clerk filed the " that opens it.
+    page2_runs = [
+        TextRun(font=FONT_NAME, size=BODY_SIZE, x=MARGIN, y=PAGE_H - MARGIN, text=continuation),
+        *(
+            TextRun(
+                font=FONT_NAME,
+                size=BODY_SIZE,
+                x=MARGIN,
+                y=PAGE_H - MARGIN - (i + 1) * LINE_HEIGHT,
+                text=line.encode("ascii"),
+            )
+            for i, line in enumerate(lines2)
+        ),
+    ]
+    page2 = Page(runs=tuple(page2_runs))
+    # The two hyphens differ deliberately: the line-break hyphen in "coopera-" is joined away across
+    # the page boundary; the soft hyphen inside "archive[U+00AD]al" is dropped in place, mid-word,
+    # never touching a block boundary at all.
     expected = (
         f"The clerk filed the cooperation agreement under the archival index.\n{' '.join(lines2)}\n"
     )

@@ -60,6 +60,56 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   content-anchored assertion (a sentinel placed on one page, and no other, must fall inside that
   page's span, and every non-empty page must carry one) is what actually catches a wrong page
   number.
+- **I3b: the pypdfium2 adapter, the extraction-quality metrics, and the two fitted floors.**
+  `extract/pdfium.py` is a thin I/O reader: guards a file's size at 256 MB before ever opening it,
+  translates pdfium's own refusals into a named `ExtractionError` (corrupt/malformed header,
+  password-protected, no pages at all), turns pdfium's character-level text API into I3a's
+  `CharSpan`s, and hands the whole document to `layout.assemble()`. `slice_pages(path, first,
+  last)` is I7b's future request unit, clamping its own range since `import_pages` raises outright
+  on an out-of-range index rather than tolerating one. `extract/quality.py` scores a free-path
+  extraction against `tests/pdf-corpus/`'s ground truth on five metrics — `char_recall`,
+  `order_fidelity`, `junk_rate`, `pair_adjacency`, `word_coverage` — each carrying its own
+  numerator and denominator rather than a bare float, so a stratum with nothing to measure reports
+  `null`, never an indistinguishable `0.0`. `make pdf-eval` (`check.sh`, and CI as its own job in
+  this commit, not deferred to I9) extracts and scores every fixture, compares each stratum
+  against a committed `tests/pdf-corpus/baseline.json` with a tolerance, and re-fits both floors to
+  check neither has drifted. Two floors are fitted from the corpus, not guessed, and ship as
+  package data (`extract/floors.toml`, beside I6a's future `prices.toml`) with `fitted_on`: the
+  running-head threshold *T* (0.666667 — the midpoint of the lowest recurrence any genuine running
+  head reaches across the headers-footers stratum and the highest recurrence anything else
+  reaches, `tests/pdf-corpus/spec.py::KNOWN_RUNNING_HEAD_SIGNATURES` stating which is genuine per
+  fixture) and the text-yield floor (65.75 non-whitespace characters per page — the midpoint of
+  the scanned stratum's yield, 0, and the lowest real document's).
+
+  Verifying the adapter against real PDFs — the first time in this project real pdfium output ever
+  reached I3a's pure pipeline — surfaced six defects the hand-built fixtures in `test_extract_layout.py`
+  never could: `_LINE_TOLERANCE` (2.0) was too tight for real descender depth, silently splitting
+  g/y/q/j onto phantom one-character lines; the geometric word-gap heuristic inserted a space
+  between nearly every letter pair, since real intra-word kerning gaps and inter-word gaps overlap
+  (now removed — word breaks come from the source stream's own space characters); `reading_order`'s
+  column clustering read a caption spanning two columns as that column's own last line rather than
+  after both (fixed with a width-based spanning-block detection, `_SPANNING_WIDTH_FRACTION`); a
+  `Tj` string authored with an embedded line break duplicated the newline `assemble()` already
+  inserts between blocks; a soft hyphen sitting mid-block (not at a block boundary) was never
+  removed by any existing code path (`textpolicy.normalise` now drops U+00AD unconditionally,
+  wherever it falls); and I2's `pdfwriter.py` wrote a *partial* ToUnicode CMap that made pdfium
+  misreport an unrelated, unmapped character as U+FFFE — fixed by filling in an identity mapping
+  for every printable ASCII byte, not only the one needing an override. The `hyphenation-soft`
+  fixture is restructured to a two-page layout (the same shape `hyphenation-page-break` already
+  used safely) after finding that pdfium's own text-extraction reconstruction misreads an ordinary
+  hyphen as U+FFFE whenever the text-showing operation ending in it is immediately followed by
+  another one starting lowercase *on the same page* — and its own ground truth had a typo
+  ("archive" + U+00AD + "al" spells "archiveal", not "archival"). All six are recorded in
+  `docs/RETROSPECTIVES.md`.
+
+  **A known, accepted limitation:** `reading_order`'s column detection is geometric, not
+  structural, so the free path reads a table column by column, not row by row.
+  `pair_adjacency` measures this directly for the tables stratum, though this corpus's own tables
+  are small enough that even the wrong reading order keeps a label and its value within the
+  metric's 80-character window — a disclosed limitation of this corpus's diagnostic power, not of
+  the metric's design. There is no `word_coverage` floor yet (decision 12, `plans/v0.2.md`): the
+  correct pair to fit it against is (native layer → Claude's output), and no Claude output exists
+  before I7b.
 
 ## [0.1.4] — 20260727 21:19
 

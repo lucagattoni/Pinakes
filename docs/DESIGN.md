@@ -566,6 +566,50 @@ Stated cost: synthetic prose is unrealistically clean, and small-corpus results 
 hold at 50k documents. The harness is therefore built to be pointed at a user's own KB, and the docs
 say so.
 
+### 7.1 PDF extraction quality
+
+`pinakes.extract.quality` scores a free-path extraction against `tests/pdf-corpus/`'s own ground
+truth on five metrics, each shipping its own denominator rather than a bare float — a rate whose
+denominator is legitimately zero (no native text layer, no `(label, value)` pairs to assert in this
+stratum) is declared `null`, never a silent, indistinguishable `0.0` (this section's own
+`false_abstain: 0.0` mistake, corrected here rather than repeated):
+
+| Metric | Numerator | Denominator |
+|---|---|---|
+| `char_recall` | expected non-space characters found, in order (LCS) | expected non-space characters |
+| `order_fidelity` | LCS length over word sequences | expected word count |
+| `junk_rate` | extracted words absent from the ground truth | extracted word count |
+| `pair_adjacency` | asserted `(label, value)` pairs within 80 characters of each other | asserted pairs |
+| `word_coverage` | significant native-layer words present in the extraction | significant native-layer words |
+
+`make pdf-eval` (`check.sh`, CI) extracts and scores every corpus fixture, compares each stratum
+against `tests/pdf-corpus/baseline.json` with a tolerance, and re-fits both floors below to check
+neither has drifted from `extract/floors.toml`. It skips, printing why, when `pinakes[pdf]` is
+absent — never silently, and never failing a `[light]`-only checkout.
+
+**Two floors are fitted from the corpus, not guessed**, and ship as package data
+(`extract/floors.toml`, beside §5's `prices.toml`) with `fitted_on`:
+
+- **The running-head threshold *T*** (`layout.strip_running_heads`) — the midpoint between the
+  lowest recurrence any genuine running head or footer reaches and the highest recurrence anything
+  else in the headers-footers stratum reaches (`tests/pdf-corpus/spec.py::KNOWN_RUNNING_HEAD_SIGNATURES`
+  states which signature is genuine, per fixture). Costs nothing to apply, so its absence at runtime
+  is a startup error, not a refusal to spend.
+- **The text-yield floor** (non-whitespace characters per page) — the midpoint between the highest
+  yield the scanned stratum reaches (0, no native text layer) and the lowest yield any real document
+  reaches. It separates *empty* from *non-empty* and nothing finer — a stated blind spot, not a
+  discovered one: the pathological stratum's invisible-render-mode fixture yields real characters
+  while being useless text, and still needs the paid path. There is no `word_coverage` floor yet
+  (decision 12, `plans/v0.2.md`): the correct pair to fit it against is (native layer → Claude's
+  output), and no Claude output exists before I7b.
+
+**A known, accepted limitation:** `reading_order`'s column detection is geometric (x-gap
+clustering), not structural — it has no notion of a table's rows and columns, so the free path reads
+a table column by column, not row by row. `pair_adjacency` measures this directly for the tables
+stratum, though this corpus's own tables are small enough that even the wrong reading order keeps a
+label and its value within the metric's 80-character window — a disclosed limitation of this
+specific corpus's diagnostic power, not of the metric's own design.
+
 ---
 
 ## 8. Delivery plan

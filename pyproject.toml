@@ -72,6 +72,12 @@ target-version = "py313"
 # bugs — I2's retrospective caught two (docs/RETROSPECTIVES.md).
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "BLE"]
 
+[tool.ruff.lint.per-file-ignores]
+# A hand-authored stub names pdfium's own C API functions verbatim (`FPDFText_GetFontSize`), never
+# a Python name this project chose — renaming it to satisfy N802 would make the stub describe a
+# function that does not exist (I3b).
+"stubs/*.pyi" = ["N802"]
+
 [tool.pyright]
 include = ["src", "tests"]
 pythonVersion = "3.13"

@@ -104,6 +104,25 @@ jobs:
       - name: Golden-set evaluation against the baseline
         run: uv run --frozen python -m pinakes.eval tests/demo-kb
 
+  pdf-eval:
+    # I3b: joins CI in the same commit that adds the gate, not deferred until I9 the way the draft
+    # plan would have left it for six intervening increments to land ungated.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen --extra light --extra pdf
+
+      - name: Extraction-quality baseline + floor-drift check
+        run: |
+          uv run --frozen python -m pinakes.extract.quality tests/pdf-corpus \
+            --check-floors src/pinakes/extract/floors.toml
+
   build:
     runs-on: ubuntu-latest
     steps:

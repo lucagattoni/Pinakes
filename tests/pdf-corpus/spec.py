@@ -57,3 +57,29 @@ STRATA_ORDER: tuple[str, ...] = (
     "pathological",
     "baseline",
 )
+
+# I3b's `quality.py::pair_adjacency` metric: the (label, value) pairs a correctly-read table asserts
+# are near each other in the extracted text — a row's own year beside its own count, never a
+# different row's. All three table fixtures share one underlying data table (`generate.py`,
+# `TABLE_DATA`), so the same four pairs apply to each. No other stratum asserts any pairs: nothing
+# else in this corpus has a label/value relationship for adjacency to mean anything about.
+PAIR_ADJACENCY_PAIRS: dict[str, tuple[tuple[str, str], ...]] = {
+    "tables-bordered": (("2019", "142"), ("2020", "88"), ("2021", "165"), ("2022", "121")),
+    "tables-borderless": (("2019", "142"), ("2020", "88"), ("2021", "165"), ("2022", "121")),
+    "tables-spanning": (("2019", "142"), ("2020", "88"), ("2021", "165"), ("2022", "121")),
+}
+
+# I3b's fit of `layout.py`'s running-head threshold *T*: for each headers-footers fixture, the exact
+# digit-normalised signature (`_DIGITS.sub("#", text.strip())`, matching `strip_running_heads`'s own
+# key) of its one genuine running head or footer — `None` where the fixture plants no genuine one at
+# all. `footer-first-page-only`'s whole point is a footer that appears once, so `None` is the
+# correct declaration, not an oversight: it is the fixture that sets *T*'s lower bound, not an
+# exemption from needing one. Verified (not assumed) against real pdfium extraction of every fixture
+# in this stratum before committing to it: every non-running-head line here recurs on exactly 1 of
+# its own fixture's pages (docs/RETROSPECTIVES.md, I3b) — there is no line anywhere in this stratum
+# recurring on 2 of 3 or more pages without being one of the two declared running heads below.
+KNOWN_RUNNING_HEAD_SIGNATURES: dict[str, str | None] = {
+    "headers-repeating": "PINAKES ARCHIVE REVIEW",
+    "footers-pagenum": "Page #",
+    "footer-first-page-only": None,
+}

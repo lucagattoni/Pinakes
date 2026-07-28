@@ -39,4 +39,15 @@ else
     echo "corpus-regenerates (scanned half): skipped — pinakes[pdf] and/or Pillow not installed"
 fi
 
+# pdf-quality (I3b): the extraction-quality baseline must not drift beyond tolerance, and neither
+# fitted floor may drift from a fresh re-fit — a gate, never a one-time ceremony (plans/v0.2.md).
+# Skips with its reason when pinakes[pdf] is absent (I1's own exit criterion: green under
+# `--extra light` alone), never silently — `make pdf-eval` is the same command CI runs as its own
+# job, in this commit, not deferred the way the draft plan would have left it until I9.
+if uv run --frozen python3 -c "import pypdfium2" 2>/dev/null; then
+    make pdf-eval
+else
+    echo "pdf-quality: skipped — pinakes[pdf] not installed"
+fi
+
 echo "all gates green"

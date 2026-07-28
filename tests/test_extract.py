@@ -99,17 +99,22 @@ def test_a_missing_extra_names_the_install_command(
     assert f'uv add "pinakes[{extra}]"' in exc_info.value.remedy
 
 
-@pytest.mark.parametrize(
-    ("backend", "module", "increment"),
-    [(PYPDFIUM2, "pypdfium2", "I3b"), (CLAUDE_VISION, "anthropic", "I7b")],
-)
-def test_a_stub_names_its_own_landing_increment(
-    monkeypatch: pytest.MonkeyPatch, backend: str, module: str, increment: str
+def test_claude_vision_stub_names_its_own_landing_increment(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(builtins, "__import__", _faking(module))
+    """The one remaining stub — pypdfium2 stopped being one in I3b (below)."""
+    monkeypatch.setattr(builtins, "__import__", _faking("anthropic"))
     with pytest.raises(ExtractionError) as exc_info:
-        load_extractor(backend)
-    assert increment in exc_info.value.message
+        load_extractor(CLAUDE_VISION)
+    assert "I7b" in exc_info.value.message
+
+
+def test_pypdfium2_is_a_real_extractor_not_a_stub(monkeypatch: pytest.MonkeyPatch) -> None:
+    """I3b's own landing: `load_extractor(PYPDFIUM2)` used to raise, naming this increment, the
+    moment `pypdfium2` imported cleanly — now it must return a working `Extractor` instead."""
+    monkeypatch.setattr(builtins, "__import__", _faking("pypdfium2"))
+    extractor = load_extractor(PYPDFIUM2)
+    assert hasattr(extractor, "extract")
 
 
 def test_fingerprint_inputs_never_import_the_backend(monkeypatch: pytest.MonkeyPatch) -> None:
