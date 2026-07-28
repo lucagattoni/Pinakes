@@ -9,6 +9,7 @@ locate is barely better than no validation.
 """
 
 from collections.abc import Sequence
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
 
@@ -100,6 +101,36 @@ class Table:
         if minimum is not None and value < minimum:
             raise self._fail(f"`{key}` must be >= {minimum}, found {value}")
         return value
+
+    def decimal(
+        self, key: str, *, default: Decimal | None = None, minimum: Decimal | None = None
+    ) -> Decimal:
+        """A TOML number read as an exact `Decimal`, for a value that is ever compared or summed
+        as money — where `float`'s binary representation error would make a hard cap not actually
+        hard (I6a).
+
+        TOML has no native decimal type, so `tomllib` hands back a `float` regardless; this goes
+        through `Decimal(str(value))`, never `Decimal(value)` directly. The former recovers the
+        clean literal a user typed (`0.05` -> `Decimal("0.05")`); the latter reproduces the exact
+        binary value that literal only approximates (`0.05` ->
+        `Decimal("0.05000000000000000277555756156289135105907917022705078125")`) — verified
+        directly against every value this project's own `[budget]` defaults use.
+        """
+        value = self._take(key, required=default is None)
+        if value is None:
+            assert default is not None  # `required=True` above already raised otherwise
+            decimal_value = default
+        else:
+            if isinstance(value, bool) or not isinstance(value, int | float):
+                raise self._fail(f"`{key}` must be a number, found {type(value).__name__}")
+            decimal_value = Decimal(str(value))
+        # Checked on both paths, not only the TOML-sourced one — `integer()`/`number()` above
+        # validate their own defaults for free, since they share one type with the parsed value;
+        # `decimal()`'s default is already a `Decimal` rather than a parsed float, so an early
+        # return here would let a below-`minimum` default slip past unminded.
+        if minimum is not None and decimal_value < minimum:
+            raise self._fail(f"`{key}` must be >= {minimum}, found {decimal_value}")
+        return decimal_value
 
     def strings(self, key: str, *, default: Sequence[str] | None = None) -> tuple[str, ...]:
         value = self._take(key, required=default is None)

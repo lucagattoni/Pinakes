@@ -1,7 +1,7 @@
 # pinakes — project instructions
 
-Architecture lives in [`docs/DESIGN.md`](docs/DESIGN.md). It is the source of truth; this file only
-carries rules that change how you work.
+Architecture and rationale live in [`docs/DESIGN.md`](docs/DESIGN.md); [`docs/README.md`](docs/README.md)
+indexes the rest (which file owns which fact). This file only carries rules that change how you work.
 
 ## This repository is PUBLIC
 
@@ -31,6 +31,10 @@ carries rules that change how you work.
   extraction.
 - **`.pinakes/` is disposable except `ledger.jsonl`** — a rebuild must preserve spend history.
 - **The free path stays free.** No code path may make a paid API call outside `pnk ask --deep`.
+- **Money is `Decimal` end to end, quantised only once — at ledger-write time.** Convert a TOML
+  float via `Decimal(str(value))`, never `Decimal(value)` directly: the latter reproduces float's
+  own binary imprecision instead of the clean decimal a human wrote — verified directly,
+  `Decimal(0.05) != Decimal("0.05")`.
 - Index schema changes bump `schema_version` and require a rebuild. Never write a migration.
 
 ## Building a release — one increment at a time
@@ -60,6 +64,12 @@ bisectable landing:
 Work left local is invisible to every other agent, machine and scheduled run.
 
 - **Push every landing** to `origin/main` — never leave merged work sitting locally.
+- **Before assigning the next release number, check what has already landed on `main`.** `git fetch`
+  and diff `origin/main` against this work's own base first — another agent, session, or worktree
+  may have cut a release since this branch started, so the number you were about to assign, or a
+  plan's assumed version target, may already be taken. Only decide the number after that check.
+  Caught 20260728: an I6a worktree almost reasoned about "0.2.1 vs 0.3.0" from a stale base, when a
+  parallel docs pass had already shipped v0.2.1.
 - **Cut the release** as soon as the work passes the SemVer table in the global rules (feature =
   MINOR, fix/docs/deps = PATCH, breaking = MAJOR). Complete work never lingers in `[Unreleased]`.
 - Release procedure: bump `__version__`, move `[Unreleased]` into a dated `[x.y.z] — YYYYMMDD HH:MM`
@@ -99,25 +109,19 @@ and after numbers in the commit message.
 
 ## Docs
 
-A change to any user-facing surface (CLI flag, manifest key, MCP tool, default, behaviour) updates
-`docs/DESIGN.md`, the README and `--help` text **in the same commit** — including README/Makefile
-*prose* describing build or CI behaviour, not only flags and manifest keys: I1 changed CI to a
-three-leg matrix and left two stale "as CI does" comments in README.md and the Makefile
-(docs/RETROSPECTIVES.md, 20260727 22:28).
+**One fact, one home** — [`docs/README.md`](docs/README.md) is the routing table (which file owns
+which fact) and the per-increment landing checklist. `docs/DESIGN.md` is rationale only; it changes
+only when the *reasoning* changes, never for a new flag or field alone.
 
-**The README describes what ships, not what is designed** — anything unbuilt carries the version
-that will bring it. Prose drifts toward the design, because the design is what you are thinking
-about; check it by *running the commands the README shows*, install line included. An audit at 0.1.2
-found four README claims contradicting the code while `cli.py` and the CHANGELOG were correct in the
-same places (docs/RETROSPECTIVES.md, 20260727).
-
-**Every date carries a time** — `YYYYMMDD HH:MM`, local 24h — in the CHANGELOG, `docs/DESIGN.md`'s
-iteration log and status line, `docs/RETROSPECTIVES.md`, and any "verified on" claim. Several
-entries land per day; a bare date loses their order and hides how fresh a verified claim is.
-
-**Read the clock; never compose a timestamp.** Run `date "+%Y%m%d %H:%M"` and paste the result.
-Session context carries a *date*, never a time, so any `HH:MM` not read from the clock is invented —
-and an invented one lands in the future about half the time. `plans/v0.2.md` shipped four
-"verified 20260727 17:34" claims written at 17:00 (docs/RETROSPECTIVES.md, 20260727 17:00). A
-timestamp exists to say how fresh a verified claim is, so a fabricated one is a false evidence
-claim, not a formatting slip. One `date` call covers a whole batch of edits.
+- **README and DESIGN.md are deliberately version-free** — they describe what pinakes *is*, never
+  which release it's on. Never reintroduce a version number or "as of vX" claim into their prose
+  (CHANGELOG.md `[0.2.1]` — a 20260728 restructure existed specifically to stop that drift).
+- **Verify docs by running the commands they show**, install line included — prose drifts toward
+  the design, because the design is what you're thinking about while writing it. An audit at 0.1.2
+  found four README claims contradicting the code while `cli.py` and the CHANGELOG were correct in
+  the same places (docs/RETROSPECTIVES.md, 20260727).
+- **Every date carries a time** — `YYYYMMDD HH:MM`, local 24h — in the CHANGELOG, `docs/STATUS.md`,
+  `docs/RETROSPECTIVES.md`, and any "verified on" claim.
+- **Read the clock; never compose a timestamp.** Run `date "+%Y%m%d %H:%M"` and paste the result —
+  session context carries a date, never a time, and an invented `HH:MM` lands in the future about
+  half the time (docs/RETROSPECTIVES.md, 20260727 17:00).

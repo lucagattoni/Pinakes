@@ -50,4 +50,24 @@ else
     echo "pdf-quality: skipped — pinakes[pdf] not installed"
 fi
 
+# prices-toml-parses (I6a): `as_of` must exist and parse as `YYYYMMDD HH:MM` — a build-time gate,
+# never a staleness check (a wall-clock gate would fail a quiet weekend with no code change;
+# staleness is a `pnk doctor` WARN and a runtime refusal instead, docs/DESIGN.md §5). This only
+# ever catches a *malformed* file, which a code change could actually introduce.
+uv run --frozen python3 -c "
+import sys
+from datetime import datetime
+from pinakes.budget.prices import load_prices
+
+prices = load_prices()
+try:
+    datetime.strptime(prices.as_of, '%Y%m%d %H:%M')
+except ValueError as exc:
+    print(
+        f'prices.toml: as_of {prices.as_of!r} does not parse as YYYYMMDD HH:MM: {exc}',
+        file=sys.stderr,
+    )
+    sys.exit(1)
+"
+
 echo "all gates green"

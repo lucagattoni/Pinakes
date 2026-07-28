@@ -1,10 +1,12 @@
 """Manifest parsing: strict in both directions, and cross-key invariants checked at read time."""
 
 from collections.abc import Callable
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
+from pinakes._toml import Table
 from pinakes.errors import ManifestError, NoKbFoundError
 from pinakes.ids import mint_kb_id
 from pinakes.manifest import discover, find_kb_root, load
@@ -63,6 +65,11 @@ def test_omitted_sections_take_the_documented_defaults(write_manifest: WriteMani
     assert manifest.retrieval.confidence is None
     assert manifest.rerank.model == "BAAI/bge-reranker-base"
     assert manifest.budget.on_exceed == "abort"
+    assert manifest.budget.confirm_above_eur == Decimal("0.01")
+    assert manifest.budget.per_operation_eur == Decimal("0.05")
+    assert manifest.budget.daily_eur == Decimal("1.00")
+    assert manifest.budget.monthly_eur == Decimal("5.00")
+    assert manifest.budget.max_price_age_days == 30
 
 
 def test_extraction_backend_must_be_registered(write_manifest: WriteManifest) -> None:
@@ -159,6 +166,51 @@ def test_budget_timezone_must_resolve(write_manifest: WriteManifest) -> None:
     with pytest.raises(ManifestError) as exc_info:
         load(write_manifest(body))
     assert "not a known IANA zone" in exc_info.value.message
+
+
+def test_budget_values_parse_as_exact_decimal_not_float(write_manifest: WriteManifest) -> None:
+    """I6a: a `Decimal` constructed from a TOML float via `Decimal(the_float)` directly (rather
+    than `Decimal(str(the_float))`) reproduces the binary value the literal only approximates —
+    verified directly against every value here to fail this exact assertion if that regressed."""
+    body = minimal(
+        extra=(
+            "\n[budget]\nconfirm_above_eur = 0.01\nper_operation_eur = 0.05\n"
+            "daily_eur = 1.08\nmonthly_eur = 5.00\nmax_price_age_days = 45\n"
+        )
+    )
+    manifest = load(write_manifest(body))
+    assert manifest.budget.confirm_above_eur == Decimal("0.01")
+    assert manifest.budget.per_operation_eur == Decimal("0.05")
+    assert manifest.budget.daily_eur == Decimal("1.08")
+    assert manifest.budget.monthly_eur == Decimal("5.00")
+    assert manifest.budget.max_price_age_days == 45
+
+
+def test_a_negative_budget_value_is_rejected(write_manifest: WriteManifest) -> None:
+    body = minimal(extra="\n[budget]\ndaily_eur = -1.0\n")
+    with pytest.raises(ManifestError) as exc_info:
+        load(write_manifest(body))
+    assert "must be >=" in exc_info.value.message
+
+
+def test_table_decimal_validates_a_below_minimum_default_too(tmp_path: Path) -> None:
+    """Every shipped `[budget]` default is in range, so `load()` alone cannot exercise this: a
+    below-`minimum` *default* must still be rejected when the key is absent, not only a below-
+    minimum value actually written in the TOML (`test_a_negative_budget_value_is_rejected` above).
+    `integer()`/`number()` get this for free since their default and parsed-value are the same
+    type and share one code path; `decimal()`'s default is pre-typed `Decimal` and used to return
+    early, skipping `minimum` entirely."""
+    table = Table({}, name="budget", source=tmp_path / "pinakes.toml")
+    with pytest.raises(ManifestError) as exc_info:
+        table.decimal("daily_eur", default=Decimal("-5"), minimum=Decimal("0"))
+    assert "must be >=" in exc_info.value.message
+
+
+def test_table_decimal_accepts_a_valid_default_unchanged(tmp_path: Path) -> None:
+    table = Table({}, name="budget", source=tmp_path / "pinakes.toml")
+    assert table.decimal("daily_eur", default=Decimal("1.00"), minimum=Decimal("0")) == Decimal(
+        "1.00"
+    )
 
 
 def test_overlap_must_be_smaller_than_max_tokens(write_manifest: WriteManifest) -> None:

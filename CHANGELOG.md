@@ -7,6 +7,143 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **I6a of the v0.2 build order: budget core, pure (rule 11 — the pure half of the money
+  machinery).** `src/pinakes/budget/` — no I/O, no `anthropic` import, asserted by an AST-based
+  import-graph test over every file in the package. This is the accountant and the estimator;
+  reading `ledger.jsonl`, `pnk budget`, and actually spending are I6b's job.
+
+  **`prices.toml` ships as package data**, exactly like `extract/floors.toml` (verified: it is
+  present inside a real built wheel, not only this source checkout). Every price is a TOML
+  *string*, not a bare number — `prices.toml` is entirely project-controlled, never
+  user-authored, so parsing via `Decimal(the_string)` directly removes the float intermediary
+  altogether rather than reconstructing it from `str(float(...))` the way a user-authored manifest
+  number has to. Seeded: `claude-opus-5` at $5.00 / $25.00 per MTok, `usd_per_eur = 1.08`, both
+  carrying the same `as_of`. `prices.py` mirrors `floors.py`'s `load_floors()` shape precisely,
+  including a new `PricesMissingError` for a missing/unreadable/malformed file and
+  `UnknownModelPriceError` naming the models a document's own manifest could actually ask for.
+
+  **`estimate.py` estimates over *requests*, never a whole document and never a single page**
+  (decision 8): worst case per request = `(K * page_tokens + prompt_tokens) * input_price +
+  max_tokens * output_price`, and a document is `ceil(pages / K)` requests. `K = 5` is a semantic
+  constant (hashed into the paid extractor's own request-shape version in I7b, not a tuning knob).
+  `page_tokens` is a conservative ceiling of 6,000 until I7b measures the real figure;
+  `prompt_tokens = 300` and `max_tokens = 8,000` are measured module constants, not afterthoughts a
+  real worst case could omit. No cache-write multiplier: the shared prefix is a few hundred tokens
+  against the model's own cache minimum, so it very likely cannot be cached at all. A context-window
+  precheck (1,000,000 tokens on `claude-opus-5`) runs before the estimate is even produced — cheap,
+  and under the shipped constants (30,300 tokens per request) it never fires, but it names the exact
+  limit rather than letting a real 400 response discover it. A stale `as_of` (older than
+  `[budget] max_price_age_days`) refuses to estimate at all, naming the remedy. Verified directly
+  against `plans/v0.2.md`'s own worked examples: 200 pages resolves to exactly 40 requests and
+  $14.06 reserved; a single 5-page slice resolves to exactly $0.3515 — both to the last digit the
+  plan states.
+
+  **`reserve.py` is the pure accountant.** `reserve(reserved_eur, caps, spent) -> Decision` checks
+  one call's cost against all three ceilings — `per_operation_eur`, the new `daily_eur`, and
+  `monthly_eur` — in order, and refuses before any call is made if `spent.window + reserved` would
+  exceed any of them; the refusal names which window and by how much. `reserve_document(estimate,
+  caps, spent, confirm_above_eur=...) -> DocumentDecision` is the whole-document precheck run
+  before the first call: unlike `reserve`, it names *every* blocked window at once, prints the
+  computed estimate, the complete `[budget]` manifest edit that would admit this run (each blocked
+  cap's minimum sufficient value, rounded up to the cent), and one line stating that raising a cap
+  is a permanent, ongoing exposure — a one-run `--extract=<backend>` override is not.
+  `confirm_above_eur` is evaluated once, against the whole-document estimate, never per slice: a
+  20-page document whose *per-request* cost sits below the threshold but whose *document total*
+  clears it is still flagged, exactly as the design says. All display amounts (never the internal
+  comparisons, which stay full-precision `Decimal` throughout) are rounded to the cent for a human
+  to actually read — an early version printed
+  `€0.3254629629629629629629629630`, fixed before this was ever exercised by a test.
+
+  **`window.py` aggregates ledger records into day/month totals**, in `[budget] timezone` — reading
+  the ledger file itself is I6b's job, so this only ever takes an in-memory list. The
+  reservation/reconciliation/void rule a draft of this design never stated, now pinned down and
+  tested: a pair is one record, attributed to the *reservation's* own timestamp (never the
+  outcome's); a reconciliation supersedes the reservation's amount in place, never adding to it; an
+  unreconciled reservation counts at its reserved amount, so an in-flight or crashed call consumes
+  headroom rather than vanishing; a void (I7b) closes a reservation at zero. Verified directly
+  against a genuine midnight-straddling pair, a month-end-straddling pair, and a real DST
+  spring-forward transition (`Europe/Berlin`, 2026-03-29) — all three attributed correctly. The
+  `operation` window total is supplied by the caller (its own running tally for the current
+  invocation), never aggregated from the historical ledger — a call from an *earlier* operation
+  today must not bleed into a fresh one's own count.
+
+  **`manifest.py`'s `[budget]` block moves from `float` to `Decimal` end to end** — a reservation
+  compared against a float-derived cap is a representation error wearing a different hat, and the
+  boundary tests this increment adds assert exact equality at the cent. `_toml.py` gains
+  `Table.decimal()`, parsing a TOML number via `Decimal(str(the_parsed_float))`, never
+  `Decimal(the_parsed_float)` directly — verified empirically that the latter reproduces the exact
+  binary value a literal like `0.05` only approximates
+  (`Decimal("0.05000000000000000277555756156289135105907917022705078125")`), not the clean decimal
+  a human wrote. `[budget]` gains `daily_eur` (default 1.00 — a burst limiter between the
+  per-operation and monthly caps) and `max_price_age_days` (default 30).
+
+  **`check.sh` gains a `prices-toml-parses` gate**: `as_of` must exist and parse as
+  `YYYYMMDD HH:MM`, failing the build if not. Deliberately *not* a staleness gate — a wall-clock
+  check would fail a quiet weekend with no code change at all; staleness itself is a runtime
+  refusal (`estimate_document`, above) and belongs to `pnk doctor` as a WARN, not to CI.
+
+  **Tests, `tests/test_budget_core.py`** (35 cases): the exact boundary for each of the three
+  windows (`spent + reserved == cap` proceeds, one cent more refuses, parametrised over all three);
+  a case where the operation cap passes but the month's does not; `test_reservation_bounds_every_
+  usage_table` (hand-written hypothetical usages, the worst-case reservation never below any of
+  them); the midnight/month-end/DST attribution trio; reservation/reconciliation/void semantics;
+  `test_the_refusal_names_all_three_windows`; `test_an_unaffordable_document_is_refused_before_
+  the_first_call` (a spy asserting zero calls made); `test_confirmation_is_once_per_document_not_
+  per_slice`; `test_confirm_threshold_and_hard_cap_are_independent_boundaries` (a request landing
+  exactly at the hard cap is still allowed *and* still confirmable — design pass 3's finding);
+  a stale `as_of`, a missing `prices.toml`, a malformed one, and one missing a required field, each
+  a named startup error rather than a silent zero; `test_the_context_window_precheck_names_its_
+  limit`; `test_prices_are_installed_package_data`; the import-graph test. `tests/test_manifest.py`
+  gains exact-`Decimal` parsing coverage for `[budget]` (rejecting the float-comparison trap
+  directly: `Decimal("0.05") == 0.05` is `False` in Python, so an existing test written the wrong
+  way would have silently stopped proving anything). `tests/test_check_script.py` gains a check
+  that the new gate's own snippet is genuinely present in `check.sh` — nothing else would notice if
+  it were quietly deleted, since neither `ruff` nor `pyright` parse shell.
+
+  **An independent adversarial review before this reached a commit found two real defects and
+  three test-coverage gaps, all fixed here** (a `docs/RETROSPECTIVES.md` entry is owed once the
+  parallel documentation pass reaches it — recorded here in full for now, per this round's scope):
+
+  - `prices.py`'s malformed-file handling caught TOML *syntax* errors but not value-level ones:
+    `Decimal(str(x))` raises `decimal.InvalidOperation`, not the `ValueError` `floors.py`'s
+    `float(x)` raises for the same mistake, so a one-typo price (a European "5,00", an unfilled
+    "TBD") or a wrong-shaped `models` table crashed uncaught instead of raising the documented
+    `PricesMissingError`. Both exceptions are now caught.
+  - `window.py`'s entire reason to exist — converting a differently-zoned input into `[budget]
+    timezone` before comparing — was completely unexercised: every test constructed
+    `reserved_at`/`now` already in the target zone, where `.astimezone()` is a no-op, so mutating
+    the conversion away entirely still passed every test. A new test aggregates a UTC-stamped
+    record against a Berlin-configured window (2026-03-15 23:30 UTC is the *next* calendar day,
+    00:30, in Berlin) and catches exactly that regression.
+  - `estimate_document` had no validation on `pages`/`pages_estimated`: `pages=0` divides by zero
+    computing `per_request_eur`, and a negative `pages_estimated` produced a *negative*
+    `total_eur` — the one direction a budget guard must never move, since it understates real
+    spend rather than overstating it. Both now raise `ValueError` before any arithmetic runs.
+  - `Table.decimal()`'s default path returned early, skipping its own `minimum` check — unlike
+    `integer()`/`number()`, which validate their defaults for free by sharing one code path with
+    the parsed value — so a below-`minimum` default would have silently passed. Restructured to
+    check `minimum` on both paths.
+  - `reserve_document`'s "every blocked window is named" claim and `reserve()`'s "first breach
+    wins, in order" claim were each tested only where every window breached at once (or where
+    only one *could*), so neither a partial breach nor a genuine two-window tie was ever
+    exercised. `confirm_above_eur`'s exact boundary (`>`, not `>=`) had only an incidental test,
+    never a dedicated one. Three new tests pin all of this down.
+  - Two low-severity fixes: `ContextWindowExceededError`'s remedy suggested lowering a
+    "`[chunking]`-equivalent slice size K" that does not exist as a configurable knob (`K` is a
+    fixed constant); and a cap lowered mid-window below already-recorded spend printed a negative
+    "headroom €-X.XX" in a refusal message, now rendered as "already €X.XX over cap" instead.
+
+  One review finding was **not** acted on here: `docs/DESIGN.md`'s own "⏳ pending amendment" note
+  (§5) promises the `daily_eur`/`max_price_age_days` rewrite "lands with I6a" — it does not, since
+  documentation for this round is deliberately deferred to the parallel pass (below). Flagged for
+  whoever reconciles that pass with this entry, not silently left contradicted.
+
+  **Documentation for this increment (`docs/DESIGN.md` §2.1/§5/§8, `README.md`) is being amended in
+  a parallel, independent pass and is deliberately not touched here** — this entry is the complete
+  record of what shipped until that pass lands.
+
 ## [0.2.1] — 20260728 16:54
 
 ### Added

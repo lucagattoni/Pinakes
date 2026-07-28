@@ -359,6 +359,77 @@ class CalibrationError(PinakesError):
     """Thresholds cannot be fitted from this golden set."""
 
 
+class PricesMissingError(PinakesError):
+    """`budget/prices.toml` is missing or unreadable (I6a) — ships as package data for the same
+    reason `FloorsMissingError` exists: a file only present in the source tree is invisible to an
+    installed wheel, and every estimate depends on it."""
+
+    def __init__(self, *, reason: str) -> None:
+        super().__init__(
+            f"pinakes.budget's prices.toml is missing or unreadable ({reason}).",
+            remedy=(
+                "This ships as package data; reinstall pinakes or rebuild the wheel (`uv build`)."
+            ),
+        )
+        self.reason = reason
+
+
+class UnknownModelPriceError(PinakesError):
+    """`prices.toml` has no entry for this model — an estimate built on a silently absent price
+    would be a `KeyError` three layers down instead of a named, actionable failure."""
+
+    def __init__(self, model: str, *, known: Sequence[str]) -> None:
+        super().__init__(
+            f"no price entry for model {model!r}.",
+            remedy=(
+                f"Known models: {', '.join(sorted(known))}. "
+                "This ships in pinakes.budget's prices.toml; a model outside that list cannot be "
+                "estimated until a price for it is added there."
+            ),
+        )
+        self.model = model
+        self.known = tuple(known)
+
+
+class StalePricesError(PinakesError):
+    """`prices.toml`'s `as_of` is older than `[budget] max_price_age_days` (I6a, docs/DESIGN.md
+    §5) — an estimate built on silently outdated prices is a liability, so estimation refuses
+    rather than quietly using a number that may no longer be true."""
+
+    def __init__(self, *, as_of: str, max_age_days: int) -> None:
+        super().__init__(
+            f"pinakes's bundled prices.toml is dated {as_of!r}, older than the configured "
+            f"max_price_age_days ({max_age_days}).",
+            remedy=(
+                "Upgrade pinakes to refresh the bundled prices, or raise `[budget] "
+                "max_price_age_days` once you have verified the current prices are still accurate."
+            ),
+        )
+        self.as_of = as_of
+        self.max_age_days = max_age_days
+
+
+class ContextWindowExceededError(PinakesError):
+    """A single request's input (`K` page-slice tokens plus the prompt) would exceed the model's
+    documented maximum input — the pre-check exists so this is discovered at estimate time, not at
+    a 400 response from a paid call already in flight (I6a, docs/DESIGN.md §5)."""
+
+    def __init__(self, *, request_tokens: int, max_input_tokens: int, model: str) -> None:
+        super().__init__(
+            f"a single request's input ({request_tokens:,} tokens) would exceed {model}'s "
+            f"documented maximum input ({max_input_tokens:,} tokens).",
+            remedy=(
+                "This should not fire under the shipped constants — K is a fixed request-shape "
+                "constant (I6a decision 8), not a configurable knob. If it does, either the "
+                "model's documented context window shrank or the page-token ceiling grew past "
+                "what any model here accepts; report this as a pinakes defect."
+            ),
+        )
+        self.request_tokens = request_tokens
+        self.max_input_tokens = max_input_tokens
+        self.model = model
+
+
 def _rebuild(cls: type[PinakesError], message: str, remedy: str) -> PinakesError:
     """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable.
 
