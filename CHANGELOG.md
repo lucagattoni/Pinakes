@@ -75,6 +75,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The budget accountant handed out a `PaidCall` instead of a context manager (I6b review).** That
+  put the void-vs-unknown decision and the closing write back in the caller's hands — undoing the
+  one guarantee `budget/ledger.py` exists to enforce, for the caller it was written for (I7b's
+  retry loop).
+
+- **A ledger line with a `usd_per_eur` of `0` crashed `pnk budget`.** Every euro figure is a
+  division computed lazily, so the `DivisionByZero` escaped the malformed-line counting whose whole
+  purpose is that one bad line cannot take the report down. Rates are validated positive at parse
+  time.
+
+- **The first reservation a KB ever wrote was not durable.** `fsync` on the file does not make its
+  *directory entry* durable, so a crash could lose it entirely while every later record survived.
+
+- **`pnk doctor` was blind to hooks inside a git worktree**, where `.git` is a file pointing
+  elsewhere: both hook checks read `root/.git/hooks` directly rather than through
+  `hooks.hooks_dir`, which has resolved that since v0.1. It reported "0 of 3 installed" on a KB
+  whose hooks were installed and running.
+
+- **`pnk budget` printed its windows in `[budget] timezone` and its operation list in the machine's
+  local zone**, and `pnk doctor` printed a raw 28-digit `Decimal` division as a euro amount.
+
 - **`pnk doctor` and `pnk sync` imported the paid API client on a KB configured for
   `claude-vision`.** Both reported a backend's availability by *loading* it —
   `doctor._extraction` on every run, and `sync._missing_pdf_extra` when building the "matched no

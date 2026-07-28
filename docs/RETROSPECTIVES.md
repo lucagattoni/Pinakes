@@ -1127,6 +1127,63 @@ locatable — the necessary price of not importing it, and worth remembering at 
 `_load_claude_vision` stops being a stub. Every fix above was confirmed to fail against the pre-fix
 code: 10 mutations planted, 10 detected, including both fixes made during this review.
 
+## I6b — budget I/O: the ledger, `pnk budget`, hooks that cannot spend (20260728 23:27)
+
+**HIGH — the accountant handed out a `PaidCall` object, undoing the one guarantee the ledger module
+exists to provide.** `budget/ledger.py`'s whole argument is that a void may only be written when no
+response was received, and that this is enforced by `paid_call` being a context manager rather than
+a convention someone remembers. `Accountant.open_call` then wrote the reservation and *returned the
+object*, putting both the void/unknown decision and the closing write back in the caller's hands —
+and the caller it was written for is I7b's retry loop, the most branch-heavy code in the release.
+Its own test left a permanent `unknown outcome` behind and asserted nothing about it. Now a context
+manager delegating to `ledger.paid_call`. *Lesson: an invariant enforced by a control-flow construct
+is only enforced where that construct is actually used. A convenience wrapper one layer up is
+exactly where it gets quietly opted out of, and "the module below guarantees it" stops being true
+the moment a caller can hold the handle.*
+
+**MEDIUM — a single bad character in the ledger could take `pnk budget` down entirely.** Every euro
+figure is `cost_usd / usd_per_eur`, computed in a property called long after parsing, from inside
+the summing loop. A line with `usd_per_eur` of `"0"` therefore raised `DivisionByZero` out of a
+read-only reporting command — defeating the malformed-line counting whose entire purpose is that no
+one bad line can do that. The parse-time checks covered *type* (a JSON number is refused, so no
+`float` gets in) but not *domain*. Rates are now validated positive at parse time, where a failure
+is a counted malformed line. *Lesson: validation placed at the parse boundary only protects what is
+computed at the parse boundary. A derived value computed lazily elsewhere needs its inputs checked
+where they enter, not where they are used.*
+
+**MEDIUM — `fsync` on the file does not make the file's name durable.** The reservation is written
+before the call precisely so a crash during the call cannot lose it, and each write is fsynced. But
+creating a file and fsyncing its contents leaves the *directory entry* unsynced, so the very first
+reservation a KB ever writes — the one before its first paid call — could vanish on a crash while
+every later one survived. The parent directory is now fsynced on creation only. *Lesson: durability
+claims have to name what is durable. "The write is fsynced" is a claim about bytes; "the record
+survives a crash" additionally requires the file to still have a name.*
+
+**MEDIUM — both hook checks read `root/.git/hooks` directly, so they were blind in a git worktree.**
+Inside a worktree or submodule `.git` is a *file* pointing elsewhere; `hooks.hooks_dir` has resolved
+that since I12, and `doctor` never used it. Every hook read as absent, so `pnk doctor` reported "0 of
+3 installed" and I6b's new machine-driven-spend check would have reported "no hooks installed, so no
+automatic sync runs" on a KB whose hooks were installed and running. Worth more than its size here:
+this project's own CLAUDE.md mandates a worktree for *every* change, so the layout the check is blind
+on is the one it is developed in. *Lesson: a helper that already handles a case is not the same as
+using it — the second reader of `.git` reintroduced the bug the first one had solved.*
+
+**LOW, worth keeping — one report, two clocks.** `pnk budget` computes its windows in
+`[budget] timezone` and printed the recent-operations list in the *machine's* local zone, unlabelled.
+On a KB synced from two machines the same operation renders at two different times, and the day a
+call is filed under would not match the timestamp beside it. *Recorded because the fix is trivial and
+the class of bug is not: a report that derives one number from configuration and another from
+ambient state looks consistent on the machine it was written on.*
+
+Also: `doctor` printed `cost_eur` — a `Decimal` division — with a bare f-string, putting all 28
+significant digits into a health-check line; the `--resolve` record's `operation` field was
+documented as a value it never takes. Every fix above was confirmed to fail against the pre-fix
+code: 14 mutations planted over the implementation (14 detected), and 5 more reverting each review
+fix in turn (5 detected), the last of which found that the formatting fix had no test at all until
+one was written for it.
+
+---
+
 ---
 
 ## Design review passes 1–7 (pre-implementation)

@@ -108,7 +108,9 @@ class Record:
     operation_id: str
     call_id: str
     operation: str
-    """The user-facing invocation kind: `sync`, `ask`, or `resolve` for an operator record."""
+    """The user-facing invocation kind — `sync`, `ask`. An operator's `--resolve` record copies the
+    reservation's own value rather than inventing one: the pair describes one call, made by one
+    operation, and `source` is what says who wrote the closing line."""
     kb_id: str
     model: str
     cost_usd: Decimal
@@ -159,7 +161,7 @@ class Record:
                 kb_id=_text(data, "kb_id"),
                 model=_text(data, "model"),
                 cost_usd=_money(data, "cost_usd"),
-                usd_per_eur=_money(data, "usd_per_eur"),
+                usd_per_eur=_rate(data, "usd_per_eur"),
                 prices_as_of=_text(data, "prices_as_of"),
                 input_tokens=_count(data, "input_tokens"),
                 output_tokens=_count(data, "output_tokens"),
@@ -198,6 +200,20 @@ def _money(data: Mapping[str, Any], key: str) -> Decimal:
     return Decimal(value)
 
 
+def _rate(data: Mapping[str, Any], key: str) -> Decimal:
+    """A conversion rate, which every euro figure is *divided* by.
+
+    Zero (or negative) is rejected here rather than at the division, because the division happens
+    in `cost_eur` — a property, called long after parsing, from inside `pnk budget`'s own summing.
+    A `DivisionByZero` escaping from there is a traceback out of a read-only reporting command,
+    and the whole point of counting malformed lines is that no single bad line can do that.
+    """
+    rate = _money(data, key)
+    if rate <= ZERO:
+        raise ValueError(f"{key} must be positive, got {rate}")
+    return rate
+
+
 def _count(data: Mapping[str, Any], key: str) -> int | None:
     value = data.get(key)
     if value is None:
@@ -218,6 +234,11 @@ def append(path: Path, record: Record) -> None:
     the same moment cannot land inside this line. The `fsync` is what makes the pre-call
     reservation worth writing at all: without it a crash during the call can lose the very record
     that exists to survive one.
+
+    The *directory* is fsynced too, but only when this call created the file. Syncing a file's
+    contents does not make its directory entry durable, so without it the very first reservation a
+    KB ever writes — the one before the first paid call it ever makes — could vanish entirely on a
+    crash while every later one survived.
     """
     payload = json.dumps(record.as_json(), separators=(",", ":"), sort_keys=True) + "\n"
     data = payload.encode("utf-8")
@@ -227,6 +248,7 @@ def append(path: Path, record: Record) -> None:
             remedy="Records must fit one atomic append (docs/DESIGN.md §5). Shorten the fields.",
         )
     path.parent.mkdir(parents=True, exist_ok=True)
+    created = not path.exists()
     try:
         handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
     except OSError as exc:
@@ -247,6 +269,24 @@ def append(path: Path, record: Record) -> None:
             f"cannot write to {path}: {exc.strerror}.",
             remedy="The spend ledger must be writable before a paid call is made.",
         ) from exc
+    finally:
+        os.close(handle)
+    if created:
+        _fsync_directory(path.parent)
+
+
+def _fsync_directory(directory: Path) -> None:
+    """Best effort — a platform that cannot open a directory read-only still gets a durable file,
+    just not a guaranteed durable name for it, and refusing to record spend over that would be the
+    worse trade."""
+    try:
+        handle = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(handle)
+    except OSError:
+        pass
     finally:
         os.close(handle)
 

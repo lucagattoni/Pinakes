@@ -1,7 +1,8 @@
 # CLI reference
 
-Every command and flag on the `pnk` surface, as of 0.2.0 (20260728 16:40). Task-oriented walkthroughs
-are in [GUIDE.md](GUIDE.md); whether something is built yet is in [STATUS.md](STATUS.md).
+Every command and flag on the `pnk` surface — including what is merged to `main` but not yet
+released. Task-oriented walkthroughs are in [GUIDE.md](GUIDE.md); **whether a given surface is in a
+release yet is [STATUS.md](STATUS.md)**, which is why no version is quoted here.
 
 `pnk --help` and `pnk <command> --help` are authoritative — this file adds the *when* and *why*.
 

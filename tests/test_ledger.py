@@ -577,3 +577,48 @@ def test_a_naive_timestamp_is_refused(path: Path) -> None:
     entry["at"] = "2026-07-28T12:00:00"
     path.write_text(json.dumps(entry) + "\n", encoding="utf-8")
     assert read(path).malformed == (1,)
+
+
+def test_a_zero_conversion_rate_is_a_malformed_line_not_a_traceback(path: Path) -> None:
+    """Every euro figure is `cost_usd / usd_per_eur`, and that division happens in a property —
+    called long after parsing, from inside `pnk budget`'s own summing. A `DivisionByZero` escaping
+    from there is a traceback out of a read-only reporting command."""
+    append(path, record(RecordKind.RESERVATION, call_id="C1"))
+    entry = lines(path)[0]
+    entry["usd_per_eur"] = "0"
+    path.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+
+    contents = read(path)
+    assert contents.records == ()
+    assert contents.malformed == (1,)
+
+
+def test_a_negative_conversion_rate_is_refused_too(path: Path) -> None:
+    append(path, record(RecordKind.RESERVATION, call_id="C1"))
+    entry = lines(path)[0]
+    entry["usd_per_eur"] = "-1.08"
+    path.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    assert read(path).malformed == (1,)
+
+
+def test_the_first_write_syncs_the_directory_entry_too(
+    path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Syncing a file's contents does not make its *name* durable. Without this, the very first
+    reservation a KB ever writes — the one before its first paid call — could vanish on a crash
+    while every later one survived."""
+    synced: list[int] = []
+    real_fsync = os.fsync
+
+    def spy(handle: int) -> None:
+        synced.append(handle)
+        real_fsync(handle)
+
+    monkeypatch.setattr(os, "fsync", spy)
+
+    append(path, record(RecordKind.RESERVATION, call_id="C1"))
+    assert len(synced) == 2, "the file and its directory"
+
+    synced.clear()
+    append(path, record(RecordKind.RESERVATION, call_id="C2"))
+    assert len(synced) == 1, "the file only — the directory entry already exists"

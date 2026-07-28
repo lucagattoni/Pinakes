@@ -16,7 +16,8 @@ against the same KB between two of them. Caching the totals for the duration of 
 three enforced ceilings into three ceilings enforced against a stale snapshot.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -105,17 +106,19 @@ class Accountant:
             confirm_above_eur=self.manifest.budget.confirm_above_eur,
         )
 
-    def open_call(
-        self,
-        *,
-        model: str,
-        reserved_eur: Decimal,
-        call_id: CallId | None = None,
-    ) -> ledger.PaidCall:
-        """Mint a call and write its reservation. The caller drives it — `response_received()` the
-        instant the client returns, then `reconcile()` — and `budget.ledger.paid_call` is the
-        wrapper that guarantees an unclosed call is still resolved correctly."""
-        call = ledger.PaidCall(
+    @contextmanager
+    def paid_call(
+        self, *, model: str, reserved_eur: Decimal, call_id: CallId | None = None
+    ) -> Generator[ledger.PaidCall]:
+        """Mint a call, write its reservation, and guarantee it is closed correctly.
+
+        A context manager, not a `PaidCall` handed back to the caller, for the reason
+        `budget.ledger` states: whether a failed call may be voided depends on `response_received`,
+        and a returned object leaves that decision — and the closing write itself — to whoever
+        remembers. The caller's whole job inside the block is `response_received()` the instant the
+        client returns, then `reconcile()`.
+        """
+        with ledger.paid_call(
             self.path,
             operation_id=self.operation_id,
             call_id=call_id or mint_call_id(),
@@ -126,9 +129,8 @@ class Accountant:
             usd_per_eur=self.prices.usd_per_eur,
             prices_as_of=self.prices.as_of,
             now=self._now,
-        )
-        call.reserve()
-        return call
+        ) as call:
+            yield call
 
 
 @dataclass(frozen=True, slots=True)

@@ -249,14 +249,19 @@ def test_the_operation_window_is_read_back_from_the_ledger_not_tallied_in_memory
     now = datetime.now(UTC)
     accountant = Accountant(loaded, prices=prices(), now=now)
 
-    call = accountant.open_call(model=MODEL, reserved_eur=Decimal("0.06"))
-    assert call.call_id
-    assert accountant.spent().operation == Decimal("0.06")
+    with accountant.paid_call(model=MODEL, reserved_eur=Decimal("0.06")) as call:
+        assert call.call_id
+        call.response_received()
+        # Inside the call, before it is reconciled: the reservation already consumes headroom.
+        assert accountant.spent().operation == Decimal("0.06")
 
-    # A second accountant on the *same* operation id — what a resumed process would build.
-    resumed = Accountant(loaded, prices=prices(), operation_id=accountant.operation_id, now=now)
-    assert resumed.spent().operation == Decimal("0.06")
-    assert not resumed.check_call(Decimal("0.06")).allowed
+        # A second accountant on the *same* operation id — what a resumed process would build.
+        resumed = Accountant(loaded, prices=prices(), operation_id=accountant.operation_id, now=now)
+        assert resumed.spent().operation == Decimal("0.06")
+        assert not resumed.check_call(Decimal("0.06")).allowed
+        call.reconcile(cost_usd=Decimal("0.0648"))
+
+    assert accountant.spent().operation == Decimal("0.06")
 
     # A different operation starts with a clean per-operation allowance, and still sees the day.
     fresh = Accountant(loaded, prices=prices(), now=now)
@@ -475,3 +480,49 @@ def test_no_hook_and_no_workflow_writes_the_paid_clearing_flag() -> None:
 
     assert all("--clear-cache" not in command for command in HOOKS.values())
     assert "--clear-cache" not in WORKFLOW
+
+
+def test_a_call_opened_through_the_accountant_is_always_closed(
+    make_fake_kb: Callable[..., Path],
+) -> None:
+    """`Accountant.paid_call` is a context manager, not a `PaidCall` handed back: a returned object
+    leaves both the void/unknown decision and the closing write to whoever remembers, which is the
+    one thing `budget.ledger` exists to take out of a caller's hands."""
+    from pinakes.budget.ledger import CallState, read, resolve
+
+    root = make_fake_kb(budget={"per_operation_eur": "1.00", "daily_eur": "100.00"})
+    accountant = Accountant(load(root), prices=prices(), now=datetime.now(UTC))
+
+    with (
+        pytest.raises(RuntimeError),
+        accountant.paid_call(model=MODEL, reserved_eur=Decimal("0.06")),
+    ):
+        raise RuntimeError("connection reset before any response byte")
+
+    (call,) = resolve(read(ledger_of(root)).records).calls
+    assert call.state is CallState.VOIDED
+    assert accountant.spent().day == Decimal("0")
+
+
+def test_recent_operations_are_shown_in_the_configured_timezone(
+    make_fake_kb: Callable[..., Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One report, one clock. The machine's own local zone would be a second, unlabelled one — and
+    on a KB synced from two machines the same operation would appear at two different times."""
+    root = make_fake_kb(budget={"timezone": '"Asia/Tokyo"'})
+    loaded = load(root)
+    # 23:30 UTC on the 15th is 08:30 on the *16th* in Tokyo.
+    append(
+        ledger_of(root),
+        entry(
+            RecordKind.RESERVATION,
+            call_id="A",
+            kb_id=loaded.kb.id,
+            at=datetime(2026, 7, 15, 23, 30, tzinfo=UTC),
+            cost_usd="0.01",
+        ),
+    )
+
+    assert main(["budget", "--kb", str(root)]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert "20260716 08:30" in out

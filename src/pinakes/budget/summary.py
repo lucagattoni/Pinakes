@@ -225,8 +225,12 @@ def render(summary: Summary) -> list[str]:
     if summary.operations:
         lines.append("")
         lines.append("  recent operations:")
+        # Shown in `[budget] timezone`, the same zone the windows above are computed in. The
+        # machine's own local zone would be a second, unlabelled clock in one report — and on a KB
+        # synced from two machines it would make the same operation appear at two different times.
+        zone = ZoneInfo(summary.timezone)
         lines.extend(
-            f"    {operation.started.astimezone().strftime('%Y%m%d %H:%M')}  "
+            f"    {operation.started.astimezone(zone).strftime('%Y%m%d %H:%M')}  "
             f"{operation.operation:<7} {operation.calls:>3} call(s)  "
             f"€{euros(operation.spent_eur)}"
             for operation in summary.operations

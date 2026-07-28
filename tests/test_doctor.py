@@ -457,7 +457,7 @@ def test_a_ledger_with_no_unknown_outcomes_is_quiet(kb: Path) -> None:
     assert detail == "none"
 
 
-def _reserve(kb: Path, *, call_id: str, cost_usd: str) -> None:
+def _reserve(kb: Path, *, call_id: str, cost_usd: str, rate: str = "1.00") -> None:
     from datetime import UTC, datetime
     from decimal import Decimal
 
@@ -474,7 +474,7 @@ def _reserve(kb: Path, *, call_id: str, cost_usd: str) -> None:
             kb_id=load(kb).kb.id,
             model="claude-opus-5",
             cost_usd=Decimal(cost_usd),
-            usd_per_eur=Decimal("1.00"),
+            usd_per_eur=Decimal(rate),
             prices_as_of="20260728 12:00",
         ),
     )
@@ -543,3 +543,29 @@ def test_a_paid_backend_without_hooks_says_no_automatic_sync_runs(kb: Path) -> N
     status, detail = checks(kb)["machine-driven spend"]
     assert status is Status.OK
     assert "no pinakes hooks installed" in detail
+
+
+def test_hooks_are_found_inside_a_git_worktree(kb: Path, tmp_path: Path) -> None:
+    """In a worktree or submodule `.git` is a *file* pointing elsewhere. Probing
+    `root/.git/hooks` directly names a directory that does not exist, so every hook reads as
+    absent and both hook checks quietly report the wrong thing on exactly the layout this
+    project's own CLAUDE.md mandates for every change."""
+    from pinakes.hooks import install
+
+    real_gitdir = tmp_path / "real-gitdir"
+    real_gitdir.mkdir()
+    (kb / ".git").write_text(f"gitdir: {real_gitdir}\n", encoding="utf-8")
+    install(kb)
+    assert (real_gitdir / "hooks" / "pre-commit").is_file()
+
+    status, detail = checks(kb)["git hooks"]
+    assert status is Status.OK, detail
+
+
+def test_the_unknown_outcome_total_is_formatted_not_a_raw_decimal(kb: Path) -> None:
+    """`cost_eur` is a division: $0.10 at 1.08 is €0.0925925925925925925925925926, and a bare
+    f-string puts all 28 significant digits into a health-check line."""
+    _reserve(kb, call_id="C1", cost_usd="0.10", rate="1.08")
+    _status, detail = checks(kb)["unknown outcomes"]
+    assert "€0.0926" in detail
+    assert "0.09259259" not in detail

@@ -25,6 +25,7 @@ from pinakes.budget.ledger import CallState, ledger_path
 from pinakes.budget.ledger import read as read_ledger
 from pinakes.budget.ledger import resolve as ledger_resolve
 from pinakes.budget.prices import load_prices
+from pinakes.budget.summary import euros
 from pinakes.budget.window import in_window
 from pinakes.embed import hf_cache_dir, load_backend, load_reranker
 from pinakes.errors import (
@@ -32,6 +33,7 @@ from pinakes.errors import (
     ExtractionCoherenceError,
     ExtractionError,
     ExtractorMissingError,
+    HookError,
     LedgerError,
     PinakesError,
     PricesMissingError,
@@ -44,7 +46,7 @@ from pinakes.extract import (
     paid_backend_names,
 )
 from pinakes.extract import cache as extract_cache
-from pinakes.hooks import FREE_BACKEND_FLAG, HOOKS
+from pinakes.hooks import FREE_BACKEND_FLAG, HOOKS, hooks_dir
 from pinakes.ids import DocId
 from pinakes.lock import LOCK_NAME, read_holder
 from pinakes.manifest import Manifest
@@ -559,11 +561,18 @@ def _hooks(manifest: Manifest) -> Check:
 
 
 def _installed_hooks(manifest: Manifest) -> list[str]:
-    hooks = manifest.root / ".git" / "hooks"
+    """Which of our hooks are installed. Resolved through `hooks.hooks_dir`, not
+    `root/.git/hooks`: inside a git worktree or submodule `.git` is a *file* pointing elsewhere, so
+    the naive path names a directory that does not exist and every hook reads as absent."""
+    try:
+        directory = hooks_dir(manifest.root)
+    except HookError:
+        return []
     return [
         name
         for name in HOOKS
-        if (hooks / name).is_file() and HOOK_MARKER in (hooks / name).read_text(encoding="utf-8")
+        if (directory / name).is_file()
+        and HOOK_MARKER in (directory / name).read_text(encoding="utf-8", errors="replace")
     ]
 
 
@@ -662,9 +671,11 @@ def _unknown_outcomes(manifest: Manifest) -> Check:
         )
         if total * 4 > cap
     ]
+    # Formatted, never printed raw: `cost_eur` is a division, so a bare f-string renders it at
+    # `Decimal`'s full 28 significant digits.
     detail = (
-        f"{len(unknown)} call(s) neither reconciled nor voided — €{month_total} of this month's "
-        f"budget, €{day_total} of today's"
+        f"{len(unknown)} call(s) neither reconciled nor voided — €{euros(month_total)} of this "
+        f"month's budget, €{euros(day_total)} of today's"
     )
     remedy = (
         "`pnk budget` lists them; check the vendor's usage dashboard and close each with "
