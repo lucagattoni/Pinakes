@@ -101,7 +101,7 @@ def fake_paid() -> Iterator[str]:
     name = "test-paid"
     entry = ExtractorEntry(
         load=_FakePaidExtractor,
-        fingerprint_inputs=lambda: {"backend": name},
+        fingerprint_inputs=lambda _model=None: {"backend": name},
         paid=True,
     )
     register_extractor(name, entry)

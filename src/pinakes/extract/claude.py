@@ -847,7 +847,7 @@ class AnthropicTransport:
         )
 
 
-def fingerprint_inputs() -> Mapping[str, str]:
+def fingerprint_inputs(model: str | None = None) -> Mapping[str, str]:
     """What this backend's extraction depends on — client-free, so §4.4 can hash it on every query.
 
     Includes the pdfium versions because this backend **does** load pypdfium2, to slice and to
@@ -862,6 +862,9 @@ def fingerprint_inputs() -> Mapping[str, str]:
 
     return {
         "backend": CLAUDE_VISION,
+        # The model is part of what produced the text, so it is part of the key: without it,
+        # editing `[extraction] model` would silently reuse text a different model wrote.
+        "model": model or "",
         "prompt_version": str(PROMPT_VERSION),
         "schema_version": str(SCHEMA_VERSION),
         "request_shape_version": str(REQUEST_SHAPE_VERSION),

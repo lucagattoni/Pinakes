@@ -135,6 +135,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`pnk budget` printed its windows in `[budget] timezone` and its operation list in the machine's
   local zone**, and `pnk doctor` printed a raw 28-digit `Decimal` division as a euro amount.
 
+- **The paid extraction fingerprint omitted the model (I7b review)** — so changing
+  `[extraction] model` hit a cache entry a *different* model had written, with no miss and no
+  stale marker. The registry's fingerprint contract now carries the configured model; free
+  backends ignore it, so no existing index goes stale.
+
 - **A paid call's reconciliation recorded the reserved amount rather than what it cost (I7b
   review)** — the protocol's shape was right and its content was the estimate again, so every
   budget window would have charged worst-case forever with a reconciliation record present to make

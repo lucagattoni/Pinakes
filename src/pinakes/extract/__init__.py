@@ -82,7 +82,11 @@ class Extractor(Protocol):
 
 
 type ExtractorFactory = Callable[[], Extractor]
-type FingerprintInputs = Callable[[], Mapping[str, str]]
+type FingerprintInputs = Callable[[str | None], Mapping[str, str]]
+"""Takes `[extraction] model`, because for a paid backend the model **is** part of what produced
+the text: without it, changing `model` would silently reuse a cache entry a different model wrote
+(plans/v0.2.md, I7b). Free backends ignore it — `pypdfium2` has no model — and it stays a plain
+string so this is still client-free."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,14 +173,16 @@ def paid_backend_names() -> frozenset[str]:
     return frozenset(name for name in _REGISTRY if _REGISTRY[name].paid)
 
 
-def fingerprint_inputs(name: str) -> Mapping[str, str]:
+def fingerprint_inputs(name: str, model: str | None = None) -> Mapping[str, str]:
     """The backend's declared inputs — never imports, so §4.4 can call this on every query."""
-    return _entry(name).fingerprint_inputs()
+    return _entry(name).fingerprint_inputs(model)
 
 
-def fingerprint(name: str) -> str:
+def fingerprint(name: str, model: str | None = None) -> str:
     """Hash a backend's inputs with one shared pure function, never a per-backend formula."""
-    canonical = json.dumps(dict(fingerprint_inputs(name)), sort_keys=True, ensure_ascii=False)
+    canonical = json.dumps(
+        dict(fingerprint_inputs(name, model)), sort_keys=True, ensure_ascii=False
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -203,7 +209,7 @@ def _load_pypdfium2() -> Extractor:
     return Pypdfium2Extractor()
 
 
-def _pypdfium2_fingerprint_inputs() -> Mapping[str, str]:
+def _pypdfium2_fingerprint_inputs(_model: str | None = None) -> Mapping[str, str]:
     """Deliberately omits pypdfium2's bundled PDFium *build* number — see `pdfium.py`'s own
     docstring for why: it exists only as an attribute of the imported module, and this function
     must never import the backend it describes (`test_fingerprint_inputs_never_import_the_backend`,
@@ -230,7 +236,7 @@ def _load_claude_vision() -> Extractor:
     return ClaudeVisionExtractor()
 
 
-def _claude_vision_fingerprint_inputs() -> Mapping[str, str]:
+def _claude_vision_fingerprint_inputs(model: str | None = None) -> Mapping[str, str]:
     """Deferred to the adapter, which owns the versions that actually shape its output — and
     imported lazily *here* rather than at module scope, because `claude.py` imports this module
     (for `ExtractedText`) and a top-level import would close the cycle.
@@ -240,7 +246,7 @@ def _claude_vision_fingerprint_inputs() -> Mapping[str, str]:
     """
     from pinakes.extract.claude import fingerprint_inputs as claude_fingerprint_inputs
 
-    return claude_fingerprint_inputs()
+    return claude_fingerprint_inputs(model)
 
 
 _FAKE_PAGE_1 = (
@@ -265,7 +271,7 @@ def _load_fake() -> Extractor:
     return _FakeExtractor()
 
 
-def _fake_fingerprint_inputs() -> Mapping[str, str]:
+def _fake_fingerprint_inputs(_model: str | None = None) -> Mapping[str, str]:
     return {"backend": FAKE}
 
 

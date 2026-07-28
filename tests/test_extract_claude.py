@@ -523,11 +523,34 @@ def test_the_fingerprint_names_what_shapes_the_output_and_nothing_else() -> None
 
 
 def test_changing_the_model_misses_the_cache() -> None:
-    """A `[extraction] model` change must not silently reuse text a different model produced."""
-    from pinakes.extract.claude import fingerprint_inputs as claude_inputs
+    """The cache key is `<content_hash>-<fingerprint>`, so this *is* the cache-miss test: if the
+    model does not enter the fingerprint, editing `[extraction] model` silently reuses text a
+    different model produced, and nothing anywhere says so."""
+    from pinakes.extract import fingerprint
 
-    baseline = dict(claude_inputs())
-    assert baseline["prompt_version"] and baseline["schema_version"]
+    opus = fingerprint(CLAUDE_VISION, "claude-opus-5")
+    other = fingerprint(CLAUDE_VISION, "some-other-model")
+    assert opus != other
+    assert fingerprint(CLAUDE_VISION, "claude-opus-5") == opus, "and it is stable"
+
+
+def test_changing_k_misses_the_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """K is a semantic constant, not a tuning knob: a page transcribed with different neighbours
+    is a different extraction, so the slice size has to be part of the key."""
+    from pinakes.extract import claude as claude_module
+    from pinakes.extract import fingerprint
+
+    before = fingerprint(CLAUDE_VISION, MODEL)
+    monkeypatch.setattr(claude_module, "K", 3)
+    assert fingerprint(CLAUDE_VISION, MODEL) != before
+
+
+def test_the_free_backends_fingerprint_ignores_the_model() -> None:
+    """`pypdfium2` has no model, so threading one through must not perturb its key — otherwise
+    every free KB's index would go stale the day this parameter was added."""
+    from pinakes.extract import PYPDFIUM2, fingerprint
+
+    assert fingerprint(PYPDFIUM2, "claude-opus-5") == fingerprint(PYPDFIUM2, None)
 
 
 # --- the one test that needs a real key ----------------------------------------------------------

@@ -1269,7 +1269,7 @@ def _extract_for_index(
         )
         return load_extractor(extraction_backend).extract(source, ctx)
 
-    used_fingerprint = fingerprint(extraction_backend)
+    used_fingerprint = fingerprint(extraction_backend, manifest.extraction.model)
     extracted = extract_cache.get_or_extract(
         manifest.extract_cache_dir,
         content_hash=content_hash,

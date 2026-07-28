@@ -194,7 +194,7 @@ def probe_backend() -> Iterator[Callable[[tuple[str, str] | None], str]]:
             name,
             ExtractorEntry(
                 load=lambda: load_extractor(FAKE),
-                fingerprint_inputs=lambda: {"backend": name},
+                fingerprint_inputs=lambda _model=None: {"backend": name},
                 requires=requires,
             ),
         )

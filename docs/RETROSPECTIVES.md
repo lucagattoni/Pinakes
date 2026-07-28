@@ -1260,6 +1260,22 @@ reporting nothing. Built on the first PDF now. Also cleaned up in the same pass:
 call is committed — the size question belongs before anything is built), and a repeated
 `"claude-vision"` literal where the module already imports the constant.
 
+**HIGH, fourth pass — the paid fingerprint omitted the model, so changing it reused another
+model's text.** The plan states the inputs as "(backend name, **model id**, prompt version, schema
+version, request-shape version…)" and I wrote every one of those except the model. The cache key is
+`<content_hash>-<fingerprint>`, so editing `[extraction] model` would have hit an entry a
+*different* model wrote, with no miss, no warning and no stale marker — the §4.4 machinery intact
+and looking at the wrong key. The plan names two tests for exactly this
+(`test_changing_the_model_misses_the_cache`, `test_changing_k_misses_the_cache`) and I had written a
+placeholder for the first that only asserted two unrelated fields were non-empty, which is how it
+stayed invisible through three review passes and fifteen mutations. Fixing it meant threading
+`[extraction] model` through the registry's `FingerprintInputs` contract — two real callers, `sync`
+and the §4.4 coherence check — plus a test that the *free* backend's key is unperturbed by the new
+parameter, or every existing free KB's index would have gone stale the day it was added. *Lesson: a
+test written to a name from the plan, but not to the claim behind the name, is worse than a missing
+test — the plan's checklist reads as satisfied. The tell was there in the placeholder's own body:
+it asserted things that could not fail.*
+
 **LOW, third pass — markdown emphasis reached a terminal.** `--estimate-only`'s help text carried
 `**A network call**`, which argparse renders as literal asterisks: the emphasis was written for
 CLI.md and pasted into a surface that has no renderer. Now checked against every command's
@@ -1273,7 +1289,7 @@ Also: `stubs/anthropic.pyi` joins `stubs/pypdfium2.pyi`, because the strict type
 memory — `APIConnectionError` is a *sibling* of `APIStatusError`, and `APITimeoutError` a subclass
 of the former — because checking them in the wrong order classifies every timeout as a plain
 connection failure, which is the difference between recording €0 and admitting a possible charge.
-15 mutations planted in total, 15 detected once the survivors got tests.
+18 mutations planted in total, 18 detected once the survivors got tests.
 
 ---
 

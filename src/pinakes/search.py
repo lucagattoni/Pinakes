@@ -104,10 +104,10 @@ def check_coherence(connection: sqlite3.Connection, manifest: Manifest) -> dict[
     if differences:
         raise CoherenceError(differences)
 
-    return _check_extraction_coherence(connection)
+    return _check_extraction_coherence(connection, manifest.extraction.model)
 
 
-def _check_extraction_coherence(connection: sqlite3.Connection) -> dict[DocId, str]:
+def _check_extraction_coherence(connection: sqlite3.Connection, model: str) -> dict[DocId, str]:
     stale_paid: dict[DocId, str] = {}
     known = set(registered_extractors())
     rows = connection.execute(
@@ -123,7 +123,7 @@ def _check_extraction_coherence(connection: sqlite3.Connection) -> dict[DocId, s
             # because refusing every query on an otherwise-healthy KB over one unrecognised name
             # is a worse failure than the one this check exists to prevent.
             continue
-        current = extraction_fingerprint(backend)
+        current = extraction_fingerprint(backend, model)
         if current == stored:
             continue
         affected = connection.execute(
