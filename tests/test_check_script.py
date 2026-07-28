@@ -65,3 +65,14 @@ echo "all gates green"
     assert "some-gate: skipped -- reason" in result.stdout
     assert "gate ran" not in result.stdout
     assert "all gates green" in result.stdout
+
+
+def test_check_sh_declares_the_prices_toml_gate() -> None:
+    """I6a: unlike the extras-gated checks above, this one has no skip branch — `budget/` has no
+    extra to be absent — so nothing else would notice if it were quietly deleted or reduced to a
+    no-op. `pyright`/`ruff` never see it: it is shell embedding Python, not a module either
+    checker parses."""
+    text = CHECK_SH.read_text(encoding="utf-8")
+    assert "load_prices" in text
+    assert "strptime" in text
+    assert "%Y%m%d %H:%M" in text

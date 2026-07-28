@@ -1,0 +1,17 @@
+# Ships as package data (I6a) — read at runtime through `importlib.resources`, never a
+# repo-relative path, so an installed wheel sees exactly what a source checkout does.
+#
+# Every price is a *string*, not a bare TOML number: this file is entirely project-controlled
+# (never user-authored, unlike pinakes.toml), so there is no reason to let a TOML float sit
+# between the literal below and the `Decimal` this project does all money arithmetic in.
+# `Decimal("5.00")` is exact; `Decimal(5.00)` is not (verified directly, docs/RETROSPECTIVES.md).
+#
+# usd_per_eur carries the same as_of as the model prices below: every EUR figure this project
+# computes depends on it, and a rate with its own, different staleness would make "the prices are
+# fresh" a claim about only half of what an estimate actually uses.
+as_of = "20260728 16:31"
+usd_per_eur = "1.08"
+
+[models.claude-opus-5]
+input_per_mtok_usd = "5.00"
+output_per_mtok_usd = "25.00"

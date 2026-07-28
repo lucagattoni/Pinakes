@@ -20,6 +20,7 @@ import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -108,14 +109,19 @@ class RerankSection:
 
 @dataclass(frozen=True, slots=True)
 class BudgetSection:
-    """Parsed and validated from v0.1, consumed from v0.4.
+    """Parsed and validated from v0.1; the caps are consumed by `budget.reserve` from I6a, the
+    ledger and `pnk ask --deep` itself still land later (I6b/v0.4).
 
-    Validated now so a KB authored today does not break when the paid path arrives.
+    All four caps are `Decimal`, not `float` (I6a): a reservation compared against a
+    float-derived cap is a representation error wearing a different hat, and the boundary tests
+    this increment adds assert exact equality at the cent.
     """
 
-    confirm_above_eur: float
-    per_operation_eur: float
-    monthly_eur: float
+    confirm_above_eur: Decimal
+    per_operation_eur: Decimal
+    daily_eur: Decimal
+    monthly_eur: Decimal
+    max_price_age_days: int
     timezone: str
     on_exceed: str
 
@@ -419,16 +425,24 @@ def _budget(root_table: Table, path: Path) -> BudgetSection:
     table = _optional_table(root_table, "budget")
     if table is None:
         return BudgetSection(
-            confirm_above_eur=0.01,
-            per_operation_eur=0.05,
-            monthly_eur=5.0,
+            confirm_above_eur=Decimal("0.01"),
+            per_operation_eur=Decimal("0.05"),
+            daily_eur=Decimal("1.00"),
+            monthly_eur=Decimal("5.00"),
+            max_price_age_days=30,
             timezone="UTC",
             on_exceed="abort",
         )
     section = BudgetSection(
-        confirm_above_eur=table.number("confirm_above_eur", default=0.01, minimum=0.0),
-        per_operation_eur=table.number("per_operation_eur", default=0.05, minimum=0.0),
-        monthly_eur=table.number("monthly_eur", default=5.0, minimum=0.0),
+        confirm_above_eur=table.decimal(
+            "confirm_above_eur", default=Decimal("0.01"), minimum=Decimal("0")
+        ),
+        per_operation_eur=table.decimal(
+            "per_operation_eur", default=Decimal("0.05"), minimum=Decimal("0")
+        ),
+        daily_eur=table.decimal("daily_eur", default=Decimal("1.00"), minimum=Decimal("0")),
+        monthly_eur=table.decimal("monthly_eur", default=Decimal("5.00"), minimum=Decimal("0")),
+        max_price_age_days=table.integer("max_price_age_days", default=30, minimum=1),
         timezone=table.string_or("timezone", "UTC"),
         on_exceed=table.choice("on_exceed", ON_EXCEED, default="abort"),
     )
