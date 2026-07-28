@@ -932,7 +932,7 @@ def test_a_real_sync_extracts_indexes_records_and_caches(
         CLAUDE_VISION,
         ExtractorEntry,
         register_extractor,
-        unregister_extractor,
+        registered_entry,
     )
     from pinakes.extract import claude as claude_module
     from pinakes.extract.claude import ClaudeVisionExtractor
@@ -955,6 +955,9 @@ def test_a_real_sync_extracts_indexes_records_and_caches(
         {"type": "text", "text": json_module.dumps({"pages": [{"page": 1, "text": "paid text"}]})}
     ]
     original = claude_module.default_transport
+    # Captured and re-registered, never unregistered: `unregister_extractor` deletes, and deleting
+    # a name the package registers at import leaves every later test in the session without it.
+    original_entry = registered_entry(CLAUDE_VISION)
     register_extractor(
         CLAUDE_VISION,
         ExtractorEntry(
@@ -969,7 +972,7 @@ def test_a_real_sync_extracts_indexes_records_and_caches(
         # `--force`: the corpus PDF is healthy by design, so the free-yield guard would refuse it.
         assert main(["sync", "--kb", str(root), "--force", "--yes"]) == EXIT_OK
     finally:
-        unregister_extractor(CLAUDE_VISION)
+        register_extractor(CLAUDE_VISION, original_entry)
         claude_module.default_transport = original
 
     assert transport.calls == 1

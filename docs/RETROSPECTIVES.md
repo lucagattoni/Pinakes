@@ -1293,8 +1293,13 @@ together across four modules, and "each part works" is not the claim "the parts 
 which is the seam an increment is most likely to get wrong. One end-to-end test now runs a real
 `pnk sync` over a paid KB and checks the whole chain: the document indexed under `claude-vision`,
 the ledger's call reconciled, and the cache entry carrying the `operation_id`/`call_ids` that §6.3
-left `null` until this increment. It passed first time; recorded because its absence was the last
-thing five passes had not noticed.
+left `null` until this increment. It passed first time — but writing it introduced the pass's
+one real defect, and only the `[claude]` leg saw it: the test swapped the registry entry and then
+called `unregister_extractor`, which *deletes*. There is no undo for a name the package registers
+at import, so two unrelated tests later in the session lost `claude-vision` entirely. Fixed with a
+`registered_entry` accessor and a re-register in the `finally`. *Lesson: a test that mutates
+process-global state needs to restore the previous value, not remove its own — and a suite that
+only ever runs on one CI leg will not show you which.*
 
 **LOW, third pass — markdown emphasis reached a terminal.** `--estimate-only`'s help text carried
 `**A network call**`, which argparse renders as literal asterisks: the emphasis was written for

@@ -119,6 +119,15 @@ def unregister_extractor(name: str) -> None:
     del _REGISTRY[name]
 
 
+def registered_entry(name: str) -> ExtractorEntry:
+    """The registered entry itself — for a test that swaps one out and must put it *back*.
+
+    `unregister_extractor` deletes; there is no undo for a name the package registered at import,
+    and a test that deletes one poisons every later test in the session (I7b review, pass 6).
+    """
+    return _entry(name)
+
+
 def registered_extractors() -> list[str]:
     return sorted(_REGISTRY)
 
