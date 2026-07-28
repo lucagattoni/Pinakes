@@ -11,7 +11,7 @@ import yaml
 
 from pinakes import store
 from pinakes.embed import EmbeddingBackend, ModelInfo, Vectors
-from pinakes.errors import DuplicateIdsError
+from pinakes.errors import DuplicateIdsError, ExtractorMissingError
 from pinakes.extract import (
     ExtractedText,
     ExtractionContext,
@@ -22,7 +22,7 @@ from pinakes.extract import (
 from pinakes.ids import mint_doc_id
 from pinakes.manifest import Manifest, load
 from pinakes.sidecar import SIDECAR_SUFFIX
-from pinakes.sync import SyncOptions, SyncReport, sync
+from pinakes.sync import MAX_PROBED_PER_ROOT, SyncOptions, SyncReport, sync
 
 DIM = 8
 
@@ -818,3 +818,309 @@ def test_three_consecutive_paid_syncs_settle_after_the_first(kb: Path, fake_paid
     assert (first.embedded, first.refreshed, first.skipped) == (1, 0, 0)
     assert (second.embedded, second.refreshed, second.skipped) == (0, 0, 1)
     assert (third.embedded, third.refreshed, third.skipped) == (0, 0, 1)
+
+
+# --- unmatched files: a file skipped for want of a glob must say so (0.2.2) -------------------
+
+
+def test_a_pdf_with_no_matching_glob_is_named_not_silently_skipped(kb: Path) -> None:
+    """The defect this fixes: `pnk init` stamps no `**/*.pdf`, so a PDF dropped into a fresh KB
+    matched nothing and sync reported `0 indexed` explaining nothing — v0.2's headline feature
+    silently off, with the output giving no hint why."""
+    (kb / "docs" / "report.pdf").write_bytes(b"%PDF-1.4\nnot really a pdf\n")
+
+    report = run(kb)
+
+    assert report.embedded == 0
+    assert report.unmatched == ("docs/report.pdf",)
+    line = next(line for line in report.lines() if "matched no `include` pattern" in line)
+    assert '"**/*.pdf"' in line  # the exact glob to add, not a vague pointer
+    assert "`exclude`" in line  # and the way to silence it instead
+
+
+def test_unmatched_files_are_reported_even_when_others_indexed_fine(kb: Path) -> None:
+    """The mixed case is the dangerous one: a sync that indexes the Markdown and drops the PDFs
+    reports success, so nothing prompts the user to look. Silence here is worse than silence on an
+    empty KB, which at least invites investigation."""
+    write(kb, "notes.md", "# Notes\n\nIndexed fine.\n")
+    (kb / "docs" / "report.pdf").write_bytes(b"%PDF-1.4\n")
+
+    report = run(kb)
+
+    assert report.embedded == 1
+    assert report.ok  # not a failure — the run succeeded, it just was not complete
+    assert report.unmatched == ("docs/report.pdf",)
+
+
+def test_binaries_are_never_reported_because_the_remedy_would_not_work(kb: Path) -> None:
+    """A file pinakes could not read however the manifest is configured must stay silent: every
+    non-PDF source goes through `read_text(encoding="utf-8")`, so telling the user to add
+    `"**/*.png"` would hand them a remedy that produces a `UnicodeDecodeError` failure row when
+    followed. A wrong hint is worse than none."""
+    (kb / "docs" / "diagram.png").write_bytes(bytes.fromhex("89504e470d0a1a0a") + b"\x00" * 64)
+    (kb / "docs" / "utf16.txt").write_text("hello", encoding="utf-16")
+
+    report = run(kb)
+
+    assert report.unmatched == ()
+    assert not any("matched no `include` pattern" in line for line in report.lines())
+
+
+def test_an_unknown_text_format_is_reported_since_it_indexes_as_text(kb: Path) -> None:
+    """`chunk.source_type` falls back to `"text"` for any unrecognised suffix, so `.rst`/`.org`/
+    `.tex` genuinely index once a glob matches them. A fixed extension allowlist would have stayed
+    silent here; deciding by decodability does not."""
+    (kb / "docs" / "guide.rst").write_text("Title\n=====\n\nBody.\n", encoding="utf-8")
+
+    report = run(kb)
+
+    assert report.unmatched == ("docs/guide.rst",)
+
+
+def test_excluded_and_hidden_files_are_never_reported(kb: Path) -> None:
+    """`exclude` is the user having already said "not this" — repeating it back as a suggestion
+    would be noise. Dotted segments (`.git/`, `.DS_Store`) are never the corpus."""
+    manifest = (kb / "pinakes.toml").read_text(encoding="utf-8")
+    (kb / "pinakes.toml").write_text(
+        manifest.replace(
+            'include = ["**/*.md"]', 'include = ["**/*.md"]\nexclude = ["**/vendor/**"]'
+        ),
+        encoding="utf-8",
+    )
+    (kb / "docs" / "vendor").mkdir()
+    (kb / "docs" / "vendor" / "third-party.rst").write_text("Vendored.\n", encoding="utf-8")
+    (kb / "docs" / ".hidden").mkdir()
+    (kb / "docs" / ".hidden" / "secret.rst").write_text("Hidden.\n", encoding="utf-8")
+    (kb / "docs" / ".DS_Store").write_bytes(b"\x00\x01")
+
+    report = run(kb)
+
+    assert report.unmatched == ()
+
+
+def test_a_matched_file_is_not_also_reported_as_unmatched(kb: Path) -> None:
+    """The two sets must be disjoint — a document that indexed fine appearing in the "you have no
+    glob for this" line would be a plain contradiction."""
+    write(kb, "notes.md", "# Notes\n\nBody.\n")
+
+    report = run(kb)
+
+    assert report.embedded == 1
+    assert report.unmatched == ()
+
+
+def test_the_unmatched_line_groups_by_extension_and_caps_the_list(kb: Path) -> None:
+    """By extension, not by path: twelve unindexed PDFs are one missing glob, and printing twelve
+    paths would obscure that. Capped so a KB with many stray formats still prints one readable
+    line."""
+    for index_ in range(4):
+        (kb / "docs" / f"doc{index_}.rst").write_text("Body.\n", encoding="utf-8")
+    (kb / "docs" / "a.org").write_text("Body.\n", encoding="utf-8")
+    (kb / "docs" / "b.tex").write_text("Body.\n", encoding="utf-8")
+    (kb / "docs" / "c.adoc").write_text("Body.\n", encoding="utf-8")
+
+    report = run(kb)
+
+    line = next(line for line in report.lines() if "matched no `include` pattern" in line)
+    assert "7 file(s)" in line
+    assert ".rst (4)" in line  # commonest first
+    assert '"**/*.rst"' in line  # and it is the one the remedy names
+    assert "and 1 more" in line  # 4 distinct extensions, 3 shown
+
+
+def test_a_cjk_document_is_reported_not_judged_unreadable(kb: Path) -> None:
+    """The probe reads a fixed 8 KB prefix, and a fixed byte cut lands mid-character in any script
+    whose codepoints are multi-byte — roughly two times in three for CJK. Decoded non-incrementally,
+    the split trailing character raised `UnicodeDecodeError`, `_indexable` returned False, and every
+    non-English corpus got this feature's silence handed straight back."""
+    (kb / "docs" / "notes.rst").write_text(
+        "中" * 5000, encoding="utf-8"
+    )  # ~15 KB, valid throughout
+
+    report = run(kb)
+
+    assert report.unmatched == ("docs/notes.rst",)
+
+
+@pytest.mark.parametrize("pad", [8189, 8190, 8191, 8192])
+def test_the_probe_boundary_never_rejects_valid_utf8(kb: Path, pad: int) -> None:
+    """Every offset where a multi-byte character can straddle the probe's last byte."""
+    (kb / "docs" / "notes.rst").write_text("a" * pad + "中" * 20, encoding="utf-8")
+
+    assert run(kb).unmatched == ("docs/notes.rst",)
+
+
+def test_two_roots_never_report_a_file_the_other_root_indexed(kb: Path) -> None:
+    """`matched` must be complete before anything is tested against it. Collecting unmatched files
+    inside the per-root loop tested each file against a `files` the later roots had not contributed
+    to yet — so a document indexed via root B was *also* reported as having no pattern, and swapping
+    the two roots in the manifest made it disappear. An ordering artefact, in output whose entire
+    job is to be trusted."""
+    manifest = (kb / "pinakes.toml").read_text(encoding="utf-8")
+    (kb / "pinakes.toml").write_text(
+        manifest.replace('roots = ["docs/"]', 'roots = ["docs/", "docs/sub/"]'), encoding="utf-8"
+    )
+    (kb / "docs" / "sub").mkdir()
+    write(kb, "a.md", "# A\n\nBody.\n")
+    (kb / "docs" / "sub" / "b.md").write_text("# B\n\nBody.\n", encoding="utf-8")
+
+    report = run(kb)
+
+    assert report.embedded == 2
+    assert set(report.unmatched) & {doc["path"] for doc in index(kb)} == set()
+    assert report.unmatched == ()
+
+
+def test_root_order_does_not_change_what_is_reported(kb: Path) -> None:
+    """The same KB, the same two roots, listed the other way round — identical output or the
+    reporting is an artefact of manifest ordering rather than a fact about the KB."""
+    manifest = (kb / "pinakes.toml").read_text(encoding="utf-8")
+    (kb / "docs" / "sub").mkdir()
+    write(kb, "a.md", "# A\n\nBody.\n")
+    (kb / "docs" / "sub" / "b.md").write_text("# B\n\nBody.\n", encoding="utf-8")
+    (kb / "docs" / "sub" / "c.rst").write_text("Body.\n", encoding="utf-8")
+
+    (kb / "pinakes.toml").write_text(
+        manifest.replace('roots = ["docs/"]', 'roots = ["docs/", "docs/sub/"]'), encoding="utf-8"
+    )
+    forwards = run(kb, rebuild=True).unmatched
+    (kb / "pinakes.toml").write_text(
+        manifest.replace('roots = ["docs/"]', 'roots = ["docs/sub/", "docs/"]'), encoding="utf-8"
+    )
+    backwards = run(kb, rebuild=True).unmatched
+
+    assert forwards == backwards == ("docs/sub/c.rst",)
+
+
+def test_an_uppercase_extension_gets_a_glob_that_actually_matches_it(kb: Path) -> None:
+    """`pathlib` glob is case-sensitive on POSIX whatever the filesystem does, so `"**/*.pdf"` does
+    not match `Report.PDF`. Lowercasing the suffix for the hint produced a remedy that fails to fix
+    the file it was printed for."""
+    (kb / "docs" / "Report.PDF").write_bytes(b"%PDF-1.4\n")
+
+    report = run(kb)
+
+    line = next(line for line in report.lines() if "matched no `include` pattern" in line)
+    assert '"**/*.PDF"' in line
+    assert '"**/*.pdf"' not in line
+
+
+def test_an_unmatched_pdf_names_the_extra_it_will_still_need(
+    kb: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Adding the glob on a core-only install turns every PDF from silently skipped into loudly
+    failed — the same trap `_indexable` refuses to set for images, so the hint carries both halves.
+
+    The extractor is forced *missing* rather than left to the environment: this repo's CI runs a
+    three-leg extras matrix, so whether `pypdfium2` imports differs per leg, and a test that only
+    asserts "the line agrees with the flag" agrees with itself under every leg while proving
+    nothing. Verified: that earlier shape survived deleting the whole feature."""
+    import pinakes.sync as sync_module
+
+    def missing(_backend: str) -> object:
+        raise ExtractorMissingError("pypdfium2", extra="pdf")
+
+    monkeypatch.setattr(sync_module, "load_extractor", missing)
+    (kb / "docs" / "report.pdf").write_bytes(b"%PDF-1.4\n")
+
+    report = run(kb)
+
+    assert report.unmatched_pdf_extra == "pdf"
+    line = next(line for line in report.lines() if "matched no `include` pattern" in line)
+    assert 'uv add "pinakes[pdf]"' in line
+
+
+def test_no_pdf_means_no_extra_hint(kb: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Telling someone to install a PDF extractor when nothing they own is a PDF is noise in a line
+    competing for the attention of a person who was just told something got skipped. Forced missing
+    for the same reason as above, so the assertion holds under every extras leg."""
+    import pinakes.sync as sync_module
+
+    def missing(_backend: str) -> object:
+        raise ExtractorMissingError("pypdfium2", extra="pdf")
+
+    monkeypatch.setattr(sync_module, "load_extractor", missing)
+    (kb / "docs" / "guide.rst").write_text("Body.\n", encoding="utf-8")
+
+    report = run(kb)
+
+    assert report.unmatched_pdf_extra is None
+    assert "pinakes[pdf]" not in next(
+        line for line in report.lines() if "matched no `include` pattern" in line
+    )
+
+
+def test_a_sidecar_is_never_reported_as_an_unindexed_document(kb: Path) -> None:
+    """Load-bearing and previously untested: sidecars are `.pnk.yaml`, which no include glob
+    matches, so without the guard every document's own metadata would be reported back as a file
+    needing a pattern — on every sync after the first."""
+    write(kb, "a.md", "# A\n\nBody.\n")
+    run(kb)  # mints docs/a.md.pnk.yaml
+
+    second = run(kb)
+
+    assert (kb / "docs" / "a.md.pnk.yaml").exists()
+    assert second.unmatched == ()
+
+
+def test_a_dotted_root_is_walked_normally(kb: Path) -> None:
+    """The dotted-segment test is relative to the *source root*, not the KB root — otherwise a KB
+    whose root is itself dotted (`~/.config/mykb/`) or a root named `.notes/` would suppress its own
+    entire corpus."""
+    manifest = (kb / "pinakes.toml").read_text(encoding="utf-8")
+    (kb / "pinakes.toml").write_text(
+        manifest.replace('roots = ["docs/"]', 'roots = [".notes/"]'), encoding="utf-8"
+    )
+    (kb / ".notes").mkdir()
+    (kb / ".notes" / "guide.rst").write_text("Body.\n", encoding="utf-8")
+
+    assert run(kb).unmatched == (".notes/guide.rst",)
+
+
+def test_probing_stops_at_the_cap_and_says_the_count_is_partial(kb: Path) -> None:
+    """A `node_modules/` under a root is thousands of `open()` calls per sync — a network round trip
+    each on an SMB or NFS mount — to produce advice nobody wants. Bounded, and the truncation is
+    stated rather than silently capping the number."""
+    for index_ in range(MAX_PROBED_PER_ROOT + 50):
+        (kb / "docs" / f"f{index_}.rst").write_text("Body.\n", encoding="utf-8")
+
+    report = run(kb)
+
+    assert report.unmatched_truncated
+    assert len(report.unmatched) == MAX_PROBED_PER_ROOT
+    assert f"{MAX_PROBED_PER_ROOT}+ file(s)" in next(
+        line for line in report.lines() if "matched no `include` pattern" in line
+    )
+
+
+def test_and_n_more_counts_extensions_not_files(kb: Path) -> None:
+    """The cap shows three extensions; the residue is a count of *extensions*, and the wording has
+    to say so. With 40 files across 5 extensions, "and 2 more" read as files makes the numbers in
+    one line contradict each other."""
+    for suffix, count in (("aa", 10), ("bb", 9), ("cc", 8), ("dd", 7), ("ee", 6)):
+        for index_ in range(count):
+            (kb / "docs" / f"{suffix}{index_}.{suffix}").write_text("Body.\n", encoding="utf-8")
+
+    line = next(line for line in run(kb).lines() if "matched no `include` pattern" in line)
+
+    assert "40 file(s)" in line
+    assert "and 2 more extension(s)" in line
+
+
+def test_quiet_still_prints_the_unmatched_line(
+    kb: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`-q` prints only problems, and a file skipped for want of a glob is one. The git hooks
+    `docs/GUIDE.md` recommends run `pnk sync --quiet`, so suppressing it under `-q` would leave the
+    project's own documented workflow as the single place this fix never reaches."""
+    from pinakes.cli import print_sync_report
+
+    (kb / "docs" / "report.pdf").write_bytes(b"%PDF-1.4\n")
+    report = run(kb)
+    capsys.readouterr()
+
+    print_sync_report(report, quiet=True)
+
+    captured = capsys.readouterr()
+    assert "matched no `include` pattern" in captured.err
+    assert "0 indexed" not in (captured.out + captured.err)  # the counts stay suppressed

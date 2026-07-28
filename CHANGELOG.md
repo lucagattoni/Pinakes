@@ -7,6 +7,75 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A file that matched no `include` pattern was skipped in silence — including, in a KB made by
+  `pnk init`, every PDF.** 0.2.0 shipped free PDF ingest as its headline feature while the `notes`
+  template stamped `include = ["**/*.md", "**/*.txt"]`, so the actual first-run experience was:
+  drop in a PDF, run `pnk sync`, read `0 indexed`, and get no hint that a missing glob was the
+  reason. The mixed case was worse — Markdown indexed, PDFs dropped, the run reporting success —
+  because nothing prompted anyone to look.
+
+  `pnk sync` now names what it skipped, grouped by extension, with the exact glob that would pick
+  the commonest up and a pointer to `exclude` for silencing it instead:
+
+  ```text
+  0 indexed, 0 renamed, 0 metadata-only, 0 unchanged, 0 removed
+  1 file(s) matched no `include` pattern: .pdf (1) — add "**/*.pdf" to `[sources] include` to index them, or `exclude` them to silence this.
+  ```
+
+  **Only files pinakes could actually index are reported**, and the test is the one indexing itself
+  applies: whether the first 8 KB decode as UTF-8 (`_index_document` reads every non-PDF source with
+  `read_text(encoding="utf-8")`), plus `.pdf`, binary on purpose and indexable through
+  `pinakes[pdf]`. An image or an archive beside your notes never appears — suggesting a glob for one
+  would hand back a remedy that produces a `UnicodeDecodeError` failure row when followed, and a
+  wrong hint is worse than none. Deciding by decodability rather than an extension allowlist also
+  covers `.rst`, `.org`, `.tex` and every other text format without a list anyone has to maintain,
+  since `chunk.source_type` already falls back to `"text"` for an unknown suffix. Silent too,
+  deliberately: anything `exclude` already names, sidecars, and anything under a dotted path segment
+  (`.git/`, `.DS_Store`).
+
+- **The `notes` template now spells out the PDF glob and the extra it needs** (plan decision 6,
+  pulled forward from I9 — the defect was live in a released version, and the plan had already
+  reversed itself on the same reasoning for I7a's allowlist gate). PDFs stay **off** by default:
+  `init` cannot see whether `pinakes[pdf]` is installed, and a glob stamped without it turns every
+  PDF into a *failed* document rather than a skipped one. Off, but no longer undiscoverable.
+
+  An independent adversarial review caught two defects that each handed the silence straight back,
+  plus five smaller ones — all fixed here:
+
+  - **The probe read a fixed 8 KB prefix and decoded it in one go**, so a multi-byte character
+    straddling the boundary raised `UnicodeDecodeError` on a perfectly valid document — about two
+    times in three for CJK, Cyrillic or Greek prose. A non-English corpus therefore got exactly the
+    pre-fix behaviour: PDF beside the notes, `0 indexed`, no explanation. Now decoded incrementally,
+    which holds a partial trailing character instead of failing on it.
+  - **With more than one `[sources] root`, matched and unmatched were not disjoint.** The unmatched
+    pass ran inside the per-root loop, testing each file against a matched-set the later roots had
+    not contributed to yet — so a document indexed via root B was *also* reported as having no
+    pattern, and swapping the two roots in the manifest made it disappear. Now a second pass, after
+    every root's include walk.
+  - `pnk sync --quiet` never printed the line, and the git hooks `docs/GUIDE.md` recommends run
+    exactly that — leaving the project's own documented workflow as the one place the fix could not
+    reach. `-q` prints only problems, and this is one; it now goes to stderr.
+  - The suggested glob was lowercased, so `Report.PDF` was told to add `"**/*.pdf"` — which
+    `pathlib` glob, case-sensitive on POSIX whatever the filesystem does, will not match. Suffixes
+    are now grouped as they appear on disk.
+  - An unmatched `.pdf` now names `pinakes[pdf]` when the extractor is genuinely not importable:
+    adding the glob alone on a core-only install turns a skipped file into a *failed* one, the same
+    trap the binary exclusion exists to avoid.
+  - Probing is capped per root (`MAX_PROBED_PER_ROOT`), because a `node_modules/` under a root is
+    thousands of `open()` calls per sync — a network round trip each on an SMB or NFS mount — to
+    produce advice nobody wants. Truncation is stated (`500+ file(s)`), never silent.
+  - A symlinked source root resolving outside the KB raised an uncaught `ValueError` out of the
+    walk; ties in the extension ranking no longer let `(no extension)` take the hint slot from a
+    real suffix; and "and N more" now says "extension(s)", since it counts extensions while the
+    number beside it counts files.
+
+  Tests: 22 cases across `tests/test_sync.py` and `tests/test_init.py`, each confirmed to fail
+  against the code before its fix by mutating the source and watching the right one break. One of
+  them — the PDF-extra hint — was first written as a self-consistency check that agreed with itself
+  under every extras leg and survived deleting the feature; it now forces the extractor missing.
+
 ### Added
 
 - **I6a of the v0.2 build order: budget core, pure (rule 11 — the pure half of the money

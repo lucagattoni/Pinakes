@@ -79,6 +79,12 @@ explicit free `--extract` all leave paid-extracted text alone, and the run says 
 protected. The single override is `--force` *plus* a free `--extract`. Full decision table:
 [DESIGN §6.4](DESIGN.md#64-sync-semantics-the-part-that-silently-corrupts-a-kb-if-left-vague).
 
+**A file no `include` pattern matches is named, not silently skipped** (0.2.2), grouped by extension
+with the glob that would pick it up. Only files pinakes could actually index are listed — the test
+is whether the bytes are UTF-8, the same one indexing itself applies, plus `.pdf` — so images and
+archives beside your notes never appear, and the suggested glob never leads to a failed document.
+`exclude` them to silence the line for good.
+
 **Locking.** `.pinakes/sync.lock` records pid, hostname and start time. A live holder on this host
 means a quiet exit 0 — hook-driven contention is normal, not an error. A dead pid is reclaimed with
 a warning. Another host refuses, pointing at `--force-unlock`.

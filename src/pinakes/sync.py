@@ -14,17 +14,18 @@ properties that make a half-finished sync harmless:
   routine rebuild must not reset the spend history (§6.3).
 """
 
+import codecs
 import hashlib
 import os
 import sqlite3
 import subprocess
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from pinakes import store
-from pinakes.chunk import assert_chunkable, chunk_document, source_type
+from pinakes.chunk import PDF_SUFFIXES, assert_chunkable, chunk_document, source_type
 from pinakes.embed import EmbeddingBackend, load_backend
 from pinakes.errors import (
     BackendUnknownError,
@@ -122,6 +123,15 @@ class SyncReport:
     paid_extraction_overwritten: tuple[str, ...] = ()
     """`--force` plus an explicit free `--extract` discarded these paid extractions — named, not
     just counted, since discarding paid work is the one thing this design must never do quietly."""
+    unmatched: tuple[str, ...] = ()
+    """Files under `[sources] roots` that no `include` pattern matched (`walk_sources`). Summarised
+    by extension in `lines()`: the individual paths are rarely interesting, but "you have PDFs and
+    no glob for them" always is."""
+    unmatched_truncated: bool = False
+    """The walk stopped probing at `MAX_PROBED_PER_ROOT`, so `unmatched` is a sample."""
+    unmatched_pdf_extra: str | None = None
+    """The extra a `.pdf` in `unmatched` would still need after the glob is added — set only when
+    the extractor is genuinely not importable, so the hint is never redundant advice."""
     busy: bool = False
     reclaimed_lock: bool = False
     # --clear-cache's own outcome; None on every other run (see `sync()`'s early return for it).
@@ -145,6 +155,8 @@ class SyncReport:
             f"{self.deleted} removed",
         ]
         lines = [", ".join(summary)]
+        if self.unmatched:
+            lines.append(self.unmatched_line())
         for path in self.paid_extraction_overwritten:
             lines.append(f"paid extraction discarded (--force --extract): {path}")
         if self.paid_extraction_protected:
@@ -166,6 +178,48 @@ class SyncReport:
             lines.append(f"orphaned sidecar (kept; remove with `pnk doctor --prune`): {orphan}")
         lines.extend(self.failure_lines())
         return lines
+
+    def unmatched_line(self) -> str:
+        """One line, grouped by extension, naming the glob that would pick the commonest up.
+
+        By extension rather than by path because the actionable unit is the *pattern*: twelve
+        unindexed PDFs are one missing glob, and printing twelve paths would obscure that. The
+        `exclude` half is named too — a KB with images beside its notes should be able to silence
+        this rather than being nagged by it on every sync.
+
+        Suffixes are grouped **as they appear on disk**, never lowercased: `pathlib` glob is
+        case-sensitive on POSIX whatever the filesystem does, so `"**/*.pdf"` does not match
+        `Report.PDF`, and a remedy that fails to fix the file it was printed for is the very thing
+        `_indexable` exists to avoid.
+        """
+        counts: dict[str, int] = {}
+        for path in self.unmatched:
+            suffix = Path(path).suffix or "(no extension)"
+            counts[suffix] = counts.get(suffix, 0) + 1
+        # Ties break toward a real suffix: "(no extension)" sorts before ".pdf" by codepoint, and
+        # would otherwise win the hint slot while carrying no usable glob.
+        ranked = sorted(
+            counts.items(), key=lambda item: (-item[1], not item[0].startswith("."), item[0])
+        )
+        shown = ", ".join(f"{suffix} ({count})" for suffix, count in ranked[:3])
+        if len(ranked) > 3:
+            shown += f" and {len(ranked) - 3} more extension(s)"
+        commonest = ranked[0][0]
+        hint = (
+            f'add "**/*{commonest}" to `[sources] include` to index them'
+            if commonest.startswith(".")
+            else "add a matching glob to `[sources] include` to index them"
+        )
+        counted = (
+            f"{len(self.unmatched)}+" if self.unmatched_truncated else f"{len(self.unmatched)}"
+        )
+        line = (
+            f"{counted} file(s) matched no `include` pattern: {shown} — "
+            f"{hint}, or `exclude` them to silence this."
+        )
+        if self.unmatched_pdf_extra:
+            line += f' Indexing PDFs also needs `uv add "pinakes[{self.unmatched_pdf_extra}]"`.'
+        return line
 
     def failure_lines(self) -> list[str]:
         """One line per failing path, then each distinct remedy **once** - never per path.
@@ -190,14 +244,32 @@ def hash_file(path: Path) -> str:
     return hash_bytes(path.read_bytes())
 
 
-def walk_sources(manifest: Manifest) -> tuple[list[WalkedFile], list[WalkedSidecar]]:
-    """Collect source files and sidecars, KB-root-relative with POSIX separators.
+@dataclass(frozen=True, slots=True)
+class UnmatchedFiles:
+    """Files under the roots that no `include` pattern picked up, and whether the walk gave up
+    before seeing them all."""
+
+    paths: tuple[str, ...] = ()
+    truncated: bool = False
+
+
+def walk_sources(
+    manifest: Manifest,
+) -> tuple[list[WalkedFile], list[WalkedSidecar], UnmatchedFiles]:
+    """Collect source files, sidecars, and files no `include` pattern matched.
 
     Sidecars are excluded from the *document* set categorically, whatever the include patterns say:
     an `include = ["**/*.yaml"]` must never ingest a document's own metadata as a document.
+
+    The third element exists because a file silently absent from the index is indistinguishable
+    from one that was never there. `pnk init` stamps no `**/*.pdf` glob, so a PDF dropped into a
+    fresh KB matched nothing and `pnk sync` reported `0 indexed` explaining nothing — the file was
+    skipped for a reason the user configured without realising, which is exactly the class of thing
+    a tool should say out loud.
     """
     files: dict[str, WalkedFile] = {}
     sidecars: dict[str, WalkedSidecar] = {}
+    unmatched: set[str] = set()
 
     for root_name in manifest.sources.roots:
         root = (manifest.root / root_name).resolve()
@@ -230,9 +302,126 @@ def walk_sources(manifest: Manifest) -> tuple[list[WalkedFile], list[WalkedSidec
                 file_hash=hash_file(candidate),
             )
 
-    return sorted(files.values(), key=lambda f: f.path), sorted(
-        sidecars.values(), key=lambda s: s.path
+    # A second pass, deliberately *after* every root's include walk rather than inside it: with two
+    # roots (or one nested in another) the first pass would test a file against a `files` that the
+    # later roots had not contributed to yet, reporting an indexed document as unmatched and making
+    # the output depend on the order roots happen to be listed in.
+    truncated = False
+    for root_name in manifest.sources.roots:
+        root = (manifest.root / root_name).resolve()
+        if root.is_dir():
+            found, hit_cap = _unmatched_under(root, manifest, matched=files)
+            unmatched.update(found)
+            truncated = truncated or hit_cap
+
+    return (
+        sorted(files.values(), key=lambda f: f.path),
+        sorted(sidecars.values(), key=lambda s: s.path),
+        UnmatchedFiles(paths=tuple(sorted(unmatched)), truncated=truncated),
     )
+
+
+#: Bytes sampled to decide whether a file is text pinakes could index. A prefix is enough: a binary
+#: format's magic number is at the front, and no realistic document is valid UTF-8 for 8 KB and
+#: then not.
+_TEXT_PROBE_BYTES = 8192
+
+#: Files probed per root before giving up on completeness. Bounds the cost on a tree this walk has
+#: no business reading in full — a `node_modules/` under a KB root is thousands of files, each an
+#: `open()` (a network round trip on an SMB or NFS mount) on every sync, to produce advice nobody
+#: wants. Truncation is reported, never silent.
+MAX_PROBED_PER_ROOT = 500
+
+
+def _indexable(candidate: Path) -> bool:
+    """Whether pinakes could read this file at all, tested the way indexing itself tests it.
+
+    `_index_document` reads every non-PDF source with `read_text(encoding="utf-8")`, so a file whose
+    bytes are not UTF-8 cannot be indexed however the manifest is configured — suggesting a glob for
+    one would hand the user a remedy that produces a `UnicodeDecodeError` failure row when followed.
+    Deciding by *decodability* rather than by an extension allowlist keeps `.rst`, `.org`, `.tex`
+    and every other text format working without a list anybody has to maintain, since
+    `chunk.source_type` already falls back to `"text"` for an unknown suffix.
+
+    Decoded **incrementally**, because a fixed byte cut lands mid-character in any script whose
+    codepoints are multi-byte: a plain `bytes.decode()` of the first 8 KB of CJK, Cyrillic or Greek
+    prose raises `UnicodeDecodeError` on the split trailing character about two times in three, and
+    would have handed exactly this feature's silence back to every non-English corpus. An
+    incremental decoder holds a partial character instead of failing on it.
+
+    `.pdf` is the one exception, admitted explicitly: binary on purpose, and indexable through
+    `pinakes[pdf]`.
+    """
+    if candidate.suffix.lower() in PDF_SUFFIXES:
+        return True
+    try:
+        with candidate.open("rb") as handle:
+            codecs.getincrementaldecoder("utf-8")().decode(handle.read(_TEXT_PROBE_BYTES))
+    except UnicodeDecodeError:
+        return False
+    except OSError:
+        return False  # unreadable is not actionable either; `pnk doctor` owns permissions
+    return True
+
+
+def _unmatched_under(
+    root: Path, manifest: Manifest, *, matched: Mapping[str, WalkedFile]
+) -> tuple[set[str], bool]:
+    """Files under `root` that no `include` pattern picked up, that the user did not ask to ignore,
+    and that pinakes could actually index if a pattern did match. The flag is `True` when probing
+    stopped at `MAX_PROBED_PER_ROOT` and the set is therefore incomplete.
+
+    Deliberately silent about four classes, none of them a surprise worth reporting: anything
+    `exclude` already names (the user said so), sidecars (metadata, never documents), anything under
+    a dotted path segment (`.git/`, `.DS_Store` — never the corpus), and anything `_indexable`
+    rejects. Reporting an image beside someone's notes would bury the one line that matters under
+    noise they cannot act on.
+    """
+    found: set[str] = set()
+    probed = 0
+    for candidate in sorted(root.rglob("*")):
+        if not candidate.is_file():
+            continue
+        try:
+            relative = candidate.relative_to(manifest.root).as_posix()
+        except ValueError:
+            # A symlinked root resolves outside the KB. Nothing here can be addressed by a
+            # KB-relative path, so there is no advice to give — and a raw ValueError out of a walk
+            # would reach the CLI as a traceback rather than a sync.
+            continue
+        if relative in matched or is_sidecar(candidate):
+            continue
+        if _excluded(relative, manifest.sources.exclude, manifest.root, candidate):
+            continue
+        if any(part.startswith(".") for part in candidate.relative_to(root).parts):
+            continue
+        if probed >= MAX_PROBED_PER_ROOT:
+            return found, True
+        probed += 1
+        if not _indexable(candidate):
+            continue
+        found.add(relative)
+    return found, False
+
+
+def _missing_pdf_extra(unmatched: Sequence[str], extraction_backend: str) -> str | None:
+    """The extra an unmatched `.pdf` would *still* need once its glob is added, or `None`.
+
+    Adding `"**/*.pdf"` on a core-only install turns every PDF from a silently skipped file into a
+    loudly failed one — which is the same trap `_indexable` refuses to set for images, so the hint
+    has to carry the second half. Only when the extractor genuinely will not import: telling someone
+    to install what they already have is noise, and this line is competing for the attention of a
+    person who has just been told something was skipped.
+    """
+    if not any(Path(path).suffix.lower() in PDF_SUFFIXES for path in unmatched):
+        return None
+    try:
+        load_extractor(extraction_backend)
+    except ExtractorMissingError as exc:
+        return exc.extra
+    except (ExtractionError, PinakesError):
+        return None  # registered but unimplemented, or unknown — not a missing-extra story
+    return None
 
 
 def _excluded(relative: str, patterns: Sequence[str], root: Path, candidate: Path) -> bool:
@@ -324,7 +513,10 @@ def _run(
     report: SyncReport,
     extraction_backend: str,
 ) -> None:
-    files, sidecars = walk_sources(manifest)
+    files, sidecars, unmatched = walk_sources(manifest)
+    report.unmatched = unmatched.paths
+    report.unmatched_truncated = unmatched.truncated
+    report.unmatched_pdf_extra = _missing_pdf_extra(unmatched.paths, extraction_backend)
 
     if options.sidecars_only:
         _write_missing_sidecars(manifest, files, sidecars, options, stamp, report)

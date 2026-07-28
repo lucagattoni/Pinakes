@@ -18,6 +18,10 @@ import argparse
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # `sync` pulls numpy and the store; the CLI stays fast to start
+    from pinakes.sync import SyncReport
 
 from pinakes import __version__
 from pinakes.errors import NotImplementedYetError, PinakesError
@@ -356,6 +360,23 @@ def _sync_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-q", "--quiet", action="store_true", help="print only problems")
 
 
+def print_sync_report(report: "SyncReport", *, quiet: bool) -> None:
+    """Render one sync's outcome. Split out of `run_sync` so `-q`'s own rules are testable without
+    driving the whole command — the quiet path is the one the recommended git hooks actually take,
+    and it had no test at all."""
+    if not quiet:
+        for line in report.lines():
+            print(line)
+        return
+    # `-q` prints only problems — and a file skipped for want of a glob is one. The hooks
+    # `docs/GUIDE.md` recommends run `pnk sync --quiet`, so dropping it here would leave the
+    # project's own documented workflow as the single place this never reaches.
+    if report.unmatched:
+        print(report.unmatched_line(), file=sys.stderr)
+    for line in report.failure_lines():
+        print(line, file=sys.stderr)
+
+
 def run_sync(args: argparse.Namespace) -> int:
     """`pnk sync`. Exit 0 on success (including a busy lock), 1 if any document failed."""
     from pinakes import manifest as manifest_module
@@ -390,12 +411,7 @@ def run_sync(args: argparse.Namespace) -> int:
             "took over a stale sync lock left by a process that is no longer running.",
             file=sys.stderr,
         )
-    if not args.quiet:
-        for line in report.lines():
-            print(line)
-    elif not report.ok:
-        for line in report.failure_lines():
-            print(line, file=sys.stderr)
+    print_sync_report(report, quiet=args.quiet)
 
     return EXIT_OK if report.ok else EXIT_FAILURE
 
