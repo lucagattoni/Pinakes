@@ -543,7 +543,6 @@ def _estimate_only(manifest: Manifest, options: SyncOptions) -> SyncReport:
     from pinakes.budget.prices import load_prices
     from pinakes.budget.summary import euros
     from pinakes.extract.claude import default_transport, estimate_only
-    from pinakes.extract.pdfium import page_count
 
     backend = options.extract or manifest.extraction.backend
     if backend not in paid_backend_names():
@@ -563,6 +562,11 @@ def _estimate_only(manifest: Manifest, options: SyncOptions) -> SyncReport:
         source = manifest.root / walked.path
         if source.suffix.lower() not in PDF_SUFFIXES:
             continue
+        # `page_count` imports pypdfium2, and `default_transport` needs a key. Both are deferred
+        # to the first PDF for the same reason: a KB with none has nothing to estimate, and should
+        # not have to have the extra installed — or a key — to be told so.
+        from pinakes.extract.pdfium import page_count
+
         pages = page_count(source)
         if transport is None:
             transport = default_transport()

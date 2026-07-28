@@ -1301,6 +1301,18 @@ at import, so two unrelated tests later in the session lost `claude-vision` enti
 process-global state needs to restore the previous value, not remove its own — and a suite that
 only ever runs on one CI leg will not show you which.*
 
+**MEDIUM, seventh pass — the `[light]` leg's green was partly an artefact, and I had not really
+run that leg at all.** `uv run --extra light` does **not** prune extras a previous
+`--extra pdf --extra claude` installed, so "all three CI legs pass" was one leg run three times. A
+real `uv sync --frozen --extra light` — what CI actually does — then showed the paid suite failing
+*on its own* while passing in a full run: `tests/test_extract.py` leaves a fake `pypdfium2` in
+`sys.modules`, and two `--estimate-only` tests were quietly relying on it. The underlying cause was
+mine: `_estimate_only` imported `page_count` before the walk, so a KB with no PDFs demanded the
+`[pdf]` extra to be told it had nothing to estimate — the same defect as pass 2's transport, one
+line above where I had fixed it. *Lesson: `uv run --extra X` is not `uv sync --extra X`; verifying a
+matrix means reproducing what the matrix does, not asking for the same set three times. And a suite
+that only ever runs after its neighbours cannot tell you what it depends on.*
+
 **LOW, third pass — markdown emphasis reached a terminal.** `--estimate-only`'s help text carried
 `**A network call**`, which argparse renders as literal asterisks: the emphasis was written for
 CLI.md and pasted into a surface that has no renderer. Now checked against every command's
