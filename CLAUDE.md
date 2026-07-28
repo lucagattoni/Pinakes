@@ -29,7 +29,12 @@ indexes the rest (which file owns which fact). This file only carries rules that
   `--force` discarding one) additively rewrites that document's own sidecar with
   `provenance.extraction` (docs/DESIGN.md §2.2) — never any other key, and never for a free
   extraction.
-- **`.pinakes/` is disposable except `ledger.jsonl`** — a rebuild must preserve spend history.
+- **`.pinakes/` is disposable except `ledger.jsonl`** — a rebuild must preserve spend history, and
+  the ledger is append-only: correct a record by appending another (`pnk budget --resolve`), never
+  by editing or rewriting the file.
+- **A `void` ledger record needs proof the call never billed** — written only when a
+  `response_received` flag is false, never from a bare `finally`, which would record €0 for money
+  that already left the account. Under-counting is the one direction a budget may never be wrong in.
 - **The free path stays free — paid entry points are an enumerated allowlist.** Exactly these may
   spend: `pnk sync` with `[extraction] backend = "claude-vision"` or `--extract=claude-vision`;
   `pnk ask --deep` (v0.4). Each goes through the §5 accountant. Adding an entry point edits this
