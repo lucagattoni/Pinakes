@@ -868,3 +868,56 @@ unreachable today (grepped every `Font(...)` call site) but fixed to be symmetri
 "the existing test would have caught this eventually, on some other platform" is not the same claim
 as "this increment shipped its own regression test" — a fix for a bug that was invisible on one
 platform needs a check that doesn't depend on which platform runs it.*
+
+## I4 — the extraction cache (20260728 10:28)
+
+**MEDIUM — a filename collision between a real cache entry and its own in-flight write.** Every
+scanning function (`survey`, `total_stats`, `clear_all`) globs `*.json`; `_write`'s atomic-write
+temp file was originally suffixed `.json` too (`.tmp-<random>.json`, meant to land beside the final
+name before `os.replace`). Verified directly: `pathlib.Path.glob("*.json")` matches dot-files,
+unlike shell globbing, so that temp name was scanned as a real entry by every one of them. The
+window only opens on an uncatchable kill (SIGKILL, OOM, power loss — `_write`'s own
+`except BaseException` already cleans up anything else), but inside it a stray file could be
+double-counted in `pnk doctor`'s totals forever (unreachable via the keyed `entry_path()` lookup, so
+a fresh real entry gets written alongside it, never replacing it) and, worse, misclassified as a
+*paid* orphan if the abandoned write happened to carry an `operation_id` — read by the one thing
+this module exists to protect. Fixed by suffixing the temp file `.tmp`, never `.json`, so it can
+never match the glob regardless of the leading-dot question. *Lesson: when several functions all
+key off "does the filename match this pattern," a temp/staging file used by the same module needs
+its own, deliberately non-matching pattern — matching the final name's extension by habit (`.json`
+in, `.json` out) is exactly how a temp file becomes indistinguishable from a real one.*
+
+**LOW-MEDIUM, no live trigger today — a JSON round-trip validated key structure but not value
+types.** `_read`'s reconstruction of `per_page_provenance` did `dict(page) for page in provenance`
+with no check that a page's values were actually strings, unlike `page_spans` three lines above
+(`int(span[0])`, `int(span[1])`) — the same rigor wasn't applied to both fields reading from the
+same untrusted JSON. Verified directly: a hand-written entry with `{"confidence": None}` was
+accepted as a clean cache hit, silently degrading `ExtractedText.per_page_provenance`'s declared
+`Mapping[str, str]`. No live writer currently populates a non-empty `per_page_provenance` (`pdfium.py`
+and the `fake` backend both rely on the dataclass default), so this was unreachable in practice —
+but the cache exists precisely to survive untrusted/older/hand-edited files, and I5/I7b are exactly
+the increments that will start writing real provenance. Fixed with `_string_mapping`, validating
+every key and value before trusting the entry. *Lesson: "no code currently writes the bad shape" is
+a fact about today's callers, not a property of the format — a cache that reads its own JSON back
+should validate every field it reconstructs the same way, not just the ones a current caller happens
+to populate.*
+
+**LOW — two verified-true claims shipped with no regression test.** A cache-write failure
+(`chmod 0o500` on the cache directory, reproduced directly) correctly returns the extraction result
+without raising, matching the `contextlib.suppress(OSError)` comment's claim — but nothing asserted
+it. Two documents sharing one `content_hash` within a single KB correctly keep their shared cache
+entry after one of them is deleted (eviction keys on the hash, which is still claimed by the
+survivor) — only the cross-*KB* duplicate case had a test. Both were already correct; both now have
+a test, one of which (the write-failure case) was verified to actually exercise the `except OSError`
+branch by checking no cache file was created afterward, not merely that no exception propagated.
+*Lesson: an already-true claim without a test is one refactor away from becoming a false one with no
+signal — "this works" and "this is tested" are different sentences even when both are honestly true
+today.*
+
+**Reviewed and found correct, not a defect:** `pnk sync --clear-cache` (bare, no argument) deleting
+paid cache entries along with everything else is the *intended* I4 behavior, not a gap — the plan's
+own text ("removed only by an explicit `--clear-cache=paid`") describes a narrower, paid-preserving
+variant that lands with I7c's ledger reader, which can price what it would be destroying; building
+selective removal before that reader exists would mean guessing at a cost nothing can yet compute.
+Confirmed live: an injected paid orphan was removed by `pnk sync --clear-cache --yes` along with
+every other entry, consistent with `clear_all`'s own docstring and `docs/DESIGN.md`'s description.

@@ -424,6 +424,25 @@ def test_a_fully_successful_sync_evicts_a_deleted_documents_cache_entry(kb: Path
     assert _cache_files(kb) == []
 
 
+def test_deleting_one_of_two_same_content_documents_keeps_the_shared_cache_entry(
+    kb: Path,
+) -> None:
+    """Eviction keys on `content_hash`, not on any one document — as long as *some* active
+    document still claims it, the shared entry must survive deleting the others."""
+    _add_pdf_support(kb)
+    same_bytes = b"identical content shared by two documents"
+    (kb / "docs" / "a.pdf").write_bytes(same_bytes)
+    (kb / "docs" / "b.pdf").write_bytes(same_bytes)
+    run(kb)
+    assert len(_cache_files(kb)) == 1  # one content_hash, one entry, regardless of path count
+
+    (kb / "docs" / "b.pdf").unlink()
+    (kb / "docs" / f"b.pdf{SIDECAR_SUFFIX}").unlink()
+    report = run(kb)
+    assert report.ok
+    assert len(_cache_files(kb)) == 1  # a.pdf still claims the same content_hash
+
+
 def test_clear_cache_preserves_the_ledger(kb: Path) -> None:
     _add_pdf_support(kb)
     (kb / "docs" / "a.pdf").write_bytes(b"placeholder")

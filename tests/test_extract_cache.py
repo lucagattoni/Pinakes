@@ -235,3 +235,100 @@ def test_total_stats_and_clear_all_on_a_directory_that_does_not_exist_yet(tmp_pa
     assert extract_cache.survey(missing, active_content_hashes=set()) == extract_cache.CacheSurvey(
         0, 0, (), (), ()
     )
+
+
+def test_an_interrupted_writes_temp_file_is_never_counted_as_a_real_entry(tmp_path: Path) -> None:
+    """`_write`'s actual temp name (`.tmp-<random>.tmp`, matching `tempfile.mkstemp`'s
+    `prefix`/`suffix`) must never match the `*.json` glob every scanning function uses — otherwise
+    a leftover from an uncatchable kill (SIGKILL/OOM/power loss) would be scanned as if it were a
+    real entry. `Path.glob("*.json")` matches dot-files too (verified — unlike shell globbing), so
+    this only holds because the suffix itself is `.tmp`, not because of the leading dot."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    debris = tmp_path / ".tmp-abandoned8fa3c1.tmp"
+    debris.write_text(
+        json.dumps(
+            {
+                "schema": extract_cache.CACHE_SCHEMA_VERSION,
+                "content_hash": "sha256:whatever",
+                "backend": "claude-vision",
+                "fingerprint": "fp",
+                "page_count": 1,
+                "page_spans": [[0, 1]],
+                "text": "x",
+                "per_page_provenance": [],
+                "operation_id": "op-should-never-be-seen",
+                "call_ids": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    entries, total_bytes = extract_cache.total_stats(tmp_path)
+    assert entries == 0
+    assert total_bytes == 0
+
+    found = extract_cache.survey(tmp_path, active_content_hashes=set())
+    assert found.entries == 0
+    assert found.paid_orphans == ()
+    assert found.corrupt == ()
+
+    removed, _ = extract_cache.clear_all(tmp_path)
+    assert removed == 0
+    assert debris.exists()  # `clear_all` only ever touches real `*.json` entries
+
+
+def test_a_non_string_provenance_value_misses_rather_than_silently_degrading(
+    tmp_path: Path,
+) -> None:
+    """`dict(page)` alone would accept `{"confidence": None}` silently, degrading
+    `ExtractedText.per_page_provenance`'s declared `Mapping[str, str]` — every key and value must
+    actually be a string."""
+    path = extract_cache.entry_path(tmp_path, content_hash="sha256:abc", fingerprint="fp1")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": extract_cache.CACHE_SCHEMA_VERSION,
+                "content_hash": "sha256:abc",
+                "backend": "pypdfium2",
+                "fingerprint": "fp1",
+                "page_count": 1,
+                "page_spans": [[0, 13]],
+                "text": "Hello, world.",
+                "per_page_provenance": [{"source": "pypdfium2", "confidence": None}],
+                "operation_id": None,
+                "call_ids": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+    spy = Spy()
+    result = extract_cache.get_or_extract(
+        tmp_path, content_hash="sha256:abc", backend="pypdfium2", fingerprint="fp1", extract=spy
+    )
+    assert spy.calls == 1  # the type-invalid entry was a miss, not a silently-degraded hit
+    assert result == SAMPLE
+
+
+def test_a_cache_write_failure_never_fails_an_already_successful_extraction(
+    tmp_path: Path,
+) -> None:
+    """The cache is an optimisation; a disk-full/permission failure writing it must not fail an
+    extraction that already succeeded."""
+    cache_dir = tmp_path / "cache" / "extract"
+    cache_dir.mkdir(parents=True)
+    cache_dir.chmod(0o500)  # read+execute, no write
+    try:
+        spy = Spy()
+        result = extract_cache.get_or_extract(
+            cache_dir,
+            content_hash="sha256:abc",
+            backend="pypdfium2",
+            fingerprint="fp1",
+            extract=spy,
+        )
+        assert result == SAMPLE
+        assert spy.calls == 1
+        assert list(cache_dir.glob("*.json")) == []  # the write silently failed, as expected
+    finally:
+        cache_dir.chmod(0o700)  # restore so pytest's own tmp_path cleanup can remove it

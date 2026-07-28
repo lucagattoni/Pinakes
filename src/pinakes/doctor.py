@@ -261,14 +261,20 @@ def _extraction_cache(manifest: Manifest, connection: sqlite3.Connection) -> Che
     )
     if found.corrupt:
         detail += f", {len(found.corrupt)} unreadable (left alone)"
-    if found.paid_orphans or found.corrupt:
-        return Check(
-            "extraction cache",
-            Status.WARN,
-            detail,
+    remedies: list[str] = []
+    if found.paid_orphans:
+        remedies.append(
             "Paid extractions with no matching active document are kept, never swept "
-            "automatically — selective removal is not implemented yet (I7c).",
+            "automatically — selective removal is not implemented yet (I7c)."
         )
+    if found.corrupt:
+        remedies.append(
+            "Unreadable cache entries are left alone rather than swept (a paid one can't be "
+            "ruled out for a file that can't be read) — safe to delete by hand if you confirm "
+            "they're junk, or clear the whole cache with `pnk sync --clear-cache`."
+        )
+    if remedies:
+        return Check("extraction cache", Status.WARN, detail, " ".join(remedies))
     return Check("extraction cache", Status.OK, detail)
 
 

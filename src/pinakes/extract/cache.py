@@ -111,10 +111,21 @@ def _read(path: Path) -> ExtractedText | None:
         return ExtractedText(
             text=text,
             page_spans=tuple((int(span[0]), int(span[1])) for span in page_spans),
-            per_page_provenance=tuple(dict(page) for page in per_page_provenance),
+            per_page_provenance=tuple(_string_mapping(page) for page in per_page_provenance),
         )
     except (KeyError, TypeError, IndexError, ValueError):
         return None
+
+
+def _string_mapping(raw: object) -> dict[str, str]:
+    """A `per_page_provenance` entry, validated key *and* value — `dict(page)` alone would accept
+    `{"confidence": None}` silently, degrading `ExtractedText`'s declared `Mapping[str, str]`."""
+    if not isinstance(raw, dict):
+        raise TypeError("per_page_provenance entry must be a mapping")
+    mapping = cast(dict[Any, Any], raw)
+    if not all(isinstance(key, str) and isinstance(value, str) for key, value in mapping.items()):
+        raise TypeError("per_page_provenance entry must map str to str")
+    return cast(dict[str, str], mapping)
 
 
 def _write(
@@ -140,7 +151,11 @@ def _write(
         "call_ids": list(call_ids) if call_ids is not None else None,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".json")
+    # `.tmp` on purpose, never `.json`: `Path.glob("*.json")` matches dot-files too (verified —
+    # unlike shell globbing), so a `*.json`-suffixed temp name left behind by an uncatchable kill
+    # (SIGKILL, OOM, power loss — `except BaseException` below already cleans up anything else)
+    # would be scanned by `survey`/`total_stats`/`clear_all` as if it were a real entry.
+    descriptor, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".tmp")
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(body, handle)
