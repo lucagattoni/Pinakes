@@ -1,11 +1,26 @@
 # pinakes — a portable, agent-first knowledge base
 
-**Status:** **implemented** — v0.1.1 shipped · **Date:** 20260725 09:52 (pass 7); status updated 20260727 15:22
 **Repo:** github.com/lucagattoni/Pinakes (PUBLIC) · **Licence:** Apache-2.0 · **Python:** 3.13+
-**Package:** `pinakes` (PyPI) · **Command:** `pnk` · **Tooling:** uv
+**Package:** `pinakes` · **Command:** `pnk` · **Tooling:** uv
+**Design date:** 20260725 09:52 (review pass 7) · **Last reviewed against the code:** 20260728 16:40
 
 > *The* Pinakes *were Callimachus's catalogue of the Library of Alexandria — the first known index
 > of a body of knowledge.*
+
+---
+
+**This document is the architecture and its rationale — *why* the system is shaped this way.** It
+deliberately does not track releases:
+
+| For | Read |
+|---|---|
+| Whether something is **built yet** | [STATUS.md](STATUS.md) — the only place that says so |
+| **How to use** it | [GUIDE.md](GUIDE.md) |
+| A **flag** or a **manifest field** | [CLI.md](CLI.md) · [MANIFEST.md](MANIFEST.md) |
+| What is **going to be built**, in order | [`plans/`](../plans/) |
+
+Sections whose amendment is assigned to an unshipped increment carry a dated **⏳ pending** note
+saying so, rather than describing behaviour that does not exist.
 
 ---
 
@@ -74,79 +89,38 @@ committed files, never in `.pinakes/`** — a freshly cloned KB has no index at 
 
 ### 2.1 The manifest — `pinakes.toml`
 
+> **Every field, its default and its validation rule: [MANIFEST.md](MANIFEST.md).** This section
+> carries only the reasoning behind the shape.
+
 ```toml
-[kb]
-name     = "research"                 # local, human-facing; may be renamed freely
-id       = "01JQ8ZK3…"                # ULID. Permanent. The authority in pnk:// URIs
-template = "research-papers@1.2"      # template's own version, not the package version
-created  = "20260725 09:14"
-
-[sources]
-roots   = ["docs/"]                   # relative to KB root, always
-include = ["**/*.md", "**/*.pdf", "**/*.py"]
-exclude = ["**/drafts/**"]
-
-[embedding]
-provider = "sentence-transformers"
-model    = "BAAI/bge-small-en-v1.5"
-dim      = 384
-revision = "…"                        # HF commit sha — index refuses to load on mismatch (§4.4)
-
-[extraction]
-backend = "pypdfium2"                 # "pypdfium2" (free) | "claude-vision" (paid, opt-in)
-model   = "claude-opus-5"             # consulted only when backend = "claude-vision"
-
-[chunking]
-strategy   = "structural"             # headings/paragraphs, not blind character windows
-max_tokens = 510                      # ≤ model max_seq_length minus special tokens (§4.6)
-overlap    = 64
-
-[retrieval]
-candidates_per_source = 50            # BM25 top-N and vector top-N, before fusion
-fusion                = "rrf"         # k = 60 by default
-fusion_top_k          = 20            # survivors handed to the reranker
-final_k               = 8             # passages actually returned
-rerank                = "local"       # "local" | "none"
-vector_tier           = "auto"        # "auto" | "numpy" | "sqlite-vec"
-
-[retrieval.confidence]
-# Fitted against the template's golden set (§4.2/§7). Absent ⇒ report `unknown`, never guess.
-fitted_for = "BAAI/bge-reranker-base@…"   # reranker model@revision — on mismatch, report `unknown`
-low_below  = 0.31
-high_above = 0.62
-
-# Consumed only when [retrieval] rerank = "local". Mirrors [embedding]. The default model id is
-# identical on both backends (verified in fastembed's registry, 20260725 13:49), so switching backend
-# does not change this block.
-[rerank]
-provider = "sentence-transformers"
-model    = "BAAI/bge-reranker-base"       # ~1.04 GB — see §4.5 for the weight/caching story
-revision = "…"
-
-[budget]
-confirm_above_eur = 0.01              # prompt for confirmation (soft)
-per_operation_eur = 0.05              # hard ceiling — never exceeded, never prompted past
-monthly_eur       = 5.00
-timezone          = "UTC"              # makes "daily"/"monthly" unambiguous
-on_exceed         = "abort"           # "abort" | "partial"
-
-# Connected KBs. `id` is canonical; `name` is a local alias; `path` is machine-local.
-# Schema present from v0.1 so IDs are stable; actually consumed from v0.3 (§8).
-[[links.kb]]
-name = "research-archive"
-id   = "01JQ8ZM7…"
-path = "~/kb/archive"
+[kb]                    # identity — REQUIRED. `id` is a permanent ULID
+[sources]               # roots / include / exclude, always KB-root-relative
+[embedding]             # provider, model, dim — REQUIRED: the index *is* this model's output
+[extraction]            # PDF backend: free or paid
+[chunking]              # structural, max_tokens, overlap
+[retrieval]             # three separate widths, fusion, rerank, vector tier
+[retrieval.confidence]  # fitted thresholds; absent ⇒ report `unknown`, never guess
+[rerank]                # mirrors [embedding]
+[budget]                # soft confirm threshold, hard per-operation cap, rolling windows
+[[links.kb]]            # connected KBs: canonical ULID + machine-local alias and path
 ```
 
-**Required vs optional.** `[kb]` (`name`, `id`), `[sources]` (`roots`) and `[embedding]`
-(`provider`, `model`, `dim`) must be present: nothing can sensibly default a KB's identity, its
-sources, or the model whose output the index *is*. `[extraction]`, `[chunking]`, `[retrieval]`,
-`[rerank]` and `[budget]` may be omitted and take the values shown above; `[retrieval.confidence]`
-and `[[links.kb]]` are absent until something produces them. `backend` is validated against the
-registered extractors (extract/__init__.py) without importing either — an unknown name is rejected
-before either extra could matter. Unknown keys are rejected, and an explicit empty string is an
-error rather than a request for the default — silently substituting one hides a mistake until it
-fails somewhere far away.
+**What must be present, and why.** `[kb]` (`name`, `id`), `[sources]` (`roots`) and `[embedding]`
+(`provider`, `model`, `dim`) are required: nothing can sensibly default a KB's identity, its sources,
+or the model whose output the index *is*. Everything else takes a default, except
+`[retrieval.confidence]` and `[[links.kb]]`, which stay absent until something produces them.
+
+**Three validation postures, each deliberate.** Unknown keys are rejected rather than ignored. An
+explicit empty string is an error rather than a request for the default — silently substituting one
+hides a mistake until it fails somewhere far away. And `[extraction] backend` is validated against
+the registered extractors (`extract/__init__.py`) **without importing either**, so an unknown name is
+rejected before either extra could matter.
+
+Cross-key invariants are checked at *read* time, not at use time, because a manifest that parses but
+cannot work is a failure deferred to the least convenient moment: widths must narrow
+(`final_k <= fusion_top_k <= candidates_per_source`), `confirm_above_eur <= per_operation_eur` or the
+confirmation prompt is unreachable, `overlap < max_tokens`, thresholds must be ordered, and
+`fitted_for` is required whenever thresholds are present.
 
 ### 2.2 The sidecar — `<file>.pnk.yaml`
 
@@ -154,20 +128,7 @@ Auto-created at first ingest for **every** document, not only linked ones. This 
 document ID lives here, and an ID that only appears once a doc is linked is an ID that cannot be
 relied upon.
 
-```yaml
-id: 01JQ8ZC4V7K2N…            # ULID, assigned once, never regenerated
-title: "Attention Is All You Need"
-tags: [transformers, architecture]
-created: 20260725 09:14
-links:
-  - to: pnk://01JQ8ZM7…/01JQ8ZD9M…   # <kb-ulid>/<doc-ulid> — portable across machines
-    rel: cites
-  - to: pnk://self/01JQ8ZE1P…        # `self` accepted on input; expanded to this KB's ULID on write
-    rel: supersedes
-provenance:
-  source: https://arxiv.org/abs/1706.03762
-  ingested: 20260725 09:14
-```
+> **Every field and a worked example: [MANIFEST.md](MANIFEST.md#the-sidecar--filepnkyaml).**
 
 **URIs address ULIDs, not names.** A `pnk://research-archive/…` link would break the moment the KB
 is used on a machine where that alias doesn't exist, or is renamed — so aliases are accepted as CLI
@@ -394,8 +355,26 @@ Chunks are paragraphs under a heading, and **the heading line is part of the fir
 it** — not consumed as pure structure. The lexical index only sees chunk text, so a word appearing
 only in a heading would otherwise be unsearchable, and a passage quoted back to the user reads
 better carrying the heading it belongs to. `heading_path` still records the hierarchy separately,
-for filtering and citation. Each chunk's character span always satisfies
-`text == source[char_start:char_end]`, so a citation can be located exactly in the original file.
+for filtering and citation.
+
+**The span invariant, stated over the *indexed* text** (amended 20260728 16:40 — I5 shipped the
+behaviour without this edit). Every chunk satisfies:
+
+```
+chunk.text == indexed_text[char_start:char_end]
+```
+
+where `indexed_text` is **the decoded file** for a text source, and **the pinned extraction** for a
+PDF — pinned by `documents.extraction_fingerprint` (§4.4), because a PDF's characters exist only
+once an extractor has produced them, and a different extractor produces different offsets.
+
+The consequence differs by source type, and the difference is the point:
+
+- **Text sources:** a citation locates the passage *exactly in the original file*, byte for byte.
+- **PDFs:** it does **not**, and cannot. The offsets address the extraction, not the file. What a PDF
+  citation locates is a **page** (`page_start`/`page_end`, below). An earlier draft of this section
+  claimed exact location in the original file for every source; that claim is false for PDFs and is
+  replaced here.
 
 `max_tokens` is counted with **the embedding model's own tokenizer**, and validated at sync against
 the model's `max_seq_length` minus special tokens (bge-small-en-v1.5: 512 → 510). A manifest asking
@@ -428,12 +407,27 @@ tags and titles, which routinely carry more signal than people expect. `pnk init
 `.gitignore` covering `.pinakes/` (so the ledger and index never leave the machine), and the docs
 state the exposure plainly. The engine repo itself contains no real KB: only the synthetic demo (§7).
 
+> ⏳ **Pending amendment (noted 20260728 16:40).** The agent surface does not yet carry two things
+> the rest of this document assumes: `page_start`/`page_end` on `pinakes_search` results (with
+> `pinakes_get` accepting a page range), and the `stale_extraction` marker §4.4 sets on a
+> paid-fingerprint mismatch — which today reaches the CLI's `Passage` but stops there. Both are
+> increment **I8** ([STATUS.md](STATUS.md#v02-increment-ledger)). Page spans are already stored per
+> chunk; only the surfacing is missing.
+
 ---
 
 ## 5. Cost control
 
-Nothing in v0.1–v0.3 costs money — the paid path doesn't exist yet. The budget system ships in the
-same release as the first thing that can spend (`--deep`), which is the honest ordering.
+**Nothing shipped today costs money — no paid path exists yet.** The budget system ships in the same
+release as the first thing that can spend, which is the honest ordering. `[budget]` is parsed and
+validated already, so a KB authored today stays valid; nothing reads it.
+
+> ⏳ **Pending amendment (noted 20260728 16:40).** This section still describes `pnk ask --deep` as
+> the first spender. `plans/v0.2.md` decision 2 moved that role to the **opt-in Claude-vision PDF
+> extractor**, which drags the whole budget machinery earlier with it — and adds `daily_eur` and
+> `max_price_age_days` to `[budget]`. That rewrite is assigned to increment **I6a** and lands with
+> it, not before: a spec describing a budget system that does not exist is exactly what the project's
+> docs rule forbids. See [STATUS.md](STATUS.md#v02-increment-ledger).
 
 | Control | Mechanism |
 |---|---|
@@ -722,31 +716,35 @@ specific corpus's diagnostic power, not of the metric's own design.
 
 ## 8. Delivery plan
 
-**v0.1 — thin vertical slice, end to end**
+> **What has actually shipped is [STATUS.md](STATUS.md); the ordered build order is
+> [`plans/`](../plans/).** This section carries only *why* the order is what it is.
 
-`pnk init` (one template) · `pnk sync` + `--rebuild` with the full §6.4 semantics · Markdown/text/code
-ingest · structural chunking · local embeddings · FTS5 + NumPy exact vector + RRF · **local
-cross-encoder rerank** (the §4.2 confidence signal is fitted on its scores, so it cannot ship later
-than the signal) · metadata filters · **`pnk search`** — the CLI query surface §4.2's escalation
-message depends on; a "vertical slice" that can only be queried over MCP would not reach end to end ·
-`pnk doctor` (environment/FTS5, backend, model coherence, orphans, duplicate IDs, hook status, held
-sync lock) · `pnk install-hooks` (§6.3 three-hook split) · WAL/read-only/lock policy (§6.5) ·
-`pnk serve` — MCP server (`pinakes_search`, `pinakes_get`, `pinakes_list_kbs`) · golden-set eval
-harness · CI (uv, ruff, pyright, pytest, `HF_HOME` cache §4.5) · Apache-2.0 · PyPI release **(pending: trusted publishing is unconfigured, so the upload is gated on `PUBLISH_TO_PYPI`; everything else in this list shipped)**.
+**The first release had to be a thin vertical slice, end to end** — `init → sync → search`, plus
+`doctor`, `install-hooks` and `serve`. Two orderings inside it were forced rather than chosen: the
+local cross-encoder reranker could not ship later than the confidence signal, because the signal is
+fitted on the reranker's own scores; and `pnk search` could not be deferred to a later release,
+because a "vertical slice" queryable only over MCP does not reach end to end.
 
-Features deferred past v0.1, but whose **schema and identifiers ship in v0.1 because they cannot be
-retrofitted**: ULID document *and* KB IDs, sidecar generation for every document, the manifest schema
-including model-coherence fields and `[[links.kb]]`, and the `pnk://<kb-ulid>/<doc-ulid>` URI form.
-Adding stable IDs to a populated KB later means either renumbering (breaking every link) or a
-migration this design deliberately has no machinery for.
+**Schema that cannot be retrofitted ships first, whatever release consumes it.** ULID document *and*
+KB IDs, a sidecar for every document, the model-coherence fields, `[[links.kb]]`, and the
+`pnk://<kb-ulid>/<doc-ulid>` URI form all shipped in v0.1 though most are consumed much later.
+Adding stable IDs to a populated KB later means either renumbering — breaking every inbound link —
+or a migration this design deliberately has no machinery for. The same reasoning put `[budget]`'s
+schema in v0.1 and `page_start`/`page_end` in the index before anything displayed them.
 
-| Release | Adds | Why this order |
-|---|---|---|
-| v0.2 | PDF ingest (pypdfium2), extraction cache, extraction quality tests | Parsing is the biggest quality risk; isolate it from core-design feedback |
-| v0.3 | `pnk link`, `pinakes_links`, cross-KB traversal, sidecar scanning, link-coverage reporting, free structural edges and the expansion graph channel (default off) | Needs two populated KBs to be worth anything. Detailed build order: [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
-| v0.3.x | PPR graph channel and the `[ner]` mentions-edge extra — both only if the golden-set gates justify them | Each is eval-gated rather than scheduled; see `graph/PINAKES_APPROACH.md` §9 |
-| v0.4 | `pnk ask --deep`, budget ledger, reservations, `pnk budget` | First paid path and its guardrails ship together |
-| v0.5 | Template ecosystem, `pnk upgrade` migrations, `sqlite-vec` tier | Generalisation, once real usage has shaped one template well |
+**Why the releases come in this order:**
+
+| Release | Why here |
+|---|---|
+| v0.2 — PDF extraction | Parsing is the single biggest quality risk (§9), so it is isolated from core-design feedback rather than mixed into it |
+| v0.3 — cross-KB links | Needs two populated KBs to be worth anything. Build order: [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
+| v0.3.x — graph channels | Each is **eval-gated rather than scheduled** — it ships only if the golden set justifies it (`graph/PINAKES_APPROACH.md` §9) |
+| v0.4 — `pnk ask --deep` | A paid loop and its guardrails ship together, never apart |
+| v0.5 — templates, `sqlite-vec` | Generalisation, once real usage has shaped one template well |
+
+The governing rule across all of them: **the budget machinery ships in the same release as the first
+thing that can spend** (§5). That is what moved it out of v0.4 when the paid extractor was pulled
+into v0.2 — the design's own rule applied to a product decision, not scope creep.
 
 **MCP tools are namespaced `pinakes_*`, not `kb_*`.** An agent commonly has several servers loaded at
 once, and a tool called `kb_search` is a collision waiting to happen. Every tool takes an explicit
@@ -758,7 +756,7 @@ once, and a tool called `kb_search` is a collision waiting to happen. Every tool
 
 | Risk | Assessment |
 |---|---|
-| **PDF extraction quality** | The most likely source of silent quality loss (tables, multi-column, scans). Mitigation: extraction tests on known-hard documents; `pnk doctor` flags suspiciously low text yield; scanned-PDF OCR is explicitly out of scope in v1 |
+| **PDF extraction quality** | The most likely source of silent quality loss (tables, multi-column, scans). Mitigated by a scored corpus of known-hard documents with its own committed baseline and gate (§7.1), and two floors fitted from that corpus rather than guessed. **Two limits stand today:** the free path's column detection is geometric, so tables read column-by-column; and scanned/image-only PDFs yield nothing at all, since the free path has no OCR. `plans/v0.2.md` decision 3 puts scanned PDFs in scope **via the paid path only** — ⏳ that extractor is increment **I7b** and is not built ([STATUS.md](STATUS.md)) |
 | **Linear search at scale** | No tier is sublinear (§3.1). Mitigation: measured limits published, `pnk doctor` warns as the ceiling nears, splitting is the documented answer |
 | **Link coverage ceiling** | See §6.2. Measured and reported rather than hidden |
 | **Sidecar/document separation** | A user moving a file without its sidecar is the most likely real-world corruption. Mitigated by hash-based rename detection (§6.4) and `pnk doctor`; not eliminated |
@@ -773,107 +771,13 @@ once, and a tool called `kb_search` is a collision waiting to happen. Every tool
 
 ---
 
-## 10. Iteration log
+## 10. Review history
 
-**Pass 1** — 6 HIGH, 15 MEDIUM, 5 LOW resolved.
-*HIGH:* `sqlite-vec` wrongly described as an ANN index (verified false upstream — §3.1 rewritten and
-the tiering rationale corrected to bounded memory); reverse cross-KB links specified against the
-other KB's gitignored index, impossible after clone (now scans committed sidecars, §6.2);
-`pnk://` URIs used local aliases, breaking on share (now KB ULIDs, §2.2); rename/orphan/duplicate-ID
-sync semantics unspecified (§6.4 added); per-operation budget cap claimed a guarantee it could not
-deliver post-hoc (now pre-call reservation, §5); v0.1 omitted `pnk sync`, `pnk doctor` and hooks
-though every other section depended on them (§8).
-*MEDIUM:* MCP tools renamed `kb_*` → `pinakes_*` for namespace safety; multi-hop scope stated as
-single-KB in v0.1; "no network" qualified against first-use model download and weights moved to the
-shared HF cache; embedding storage described two ways, unified on a float32 BLOB; confidence signal
-recast as calibrated with term-coverage demoted to a tiebreak; token limits validated against the
-model's own tokenizer; template versioning decoupled from package version; install line corrected to
-`uvx --from "pinakes[st]" pnk` with core-only behaviour defined; sync partial-failure semantics and
-`failures` table added; WAL/read-only/lock concurrency policy added (§6.5); orphaned-sidecar deletion
-made opt-in; paths fixed as KB-root-relative; index migration policy stated as rebuild-only; ledger
-privacy and append atomicity specified; `pnk build` unified into `pnk sync --rebuild`.
-*LOW:* budget window timezone; FTS5 external-content triggers; RRF k=60; latency claim replaced with
-a measured 2.25 ms at 50k×384; golden-set size and coverage targets.
+This document was reviewed across **seven adversarial passes before implementation began** — 58
+findings resolved (11 HIGH, 32 MEDIUM, 15 LOW), including four externally verified claims, two of
+which the review found to be **false**.
 
-**Pass 2** — 1 HIGH, 7 MEDIUM, 5 LOW resolved. Several were introduced *by* pass 1's fixes, which is
-the argument for looping rather than reviewing once.
-*HIGH:* the `--rebuild` swap added in pass 1 renamed a WAL-mode database without checkpointing,
-leaving a stale `-wal` beside a new `index.db` — a corrupt read. Now checkpoint-truncate, clean
-close, then rename (§6.5).
-*MEDIUM:* "operation" undefined for the per-op cap, letting an N-step `--deep` loop spend N× the
-limit (§5); §4.2 referenced calibration thresholds the manifest had no field for (§2.1); the `links`
-schema could not represent a reverse link, whose source doc lives in another KB (`src_kb_id` +
-`origin` enum added); §3.1 presented three tiers as if all shipped, with v0.1 behaviour above 50k
-chunks undefined; duplicate-content files made hash-based rename detection ambiguous with no
-tie-break (§6.4); MCP server boundary and prompt-injection posture unstated (§4.7); FTS5 /
-`enable_load_extension` treated as universally available — verified present on uv-managed CPython
-3.13, now probed by `pnk doctor`.
-*LOW:* a single `top_k` covered three different cut-offs (split into `candidates_per_source` /
-`fusion_top_k` / `final_k`); `max_tokens` sat under `[embedding]` though §4.6 treats it as chunking;
-`[[links.kb]]` present from v0.1 but unused until v0.3, now labelled; what publishing a KB repo
-exposes; reverse-link origin provenance.
-
-**Pass 3** — 1 HIGH, 3 MEDIUM, 4 LOW resolved.
-*HIGH:* §6.3 said `--rebuild` "discards `.pinakes/`", which would delete `ledger.jsonl` — the spend
-history §5's rolling budget is computed from. A routine maintenance command would have silently reset
-the budget. Rebuild now replaces `index.db` only; `cache/` clearing is opt-in.
-*MEDIUM:* the server's staleness check read `meta.build_id` through its own open connection, which
-after a rename still points at the old inode and would report the old id forever — replaced with a
-per-request `stat()` on the path (§6.5); `per_operation_eur` served as both the confirm threshold and
-the hard ceiling, making the confirmation prompt unreachable (split into `confirm_above_eur` +
-`per_operation_eur`, §2.1/§5); §6.4 framed pairing as ordered per-file rules, but rename and
-duplicate detection require the whole before/after set — restated as an explicit two-phase algorithm.
-*LOW:* v0.1's `pnk doctor` list omitted the environment probe §3.1 depends on, and `pnk serve` was
-referenced in §4.5 but absent from the release list; "aliases … never stored" contradicted the
-manifest that stores them (clarified: never inside a URI); the reservation formula reused the name
-`max_tokens`, which `[chunking]` already claims; "not in v0.1 but present from day one" reworded.
-
-**Pass 4** — 2 MEDIUM resolved, both self-inflicted by pass 3.
-The rebuild bullet still ended "readers detect the new `build_id` and reopen" — directly contradicting
-the `stat()`-based detection added three lines above it in the same pass (§6.5, now reconciled;
-`build_id` is retained for provenance only). And `pnk://self/…` was left unexpanded, so a sidecar
-copied into another KB would silently retarget its link at the *new* KB — `self` is now expanded to
-the owning KB's ULID on write, like every other alias (§2.2). A grep sweep confirmed no stale
-`kb_*` tool names, `pnk build`, or bare `top_k` references survive outside the log.
-
-**Pass 5** — 0 findings. Verified by re-reading §§1–10 in full and grepping for every identifier
-renamed across passes 1–4. No section contradicts another; every external claim (`sqlite-vec` is
-exhaustive not ANN, FTS5 + extension loading on uv-managed CPython 3.13, `pinakes` free on PyPI,
-2.25 ms at 50k×384) was measured or fetched in-session rather than recalled; every locked constraint
-is honoured; every capability in §1 maps to a release in §8. Review complete.
-
-**Pass 6** (20260725 09:28, implementation-readiness review) — 2 HIGH, 2 MEDIUM, 1 LOW resolved; the two
-product calls were decided by the user, not the review.
-*HIGH:* the reranker was simultaneously a v0.1 default (`rerank = "local"` in §2.1, "on by default"
-in §4.1, its scores the substrate of §4.2's confidence signal, "rerank precision" in §7's v0.1 CI)
-and a v0.5 deliverable in §8 — a freshly-inited KB would have defaulted to a stage that didn't
-exist, and v0.1 would have shipped with no defined confidence signal. Resolved: the reranker ships
-in v0.1; default `BAAI/bge-reranker-base` (user decision — same id on both backends beats the
-smaller ms-marco model's provider-specific ids), a `[rerank]` manifest block mirroring
-`[embedding]`, `fitted_for` added to `[retrieval.confidence]`, and a CI `HF_HOME` cache so ~1.4GB
-of weights download per cache key, not per job (§2.1, §4.5, §8). And §8's v0.1 had no CLI query
-surface at all — `pnk search` existed in §4.2's escalation story, the CLI stub and the README, but
-not in the release that claims "end to end". Added explicitly (§8).
-*MEDIUM:* the `post-commit` hook wrote sidecars, dirtying the tree it had just committed — every
-document commit would trail an untracked `.pnk.yaml` forever. Resolved with a three-hook split:
-`pre-commit` mints and stages sidecars for staged documents only, `post-commit`/`post-merge` touch
-the index only (§6.3). And a stale `sync.lock` from a killed sync silently disabled hook-driven
-freshness forever ("a second sync exits immediately" had no liveness story). Resolved: the lock
-records pid/host/start-time; dead-pid locks are reclaimed with a warning, cross-host locks refuse
-with `--force-unlock` as the human path, `pnk doctor` reports held locks (§6.5).
-*LOW:* the sidecar's `content_hash` duplicated `documents.content_hash`, was read by nothing, and
-guaranteed a two-file diff on every document edit while going stale whenever sync hadn't run —
-dropped from the sidecar (user decision); change detection is index-only, stated in §2.2.
-
-**Pass 7** (20260725 09:52, surfaced while adversarially reviewing `plans/v0.1.md` — the implementation
-plan's review loop reads the design fresh each pass, which is how these escaped passes 1–6).
-*HIGH:* §4.5 claimed model weights go to the shared HF cache on both backends — false for fastembed,
-which defaults to `$TMPDIR/fastembed_cache` (verified upstream): CI's `HF_HOME` cache would never
-hit and `pnk doctor`'s weights check would probe the wrong directory. The fastembed backend now
-passes an explicit cache dir under `HF_HOME`, making the claim true by construction.
-*MEDIUM:* a sidecar-only edit (tags/title/links changed, document untouched) fell through §6.4's
-"path and hash unchanged → Skip" and was never re-indexed — `documents.sidecar_hash` added (§3) and
-the sidecar-only change class stated (§6.4); soft delete left chunks and embeddings searchable —
-removal on soft delete stated, identity row retained (§6.4); rename+edit in one sync had both the
-adoption and deletion rows firing for the same ID with no stated winner — sidecar adoption now wins,
-no soft delete emitted, and the sidecar-didn't-travel case is reported at sync time (§6.4).
+That record has moved to
+[RETROSPECTIVES.md § Design review passes 1–7](RETROSPECTIVES.md#design-review-passes-17-pre-implementation),
+so all project history — design review and per-increment build retrospectives alike — lives in one
+file, and this document is specification only.
