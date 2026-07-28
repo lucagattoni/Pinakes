@@ -110,6 +110,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the metric's design. There is no `word_coverage` floor yet (decision 12, `plans/v0.2.md`): the
   correct pair to fit it against is (native layer → Claude's output), and no Claude output exists
   before I7b.
+- **I4: the extraction cache.** `extract/cache.py` — one JSON file per
+  `.pinakes/cache/extract/<content_hash>-<fingerprint>.json`, storing the whole `ExtractedText`
+  (text, page spans, per-page provenance) a call returns, so a cache hit and a cache miss are the
+  same shape to every caller. `_index_document`'s PDF branch now calls the cache instead of the
+  extractor directly; the extractor is only ever loaded — importing pypdfium2, say — on an actual
+  miss, never on a hit. Invalidation is by key alone (a changed `content_hash` or a changed
+  `fingerprint`, e.g. a fitted-threshold update); any entry that fails to parse — missing,
+  truncated, an unrecognised schema — is a miss, never a crash. `operation_id`/`call_ids` are
+  already part of the schema, always `null` today, as the future join key to `ledger.jsonl`
+  (I6b/I7c) — so no cache migration is needed once a paid backend exists to populate them.
+
+  After a fully successful sync (never after one with failures; for `--rebuild`, only once its
+  atomic swap has landed), entries whose `content_hash` matches no active document are swept —
+  except entries a paid backend wrote (`operation_id` is not `None`), which are only ever
+  reported, never deleted automatically: a soft-deleted or un-sidecarred document is not an
+  "active document," and sweeping away a paid extraction with no prompt and no printed cost is
+  the one mistake this cache must not make. `pnk sync --clear-cache` empties `cache/extract/`
+  entirely (paid or free, active or orphaned) after confirming — it prints the entry count and
+  bytes and requires a `y`; `--yes` skips the prompt for cron use — and never touches
+  `ledger.jsonl`, the same guarantee `--rebuild` already gives. `pnk doctor` gains an "extraction
+  cache" check: entry count, bytes, `orphans/entries`, and paid orphans (`Status.WARN` when any
+  paid orphan or unreadable entry exists) reported separately.
+
+  **Tests, `tests/test_extract_cache.py` (no `pypdfium2` needed — a plain callable stands in for
+  the extractor):** a hit never calls `extract` at all, not even lazily; a changed content hash, a
+  changed fingerprint, a truncated file, a wrong schema version, and a missing required field each
+  miss rather than crash; two KBs holding the same PDF get two cache files; a paid orphan survives
+  the sweep and is reported while its free twin is removed; a corrupt entry is left alone, not
+  swept, since a paid entry can't be ruled out for a file that can't be read. `tests/test_sync.py`
+  adds the integration wiring: a plain second sync of an unchanged PDF never reaches the cache at
+  all (pairing's own `Skip` returns first), so the reuse test uses `--rebuild`, which forces every
+  document back through `_index_document` — proving a real cache hit (the entry's mtime is
+  unchanged) rather than merely proving pairing's pre-existing skip; a fully successful sync
+  evicts a deleted document's entry; `--clear-cache` preserves the ledger, aborts without `--yes`,
+  and is a no-op (not a prompt) on an empty cache.
 
 ### Fixed
 

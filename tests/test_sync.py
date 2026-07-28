@@ -367,4 +367,113 @@ def test_a_busy_lock_reports_and_exits_cleanly(kb: Path) -> None:
 
     report = run(kb)
     assert report.busy
+
+
+def _add_pdf_support(kb: Path) -> None:
+    """`fake` needs no `pypdfium2` and ignores file content, so these tests exercise the cache's
+    wiring into `_index_document` without depending on which optional extras are installed."""
+    manifest_path = kb / "pinakes.toml"
+    manifest_path.write_text(
+        manifest_path.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]', 'include = ["**/*.md", "**/*.pdf"]'
+        )
+        + '\n[extraction]\nbackend = "fake"\n',
+        encoding="utf-8",
+    )
+
+
+def _cache_files(kb: Path) -> list[Path]:
+    return sorted((kb / ".pinakes" / "cache" / "extract").glob("*.json"))
+
+
+def test_a_pdf_sync_writes_a_cache_entry_and_a_rebuild_reuses_it(kb: Path) -> None:
+    """A second *plain* sync of an unchanged PDF never reaches `_index_document` at all — pairing's
+    own `Skip` (content_hash unchanged) returns before the cache is ever consulted, so it would
+    prove nothing about the cache to just call `run(kb)` twice. `--rebuild` is what actually forces
+    every document back through `_index_document` regardless of pairing's skip (`before` is read
+    from a brand-new, empty database, so nothing looks unchanged to it) — exactly the scenario the
+    cache exists for (docs/DESIGN.md §6.3): re-processing the whole KB without re-paying to
+    extract a single unchanged document."""
+    _add_pdf_support(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"placeholder - the fake backend ignores this")
+
+    first = run(kb)
+    assert first.embedded == 1 and first.skipped == 0
+    entries = _cache_files(kb)
+    assert len(entries) == 1
+    first_mtime = entries[0].stat().st_mtime_ns
+
+    second = run(kb, rebuild=True)
+    assert second.embedded == 1 and second.skipped == 0  # really went through _index_document again
+    entries_again = _cache_files(kb)
+    assert len(entries_again) == 1
+    assert entries_again[0] == entries[0]
+    assert entries_again[0].stat().st_mtime_ns == first_mtime  # unchanged: a hit, never a re-write
+
+
+def test_a_fully_successful_sync_evicts_a_deleted_documents_cache_entry(kb: Path) -> None:
+    _add_pdf_support(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"placeholder")
+    run(kb)
+    assert len(_cache_files(kb)) == 1
+
+    (kb / "docs" / "a.pdf").unlink()
+    (kb / "docs" / f"a.pdf{SIDECAR_SUFFIX}").unlink()  # no hash match => soft delete, not a rename
+    report = run(kb)
+    assert report.ok
+    assert _cache_files(kb) == []
+
+
+def test_deleting_one_of_two_same_content_documents_keeps_the_shared_cache_entry(
+    kb: Path,
+) -> None:
+    """Eviction keys on `content_hash`, not on any one document — as long as *some* active
+    document still claims it, the shared entry must survive deleting the others."""
+    _add_pdf_support(kb)
+    same_bytes = b"identical content shared by two documents"
+    (kb / "docs" / "a.pdf").write_bytes(same_bytes)
+    (kb / "docs" / "b.pdf").write_bytes(same_bytes)
+    run(kb)
+    assert len(_cache_files(kb)) == 1  # one content_hash, one entry, regardless of path count
+
+    (kb / "docs" / "b.pdf").unlink()
+    (kb / "docs" / f"b.pdf{SIDECAR_SUFFIX}").unlink()
+    report = run(kb)
+    assert report.ok
+    assert len(_cache_files(kb)) == 1  # a.pdf still claims the same content_hash
+
+
+def test_clear_cache_preserves_the_ledger(kb: Path) -> None:
+    _add_pdf_support(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"placeholder")
+    run(kb)
+    assert len(_cache_files(kb)) == 1
+
+    ledger = kb / ".pinakes" / "ledger.jsonl"
+    ledger.write_text('{"spend": 1}\n', encoding="utf-8")
+
+    report = sync(load(kb), options=SyncOptions(clear_cache=True, yes=True))
+
+    assert report.cache_cleared == 1
+    assert _cache_files(kb) == []
+    assert ledger.read_text(encoding="utf-8") == '{"spend": 1}\n'
+
+
+def test_clear_cache_without_yes_and_without_a_tty_aborts(kb: Path) -> None:
+    _add_pdf_support(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"placeholder")
+    run(kb)
+    assert len(_cache_files(kb)) == 1
+
+    report = sync(load(kb), options=SyncOptions(clear_cache=True))
+
+    assert report.cache_clear_aborted
+    assert report.cache_pending_entries == 1
+    assert len(_cache_files(kb)) == 1  # nothing removed
+
+
+def test_clear_cache_on_an_empty_cache_is_a_no_op_not_a_prompt(kb: Path) -> None:
+    report = sync(load(kb), options=SyncOptions(clear_cache=True))
+    assert report.cache_cleared == 0
+    assert not report.cache_clear_aborted
     assert report.ok

@@ -152,6 +152,10 @@ class Manifest:
     def index_path(self) -> Path:
         return self.state_dir / "index.db"
 
+    @property
+    def extract_cache_dir(self) -> Path:
+        return self.state_dir / "cache" / "extract"
+
     def linked_kb(self, alias: str) -> LinkedKb | None:
         return next((linked for linked in self.links if linked.name == alias), None)
 

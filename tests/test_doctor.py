@@ -104,6 +104,77 @@ def test_an_uncalibrated_kb_is_a_warning_not_a_failure(kb: Path) -> None:
     assert checks(kb)["calibration"][0] is Status.WARN
 
 
+def _add_pdf(kb: Path) -> None:
+    path = kb / "pinakes.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md", "**/*.txt"]', 'include = ["**/*.md", "**/*.txt", "**/*.pdf"]'
+        )
+        + '\n[extraction]\nbackend = "fake"\n',
+        encoding="utf-8",
+    )
+
+
+def test_extraction_cache_check_is_ok_with_nothing_orphaned(kb: Path) -> None:
+    _add_pdf(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"placeholder")
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+
+    status, detail = checks(kb)["extraction cache"]
+    assert status is Status.OK
+    assert "1 entries" in detail
+    assert "0/1 orphaned" in detail
+    assert "0 paid orphans" in detail
+
+
+def test_extraction_cache_check_warns_on_a_paid_orphan(kb: Path) -> None:
+    """Simulates I7c's future shape directly: no real paid backend exists yet to produce one."""
+    from pinakes.extract import ExtractedText
+    from pinakes.extract import cache as extract_cache
+
+    _add_pdf(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"placeholder")
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+
+    paid = ExtractedText(text="paid text", page_spans=((0, 9),))
+    extract_cache.get_or_extract(
+        load(kb).extract_cache_dir,
+        content_hash="sha256:not-any-active-document",
+        backend="claude-vision",
+        fingerprint="fp-paid",
+        extract=lambda: paid,
+        operation_id="op-999",
+    )
+
+    found = next(c for c in diagnose(load(kb)).checks if c.name == "extraction cache")
+    assert found.status is Status.WARN
+    assert "1 paid orphans" in found.detail
+    assert found.remedy is not None
+    assert "Paid extractions" in found.remedy
+    assert "Unreadable" not in found.remedy  # no corrupt entries here — remedy must not mix in
+
+
+def test_extraction_cache_check_warns_on_a_corrupt_entry_with_its_own_distinct_remedy(
+    kb: Path,
+) -> None:
+    """A corrupt-only cache (zero paid orphans) must not print the paid-orphan remedy verbatim —
+    that told the operator nothing about the actual trigger and nothing to do about it."""
+    _add_pdf(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"placeholder")
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+
+    cache_dir = load(kb).extract_cache_dir
+    (cache_dir / "not-valid-json.json").write_text("{not json", encoding="utf-8")
+
+    found = next(c for c in diagnose(load(kb)).checks if c.name == "extraction cache")
+    assert found.status is Status.WARN
+    assert "1 unreadable" in found.detail
+    assert "0 paid orphans" in found.detail
+    assert found.remedy is not None
+    assert "Unreadable" in found.remedy
+    assert "Paid extractions" not in found.remedy  # distinct from the paid-orphan remedy above
+
+
 def test_pdf_extractor_check_is_ok_when_include_cannot_match_pdf(kb: Path) -> None:
     """The template's default `include` never matches `.pdf`, regardless of the environment."""
     assert checks(kb)["pdf extractor"][0] is Status.OK

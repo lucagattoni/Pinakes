@@ -19,6 +19,7 @@ from pathlib import Path, PurePosixPath
 from pinakes import store, template
 from pinakes.embed import hf_cache_dir, load_backend, load_reranker
 from pinakes.errors import ExtractionError, ExtractorMissingError, PinakesError
+from pinakes.extract import cache as extract_cache
 from pinakes.extract import load_extractor
 from pinakes.ids import DocId
 from pinakes.lock import LOCK_NAME, read_holder
@@ -251,6 +252,32 @@ def _sidecars(manifest: Manifest) -> tuple[list[Path], list[Check]]:
     return orphans, checks
 
 
+def _extraction_cache(manifest: Manifest, connection: sqlite3.Connection) -> Check:
+    active_hashes = store.active_content_hashes(connection)
+    found = extract_cache.survey(manifest.extract_cache_dir, active_content_hashes=active_hashes)
+    detail = (
+        f"{found.entries} entries, {found.bytes_used} bytes "
+        f"({len(found.orphans)}/{found.entries} orphaned, {len(found.paid_orphans)} paid orphans)"
+    )
+    if found.corrupt:
+        detail += f", {len(found.corrupt)} unreadable (left alone)"
+    remedies: list[str] = []
+    if found.paid_orphans:
+        remedies.append(
+            "Paid extractions with no matching active document are kept, never swept "
+            "automatically — selective removal is not implemented yet (I7c)."
+        )
+    if found.corrupt:
+        remedies.append(
+            "Unreadable cache entries are left alone rather than swept (a paid one can't be "
+            "ruled out for a file that can't be read) — safe to delete by hand if you confirm "
+            "they're junk, or clear the whole cache with `pnk sync --clear-cache`."
+        )
+    if remedies:
+        return Check("extraction cache", Status.WARN, detail, " ".join(remedies))
+    return Check("extraction cache", Status.OK, detail)
+
+
 def _index(manifest: Manifest) -> Iterator[Check]:
     if not manifest.index_path.exists():
         yield Check("index", Status.WARN, "not built yet", "Run `pnk sync`.")
@@ -277,6 +304,7 @@ def _index(manifest: Manifest) -> Iterator[Check]:
             Status.OK,
             f"{active} active documents, {counts['chunks']} chunks",
         )
+        yield _extraction_cache(manifest, connection)
 
         try:
             check_coherence(connection, manifest)

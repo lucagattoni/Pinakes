@@ -33,7 +33,14 @@ from pinakes.errors import (
     PinakesError,
     SyncError,
 )
-from pinakes.extract import ExtractionContext, load_extractor, registered_extractors
+from pinakes.extract import (
+    ExtractedText,
+    ExtractionContext,
+    fingerprint,
+    load_extractor,
+    registered_extractors,
+)
+from pinakes.extract import cache as extract_cache
 from pinakes.ids import DocId
 from pinakes.lock import LockOutcome, SyncLock
 from pinakes.manifest import Manifest
@@ -81,6 +88,8 @@ class SyncOptions:
     offline: bool = False
     force_unlock: bool = False
     extract: str | None = None  # overrides `[extraction] backend` for one run
+    clear_cache: bool = False  # a standalone mode (I4): empties the extraction cache, nothing else
+    yes: bool = False  # skip --clear-cache's confirmation (cron use)
 
 
 @dataclass(slots=True)
@@ -99,6 +108,12 @@ class SyncReport:
     moved_without_sidecar: tuple[str, ...] = ()
     busy: bool = False
     reclaimed_lock: bool = False
+    # --clear-cache's own outcome; None on every other run (see `sync()`'s early return for it).
+    cache_cleared: int | None = None
+    cache_cleared_bytes: int = 0
+    cache_clear_aborted: bool = False  # requested but not confirmed (no --yes)
+    cache_pending_entries: int = 0  # what --clear-cache *would* remove, for the caller's prompt
+    cache_pending_bytes: int = 0
 
     @property
     def ok(self) -> bool:
@@ -228,6 +243,15 @@ def sync(
     options = options or SyncOptions()
     stamp = now or datetime.now().strftime("%Y%m%d %H:%M")
 
+    if options.clear_cache:
+        # A standalone mode: empties `cache/extract/` and nothing else (§6.3) — never the walk,
+        # never the index, never `ledger.jsonl`. Needs no extraction backend to be valid, so it is
+        # checked before that validation below, not after.
+        with SyncLock(manifest.state_dir, force=options.force_unlock) as lock:
+            if not lock.acquired:
+                return SyncReport(busy=True)
+            return _clear_cache(manifest, options)
+
     # Resolved and validated before the lock is even taken: an unknown backend is a configuration
     # mistake, not a per-document failure, and it should fail the same way on a KB with zero PDFs
     # as on one full of them (I1's exit criterion).
@@ -241,6 +265,24 @@ def sync(
         report = SyncReport(reclaimed_lock=lock.outcome is LockOutcome.RECLAIMED)
         _run(manifest, options, backend_factory, stamp, report, extraction_backend)
         return report
+
+
+def _clear_cache(manifest: Manifest, options: SyncOptions) -> SyncReport:
+    """`--clear-cache`'s whole effect. No prompt lives here (§ module docstring's own I/O rule):
+    the caller (`cli.py`) checks a TTY and asks the user, then re-calls with `yes=True` — this
+    function only ever does the deletion, and only when told to."""
+    cache_dir = manifest.extract_cache_dir
+    pending_entries, pending_bytes = extract_cache.total_stats(cache_dir)
+    if pending_entries == 0:
+        return SyncReport(cache_cleared=0, cache_cleared_bytes=0)
+    if not options.yes:
+        return SyncReport(
+            cache_clear_aborted=True,
+            cache_pending_entries=pending_entries,
+            cache_pending_bytes=pending_bytes,
+        )
+    removed, removed_bytes = extract_cache.clear_all(cache_dir)
+    return SyncReport(cache_cleared=removed, cache_cleared_bytes=removed_bytes)
 
 
 def _run(
@@ -267,6 +309,7 @@ def _run(
         if options.rebuild or not index_path.exists()
         else store.connect_rw(index_path)
     )
+    active_hashes: set[str] | None = None
     try:
         before = read_index_snapshot(connection)
         result = pair(before, WalkSnapshot(tuple(files), tuple(sidecars)))
@@ -304,6 +347,11 @@ def _run(
         connection.commit()
         if options.rebuild:
             connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        # Captured now, while the connection is still open — never after a run that recorded a
+        # failure, so a document that never got its final content_hash written cannot cost its
+        # own cache entry (or anyone else's) an eviction it didn't earn (I4).
+        if report.ok:
+            active_hashes = store.active_content_hashes(connection)
     finally:
         connection.close()
 
@@ -317,6 +365,13 @@ def _run(
         # database was checkpointed and closed cleanly, so it has none of its own.
         for companion in ("-wal", "-shm"):
             index_path.with_name(index_path.name + companion).unlink(missing_ok=True)
+
+    # After the swap (if any), never before: sweeping against `.db.new`'s data is fine (renaming
+    # only moves the file, not what it says), but deleting cache files before we know the rename
+    # itself succeeded would strand `.db.new` with cache misses waiting for it if a later step in
+    # a future increment ever intervened here.
+    if active_hashes is not None:
+        extract_cache.evict_orphans(manifest.extract_cache_dir, active_content_hashes=active_hashes)
 
 
 def _backend_if_needed(
@@ -542,9 +597,20 @@ def _index_document(
     source = manifest.root / path
     kind = source_type(path)
     if kind == "pdf":
-        extractor = load_extractor(extraction_backend)
-        ctx = ExtractionContext(model=manifest.extraction.model)
-        text = extractor.extract(source, ctx).text
+        # Loading the extractor (importing pypdfium2, say) is deferred inside this closure, so a
+        # cache hit never pays for it — only a miss does (I4).
+        def _extract() -> ExtractedText:
+            ctx = ExtractionContext(model=manifest.extraction.model)
+            return load_extractor(extraction_backend).extract(source, ctx)
+
+        extracted = extract_cache.get_or_extract(
+            manifest.extract_cache_dir,
+            content_hash=content_hash,
+            backend=extraction_backend,
+            fingerprint=fingerprint(extraction_backend),
+            extract=_extract,
+        )
+        text = extracted.text
     else:
         text = source.read_text(encoding="utf-8")
     parsed = _read_sidecar_for(manifest, path)
