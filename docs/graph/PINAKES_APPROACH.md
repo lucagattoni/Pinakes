@@ -156,7 +156,7 @@ authored edges beyond depth 2, which cannot be the intent. §5's tool cap and §
 ceiling use the same metric. The mechanism is a **per-depth loop in Python, not a
 recursive CTE**: one SQL query per hop fetches the frontier's neighbours, then the ranking rule
 follows the node model's asymmetry — **chunk** neighbours are ranked by cosine against the query
-embedding (in-process on the NumPy tier — DESIGN §3.1; the v0.5 `sqlite-vec` tier instead fetches
+embedding (in-process on the NumPy tier — DESIGN §3.1; the template release `sqlite-vec` tier instead fetches
 the bounded frontier's vectors from SQLite per hop, cheap because the frontier is capped);
 **non-chunk** nodes (doc, tag, heading, directory) carry no content embedding, pass through by
 edge weight, and contribute their member chunks (minus the root's own document — §3's membership
@@ -189,10 +189,10 @@ The personalization vector has two parts, and the second is the one that matters
   top-k, is HippoRAG 2's stated key to multi-hop signal flow and its guard against the
   simple-query regression that one study in the GraphRAG-Bench line measured at ~13%
   (GRAPH_RAG §2.3). On the NumPy tier the full score vector is a free by-product of the vector
-  search already run. Under the future `sqlite-vec` tier (v0.5) only the vector scan's top-N
+  search already run. Under the future `sqlite-vec` tier (the template release) only the vector scan's top-N
   (~50; BM25 candidates carry no cosine) would have scores — which is precisely the top-k-only
   seeding HippoRAG 2 warns against. That degraded mode is acceptable only because the vec tier
-  is a v0.5 concern; when it lands, all-chunk seeding must be re-evaluated on that tier, not
+  is a template-release concern; when it lands, all-chunk seeding must be re-evaluated on that tier, not
   assumed.
 
 Implementation is power iteration over the edge list in plain NumPy — a gather/scatter
@@ -370,9 +370,9 @@ it lands as a blueprint version bump on the ClaudeKB side, not a hand-edit); fro
 sync is one-directional and needs a conflict rule; and each KB needs a `pinakes.toml` plus a
 minimal fleet registry.
 
-Sequencing, honestly: the automated `pnk adopt` command is v0.5+ work (§10). What v0.3 needs is
+Sequencing, honestly: the automated `pnk adopt` command is template-release work (§10). What the graph release needs is
 just **two populated KBs** — and a single ClaudeKB-templated KB adopted *by hand* (a
-frontmatter→sidecar script run once, ULIDs committed) is a realistic v0.3-window corpus without
+frontmatter→sidecar script run once, ULIDs committed) is a realistic corpus for the graph release without
 any adopt machinery. The fleet-scale value arrives with the command; the prerequisite-unblocking
 value doesn't have to wait for it.
 
@@ -407,10 +407,10 @@ Extends GRAPH_RAG.md's R-table into a build order; v0.1/v0.2 are untouched by al
 
 | Version | Lands | From |
 |---|---|---|
-| v0.3 | `pnk link` · `pinakes_links` (typed, capped, score+frontier+confidence) · `pinakes_search` `entities`/`concepts` params · structural edge derivation · expansion channel (`graph_channel`, default off) · in-degree salience + link-distance rerank in the eval matrix · golden-set multi-hop + simple-lookup sections · link-coverage + edge-hub reporting in `pnk doctor` · hand-adopted ClaudeKB corpus as second KB | R2 R3 R6 R7 · §3 §4A §5 §8 |
-| v0.3.x | PPR stage, only if the §9 gate says so (HippoRAG 2 recipe) · `[ner]` extra with `mentions` edges, default off, eval-gated | §4B · §3 |
-| v0.4 | `--deep` warm-up loop (LogicRAG skeleton + cycle check, calibrated round-0 gate) · ask transcript · per-template seed schemas · `--write-suggestions` sidecar write-back (`origin: deep`) · budget machinery (same release, per DESIGN §5) · DESIGN §9 wording update (§6) | R5 · §6 |
-| v0.5+ | `pnk adopt` (automated ClaudeKB fleet onboarding) · template-schema ecosystem maturation | §8 |
+| the graph release | `pnk link` · `pinakes_links` (typed, capped, score+frontier+confidence) · `pinakes_search` `entities`/`concepts` params · structural edge derivation · expansion channel (`graph_channel`, default off) · in-degree salience + link-distance rerank in the eval matrix · golden-set multi-hop + simple-lookup sections · link-coverage + edge-hub reporting in `pnk doctor` · hand-adopted ClaudeKB corpus as second KB | R2 R3 R6 R7 · §3 §4A §5 §8 |
+| the graph release (staged) | PPR stage, only if the §9 gate says so (HippoRAG 2 recipe) · `[ner]` extra with `mentions` edges, default off, eval-gated | §4B · §3 |
+| the deep release | `--deep` warm-up loop (LogicRAG skeleton + cycle check, calibrated round-0 gate) · ask transcript · per-template seed schemas · `--write-suggestions` sidecar write-back (`origin: deep`) · budget machinery (same release, per DESIGN §5) · DESIGN §9 wording update (§6) | R5 · §6 |
+| the template release | `pnk adopt` (automated ClaudeKB fleet onboarding) · template-schema ecosystem maturation | §8 |
 | never | LLM extraction in `pnk sync` (SLM boundary case requires an explicit R1 amendment, §3) · traversal policy in-engine · graph query language · graph DB · migrations | R1 R6 · §7 |
 
 ---

@@ -179,7 +179,7 @@ pnk search "how are dense and lexical results combined" --kb my-kb
     (docs/retrieval.md:0-95 (Retrieval notes))
 
 confidence: unknown — no calibrated thresholds in the manifest ([retrieval.confidence])
-retrieval-only result. Paid synthesis (`pnk ask --deep`) is planned for v0.4; until then,
+retrieval-only result. Paid synthesis (`pnk ask --deep`) is planned for the deep release; until then,
 narrowing the query or adding a filter is the lever you have.
 ```
 
@@ -358,7 +358,7 @@ cannot enforce anything here; check before you push.
 
 Links between KBs use `pnk://<kb-ulid>/<doc-ulid>` — ULIDs, never aliases — so they survive renames,
 moves, and being shared with someone whose local alias for your KB is different. Authoring and
-traversing them lands in v0.3; the *schema* ships today precisely because IDs cannot be retrofitted.
+traversing them lands in the graph release; the *schema* ships today precisely because IDs cannot be retrofitted.
 
 ## Troubleshooting
 
@@ -373,6 +373,6 @@ traversing them lands in v0.3; the *schema* ships today precisely because IDs ca
 | `confidence: unknown` on every search | No fitted `[retrieval.confidence]` | Expected. Calibrate against your own golden set ([above](#about-that-confidence-unknown)) |
 | Sync exits non-zero listing documents | Per-document failures, isolated by design | `pnk doctor` lists them with the error; the rest of the corpus indexed fine |
 | A sync seems stuck behind a lock | A killed sync, or another machine | `pnk doctor` reports the holder and age; `pnk sync --force-unlock` if it is not this host |
-| Searches slow past ~50k chunks | NumPy tier is exact, not sublinear | Expected; `pnk doctor` warns. The `sqlite-vec` tier is v0.5 — splitting the KB is the honest answer |
+| Searches slow past ~50k chunks | NumPy tier is exact, not sublinear | Expected; `pnk doctor` warns. The `sqlite-vec` tier is the template release — splitting the KB is the honest answer |
 
 Nothing here spends money, and nothing can: see [STATUS](STATUS.md#the-surface-you-can-use-today).

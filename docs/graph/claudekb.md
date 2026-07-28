@@ -1,5 +1,8 @@
 # ClaudeKB — the in-house precedent
 
+> ℹ️ **Version numbers below reflect the convention in use when this was written.** Unbuilt
+> work is now **named, not numbered** ([STATUS.md](../STATUS.md)). This record is left as it was.
+
 **Repo:** https://github.com/lucagattoni/ClaudeKB · **Investigated:** 20260725 15:31 · second pass (playbooks, kbtool, decisions, research, retrieval-layer fit): 20260726 08:52
 
 ## What it is

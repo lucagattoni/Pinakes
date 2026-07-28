@@ -10,6 +10,26 @@ indexes the rest (which file owns which fact). This file only carries rules that
 - Vet every file for PII, credentials, private URLs, and anything copied from memory before staging.
 - Never commit model weights or `.pinakes/` state (both are gitignored — keep it that way).
 
+## 🚫 Unbuilt work is named, never numbered
+
+**A version number belongs to a release when it is cut — never before.** Refer to unbuilt work by
+name:
+
+| Name | What it is |
+|---|---|
+| **the paid-extraction release** | Budget machinery, the paid Claude-vision extractor, `path:page` citations (I6–I9) |
+| **the graph release** | `pnk link`, `pinakes_links`, cross-KB traversal, structural edges |
+| **the deep release** | `pnk ask --deep` |
+| **the template release** | Template ecosystem, `pnk upgrade`, the `sqlite-vec` tier |
+
+**Never write `v0.4` for something unbuilt** — not in docs, not in `--help`, not in an error message,
+not in a code comment. Increment IDs (`I7b`, `I8`) stay: they name work inside a written plan, not a
+release. Decided 20260729 00:09, after `v0.3` came to mean two different releases at once and either
+reading would have renumbered ~60 committed references
+([docs/STATUS.md](docs/STATUS.md#release-roadmap)). Historical records — `CHANGELOG.md`,
+`docs/RETROSPECTIVES.md`, `plans/`, the dated research in `docs/graph/` — keep the numbers they were
+written with and carry a header note.
+
 ## Naming (fixed — changing any of these is a breaking change)
 
 | Thing | Value |
@@ -37,8 +57,8 @@ indexes the rest (which file owns which fact). This file only carries rules that
   that already left the account. Under-counting is the one direction a budget may never be wrong in.
 - **The free path stays free — paid entry points are an enumerated allowlist.** Exactly these may
   spend: `pnk sync` with `[extraction] backend = "claude-vision"` or `--extract=claude-vision`;
-  `pnk ask --deep` (v0.4). Each goes through the §5 accountant. Adding an entry point edits this
-  list, `.paid-path-allowlist` and DESIGN §1 in the same commit. Four gates enforce it in
+  `pnk ask --deep` (the deep release). Each goes through the §5 accountant. Adding an entry point
+  edits this list, `.paid-path-allowlist` and DESIGN §1 in the same commit. Four gates enforce it in
   `check.sh` and CI (`tools/paid_path_gate.py`, `tests/test_paid_path.py`); the one that matters
   runs the whole free path in a fresh subprocess and asserts no paid client reached `sys.modules`.
   **Never probe a backend's availability by loading it** — `is_backend_installed` answers through
