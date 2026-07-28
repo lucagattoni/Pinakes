@@ -49,6 +49,13 @@ bisectable landing:
 3. Green before review: run `./check.sh` (or `make check`) — every gate under `set -e`, so a
    failure is a non-zero exit rather than a line in a log that a pipe then swallows. It formats
    Python **inside Markdown fences** too: a docs-only commit can still fail the gate.
+   **Then break the code on purpose.** For the 3–5 most safety-critical assertions, mutate the
+   source (delete the guard, flip the comparison, neuter the conversion), confirm the *right* test
+   fails, and restore. Green proves the tests ran, never that they can detect the defect: I5 tested
+   paid-extraction protection down one of four code paths, and I6a's timezone conversion passed all
+   35 tests with the conversion deleted, because every fixture was built in the target zone. Both
+   were the same increment-shaped blind spot — tests written by the reasoning that wrote the code
+   inherit its assumptions.
 4. **Retrospective review** — a fresh adversarial pass over that increment's own diff, hunting for
    what is wrong, missed, or asserted without evidence. Fix findings, re-run the checks, repeat
    until a pass is clean. Findings and fixes are their own commit, separate from the implementation.

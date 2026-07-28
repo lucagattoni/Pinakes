@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The per-increment workflow now requires mutating the source to prove the tests can detect a
+  defect**, not merely that they pass (`CLAUDE.md`). Two consecutive increments produced the same
+  class of finding: I5 tested paid-extraction protection down one of the four code paths that reach
+  the decision, and I6a's timezone conversion — the entire reason `window.py` exists — passed all 35
+  tests with the conversion deleted, because every fixture was constructed in the zone being
+  converted to. Tests written by the reasoning that wrote the code inherit its blind spots, so the
+  cheap counter is to break the guard, watch the right test fail, and restore.
+
 ### Added
 
 - **I6a of the v0.2 build order: budget core, pure (rule 11 — the pure half of the money
