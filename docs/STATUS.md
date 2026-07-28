@@ -98,11 +98,31 @@ assumed a single release at I9; 0.2.0 was instead released after I5, correctly, 
 complete, self-contained, user-visible work the project's rule forbids leaving in `[Unreleased]`.
 The remaining increments are **not** the same shape: I6a, I6b and I7a are each explicitly partial —
 the budget core is pure logic nothing calls, and I6b's own title is "hooks that *cannot* spend".
-None adds a capability a user can reach, so none passes the SemVer table on its own. They therefore
-stay in `[Unreleased]` until paid extraction is genuinely usable (I7b) and safe (I7c), and that
-lands as **one MINOR bump — never a 0.2.x patch**, since a KB that can spend money is new
-capability, not a fix. Patch releases in between remain available for work that stands alone (0.2.1,
-the documentation restructure, was exactly that).
+They therefore stay in `[Unreleased]` until paid extraction is genuinely usable (I7b) and safe
+(I7c), and that lands as **one MINOR bump — never a 0.2.x patch**, since a KB that can spend money
+is new capability, not a fix. Patch releases in between remain available for work that stands alone
+(0.2.1, the documentation restructure, was exactly that).
+
+**Re-argued 20260728 23:42, once I6b was actually built — the decision stands, on a different
+reason.** Its original premise was "none adds a capability a user can reach". That is now false in
+one place: I6b shipped **`pnk init --ci`**, which writes a working GitHub Actions workflow for a
+free KB and is gated on nothing. Held anyway, and the reason is narrow enough to be worth stating,
+because it is the only thing keeping this out of a release:
+
+> **`pnk budget` cannot produce a non-zero result on any KB in existence, and no user can change
+> that.** It reads a ledger nothing writes until I7b. The project ships honestly-limited surfaces
+> elsewhere — `pnk search` reports `confidence: unknown` by default and says why — but that limit
+> lifts the moment *a user* calibrates. This one lifts only when *we* ship an increment. Making it
+> the headline of a MINOR would ship a command whose output nobody can affect.
+
+What is being traded away is small and named: `pnk init --ci` waits, and a user who wants it today
+can copy the workflow out of [CLI.md](CLI.md#pnk-init). The I7a import fixes and I6b's
+`--yes`/`--clear-cache=paid` change are latent by construction — every one of them only fires on a
+KB configured for a paid backend, which cannot work yet.
+
+**Trigger — if I7b slips or is deferred, cut `0.3.0` immediately**, with `pnk init --ci` as the
+headline and `pnk budget` documented as reporting a ledger nothing writes yet. This decision is a
+bet on I7b landing soon, not a standing policy, and it expires if that bet stops paying.
 
 > ⚠️ **The number itself is unassigned, because `0.3` is already taken.** Every doc here — plus
 > `docs/graph/` and [DESIGN §8](DESIGN.md#8-delivery-plan) — uses **v0.3** to mean the cross-KB
