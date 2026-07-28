@@ -66,7 +66,7 @@ from pinakes.budget.accountant import Accountant
 from pinakes.budget.estimate import MAX_TOKENS, TIMESTAMP_FORMAT, K, estimate_document
 from pinakes.budget.prices import ModelPrice
 from pinakes.errors import ExtractionError, ExtractorMissingError
-from pinakes.extract import ExtractedText, ExtractionContext
+from pinakes.extract import CLAUDE_VISION, ExtractedText, ExtractionContext
 from pinakes.extract.floors import load_floors
 from pinakes.extract.quality import text_yield
 from pinakes.extract.textpolicy import TEXT_POLICY_VERSION, normalise
@@ -682,13 +682,13 @@ def _slice_bytes(
     """
     from pinakes.extract.pdfium import slice_pages
 
-    try:
-        raw = slice_pages(path, first, last)
-        encoded_len = len(base64.standard_b64encode(raw))
-        if encoded_len <= MAX_REQUEST_BYTES:
-            return [(raw, pages_in_slice)]
-    except RequestTooLargeError:
-        encoded_len = MAX_REQUEST_BYTES + 1
+    # Measured on the base64 payload, which is what the request actually carries: base64 inflates
+    # by 4/3, so a raw-bytes check would pass a slice a third too big. `slice_pages` itself never
+    # raises `RequestTooLargeError` — only `build_request` does, and by then the call is committed
+    # — so the size question is settled here, before anything is built.
+    raw = slice_pages(path, first, last)
+    if len(base64.standard_b64encode(raw)) <= MAX_REQUEST_BYTES:
+        return [(raw, pages_in_slice)]
     if pages_in_slice == 1:
         raise ExtractionError(
             f"{path.name}: page {first + 1} alone encodes to more than "
@@ -760,7 +760,7 @@ def extract_document(
             )
             page_texts.extend(result.pages)
             provenance.extend(
-                {"backend": "claude-vision", "responded_model": result.model} for _ in result.pages
+                {"backend": CLAUDE_VISION, "responded_model": result.model} for _ in result.pages
             )
 
     assembled = assemble_pages(page_texts)

@@ -761,3 +761,22 @@ def test_a_transport_failure_is_a_document_failure_not_a_crashed_run() -> None:
     too_large = RequestTooLargeError(encoded_bytes=MAX_REQUEST_BYTES + 1, pages=5)
     assert isinstance(too_large, PinakesError)
     assert too_large.remedy
+
+
+def test_estimate_only_needs_no_key_when_there_is_nothing_to_estimate(
+    make_fake_kb: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A KB with no PDFs has nothing to price, so it has no business demanding an API key —
+    building the transport up front would make `--estimate-only` fail on a KB it should simply
+    report nothing about."""
+    from pinakes.extract import claude as claude_module
+    from pinakes.sync import SyncOptions, sync
+
+    def refuse() -> Any:
+        raise AssertionError("no transport should be built when no PDF would be extracted")
+
+    monkeypatch.setattr(claude_module, "default_transport", refuse)
+    root = make_fake_kb(extraction_backend=CLAUDE_VISION)
+
+    report = sync(load(root), options=SyncOptions(estimate_only=True))
+    assert report.estimates == ()

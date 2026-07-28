@@ -553,8 +553,10 @@ def _estimate_only(manifest: Manifest, options: SyncOptions) -> SyncReport:
         )
 
     prices = load_prices()
-    transport = default_transport()
     files, _sidecars, _unmatched = walk_sources(manifest)
+    # Built on the first PDF, not up front: constructing the transport needs a key, and a KB with
+    # no PDFs at all has nothing to estimate and no business demanding one.
+    transport = None
     lines: list[tuple[str, int, int, int, str]] = []
     for walked in files:
         # `WalkedFile.path` is the KB-relative string the index keys on, not a filesystem path.
@@ -562,6 +564,8 @@ def _estimate_only(manifest: Manifest, options: SyncOptions) -> SyncReport:
         if source.suffix.lower() not in PDF_SUFFIXES:
             continue
         pages = page_count(source)
+        if transport is None:
+            transport = default_transport()
         measured, requests = estimate_only(
             source,
             transport=transport,

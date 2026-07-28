@@ -1253,12 +1253,19 @@ now pins the expected contents — widening an allowlist is how a gate like this
 exception classes (`TruncatedResponseError`, `RefusalError`) were also removed: the `stop_reason`
 branches replaced them and nothing ever raised either.
 
+**LOW, second pass — `--estimate-only` demanded an API key from a KB with nothing to estimate.**
+The transport was built before the walk, so a KB with no PDFs failed on a missing key instead of
+reporting nothing. Built on the first PDF now. Also cleaned up in the same pass: an unreachable
+`except RequestTooLargeError` around `slice_pages` (only `build_request` raises it, and by then the
+call is committed — the size question belongs before anything is built), and a repeated
+`"claude-vision"` literal where the module already imports the constant.
+
 Also: `stubs/anthropic.pyi` joins `stubs/pypdfium2.pyi`, because the strict type gate runs on the
 `[light]` leg where the package is absent. It records the one relationship easy to get wrong from
 memory — `APIConnectionError` is a *sibling* of `APIStatusError`, and `APITimeoutError` a subclass
 of the former — because checking them in the wrong order classifies every timeout as a plain
 connection failure, which is the difference between recording €0 and admitting a possible charge.
-12 mutations planted in total, 12 detected after the two survivors got tests.
+15 mutations planted in total, 15 detected once the survivors got tests.
 
 ---
 
