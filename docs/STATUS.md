@@ -1,7 +1,6 @@
 # Status — what ships today
 
-**Latest release: 0.2.1** · `main` carries unreleased work — see the [increment
-ledger](#v02-increment-ledger) · last reviewed 20260728 17:52
+**Latest release: 0.2.2** · last reviewed 20260728 18:49
 
 > **This file is the only place in the repo that says what is built.** Every other doc describes
 > *how* something works or *why* it was designed that way, and links here for whether you can use it
@@ -34,7 +33,7 @@ ledger](#v02-increment-ledger) · last reviewed 20260728 17:52
 | Page provenance (`page_start`/`page_end`) | shipped in the **index** | not yet surfaced in results — I8 |
 | Extraction quality scoring | shipped | `make pdf-eval` against `tests/pdf-corpus/` |
 | **PDF ingest, paid path** (scanned PDFs) | **not built** | v0.2 · I7b. `claude-vision` is a stub that names its increment |
-| Budget estimator, caps, window aggregation | **on `main`, unreleased** | I6a. The pure logic only — nothing calls it yet, so no behaviour changes |
+| Budget estimator, caps, window aggregation | shipped 0.2.2, **inert** | I6a. The pure logic only — nothing calls it, so nothing can spend |
 | Budget ledger, `pnk budget`, spend enforcement | **not built** | v0.2 · I6b. Reading `ledger.jsonl` and wiring I6a's decisions to a real call |
 | `path:page` citations | **not built** | v0.2 · I8 |
 | Cross-KB links (`pnk link`, `pinakes_links`) | **not built** | v0.3 |
@@ -78,7 +77,7 @@ landing with its own tests.
 | I3b | The `pypdfium2` adapter, quality metrics, two fitted floors | shipped 0.2.0 |
 | I4 | The extraction cache | shipped 0.2.0 |
 | I5 | PDF chunking, page provenance, backend-aware sync (`schema_version` 2) | shipped 0.2.0 |
-| I6a | Budget core, pure — estimator, reservation, `prices.toml` | **on `main`, unreleased** |
+| I6a | Budget core, pure — estimator, reservation, `prices.toml` | shipped 0.2.2 (inert) |
 | I6b | Budget I/O — ledger, prompt, `pnk budget`, hooks that cannot spend | **planned** |
 | I7a | The paid-path allowlist gate and the invariant amendments | **planned** |
 | I7b | The paid Claude-vision extractor — request shape, validation, retries | **planned** |
@@ -121,6 +120,7 @@ MINOR (see the warning above). A number belongs to a release when it is cut, not
 |---|---|
 | **0.2.0** ✅ | Free PDF ingest, extraction cache, page provenance in the index, extraction-quality scoring |
 | **0.2.1** ✅ | Documentation restructure — one fact one home; three stale-claim fixes |
+| **0.2.2** ✅ | `pnk sync` names files skipped for want of an `include` glob; budget core (inert) |
 | *next MINOR* | Budget machinery, the opt-in paid Claude-vision extractor, `path:page` citations (I6–I9) |
 | "v0.3" | `pnk link`, `pinakes_links`, cross-KB traversal, link-coverage reporting, free structural edges — build order in [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
 | "v0.3.x" | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
