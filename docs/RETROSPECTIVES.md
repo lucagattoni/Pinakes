@@ -1276,6 +1276,17 @@ test written to a name from the plan, but not to the claim behind the name, is w
 test — the plan's checklist reads as satisfied. The tell was there in the placeholder's own body:
 it asserted things that could not fail.*
 
+**MEDIUM, fifth pass — three of the plan's named tests had no implementation at all.** Auditing
+the plan's test list against the file (prompted by pass 4, since the same failure mode was in play)
+found the multi-slice document, the oversize-slice split, and the no-floor-installed refusal all
+missing — the first being where the slice-window arithmetic and the short final slice actually meet
+a real PDF, and where an off-by-one either drops pages or sends the whole document to a paid API.
+Writing them found nothing broken, which is the useful outcome to record: the code was right and
+unwitnessed. Two of them also had to be *sized from the fixture* rather than from a constant — a
+hard-coded byte threshold either never splits or recurses straight to the single-page failure, and
+which one it does is a property of the corpus, not of the code. `slice_windows` and `slice_bytes`
+lost their underscores in the process: they are the two things a reader most wants to check.
+
 **LOW, third pass — markdown emphasis reached a terminal.** `--estimate-only`'s help text carried
 `**A network call**`, which argparse renders as literal asterisks: the emphasis was written for
 CLI.md and pasted into a surface that has no renderer. Now checked against every command's

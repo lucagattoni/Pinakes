@@ -666,12 +666,12 @@ def extract_slice(
 # --- the whole document ----------------------------------------------------------------------
 
 
-def _slice_windows(pages_total: int) -> list[tuple[int, int]]:
+def slice_windows(pages_total: int) -> list[tuple[int, int]]:
     """`[first, last]` inclusive, 0-indexed, K pages each — the last one short if it must be."""
     return [(first, min(first + K - 1, pages_total - 1)) for first in range(0, pages_total, K)]
 
 
-def _slice_bytes(
+def slice_bytes(
     path: Path, first: int, last: int, *, pages_in_slice: int
 ) -> list[tuple[bytes, int]]:
     """A slice's bytes, halved and retried if the encoded payload is too large.
@@ -696,8 +696,8 @@ def _slice_bytes(
             remedy="Re-save or downsample that page; it is a single oversized page, not a slice.",
         )
     midpoint = pages_in_slice // 2
-    left = _slice_bytes(path, first, first + midpoint - 1, pages_in_slice=midpoint)
-    right = _slice_bytes(path, first + midpoint, last, pages_in_slice=pages_in_slice - midpoint)
+    left = slice_bytes(path, first, first + midpoint - 1, pages_in_slice=midpoint)
+    right = slice_bytes(path, first + midpoint, last, pages_in_slice=pages_in_slice - midpoint)
     return left + right
 
 
@@ -742,11 +742,9 @@ def extract_document(
     tally = CallTally()
     page_texts: list[str] = []
     provenance: list[Mapping[str, str]] = []
-    for first, last in _slice_windows(pages_total):
+    for first, last in slice_windows(pages_total):
         pages_in_slice = last - first + 1
-        for payload, payload_pages in _slice_bytes(
-            path, first, last, pages_in_slice=pages_in_slice
-        ):
+        for payload, payload_pages in slice_bytes(path, first, last, pages_in_slice=pages_in_slice):
             result = extract_slice(
                 transport=transport,
                 accountant=accountant,
@@ -938,10 +936,10 @@ def estimate_only(
     """
     from pinakes.extract.pdfium import slice_pages
 
-    first, last = _slice_windows(pages_total)[0]
+    first, last = slice_windows(pages_total)[0]
     request = build_request(
         model=model,
         pdf_bytes=slice_pages(path, first, last),
         pages_in_slice=last - first + 1,
     )
-    return transport.count_tokens(request), len(_slice_windows(pages_total))
+    return transport.count_tokens(request), len(slice_windows(pages_total))

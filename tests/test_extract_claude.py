@@ -150,7 +150,9 @@ def accountant(make_fake_kb: Callable[..., Path]) -> Accountant:
         extraction_backend=CLAUDE_VISION,
         budget={"per_operation_eur": "50.00", "daily_eur": "50.00", "monthly_eur": "50.00"},
     )
-    return Accountant(load(root), prices=prices(), now=datetime.now(UTC))
+    # `yes=True`: a whole-document run is well above `confirm_above_eur`, and it should be — the
+    # confirmation has its own tests, and every other test here is about something else.
+    return Accountant(load(root), prices=prices(), now=datetime.now(UTC), yes=True)
 
 
 def never_sleeps(_seconds: float) -> None:
@@ -803,3 +805,108 @@ def test_estimate_only_needs_no_key_when_there_is_nothing_to_estimate(
 
     report = sync(load(root), options=SyncOptions(estimate_only=True))
     assert report.estimates == ()
+
+
+# --- the document loop, where the slice windows actually meet a real PDF ------------------------
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_document_whose_page_count_is_not_a_multiple_of_k(accountant: Accountant) -> None:
+    """12 pages at K = 5 is 5 + 5 + 2. The short final slice is where an off-by-one in the window
+    arithmetic would either drop pages or — the expensive one — send the whole document."""
+    from pinakes.extract.claude import extract_document, slice_windows
+
+    assert slice_windows(12) == [(0, 4), (5, 9), (10, 11)]
+
+    transport = RecordedTransport(
+        "happy-five-page-slice", "happy-five-page-slice", "short-final-slice"
+    )
+    extracted, tally = extract_document(
+        CORPUS / "baseline-12p.pdf",
+        transport=transport,
+        accountant=accountant,
+        model=MODEL,
+        pages_total=12,
+        force=True,  # the corpus PDF is healthy by design
+        sleep=never_sleeps,
+    )
+
+    assert transport.calls == 3
+    assert len(extracted.page_spans) == 12
+    assert extracted.page_spans[-1][1] == len(extracted.text)
+    assert len(tally.call_ids) == 3
+    assert len(ledger_calls(accountant)) == 3
+    # Each request really did carry its own slice, not the whole document over and over.
+    assert (
+        len(
+            {
+                request["messages"][0]["content"][0]["source"]["data"]
+                for request in transport.requests
+            }
+        )
+        == 3
+    )
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_an_oversize_slice_is_halved_rather_than_shrinking_k(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reducing K is deliberately not an option — K is hashed into the fingerprint, so a smaller
+    slice would silently be a *different* extraction. The slice is halved instead."""
+    import base64
+
+    from pinakes.extract import claude as claude_module
+    from pinakes.extract.pdfium import slice_pages
+
+    # Sized from the document itself: a hard-coded threshold either never splits or recurses
+    # straight to the single-page failure, and which one it does would be a property of this
+    # fixture rather than of the code.
+    def encoded(first: int, last: int) -> int:
+        return len(base64.standard_b64encode(slice_pages(CORPUS / "baseline-12p.pdf", first, last)))
+
+    two_pages, five_pages = encoded(0, 1), encoded(0, 4)
+    assert two_pages < five_pages, "the corpus fixture must grow with its page count"
+    monkeypatch.setattr(claude_module, "MAX_REQUEST_BYTES", (two_pages + five_pages) // 2)
+
+    pieces = claude_module.slice_bytes(CORPUS / "baseline-12p.pdf", 0, 4, pages_in_slice=5)
+    assert len(pieces) > 1, "it must split rather than send an oversize request"
+    assert sum(pages for _bytes, pages in pieces) == 5, "and no page may be lost in the split"
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_single_page_that_is_still_too_large_fails_by_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pinakes.extract import claude as claude_module
+
+    monkeypatch.setattr(claude_module, "MAX_REQUEST_BYTES", 10)
+    with pytest.raises(ExtractionError) as exc_info:
+        claude_module.slice_bytes(CORPUS / "baseline-12p.pdf", 0, 0, pages_in_slice=1)
+    assert "page 1" in exc_info.value.message
+    assert "baseline-12p.pdf" in exc_info.value.message
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_with_no_fitted_floor_the_paid_path_refuses_to_spend_at_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A paid path running with its own cost-control check disabled is worse than one that does
+    not run: the check exists to stop the most likely accidental spend, so its absence is a
+    refusal, never a shrug."""
+    from pinakes.errors import FloorsMissingError
+    from pinakes.extract import claude as claude_module
+
+    def no_floors() -> Any:
+        raise FloorsMissingError(reason="floors.toml is missing")
+
+    monkeypatch.setattr(claude_module, "load_floors", no_floors)
+    with pytest.raises(FloorsMissingError):
+        claude_module.check_worth_paying_for(CORPUS / "baseline-12p.pdf", force=False)
+    # `--force` must not buy a way past a *missing guard*, only past a healthy-PDF refusal.
+    with pytest.raises(FloorsMissingError):
+        claude_module.check_worth_paying_for(CORPUS / "baseline-12p.pdf", force=True)
