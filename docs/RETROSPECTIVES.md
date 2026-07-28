@@ -1008,6 +1008,62 @@ redesign), with its own regression test. *Lesson: a value that is "usually uniqu
 not a key — `content_hash` was never meant to identify one document, only to detect whether one
 had changed; this table's actual primary key was sitting right there the whole time.*
 
+## I6a — budget core, pure (20260728 17:52)
+
+**HIGH — every test of the timezone conversion that is this module's entire reason to exist would
+have passed with the conversion deleted.** `window.py` aggregates ledger records into day/month
+totals in `[budget] timezone`, converting both `now` and each record's `reserved_at` before
+comparing. Every test — including the midnight, month-end and DST-transition trio written
+specifically to exercise attribution — constructed both values *already in the target zone*, where
+`.astimezone()` is a no-op. The adversarial review mutated `local_now = now.astimezone(timezone)` to
+`local_now = now`, and separately the per-record conversion, and **both mutations passed all 35
+tests**. The real case is ordinary, not exotic: a ledger storing UTC timestamps (the obvious choice
+for I6b) read under a non-UTC `[budget] timezone` — 23:30 UTC on the 15th is 00:30 on the *16th* in
+Berlin, so either mutation silently files the spend under the wrong day. Fixed by adding a test that
+aggregates a UTC-stamped record against a Berlin window. *Lesson: a test whose fixture is built in
+the same units the code converts to cannot detect a missing conversion. Exercising a transformation
+requires input where the transformation actually changes something — three tests that carefully
+varied the clock while holding the timezone constant proved nothing about the timezone at all.*
+
+**MEDIUM — an exception hierarchy copied from a sibling module inherited the wrong exception
+types.** `prices.py` was deliberately modelled on `extract/floors.py`, including its
+`except (TOMLDecodeError, KeyError, TypeError, ValueError)` around parsing. But `floors.py` parses
+with `float(x)`, which raises `ValueError` on bad input, while `prices.py` parses with
+`Decimal(str(x))`, which raises `decimal.InvalidOperation` — **not** a `ValueError` subclass
+(`InvalidOperation → DecimalException → ArithmeticError`). A single-character price typo (a European
+`"5,00"`, an unfilled `"TBD"`) therefore escaped as a bare `InvalidOperation` instead of the named
+`PricesMissingError` the module's own docstring promises, and the test claiming to cover this only
+ever exercised a TOML *syntax* error. *Lesson: when mirroring a module's error handling, the except
+clause travels with the parsing call it was written for. Changing `float` to `Decimal` changes which
+exceptions are possible, and an inherited except tuple is a claim about the old code.*
+
+**MEDIUM — validation absent at the one boundary where a wrong sign inverts the guarantee.**
+`estimate_document` accepted any `pages`/`pages_estimated`: `pages=0` produced `requests=0` and made
+`per_request_eur` raise on a zero division, and a negative `pages_estimated` produced a **negative**
+`total_eur`. Every other failure mode in the module — unknown model, missing prices, stale prices,
+oversize request — had a named error, but the one that would make a budget guard *understate* spend
+had none. Not reachable from any caller in this increment, since nothing calls it yet; guarded at
+the source rather than trusting a caller that does not exist to be written correctly. *Lesson: for
+a component whose whole job is bounding a number, the input validation that matters most is
+whichever one lets the number move in the safe-looking direction.*
+
+**LOW, worth keeping — three assertions that were true but untested, in the same shape.**
+`reserve_document`'s "every blocked window is named" was only ever tested with all three windows
+breaching at once (so "always names all three" would also have passed); `reserve`'s "first breach in
+order wins" was only tested where a single window *could* breach (two of three caps were set to a
+generous 100 in every case); and `confirm_above_eur`'s strict `>` boundary was asserted only
+incidentally. All three were verified correct by hand and none was a defect — but a regression in
+any would have been invisible. *Lesson: a passing test suite says nothing about the claims it never
+puts under tension; the boundary cases worth writing are the ones where two plausible
+implementations disagree.*
+
+Also fixed: `Table.decimal()`'s default path returned before its own `minimum` check, so a
+below-minimum default would pass silently — `integer()`/`number()` avoid this for free by sharing
+one code path between default and parsed value, which is why the bug was invisible by analogy.
+`ContextWindowExceededError`'s remedy told the user to lower a `[chunking]`-equivalent slice size
+that does not exist as configuration (`K` is a fixed constant). Every fix in this increment was
+confirmed to fail against the pre-fix code before landing.
+
 ---
 
 ## Design review passes 1–7 (pre-implementation)

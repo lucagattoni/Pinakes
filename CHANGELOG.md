@@ -135,14 +135,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     fixed constant); and a cap lowered mid-window below already-recorded spend printed a negative
     "headroom €-X.XX" in a refusal message, now rendered as "already €X.XX over cap" instead.
 
-  One review finding was **not** acted on here: `docs/DESIGN.md`'s own "⏳ pending amendment" note
-  (§5) promises the `daily_eur`/`max_price_age_days` rewrite "lands with I6a" — it does not, since
-  documentation for this round is deliberately deferred to the parallel pass (below). Flagged for
-  whoever reconciles that pass with this entry, not silently left contradicted.
+  Documentation for this increment landed separately, immediately after — see *Documentation* below.
 
-  **Documentation for this increment (`docs/DESIGN.md` §2.1/§5/§8, `README.md`) is being amended in
-  a parallel, independent pass and is deliberately not touched here** — this entry is the complete
-  record of what shipped until that pass lands.
+### Documentation
+
+- **The docs now describe I6a, and the shipped-vs-merged distinction they lacked.** I6a's own
+  implementation deliberately left `docs/` untouched while a parallel restructuring pass was in
+  flight (that pass became `0.2.1`); this reconciles the two.
+
+  `docs/DESIGN.md` §5 replaces its "⏳ pending amendment" placeholder with the real rationale: the
+  first spender is the paid PDF extractor rather than `pnk ask --deep`, three independent windows
+  instead of one cap, why a *request* (a fixed page slice) is the estimation unit rather than a
+  document or a page, the reservation/reconciliation/void aggregation rule, why money is `Decimal`
+  end to end, and why price staleness is a runtime refusal rather than a CI gate.
+  `docs/MANIFEST.md` documents `daily_eur` and `max_price_age_days` with their real defaults (read
+  from `manifest.py`, then verified against it), states that all three caps are checked and that a
+  refusal names every blocked one at once, and notes the exact-`Decimal` parsing.
+
+- **`docs/STATUS.md` said "Installed version: 0.2.0" while the package was already `0.2.1`** — the
+  one file whose entire job is being right about what ships. Now `0.2.1`, and it gained the
+  distinction it was missing: an increment merged to `main` but not released reads **"on `main`,
+  unreleased"**, never "shipped", because installing from a tag and installing from `main` are
+  different answers to "can I use this yet". `docs/README.md`'s landing checklist says so too.
+
+- **The I6–I9 version target is decided** (`docs/STATUS.md`): they accumulate in `[Unreleased]` and
+  cut as one MINOR release once paid extraction is usable (I7b) and safe (I7c) — never a `0.2.x`
+  patch, since a KB that can spend money is new capability. I6a, I6b and I7a are each explicitly
+  partial and none passes the SemVer table alone. **The number itself is left unassigned and the
+  reason is recorded**: `v0.3` is already committed across the docs, `docs/graph/` included, as the
+  cross-KB links release, so taking `0.3.0` for paid extraction cascades through the whole roadmap.
+  That is a roadmap decision rather than a documentation one. Forward roadmap rows are relabelled as
+  ordered scope rather than assigned numbers, since pre-assigning a version years ahead is what
+  created the collision.
+
+- `docs/README.md` gains the rule this round produced the hard way: **check what has landed on
+  `main` before assigning a release number** — an I6a worktree nearly reasoned about "0.2.1 vs
+  0.3.0" from a stale base while a parallel pass had already shipped `0.2.1`.
+
+- `docs/RETROSPECTIVES.md` gains I6a's entry: the timezone conversion whose every test passed with
+  the conversion deleted, an except-tuple inherited from a sibling module that parsed with `float`
+  where this one parses with `Decimal`, missing validation at the one boundary where a wrong sign
+  understates spend, and three true-but-untested assertions.
 
 ## [0.2.1] — 20260728 16:54
 

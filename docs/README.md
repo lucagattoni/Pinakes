@@ -38,8 +38,10 @@ are on. That is why it does not go stale.
 
 The docs are built so an increment touches few files. In rough order:
 
-1. **STATUS.md** — flip the increment's row to shipped; move its capability out of "not built". If it
-   changed a measured number, update it *with the date you measured it*.
+1. **STATUS.md** — flip the increment's row. Merged to `main` but not in a release is **"on `main`,
+   unreleased"**, not "shipped": installing from a tag and installing from `main` are different
+   answers to "can I use this yet". Move its capability out of "not built" only when a user can
+   actually reach it. If it changed a measured number, update it *with the date you measured it*.
 2. **CLI.md** — move the surface out of "Planned", or add its flags to the command's table.
 3. **MANIFEST.md** — add any new manifest or sidecar key, with its default.
 4. **GUIDE.md** — fill the stub if the increment made a task possible that wasn't before.
@@ -50,6 +52,11 @@ The docs are built so an increment touches few files. In rough order:
 makes it true. **Amendments land with their increment, never in advance** — a spec describing
 unbuilt behaviour is the failure mode the project's README rule exists to prevent. DESIGN sections
 still awaiting an amendment carry a dated note saying so.
+
+**Before assigning a release number, check what has already landed on `main`** ([CLAUDE.md](../CLAUDE.md)).
+Another session or worktree may have cut a release since your branch started, so the number you were
+about to use — or the one a plan assumes — may already be taken. `plans/v0.2.md` assumed it would cut
+`0.2.0` at I9; `0.2.0` shipped after I5 and `0.2.1` after that.
 
 ## Conventions
 
