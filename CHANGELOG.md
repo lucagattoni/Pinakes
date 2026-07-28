@@ -139,6 +139,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
+- **[`docs/KB-UPDATES.md`](docs/KB-UPDATES.md) — what happens to a KB somebody already has when
+  pinakes changes.** A design note, decided but **not built and not assigned to an increment**. The
+  build plans had specified three drift axes and never asked about the fourth: an index schema, an
+  embedding model and a PDF extractor each drift *detectably* and are remedied by rebuilding derived
+  state, which is free — while a manifest and a template drift **silently**, and the remedy touches
+  a file the user owns, so it cannot borrow the same shape.
+
+  The gap is live rather than theoretical: I9's `**/*.pdf` template line will reach new KBs only, so
+  every KB created before it stays PDF-blind permanently; and `doctor`'s sole drift signal compares
+  declared version strings (`doctor.py:135`) while I9 as drafted changes template content without
+  bumping `1.0` — a rule with no gate, lapsed before shipping.
+
+  A compatibility asymmetry nobody designed on purpose is recorded with its evidence: **sidecars are
+  forward-compatible** (unknown keys preserved under `extra`, `sidecar.py:35`) while **the manifest
+  is not** (unknown keys are a hard error, `_toml.py:184`) — demonstrated against `main`, where a
+  future `[budget]` key is refused with a remedy blaming a *typo* for what is version skew.
+
+  Decisions recorded: downgrade is unsupported and refuses loudly; strictness is unchanged;
+  `[kb]` gains `requires_pinakes` so the refusal can name the version, read in a **pre-pass** before
+  validation or it is unreachable in the one case it exists for; `pnk upgrade --apply` may write to
+  `pinakes.toml` via `tomlkit` (MIT, zero dependencies, 197 KB) with comments preserved, but never
+  touches `docs/`, never renumbers a ULID and never re-chunks as a side effect; and a CI gate hashes
+  the template directory minus an ignore-list, so a content change without a version bump fails at
+  commit time rather than in a user's KB.
 - **The docs now describe I6a, and the shipped-vs-merged distinction they lacked.** I6a's own
   implementation deliberately left `docs/` untouched while a parallel restructuring pass was in
   flight (that pass became `0.2.1`); this reconciles the two.

@@ -49,6 +49,11 @@ ledger](#v02-increment-ledger) · last reviewed 20260728 17:52
 skipped** — sync reports `0 indexed` and explains nothing. Add `"**/*.pdf"` to `[sources] include`
 yourself ([GUIDE](GUIDE.md#indexing-pdfs)). The template gains a commented-out line in I9.
 
+⚠️ **A template change reaches new KBs only.** I9's line will not appear in any KB created before
+it, and nothing today detects or reports that divergence — so existing KBs stay PDF-blind
+permanently unless their owner edits the manifest by hand. That gap, and what to do about it, is
+worked through in [KB-UPDATES.md](KB-UPDATES.md) (a proposal; no increment assigned).
+
 ### Caveat: the `[light]` backend needs a manifest edit
 
 `pnk init` always stamps `provider = "sentence-transformers"` — it cannot see which extra you

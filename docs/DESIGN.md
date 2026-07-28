@@ -488,6 +488,12 @@ not implicitly change a KB's blueprint.
 proposed migration. It never applies changes automatically — a template bump that silently re-chunks
 someone's corpus is a data-loss event in slow motion.
 
+**This is one of four drift axes, and the only one with no mechanism.** An index, an embedding model
+and a PDF extractor each drift detectably and are remedied by rebuilding derived state, which is
+free. A manifest and a template drift *silently*, and the remedy touches a file the user owns — so
+it cannot borrow the same shape. [KB-UPDATES.md](KB-UPDATES.md) works the problem through and
+records what has been decided; none of it is built.
+
 ### 6.2 Cross-KB links
 
 Addressing is `pnk://<kb-ulid>/<doc-ulid>` (§2.2). Aliases in `[[links.kb]]` map a KB ULID to a local
