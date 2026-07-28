@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] — 20260728 16:54
+
 ### Added
 
 - **A documentation structure built for continuous development.** Each fact now has exactly one
@@ -578,7 +580,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.2.1
 [0.2.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.2.0
 [0.1.4]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.4
 [0.1.3]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.3
