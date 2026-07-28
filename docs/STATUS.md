@@ -43,11 +43,14 @@ ledger](#v02-increment-ledger) · last reviewed 20260728 17:52
 **Nothing in the shipped surface can spend money.** The only paid code path in the design is the
 `claude-vision` extractor, and it is a stub. See [DESIGN §5](DESIGN.md#5-cost-control).
 
-### Caveat: PDFs are off by default
+### Caveat: PDFs are off by default (but no longer silently)
 
-`pnk init` stamps `include = ["**/*.md", "**/*.txt"]`. A PDF dropped into a fresh KB is **silently
-skipped** — sync reports `0 indexed` and explains nothing. Add `"**/*.pdf"` to `[sources] include`
-yourself ([GUIDE](GUIDE.md#indexing-pdfs)). The template gains a commented-out line in I9.
+`pnk init` stamps `include = ["**/*.md", "**/*.txt"]`, so PDFs need one manifest edit: add
+`"**/*.pdf"` to `[sources] include` ([GUIDE](GUIDE.md#indexing-pdfs)). The generated manifest spells
+out the glob and the extra it needs, and since 0.2.2 `pnk sync` names any file it skipped for want
+of a pattern instead of reporting `0 indexed` and explaining nothing. It stays off by default
+because `init` cannot see whether `pinakes[pdf]` is installed, and a glob stamped without it turns
+every PDF into a failed document rather than a skipped one.
 
 ### Caveat: the `[light]` backend needs a manifest edit
 

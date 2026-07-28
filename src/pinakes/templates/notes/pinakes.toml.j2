@@ -8,6 +8,10 @@ created  = "{{ created }}"
 roots   = ["docs/"]
 include = ["**/*.md", "**/*.txt"]
 exclude = ["**/drafts/**"]
+# Add "**/*.pdf" to `include` above to index PDFs. Left out rather than commented into place
+# because `init` cannot see whether the extractor is installed: PDF ingest needs
+# `uv add "pinakes[pdf]"`, and a glob stamped without it turns every PDF into a failed document.
+# `pnk sync` names any file it skipped for want of a pattern; `pnk doctor` checks the extractor.
 
 [embedding]
 provider = "{{ embedding_provider }}"

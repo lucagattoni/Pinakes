@@ -45,6 +45,20 @@ def test_confidence_thresholds_are_commented_out(tmp_path: Path) -> None:
     assert load(result.root).retrieval.confidence is None
 
 
+def test_pdfs_are_off_by_default_but_the_manifest_says_how_to_turn_them_on(tmp_path: Path) -> None:
+    """`init` cannot see whether `pinakes[pdf]` is installed, so stamping a `**/*.pdf` glob would
+    turn every PDF into a failed document on a core-only install (plan decision 6). Off, then —
+    but *discoverably* off: 0.2.0 shipped PDF ingest as its headline feature with no glob and no
+    mention of one anywhere the user would look, so a PDF dropped into a fresh KB was skipped in
+    silence. `pnk sync` names it now too (`test_sync.py`)."""
+    result = init(tmp_path / "kb")
+    manifest_text = (result.root / "pinakes.toml").read_text(encoding="utf-8")
+
+    assert "**/*.pdf" in manifest_text  # the exact glob, spelled out to copy
+    assert "pinakes[pdf]" in manifest_text  # and the extra it needs
+    assert "**/*.pdf" not in load(result.root).sources.include  # but not actually enabled
+
+
 def test_two_kbs_never_share_an_id(tmp_path: Path) -> None:
     first = init(tmp_path / "a")
     second = init(tmp_path / "b")

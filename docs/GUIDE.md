@@ -127,13 +127,20 @@ garbage, and `pnk doctor` names the mismatch. `pnk sync --rebuild` fixes it, and
 ## Indexing PDFs
 
 Needs `pinakes[pdf]`. **PDFs are not indexed by default** — the shipped template does not include
-them, and a PDF dropped into a fresh KB is silently skipped:
+them, because `init` cannot see which extras you installed. `pnk sync` says so rather than leaving
+you to guess:
 
 ```
 0 indexed, 0 renamed, 0 metadata-only, 1 unchanged, 0 removed
+1 file(s) matched no `include` pattern: .pdf (1) — add "**/*.pdf" to `[sources] include` to
+index them, or `exclude` them to silence this.
 ```
 
-Add the glob to your manifest yourself:
+That line lists any file pinakes could have indexed but had no pattern for, grouped by extension.
+Files it could not read either way — images, archives, anything not valid UTF-8 — are never
+mentioned, since adding a glob for them would only produce a failed document.
+
+Add the glob to your manifest:
 
 ```toml
 [sources]
@@ -318,7 +325,7 @@ traversing them lands in v0.3; the *schema* ships today precisely because IDs ca
 | Symptom | Cause | Fix |
 |---|---|---|
 | `the sentence-transformers backend is not installed` | `[light]` install, default manifest | Set `provider = "fastembed"` in `[embedding]` **and** `[rerank]` |
-| A PDF syncs as `0 indexed` | `**/*.pdf` missing from `[sources] include` | Add the glob ([above](#indexing-pdfs)) |
+| `N file(s) matched no include pattern` | Those files are in your roots but no glob picks them up | Add the glob it names ([above](#indexing-pdfs)), or `exclude` them |
 | A PDF indexes with no text | Scanned / image-only — the free path has no OCR | Needs the paid extractor, [not built yet](STATUS.md) |
 | `no extractor for .pdf` | `[pdf]` extra missing | `uv add "pinakes[pdf]"` |
 | Queries refuse to run, naming a model mismatch | Embedding model changed since the index was built | `pnk sync --rebuild` — free |

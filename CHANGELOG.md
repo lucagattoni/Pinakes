@@ -7,6 +7,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A file that matched no `include` pattern was skipped in silence — including, in a KB made by
+  `pnk init`, every PDF.** 0.2.0 shipped free PDF ingest as its headline feature while the `notes`
+  template stamped `include = ["**/*.md", "**/*.txt"]`, so the actual first-run experience was:
+  drop in a PDF, run `pnk sync`, read `0 indexed`, and get no hint that a missing glob was the
+  reason. The mixed case was worse — Markdown indexed, PDFs dropped, the run reporting success —
+  because nothing prompted anyone to look.
+
+  `pnk sync` now names what it skipped, grouped by extension, with the exact glob that would pick
+  the commonest up and a pointer to `exclude` for silencing it instead:
+
+  ```text
+  0 indexed, 0 renamed, 0 metadata-only, 1 unchanged, 0 removed
+  1 file(s) matched no `include` pattern: .pdf (1) — add "**/*.pdf" to `[sources] include` to
+  index them, or `exclude` them to silence this.
+  ```
+
+  **Only files pinakes could actually index are reported**, and the test is the one indexing itself
+  applies: whether the first 8 KB decode as UTF-8 (`_index_document` reads every non-PDF source with
+  `read_text(encoding="utf-8")`), plus `.pdf`, binary on purpose and indexable through
+  `pinakes[pdf]`. An image or an archive beside your notes never appears — suggesting a glob for one
+  would hand back a remedy that produces a `UnicodeDecodeError` failure row when followed, and a
+  wrong hint is worse than none. Deciding by decodability rather than an extension allowlist also
+  covers `.rst`, `.org`, `.tex` and every other text format without a list anyone has to maintain,
+  since `chunk.source_type` already falls back to `"text"` for an unknown suffix. Silent too,
+  deliberately: anything `exclude` already names, sidecars, and anything under a dotted path segment
+  (`.git/`, `.DS_Store`).
+
+- **The `notes` template now spells out the PDF glob and the extra it needs** (plan decision 6,
+  pulled forward from I9 — the defect was live in a released version, and the plan had already
+  reversed itself on the same reasoning for I7a's allowlist gate). PDFs stay **off** by default:
+  `init` cannot see whether `pinakes[pdf]` is installed, and a glob stamped without it turns every
+  PDF into a *failed* document rather than a skipped one. Off, but no longer undiscoverable.
+
+  Tests: seven cases in `tests/test_sync.py` (the bare-PDF case, the mixed case, binaries and UTF-16
+  staying silent, an unknown-but-decodable `.rst` being reported, `exclude`/dotted paths staying
+  silent, matched and unmatched being disjoint, and the by-extension grouping with its cap) plus one
+  in `tests/test_init.py` asserting the template mentions both the glob and the extra while
+  `sources.include` still does not contain it. Each was confirmed to fail against the pre-fix code.
+
 ### Added
 
 - **I6a of the v0.2 build order: budget core, pure (rule 11 — the pure half of the money

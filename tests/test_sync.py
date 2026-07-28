@@ -818,3 +818,111 @@ def test_three_consecutive_paid_syncs_settle_after_the_first(kb: Path, fake_paid
     assert (first.embedded, first.refreshed, first.skipped) == (1, 0, 0)
     assert (second.embedded, second.refreshed, second.skipped) == (0, 0, 1)
     assert (third.embedded, third.refreshed, third.skipped) == (0, 0, 1)
+
+
+# --- unmatched files: a file skipped for want of a glob must say so (0.2.2) -------------------
+
+
+def test_a_pdf_with_no_matching_glob_is_named_not_silently_skipped(kb: Path) -> None:
+    """The defect this fixes: `pnk init` stamps no `**/*.pdf`, so a PDF dropped into a fresh KB
+    matched nothing and sync reported `0 indexed` explaining nothing — v0.2's headline feature
+    silently off, with the output giving no hint why."""
+    (kb / "docs" / "report.pdf").write_bytes(b"%PDF-1.4\nnot really a pdf\n")
+
+    report = run(kb)
+
+    assert report.embedded == 0
+    assert report.unmatched == ("docs/report.pdf",)
+    line = next(line for line in report.lines() if "matched no `include` pattern" in line)
+    assert '"**/*.pdf"' in line  # the exact glob to add, not a vague pointer
+    assert "`exclude`" in line  # and the way to silence it instead
+
+
+def test_unmatched_files_are_reported_even_when_others_indexed_fine(kb: Path) -> None:
+    """The mixed case is the dangerous one: a sync that indexes the Markdown and drops the PDFs
+    reports success, so nothing prompts the user to look. Silence here is worse than silence on an
+    empty KB, which at least invites investigation."""
+    write(kb, "notes.md", "# Notes\n\nIndexed fine.\n")
+    (kb / "docs" / "report.pdf").write_bytes(b"%PDF-1.4\n")
+
+    report = run(kb)
+
+    assert report.embedded == 1
+    assert report.ok  # not a failure — the run succeeded, it just was not complete
+    assert report.unmatched == ("docs/report.pdf",)
+
+
+def test_binaries_are_never_reported_because_the_remedy_would_not_work(kb: Path) -> None:
+    """A file pinakes could not read however the manifest is configured must stay silent: every
+    non-PDF source goes through `read_text(encoding="utf-8")`, so telling the user to add
+    `"**/*.png"` would hand them a remedy that produces a `UnicodeDecodeError` failure row when
+    followed. A wrong hint is worse than none."""
+    (kb / "docs" / "diagram.png").write_bytes(bytes.fromhex("89504e470d0a1a0a") + b"\x00" * 64)
+    (kb / "docs" / "utf16.txt").write_text("hello", encoding="utf-16")
+
+    report = run(kb)
+
+    assert report.unmatched == ()
+    assert not any("matched no `include` pattern" in line for line in report.lines())
+
+
+def test_an_unknown_text_format_is_reported_since_it_indexes_as_text(kb: Path) -> None:
+    """`chunk.source_type` falls back to `"text"` for any unrecognised suffix, so `.rst`/`.org`/
+    `.tex` genuinely index once a glob matches them. A fixed extension allowlist would have stayed
+    silent here; deciding by decodability does not."""
+    (kb / "docs" / "guide.rst").write_text("Title\n=====\n\nBody.\n", encoding="utf-8")
+
+    report = run(kb)
+
+    assert report.unmatched == ("docs/guide.rst",)
+
+
+def test_excluded_and_hidden_files_are_never_reported(kb: Path) -> None:
+    """`exclude` is the user having already said "not this" — repeating it back as a suggestion
+    would be noise. Dotted segments (`.git/`, `.DS_Store`) are never the corpus."""
+    manifest = (kb / "pinakes.toml").read_text(encoding="utf-8")
+    (kb / "pinakes.toml").write_text(
+        manifest.replace(
+            'include = ["**/*.md"]', 'include = ["**/*.md"]\nexclude = ["**/vendor/**"]'
+        ),
+        encoding="utf-8",
+    )
+    (kb / "docs" / "vendor").mkdir()
+    (kb / "docs" / "vendor" / "third-party.rst").write_text("Vendored.\n", encoding="utf-8")
+    (kb / "docs" / ".hidden").mkdir()
+    (kb / "docs" / ".hidden" / "secret.rst").write_text("Hidden.\n", encoding="utf-8")
+    (kb / "docs" / ".DS_Store").write_bytes(b"\x00\x01")
+
+    report = run(kb)
+
+    assert report.unmatched == ()
+
+
+def test_a_matched_file_is_not_also_reported_as_unmatched(kb: Path) -> None:
+    """The two sets must be disjoint — a document that indexed fine appearing in the "you have no
+    glob for this" line would be a plain contradiction."""
+    write(kb, "notes.md", "# Notes\n\nBody.\n")
+
+    report = run(kb)
+
+    assert report.embedded == 1
+    assert report.unmatched == ()
+
+
+def test_the_unmatched_line_groups_by_extension_and_caps_the_list(kb: Path) -> None:
+    """By extension, not by path: twelve unindexed PDFs are one missing glob, and printing twelve
+    paths would obscure that. Capped so a KB with many stray formats still prints one readable
+    line."""
+    for index_ in range(4):
+        (kb / "docs" / f"doc{index_}.rst").write_text("Body.\n", encoding="utf-8")
+    (kb / "docs" / "a.org").write_text("Body.\n", encoding="utf-8")
+    (kb / "docs" / "b.tex").write_text("Body.\n", encoding="utf-8")
+    (kb / "docs" / "c.adoc").write_text("Body.\n", encoding="utf-8")
+
+    report = run(kb)
+
+    line = next(line for line in report.lines() if "matched no `include` pattern" in line)
+    assert "7 file(s)" in line
+    assert ".rst (4)" in line  # commonest first
+    assert '"**/*.rst"' in line  # and it is the one the remedy names
+    assert "and 1 more" in line  # 4 distinct extensions, 3 shown
