@@ -451,6 +451,30 @@ deterministic, cron-safe. A rebuild that wiped `.pinakes/` wholesale would destr
 that §5's rolling budget is computed from, turning a routine maintenance command into a silent
 budget reset. Only `cache/` is optionally cleared, behind `--clear-cache`.
 
+**The extraction cache** (I4) sits between `pnk sync` and every `Extractor`: one JSON file per
+`<content_hash>-<fingerprint>.json` under `.pinakes/cache/extract/`, storing the whole
+`ExtractedText` a call returns — text, page spans, per-page provenance — plus `operation_id`/
+`call_ids`, the future join key to `ledger.jsonl` (`null` until a paid backend exists to populate
+them, I6b/I7c). A hit skips the extractor entirely — `--rebuild` benefits the most, since it
+re-processes every document but never re-pays for one whose content and backend fingerprint are
+unchanged. Invalidation is by key alone: an edited document gets a new `content_hash`; a backend
+version bump or a re-fitted threshold changes its `fingerprint` (`extract.fingerprint()`, §7.1).
+Any entry that cannot be read — missing, truncated, an unrecognised schema — is a miss, never a
+crash: a cache that could fail a correctly-configured sync would be worse than no cache at all.
+
+After a **fully successful** sync (no failures, and — for `--rebuild` — only once the atomic swap
+has landed), entries whose `content_hash` matches no active document are swept, except entries a
+paid backend wrote, which are only ever reported, never deleted automatically: a soft-deleted or
+un-sidecarred document is not an "active document," and silently sweeping away an extraction that
+was paid for is the one mistake this cache must not make. `pnk doctor` reports entry count, bytes,
+`orphans/entries`, and paid orphans as their own line.
+
+`pnk sync --clear-cache` empties `cache/extract/` entirely — paid or free, active or orphaned —
+after confirming: it prints the entry count and bytes about to go and requires a `y`; `--yes` skips
+the prompt for cron use. `ledger.jsonl` is never touched, the same guarantee `--rebuild` already
+gives. Selective removal of paid orphans alone lands with the ledger reader that can price them
+(I7c) — building it sooner would mean pricing entries against a ledger that does not exist yet.
+
 `pnk install-hooks` writes **three** hooks, split by what each may touch:
 
 - **`pre-commit`** runs `pnk sync --sidecars-only --stage`: for every *staged* new document it mints

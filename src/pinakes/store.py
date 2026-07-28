@@ -214,6 +214,15 @@ def get_meta(connection: sqlite3.Connection) -> dict[str, str]:
     }
 
 
+def active_content_hashes(connection: sqlite3.Connection) -> set[str]:
+    """Every `content_hash` an active (non-deleted) document currently claims — what the
+    extraction cache's eviction sweep and `pnk doctor`'s report both call "still in use"."""
+    return {
+        str(row["content_hash"])
+        for row in connection.execute("SELECT content_hash FROM documents WHERE state = 'active'")
+    }
+
+
 def pack_vector(vector: "np.ndarray[Any, np.dtype[np.float32]]") -> bytes:
     """Serialise one embedding: float32 throughout, so storage and maths agree by construction."""
     return np.ascontiguousarray(vector, dtype=VECTOR_DTYPE).tobytes()

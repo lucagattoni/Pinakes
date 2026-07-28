@@ -21,6 +21,7 @@ from pathlib import Path
 
 from pinakes import __version__
 from pinakes.errors import NotImplementedYetError, PinakesError
+from pinakes.manifest import Manifest
 
 DESIGN_URL = "https://github.com/lucagattoni/Pinakes/blob/main/docs/DESIGN.md"
 
@@ -339,6 +340,14 @@ def _sync_arguments(parser: argparse.ArgumentParser) -> None:
         metavar="BACKEND",
         help="override `[extraction] backend` for this run only",
     )
+    parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help="empty the extraction cache, after confirming (never the ledger)",
+    )
+    parser.add_argument(
+        "--yes", action="store_true", help="skip --clear-cache's confirmation prompt (cron use)"
+    )
     parser.add_argument("-q", "--quiet", action="store_true", help="print only problems")
 
 
@@ -348,6 +357,10 @@ def run_sync(args: argparse.Namespace) -> int:
     from pinakes.sync import SyncOptions, sync
 
     loaded = manifest_module.discover(args.kb)
+
+    if args.clear_cache:
+        return _run_clear_cache(loaded, args)
+
     report = sync(
         loaded,
         options=SyncOptions(
@@ -379,6 +392,35 @@ def run_sync(args: argparse.Namespace) -> int:
             print(line, file=sys.stderr)
 
     return EXIT_OK if report.ok else EXIT_FAILURE
+
+
+def _run_clear_cache(loaded: Manifest, args: argparse.Namespace) -> int:
+    """`sync()` never prompts (it does no I/O beyond the filesystem, like every other function in
+    that module) — this is the one place that reads a TTY and asks, then re-calls with `yes=True`
+    once confirmed."""
+    from pinakes.sync import SyncOptions, sync
+
+    report = sync(loaded, options=SyncOptions(clear_cache=True, yes=args.yes))
+    if report.busy:
+        print("another sync is already running; nothing to do.")
+        return EXIT_OK
+
+    if report.cache_clear_aborted:
+        print(
+            f"this will remove {report.cache_pending_entries} cache entries "
+            f"({report.cache_pending_bytes} bytes)."
+        )
+        if not sys.stdin.isatty():
+            print("no terminal to confirm from; re-run with --yes.", file=sys.stderr)
+            return EXIT_FAILURE
+        answer = input("proceed? [y/N] ").strip().lower()
+        if answer != "y":
+            print("aborted; nothing removed.")
+            return EXIT_OK
+        report = sync(loaded, options=SyncOptions(clear_cache=True, yes=True))
+
+    print(f"removed {report.cache_cleared} entries ({report.cache_cleared_bytes} bytes).")
+    return EXIT_OK
 
 
 # The v0.1 surface (docs/DESIGN.md §8), in the order a user meets it. `increment` points at
