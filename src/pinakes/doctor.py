@@ -18,15 +18,22 @@ from pathlib import Path, PurePosixPath
 
 from pinakes import store, template
 from pinakes.embed import hf_cache_dir, load_backend, load_reranker
-from pinakes.errors import ExtractionError, ExtractorMissingError, PinakesError
+from pinakes.errors import (
+    CoherenceError,
+    ExtractionCoherenceError,
+    ExtractionError,
+    ExtractorMissingError,
+    PinakesError,
+)
 from pinakes.extract import cache as extract_cache
-from pinakes.extract import load_extractor
+from pinakes.extract import load_extractor, paid_backend_names
 from pinakes.ids import DocId
 from pinakes.lock import LOCK_NAME, read_holder
 from pinakes.manifest import Manifest
 from pinakes.search import check_coherence
 from pinakes.sidecar import SIDECAR_SUFFIX, Sidecar, document_for, find_duplicate_ids
 from pinakes.sidecar import read as read_sidecar
+from pinakes.sync import hash_file
 
 LARGE_CORPUS_CHUNKS = 50_000
 HOOK_MARKER = "pinakes"
@@ -278,6 +285,70 @@ def _extraction_cache(manifest: Manifest, connection: sqlite3.Connection) -> Che
     return Check("extraction cache", Status.OK, detail)
 
 
+def _extraction_backend_drift(
+    manifest: Manifest, connection: sqlite3.Connection
+) -> Iterator[Check]:
+    """The three by-path gaps decision 9's backend-aware pairing rules exist to close (I5): a
+    normal sync resolves all three the moment it runs, but nothing surfaces them *before* that —
+    and "paid extraction not requested" specifically stays green even after a sync, since it is
+    the protection working as designed, not a problem to fix.
+    """
+    paid_names = paid_backend_names()
+    configured_is_paid = manifest.extraction.backend in paid_names
+
+    rows = connection.execute(
+        "SELECT path, content_hash, extraction_backend FROM documents "
+        "WHERE state = 'active' AND extraction_backend IS NOT NULL"
+    ).fetchall()
+
+    awaiting_paid: list[str] = []
+    paid_not_requested: list[str] = []
+    paid_stale: list[str] = []
+    for row in rows:
+        path = str(row["path"])
+        recorded_is_paid = str(row["extraction_backend"]) in paid_names
+
+        if recorded_is_paid and not configured_is_paid:
+            paid_not_requested.append(path)
+        elif not recorded_is_paid and configured_is_paid:
+            awaiting_paid.append(path)
+
+        if recorded_is_paid:
+            source = manifest.root / path
+            if source.is_file() and hash_file(source) != str(row["content_hash"]):
+                paid_stale.append(path)
+
+    yield _drift_check(
+        "awaiting paid extraction",
+        awaiting_paid,
+        "still indexed with a free backend though the manifest now asks for a paid one",
+        "Run `pnk sync` to extract them with the configured paid backend.",
+    )
+    yield _drift_check(
+        "paid extraction not requested",
+        paid_not_requested,
+        "kept at their paid extraction though the manifest currently asks for a free backend",
+        "Nothing to do — decision 9's protection is working. `pnk sync --force "
+        "--extract=<free-backend>` overwrites it deliberately, printing what it discards.",
+    )
+    yield _drift_check(
+        "paid extraction stale",
+        paid_stale,
+        "changed on disk since their paid extraction",
+        "Run `pnk sync --extract=<paid-backend>` to pay for a fresh extraction — a plain "
+        "`pnk sync` will report these as failures rather than silently downgrade them.",
+    )
+
+
+def _drift_check(name: str, paths: list[str], situation: str, remedy: str) -> Check:
+    if not paths:
+        return Check(name, Status.OK, "none")
+    sample = ", ".join(sorted(paths)[:3])
+    more = len(paths) - 3
+    detail = f"{len(paths)} {situation}: {sample}" + (f" and {more} more" if more > 0 else "")
+    return Check(name, Status.WARN, detail, remedy)
+
+
 def _index(manifest: Manifest) -> Iterator[Check]:
     if not manifest.index_path.exists():
         yield Check("index", Status.WARN, "not built yet", "Run `pnk sync`.")
@@ -305,12 +376,29 @@ def _index(manifest: Manifest) -> Iterator[Check]:
             f"{active} active documents, {counts['chunks']} chunks",
         )
         yield _extraction_cache(manifest, connection)
+        yield from _extraction_backend_drift(manifest, connection)
 
         try:
-            check_coherence(connection, manifest)
+            stale_paid = check_coherence(connection, manifest)
             yield Check("model coherence", Status.OK, "index matches the configured model")
-        except PinakesError as exc:
+            if stale_paid:
+                sample = ", ".join(sorted(str(doc_id) for doc_id in stale_paid)[:3])
+                more = len(stale_paid) - 3
+                yield Check(
+                    "extraction coherence",
+                    Status.WARN,
+                    f"{len(stale_paid)} document(s) have a stale paid extraction: {sample}"
+                    + (f" and {more} more" if more > 0 else ""),
+                    "The text is still correct, merely older, and every affected result is "
+                    "marked `stale_extraction` rather than withheld. Run `pnk sync --rebuild` "
+                    "to refresh it, or leave it — nothing is silently wrong (§4.4, decision 13).",
+                )
+            else:
+                yield Check("extraction coherence", Status.OK, "none stale")
+        except CoherenceError as exc:
             yield Check("model coherence", Status.FAIL, exc.message, exc.remedy)
+        except ExtractionCoherenceError as exc:
+            yield Check("extraction coherence", Status.FAIL, exc.message, exc.remedy)
 
         yield _calibration(manifest)
         yield _links(connection, manifest, active)

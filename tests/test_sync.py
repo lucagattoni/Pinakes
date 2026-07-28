@@ -1,7 +1,8 @@
 """`pnk sync` end to end, against a real index and a fake backend."""
 
+import shutil
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +12,13 @@ import yaml
 from pinakes import store
 from pinakes.embed import EmbeddingBackend, ModelInfo, Vectors
 from pinakes.errors import DuplicateIdsError
+from pinakes.extract import (
+    ExtractedText,
+    ExtractionContext,
+    ExtractorEntry,
+    register_extractor,
+    unregister_extractor,
+)
 from pinakes.ids import mint_doc_id
 from pinakes.manifest import Manifest, load
 from pinakes.sidecar import SIDECAR_SUFFIX
@@ -70,6 +78,36 @@ def kb(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return root
+
+
+class _FakePaidExtractor:
+    """A working *paid* extractor, standing in for `claude-vision` — whose own loader is a
+    permanent I7b stub that always raises (`test_extract.py`'s own
+    `test_claude_vision_stub_names_its_own_landing_increment`), so it cannot drive an actual
+    free-to-paid re-embed end to end. Deterministic and instant, like `FakeBackend` above; the
+    point under test is I5's backend bookkeeping, not a real paid call."""
+
+    def extract(self, path: Path, ctx: ExtractionContext) -> ExtractedText:
+        text = "Paid extraction output.\n"
+        return ExtractedText(text=text, page_spans=((0, len(text)),))
+
+
+@pytest.fixture
+def fake_paid() -> Iterator[str]:
+    """Registers a second, real paid backend for the duration of one test — unregistered again on
+    teardown regardless of how the test exits, so it never leaks into another test's
+    `registered_extractors()`/`paid_backend_names()`."""
+    name = "test-paid"
+    entry = ExtractorEntry(
+        load=_FakePaidExtractor,
+        fingerprint_inputs=lambda: {"backend": name},
+        paid=True,
+    )
+    register_extractor(name, entry)
+    try:
+        yield name
+    finally:
+        unregister_extractor(name)
 
 
 def write(kb: Path, name: str, text: str) -> Path:
@@ -477,3 +515,306 @@ def test_clear_cache_on_an_empty_cache_is_a_no_op_not_a_prompt(kb: Path) -> None
     assert report.cache_cleared == 0
     assert not report.cache_clear_aborted
     assert report.ok
+
+
+# --- I5: decision 9's six backend-drift cases, end to end ------------------------------------
+
+
+def _paid_index(kb: Path, fake_paid: str) -> None:
+    """Every case but `free_then_paid` starts from an already paid-indexed PDF."""
+    _add_pdf_support(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"placeholder")
+    first = run(kb, extract=fake_paid)
+    assert first.embedded == 1
+    assert index(kb)[0]["extraction_backend"] == fake_paid
+
+
+@pytest.mark.parametrize(
+    "case_id",
+    [
+        "free_then_paid",
+        "protected_from_a_free_run",
+        "protected_from_rebuild",
+        "protected_from_an_explicit_free_extract",
+        "force_overwrites",
+        "changed_hash",
+    ],
+)
+def test_backend_drift(kb: Path, fake_paid: str, case_id: str) -> None:
+    """Decision 9's six named cases (plans/v0.2.md), addressed as `test_backend_drift[<case_id>]`.
+
+    `pairing.py`'s own tests already cover the decision table in isolation; this is the same six
+    rules wired all the way through a real `sync()` call — the actual DB row, the actual sidecar,
+    the actual report the CLI would print.
+    """
+    if case_id == "free_then_paid":
+        _add_pdf_support(kb)
+        (kb / "docs" / "a.pdf").write_bytes(b"placeholder")
+        first = run(kb)
+        assert first.embedded == 1
+        assert index(kb)[0]["extraction_backend"] == "fake"
+
+        report = run(kb, extract=fake_paid)
+        assert report.embedded == 1
+        assert index(kb)[0]["extraction_backend"] == fake_paid
+        return
+
+    _paid_index(kb, fake_paid)
+
+    if case_id == "protected_from_a_free_run":
+        report = run(kb)  # the manifest's own [extraction] backend = "fake" — a hook-style run
+        assert (report.skipped, report.embedded) == (1, 0)
+        assert report.paid_extraction_protected == ("docs/a.pdf",)
+    elif case_id == "protected_from_rebuild":
+        report = run(kb, rebuild=True)
+        assert report.ok
+        assert report.paid_extraction_protected == ("docs/a.pdf",)
+    elif case_id == "protected_from_an_explicit_free_extract":
+        report = run(kb, extract="pypdfium2")  # explicit free backend, no --force
+        assert (report.skipped, report.embedded) == (1, 0)
+        assert report.paid_extraction_protected == ("docs/a.pdf",)
+    elif case_id == "force_overwrites":
+        report = run(kb, extract="fake", force=True)
+        assert report.embedded == 1
+        assert report.paid_extraction_overwritten == ("docs/a.pdf",)
+        printed = report.lines()
+        assert any("docs/a.pdf" in line and "discarded" in line for line in printed)
+        assert index(kb)[0]["extraction_backend"] == "fake"
+        return
+    elif case_id == "changed_hash":
+        (kb / "docs" / "a.pdf").write_bytes(b"changed, invalidating the paid extraction")
+        report = run(kb)  # free effective backend
+        assert not report.ok
+        assert len(report.failures) == 1
+        path, _error, remedy = report.failures[0]
+        assert path == "docs/a.pdf"
+        assert fake_paid in remedy
+        assert index(kb)[0]["extraction_backend"] == fake_paid  # untouched, not silently downgraded
+        return
+
+    after = index(kb)[0]
+    assert after["extraction_backend"] == fake_paid  # in every remaining case, still untouched
+
+
+def test_force_alone_without_an_explicit_extract_does_not_override(
+    kb: Path, fake_paid: str
+) -> None:
+    """`--force` protects nothing by itself — this is the manifest-default-backend counterpart to
+    `pairing.py`'s own unit test of the same rule."""
+    _paid_index(kb, fake_paid)
+
+    report = run(kb, force=True)  # no explicit --extract
+    assert (report.skipped, report.embedded) == (1, 0)
+    assert report.paid_extraction_protected == ("docs/a.pdf",)
+    assert index(kb)[0]["extraction_backend"] == fake_paid
+
+
+def test_force_overwrite_clears_the_stale_sidecar_provenance(kb: Path, fake_paid: str) -> None:
+    """After `--force` downgrades a paid extraction to free, the sidecar must stop claiming a paid
+    extraction it no longer describes — otherwise a later sync (or a different clone reading the
+    same committed sidecar) would wrongly believe the file is still protected."""
+    _paid_index(kb, fake_paid)
+    sidecar_file = kb / "docs" / f"a.pdf{SIDECAR_SUFFIX}"
+    before = yaml.safe_load(sidecar_file.read_text(encoding="utf-8"))
+    assert before["provenance"]["extraction"]["backend"] == fake_paid
+
+    run(kb, extract="fake", force=True)
+
+    after = yaml.safe_load(sidecar_file.read_text(encoding="utf-8"))
+    assert "extraction" not in after.get("provenance", {})
+
+
+# --- I5: rebuild-provenance -------------------------------------------------------------------
+
+
+def test_a_rebuild_preserves_paid_provenance(kb: Path, fake_paid: str) -> None:
+    """`--rebuild` under a free manifest must leave a paid-extracted document untouched: the same
+    id, the same backend/fingerprint, and its chunks and vectors carried over rather than
+    re-embedded — the sidecar's `provenance.extraction` is what makes this possible even though
+    `--rebuild`'s own `before` snapshot is read from a brand-new, empty database (decision 11)."""
+    _paid_index(kb, fake_paid)
+    before = index(kb)[0]
+
+    report = run(kb, rebuild=True)
+
+    assert report.ok
+    after = index(kb)[0]
+    assert after["id"] == before["id"]
+    assert after["extraction_backend"] == fake_paid
+    assert after["extraction_fingerprint"] == before["extraction_fingerprint"]
+
+    sidecar = yaml.safe_load((kb / "docs" / f"a.pdf{SIDECAR_SUFFIX}").read_text(encoding="utf-8"))
+    assert sidecar["provenance"]["extraction"]["backend"] == fake_paid
+
+    connection = store.connect_ro(kb / ".pinakes" / "index.db")
+    try:
+        chunk_ids, matrix = store.load_vectors(connection, dim=DIM)
+        assert len(chunk_ids) == matrix.shape[0] > 0  # the embeddings really did carry over
+        hits = connection.execute(
+            "SELECT count(*) FROM chunks_fts WHERE chunks_fts MATCH 'Paid'"
+        ).fetchone()[0]
+        assert hits == 1  # the FTS index was rebuilt from the copied-forward chunk, not skipped
+    finally:
+        connection.close()
+
+
+def test_a_rebuild_after_clear_cache_still_preserves_it(kb: Path, fake_paid: str) -> None:
+    """The sequence a cache-based answer would have failed (plan text): if paid-extraction
+    protection depended on `extract/cache.py` still holding the entry, `--clear-cache` immediately
+    before `--rebuild` would empty it first, and the rebuild would either wrongly demand paying
+    again or — worse — silently fall back to a free re-extraction. `_paid_rebuild_survivors` reads
+    the *old index* being replaced instead, which `--clear-cache` never touches, so this sequence
+    must come out identical to a rebuild with a warm cache."""
+    _paid_index(kb, fake_paid)
+    before = index(kb)[0]
+    assert _cache_files(kb)  # confirm there is something for --clear-cache to actually remove
+
+    cleared = sync(load(kb), options=SyncOptions(clear_cache=True, yes=True))
+    assert cleared.cache_cleared == 1
+    assert _cache_files(kb) == []
+
+    report = run(kb, rebuild=True)
+
+    assert report.ok
+    assert not report.failures
+    after = index(kb)[0]
+    assert after["id"] == before["id"]
+    assert after["extraction_backend"] == fake_paid
+    assert after["extraction_fingerprint"] == before["extraction_fingerprint"]
+
+    connection = store.connect_ro(kb / ".pinakes" / "index.db")
+    try:
+        chunk_ids, matrix = store.load_vectors(connection, dim=DIM)
+        assert len(chunk_ids) == matrix.shape[0] > 0
+    finally:
+        connection.close()
+
+
+def test_a_rebuild_never_lets_a_free_twin_inherit_the_paid_ones_backend(
+    kb: Path, fake_paid: str
+) -> None:
+    """Two different documents can share one content_hash with only one of them paid: `b.pdf` is
+    minted later, under a free effective backend, and its own fresh sidecar carries no recorded
+    provenance yet — so it gets a normal free extraction of its own, same as any first-time PDF,
+    even though `a.pdf` (identical bytes) already has a paid one. `_paid_rebuild_survivors` must
+    key on (content_hash, path), not content_hash alone, or `b.pdf`'s rebuild would incorrectly
+    match `a.pdf`'s entry and inherit its chunks, embeddings and paid backend label."""
+    _add_pdf_support(kb)
+    same_bytes = b"identical content, only one of the two copies ever paid to extract"
+    (kb / "docs" / "a.pdf").write_bytes(same_bytes)
+    run(kb, extract=fake_paid)
+
+    (kb / "docs" / "b.pdf").write_bytes(same_bytes)
+    second = run(kb)  # manifest's own backend stays "fake" (free) — b.pdf is a brand-new Mint
+    assert second.ok
+    rows_by_path = {row["path"]: row for row in index(kb)}
+    assert rows_by_path["docs/a.pdf"]["extraction_backend"] == fake_paid
+    assert rows_by_path["docs/b.pdf"]["extraction_backend"] == "fake"
+    b_id_before = rows_by_path["docs/b.pdf"]["id"]
+
+    report = run(kb, rebuild=True)
+
+    assert report.ok
+    assert report.paid_extraction_protected == ("docs/a.pdf",)  # b.pdf must not appear here
+    after_by_path = {row["path"]: row for row in index(kb)}
+    assert after_by_path["docs/a.pdf"]["extraction_backend"] == fake_paid
+    assert after_by_path["docs/b.pdf"]["extraction_backend"] == "fake"  # not silently upgraded
+    assert after_by_path["docs/b.pdf"]["id"] == b_id_before
+
+
+# --- I5 retrospective: protection must not depend on the extraction cache existing at all -----
+#
+# The original design only protected a paid extraction via `pairing.py`'s "same path" comparison
+# (a normal sync) or `--rebuild`'s own copy-forward. Any *other* pairing outcome — a rename, or a
+# document adopted some other way — fell through to `_extract_for_index`'s cache lookup alone,
+# which cannot tell "just renamed" or "just cloned" apart from "content actually changed": all
+# three look identical to it as a cache miss. These four tests each construct one specific gap
+# an adversarial review caught, and were confirmed to fail without their corresponding fix.
+
+
+def test_a_rename_after_clear_cache_does_not_falsely_claim_content_changed(
+    kb: Path, fake_paid: str
+) -> None:
+    """A rename (sidecar travels) reaches pairing's `Adopt`/`Rename` branch, never the same-path
+    comparison a normal unchanged sync uses — so protection has to survive `--clear-cache` here
+    too, not only during `--rebuild`."""
+    _paid_index(kb, fake_paid)
+    sync(load(kb), options=SyncOptions(clear_cache=True, yes=True))
+
+    (kb / "docs" / "a.pdf").rename(kb / "docs" / "b.pdf")
+    (kb / "docs" / f"a.pdf{SIDECAR_SUFFIX}").rename(kb / "docs" / f"b.pdf{SIDECAR_SUFFIX}")
+
+    report = run(kb)  # manifest's own backend stays "fake" (free)
+    assert report.ok
+    rows = {row["path"]: row for row in index(kb)}
+    assert rows["docs/b.pdf"]["extraction_backend"] == fake_paid
+
+
+def test_a_fresh_clone_with_no_local_cache_or_index_fails_honestly_not_falsely(
+    kb: Path, fake_paid: str
+) -> None:
+    """Simulates cloning a KB whose paid PDFs were extracted on a different machine: `docs/` (with
+    its committed sidecar) survives, `.pinakes/` (index and cache both, per DESIGN.md's own "a
+    freshly cloned KB has no index at all") does not. The file is byte-identical; the failure must
+    say so, never claim the content changed."""
+    _paid_index(kb, fake_paid)
+    shutil.rmtree(kb / ".pinakes")
+
+    report = run(kb)
+    assert not report.ok
+    assert len(report.failures) == 1
+    path, error, remedy = report.failures[0]
+    assert path == "docs/a.pdf"
+    assert "PaidExtractionUnavailableError" in error
+    assert "PaidExtractionRequiredError" not in error
+    assert "unchanged" in error
+    assert fake_paid in remedy
+
+
+def test_a_rebuild_keeps_a_changed_paid_document_searchable_but_flagged(
+    kb: Path, fake_paid: str
+) -> None:
+    """A paid-recorded document whose content changed must not simply vanish from a rebuilt
+    index — a normal sync leaves its old text searchable in the identical situation (decision 14),
+    and `--rebuild` must match that rather than silently dropping it the moment the whole index
+    happens to be under reconstruction."""
+    _paid_index(kb, fake_paid)
+    before = index(kb)[0]
+
+    (kb / "docs" / "a.pdf").write_bytes(b"changed, invalidating the paid extraction")
+    report = run(kb, rebuild=True)
+
+    assert not report.ok
+    assert len(report.failures) == 1
+    path, error, remedy = report.failures[0]
+    assert path == "docs/a.pdf"
+    assert "kept at its last paid extraction" in error
+    assert fake_paid in remedy
+
+    after = index(kb)[0]
+    assert after["id"] == before["id"]
+    assert after["extraction_backend"] == fake_paid
+    assert after["content_hash"] == before["content_hash"]  # the OLD hash, not the changed one
+
+    connection = store.connect_ro(kb / ".pinakes" / "index.db")
+    try:
+        chunk_ids, matrix = store.load_vectors(connection, dim=DIM)
+        assert len(chunk_ids) == matrix.shape[0] > 0  # still searchable, not dropped
+    finally:
+        connection.close()
+
+
+def test_three_consecutive_paid_syncs_settle_after_the_first(kb: Path, fake_paid: str) -> None:
+    """A fresh paid-provenance write must recompute `sidecar_hash` from the file it just wrote —
+    otherwise the very next sync sees a sidecar hash it did not expect and spends a whole extra
+    cycle on a spurious `RefreshMetadata` before settling."""
+    _add_pdf_support(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"placeholder")
+
+    first = run(kb, extract=fake_paid)
+    second = run(kb, extract=fake_paid)
+    third = run(kb, extract=fake_paid)
+
+    assert (first.embedded, first.refreshed, first.skipped) == (1, 0, 0)
+    assert (second.embedded, second.refreshed, second.skipped) == (0, 0, 1)
+    assert (third.embedded, third.refreshed, third.skipped) == (0, 0, 1)

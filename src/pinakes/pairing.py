@@ -50,6 +50,9 @@ class IndexedDocument:
     content_hash: str
     sidecar_hash: str | None = None
     state: str = ACTIVE
+    extraction_backend: str | None = None
+    """`None` for a non-extracted source. `--rebuild` cannot read this from an empty new database
+    (I5, decision 11) — its caller seeds it from the sidecar's `provenance.extraction` instead."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,7 +139,23 @@ class SoftDelete:
     path: str
 
 
-type Action = Skip | RefreshMetadata | Reembed | Rename | Adopt | Mint | SoftDelete
+@dataclass(frozen=True, slots=True)
+class PaidExtractionRequired:
+    """A paid-extracted document's content changed under a free-effective run (I5, decision 14).
+
+    Neither re-extracting with the downgraded free backend (silently discarding paid quality)
+    nor leaving the stale text indexed (silently wrong) is honest — this becomes a `failures` row
+    naming the path and the paid backend, so the remedy is a deliberate, paid re-extraction.
+    """
+
+    doc_id: DocId
+    path: str
+    recorded_backend: str
+
+
+type Action = (
+    Skip | RefreshMetadata | Reembed | Rename | Adopt | Mint | SoftDelete | PaidExtractionRequired
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,9 +174,29 @@ class PairingResult:
     orphaned_sidecars: tuple[str, ...] = ()
     moved_without_sidecar: tuple[str, ...] = ()
     """Paths that were soft-deleted and re-minted because their sidecar did not travel (§9)."""
+    paid_extraction_protected: tuple[str, ...] = ()
+    """Paths kept at their paid extraction despite a free-effective run — printed once, not
+    silently (I5, decision 9)."""
+    paid_extraction_overwritten: tuple[str, ...] = ()
+    """Paths where `--force` plus an explicit free `--extract` discarded a paid extraction —
+    printed *before* it happens, naming what is about to be lost (I5, decision 9)."""
 
 
-def pair(before: IndexSnapshot, after: WalkSnapshot) -> PairingResult:
+def pair(
+    before: IndexSnapshot,
+    after: WalkSnapshot,
+    *,
+    effective_backend: str | None = None,
+    paid_backend_names: frozenset[str] = frozenset(),
+    force: bool = False,
+    explicit_extract: bool = False,
+) -> PairingResult:
+    """`effective_backend`/`paid_backend_names` classify only the *recorded-paid* direction here
+    (decision 9's other two clauses): a document whose `IndexedDocument.extraction_backend` is
+    paid, compared against whether the backend in effect *for this run* is paid too. Left at their
+    defaults, no document can ever be "recorded paid" against an empty `paid_backend_names`, so
+    every existing call site and test that never heard of backends keeps its exact old behaviour.
+    """
     _reject_duplicate_ids(after.sidecars)
 
     sidecar_by_document = {sidecar.document_path: sidecar for sidecar in after.sidecars}
@@ -165,9 +204,13 @@ def pair(before: IndexSnapshot, after: WalkSnapshot) -> PairingResult:
     before_by_id = {document.id: document for document in before.documents}
     after_by_path = {file.path: file for file in after.files}
 
+    effective_is_paid = effective_backend is not None and effective_backend in paid_backend_names
+
     actions: list[Action] = []
     ambiguities: list[Ambiguity] = []
     moved_without_sidecar: list[str] = []
+    paid_extraction_protected: list[str] = []
+    paid_extraction_overwritten: list[str] = []
     handled_ids: set[DocId] = set()
     handled_paths: set[str] = set()
 
@@ -198,7 +241,59 @@ def pair(before: IndexSnapshot, after: WalkSnapshot) -> PairingResult:
 
         handled_ids.add(document.id)
         handled_paths.add(path)
-        if document.content_hash != file.content_hash or document.state == DELETED:
+        hash_changed = document.content_hash != file.content_hash or document.state == DELETED
+        recorded_backend = document.extraction_backend
+        recorded_is_paid = recorded_backend is not None and recorded_backend in paid_backend_names
+        override = force and explicit_extract
+
+        if recorded_is_paid and not effective_is_paid and not override:
+            # Decision 9's paid-protection clauses: never silently re-extract with a downgraded
+            # backend, and never silently keep indexing text a changed file no longer matches.
+            if hash_changed:
+                assert recorded_backend is not None  # implied by recorded_is_paid
+                actions.append(
+                    PaidExtractionRequired(
+                        doc_id=document.id, path=path, recorded_backend=recorded_backend
+                    )
+                )
+            else:
+                actions.append(Skip(doc_id=document.id, path=path))
+                paid_extraction_protected.append(path)
+            continue
+
+        if recorded_is_paid and not effective_is_paid and override:
+            # `--force` with an explicit free `--extract` is the one path allowed to discard paid
+            # text — reported *before* the fact, since a plain Reembed is silent about what a
+            # backend downgrade costs. Emitted directly, not left to fall through to the
+            # hash-changed check below: an *unchanged* hash is exactly the case this whole branch
+            # exists to override, so it must still produce Reembed even though nothing else here
+            # would consider that file re-processable.
+            paid_extraction_overwritten.append(path)
+            actions.append(
+                Reembed(
+                    doc_id=document.id,
+                    path=path,
+                    content_hash=file.content_hash,
+                    sidecar_hash=sidecar_hash,
+                )
+            )
+            continue
+
+        if not recorded_is_paid and effective_is_paid and recorded_backend is not None:
+            # Free-recorded, paid-effective: stale regardless of hash — a content-hash check
+            # cannot tell "the file is unchanged" from "the last extraction undersold it" either
+            # way (decision 9).
+            actions.append(
+                Reembed(
+                    doc_id=document.id,
+                    path=path,
+                    content_hash=file.content_hash,
+                    sidecar_hash=sidecar_hash,
+                )
+            )
+            continue
+
+        if hash_changed:
             actions.append(
                 Reembed(
                     doc_id=document.id,
@@ -318,6 +413,8 @@ def pair(before: IndexSnapshot, after: WalkSnapshot) -> PairingResult:
         ambiguities=tuple(ambiguities),
         orphaned_sidecars=_orphans(after),
         moved_without_sidecar=tuple(sorted(moved_without_sidecar)),
+        paid_extraction_protected=tuple(sorted(paid_extraction_protected)),
+        paid_extraction_overwritten=tuple(sorted(paid_extraction_overwritten)),
     )
 
 

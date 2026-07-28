@@ -12,11 +12,14 @@ from pinakes.sidecar import (
     Link,
     Sidecar,
     document_for,
+    extraction_provenance,
     find_duplicate_ids,
     is_sidecar,
     read,
     sidecar_path,
     skeleton,
+    with_extraction_provenance,
+    without_extraction_provenance,
     write,
 )
 from pinakes.uri import PnkUri
@@ -263,3 +266,103 @@ def test_links_are_written_as_strings_not_objects(tmp_path: Path, owner: KbId) -
     write(path, Sidecar(id=mint_doc_id(), links=(Link(to=PnkUri(kb=kb, doc=doc), rel="cites"),)))
     written = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert written["links"] == [{"to": f"pnk://{kb}/{doc}", "rel": "cites"}]
+
+
+def test_extraction_provenance_is_none_on_a_fresh_skeleton(tmp_path: Path) -> None:
+    assert extraction_provenance(skeleton(tmp_path / "a.pdf")) is None
+
+
+def test_with_extraction_provenance_merges_additively(tmp_path: Path, owner: KbId) -> None:
+    """The one existing `provenance` key (e.g. a hand-written `source`) must survive — I5's
+    read-merge-write is additive, never a replacement of the whole block (plan text)."""
+    original = Sidecar(id=mint_doc_id(), provenance={"source": "scanned by hand"})
+
+    stamped = with_extraction_provenance(
+        original,
+        backend="claude-vision",
+        fingerprint="fp1",
+        extracted="20260728 12:00",
+        content_hash="sha256:abc",
+    )
+
+    assert stamped.provenance["source"] == "scanned by hand"
+    assert extraction_provenance(stamped) == ("claude-vision", "fp1", "sha256:abc")
+
+    path = tmp_path / f"a.pdf{SIDECAR_SUFFIX}"
+    write(path, stamped)
+    reread = read(path, owner=owner)
+    assert reread.provenance["source"] == "scanned by hand"
+    assert extraction_provenance(reread) == ("claude-vision", "fp1", "sha256:abc")
+
+
+def test_extraction_provenance_tolerates_a_hand_edited_block(tmp_path: Path, owner: KbId) -> None:
+    """A sidecar is user-owned (module docstring): a malformed `provenance.extraction` is treated
+    as never-extracted, not a reason to fail the whole sync over a decoration field."""
+    path = tmp_path / f"a.pdf{SIDECAR_SUFFIX}"
+    write(
+        path,
+        Sidecar(id=mint_doc_id(), provenance={"extraction": {"backend": "claude-vision"}}),
+    )  # no `fingerprint`, no `content_hash`
+    assert extraction_provenance(read(path, owner=owner)) is None
+
+
+def test_extraction_provenance_requires_content_hash_too(tmp_path: Path, owner: KbId) -> None:
+    """A sidecar written before this field existed (or hand-edited to drop it) must not be
+    misread as "has provenance but with a blank content_hash" — it is simply unreadable, same as
+    a missing `fingerprint`, per this function's own tolerance rule."""
+    path = tmp_path / f"a.pdf{SIDECAR_SUFFIX}"
+    write(
+        path,
+        Sidecar(
+            id=mint_doc_id(),
+            provenance={"extraction": {"backend": "claude-vision", "fingerprint": "fp1"}},
+        ),  # no `content_hash`
+    )
+    assert extraction_provenance(read(path, owner=owner)) is None
+
+
+def test_without_extraction_provenance_clears_only_that_key(tmp_path: Path, owner: KbId) -> None:
+    """`--force` overwriting a paid extraction with a free one must not also erase an unrelated,
+    hand-written provenance key sitting beside it."""
+    stamped = with_extraction_provenance(
+        Sidecar(id=mint_doc_id(), provenance={"source": "scanned by hand"}),
+        backend="claude-vision",
+        fingerprint="fp1",
+        extracted="20260728 12:00",
+        content_hash="sha256:abc",
+    )
+
+    cleared = without_extraction_provenance(stamped)
+
+    assert extraction_provenance(cleared) is None
+    assert cleared.provenance["source"] == "scanned by hand"
+    assert "provenance" in cleared.present
+
+    path = tmp_path / f"a.pdf{SIDECAR_SUFFIX}"
+    write(path, cleared)
+    reread = read(path, owner=owner)
+    assert extraction_provenance(reread) is None
+    assert reread.provenance["source"] == "scanned by hand"
+
+
+def test_without_extraction_provenance_drops_an_empty_block_entirely(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """When `extraction` was the only provenance key, clearing it should leave the sidecar looking
+    exactly as it would if the paid extraction had never happened — no stray `provenance: {}`."""
+    stamped = with_extraction_provenance(
+        Sidecar(id=mint_doc_id()),
+        backend="claude-vision",
+        fingerprint="fp1",
+        extracted="20260728",
+        content_hash="sha256:abc",
+    )
+
+    cleared = without_extraction_provenance(stamped)
+
+    assert cleared.provenance == {}
+    assert "provenance" not in cleared.present
+
+    path = tmp_path / f"a.pdf{SIDECAR_SUFFIX}"
+    write(path, cleared)
+    assert "provenance" not in yaml.safe_load(path.read_text(encoding="utf-8"))

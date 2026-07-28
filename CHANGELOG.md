@@ -145,6 +145,96 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unchanged) rather than merely proving pairing's pre-existing skip; a fully successful sync
   evicts a deleted document's entry; `--clear-cache` preserves the ledger, aborts without `--yes`,
   and is a no-op (not a prompt) on an empty cache.
+- **I5: PDF chunking, page provenance, and a backend-aware sync (`schema_version` 2 — a v0.1 or
+  pre-I5 index refuses to open, naming `pnk sync --rebuild`).** `chunk_document(kind="pdf")` looks
+  up each chunk's page span against the extractor's own per-page character spans and stores it as
+  1-indexed `page_start`/`page_end` — no new block-splitting algorithm, since the existing
+  blank-line block detection already produces a block spanning two pages whenever
+  `join_hyphenation` (I3a) joined a word across one; `heading_path` stays `None` for every PDF
+  chunk, since a PDF has pages, not headings. `documents` gains `extraction_backend` /
+  `extraction_fingerprint`, populated only for PDFs; `ExtractorEntry` gains a `paid: bool` field
+  (`claude-vision` alone is `True`) so a coherence or pairing decision can ask "is this backend
+  paid" from the registry alone, never by importing the client.
+
+  **Decision 9 — a paid extraction is never silently downgraded.** `pairing.py`'s decision table
+  grows three backend-aware rows: a free-recorded, paid-effective document is always stale,
+  regardless of hash; a paid-recorded, free-effective, **unchanged**-hash document is skipped —
+  not by a hook, not by `--rebuild`, not by an explicit free `--extract` — and the run says once
+  which paths were protected; the same document with a **changed** hash is neither a silent Skip
+  nor a silent overwrite but a `failures` row naming the paid remedy (decision 14), since letting
+  the hash win would overwrite paid text with a free extractor's empty output on an image-only PDF,
+  and letting the backend win would describe a file that no longer exists, forever. `pnk sync`
+  gains `--force`, meaningful only together with an explicit free `--extract`: the one combination
+  that overwrites a paid extraction, printing what it discarded first (`--force` alone changes
+  nothing). A paid extraction under `--index-only` is refused with a remedy naming a normal sync,
+  since recording it requires writing into `docs/`, which `--index-only` must never do.
+
+  **Provenance lives in the sidecar, because `--rebuild` reads its `before` from a brand-new,
+  empty database** (`docs/DESIGN.md` §6.4) — a backend recorded only in `index.db` is invisible at
+  exactly the moment a rebuild needs it. The sidecar's existing `provenance` block gains an
+  additive `extraction: {backend, fingerprint, extracted, content_hash}`, written only when a
+  genuinely fresh paid extraction happens (or `--force` clears a stale one), never for the routine
+  free case. `index.db`'s two extraction columns are the sidecar's cache, reseeded from it.
+  `content_hash` here is the file's own hash *at the time of that paid extraction* — narrower than
+  the general change-detection hash `docs/DESIGN.md` §2.2 already refuses to store, and the one
+  fact that lets a later sync answer "has this changed since" **directly**, without depending on
+  whether `extract/cache.py`, or any prior local index, still happens to hold the answer.
+
+  A rebuild does not depend on `extract/cache.py` to honour this: before the new database exists,
+  sync reads the *old* `index.db` (still on disk until the atomic swap) for every paid-recorded
+  document, keyed on `doc_id` alone — this table's own primary key, therefore unique by
+  construction, and the one identifier a renamed sidecar still carries unchanged — and copies its
+  row, chunks and embeddings straight across via SQLite's `ATTACH DATABASE`, at the file's *old*
+  content_hash. If that still matches the current file, the document is simply protected; if it
+  does not, the stale row is copied forward anyway alongside a `failures` entry, so a changed paid
+  document survives a rebuild exactly as it survives a normal sync (decision 14) rather than
+  vanishing from the index the instant one runs. A rename reaches this same guarantee a different
+  way: `pair()`'s `Adopt`/`Rename` rows never touch the same-path comparison a normal sync uses, so
+  a sync also checks whether *this same connection* already holds an active row for the document's
+  own `doc_id` at its unchanged content_hash, before `extract/cache.py` is ever consulted at all.
+
+  **Per-document extraction coherence** (`docs/DESIGN.md` §4.4, decision 13): every query
+  re-derives each distinct recorded backend's current, client-free fingerprint and compares. A
+  mismatch on a **free** backend refuses the query, naming the stale paths (the text can be
+  silently wrong, and re-extracting is free). A mismatch on a **paid** backend never refuses —
+  the text is still correct, merely older — but marks every affected `Passage.stale_extraction`
+  and warns in `pnk doctor`. An unrecognised backend name is skipped, never a reason to refuse an
+  otherwise-healthy KB. `pnk doctor` also gains three by-path gap reports: documents awaiting a
+  paid extraction, paid extractions the manifest no longer asks for, and a paid document whose
+  file has changed since.
+
+  **Caught by an independent adversarial review before this ever reached a commit** (full detail:
+  `docs/RETROSPECTIVES.md`): the original design protected a paid extraction only via `pair()`'s
+  same-path comparison or `--rebuild`'s own copy-forward — any *other* pairing outcome (a rename,
+  or a document adopted some other way) fell through to a cache lookup alone, which cannot tell
+  "just renamed" or "just cloned" apart from "genuinely changed" — all three look identical as a
+  cache miss. Fixed by moving the change-decision itself onto the sidecar's own recorded
+  content_hash (above), with a same-connection lookup added for the rename case and the
+  doc_id-keyed rebuild lookup extended to the changed-hash case — three fixes, described in the
+  two paragraphs above rather than as a separate, later correction. A `sidecar_hash` staleness bug
+  (a fresh paid-provenance write left the very next sync one `RefreshMetadata` cycle away from
+  settling) was found and fixed the same pass.
+
+  **Tests:** `tests/test_chunk_pdf.py` proves the span invariant, the never-drop guarantee, and
+  page monotonicity over the corpus's 15 extractable fixtures, plus a dedicated two-page-chunk
+  case against the `hyphenation-page-break` fixture. `tests/test_pairing.py` and
+  `tests/test_sync.py::test_backend_drift` (six named cases, addressable as
+  `test_backend_drift[changed_hash]` etc.) cover the decision table in isolation and end to end;
+  `test_a_rebuild_preserves_paid_provenance` and `test_a_rebuild_after_clear_cache_still_
+  preserves_it` cover the two rebuild cases specifically — the second constructed, and confirmed
+  by deliberately reverting the `ATTACH DATABASE` mechanism first, to fail without it.
+  `test_a_rebuild_never_lets_a_free_twin_inherit_the_paid_ones_backend`,
+  `test_a_rename_after_clear_cache_does_not_falsely_claim_content_changed`,
+  `test_a_fresh_clone_with_no_local_cache_or_index_fails_honestly_not_falsely`,
+  `test_a_rebuild_keeps_a_changed_paid_document_searchable_but_flagged` and
+  `test_three_consecutive_paid_syncs_settle_after_the_first` each cover one review finding above,
+  every one confirmed to fail against the pre-fix code first. A working *paid* test backend stands
+  in for `claude-vision`, whose own loader remains an honest I7b stub throughout.
+  `tests/test_search.py` covers both coherence outcomes and asserts `"anthropic" not in
+  sys.modules` after a query, in a subprocess, over a KB holding a paid document.
+  `tests/test_doctor.py` covers the extraction-coherence WARN and all three by-path gap reports,
+  including that "paid extraction not requested" stays green — it names the protection working,
+  not a problem.
 
 ### Fixed
 

@@ -54,6 +54,13 @@ def entry_path(cache_dir: Path, *, content_hash: str, fingerprint: str) -> Path:
     return cache_dir / f"{bare_hash}-{fingerprint}.json"
 
 
+def peek(cache_dir: Path, *, content_hash: str, fingerprint: str) -> ExtractedText | None:
+    """A read-only lookup: `None` on any miss, and never calls an extractor (I5's paid-protection
+    check uses this to ask "is the *recorded* backend's own cached result still here" without the
+    fallback-to-extraction `get_or_extract` always performs on a miss)."""
+    return _read(entry_path(cache_dir, content_hash=content_hash, fingerprint=fingerprint))
+
+
 def get_or_extract(
     cache_dir: Path,
     *,

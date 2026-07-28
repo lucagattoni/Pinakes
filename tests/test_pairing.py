@@ -11,6 +11,7 @@ from pinakes.pairing import (
     IndexedDocument,
     IndexSnapshot,
     Mint,
+    PaidExtractionRequired,
     Reembed,
     RefreshMetadata,
     Rename,
@@ -31,9 +32,15 @@ def indexed(
     content_hash: str = "h1",
     sidecar_hash: str | None = None,
     state: str = ACTIVE,
+    extraction_backend: str | None = None,
 ) -> IndexedDocument:
     return IndexedDocument(
-        id=doc_id, path=path, content_hash=content_hash, sidecar_hash=sidecar_hash, state=state
+        id=doc_id,
+        path=path,
+        content_hash=content_hash,
+        sidecar_hash=sidecar_hash,
+        state=state,
+        extraction_backend=extraction_backend,
     )
 
 
@@ -287,3 +294,102 @@ def test_pairing_is_pure_and_order_independent() -> None:
     forward = WalkSnapshot((walked("docs/a.md", "h1"), walked("docs/b.md", "h2-new")), ())
     backward = WalkSnapshot((walked("docs/b.md", "h2-new"), walked("docs/a.md", "h1")), ())
     assert describe(pair(before, forward)) == describe(pair(before, backward))
+
+
+# --- I5: decision 9's backend-aware rows ----------------------------------------------------
+#
+# `pair()`'s own DB-sourced `before` only ever sees the "same path, same id" instances of these
+# rows — the `--rebuild` case (an empty `before`) is `sync.py`'s own `_paid_rebuild_survivors`
+# mechanism, covered in `tests/test_sync.py::test_backend_drift` and the rebuild-provenance tests
+# instead, since `pair()` alone cannot see it.
+
+
+def test_free_recorded_paid_effective_reembeds_regardless_of_hash() -> None:
+    """Rule 1: stale the moment the effective backend outranks what is recorded — the hash does
+    not even factor in."""
+    doc = mint_doc_id()
+    result = pair(
+        IndexSnapshot((indexed(doc, "docs/a.pdf", "h1", extraction_backend="pypdfium2"),)),
+        WalkSnapshot((walked("docs/a.pdf", "h1"),), (sidecar("docs/a.pdf", doc),)),
+        effective_backend="claude-vision",
+        paid_backend_names=frozenset({"claude-vision"}),
+    )
+    assert describe(result) == {"Reembed": 1}
+
+
+def test_paid_recorded_free_effective_unchanged_hash_is_protected() -> None:
+    """Rule 2: never silently downgraded — not by a hook, not by an explicit free `--extract`."""
+    doc = mint_doc_id()
+    result = pair(
+        IndexSnapshot((indexed(doc, "docs/a.pdf", "h1", extraction_backend="claude-vision"),)),
+        WalkSnapshot((walked("docs/a.pdf", "h1"),), (sidecar("docs/a.pdf", doc),)),
+        effective_backend="pypdfium2",
+        paid_backend_names=frozenset({"claude-vision"}),
+    )
+    assert describe(result) == {"Skip": 1}
+    assert result.paid_extraction_protected == ("docs/a.pdf",)
+
+
+def test_paid_recorded_free_effective_changed_hash_requires_paid_extraction() -> None:
+    """Rule 3: a changed hash is neither a silent Skip nor a silent overwrite — a named outcome
+    the caller must act on (decision 14)."""
+    doc = mint_doc_id()
+    result = pair(
+        IndexSnapshot((indexed(doc, "docs/a.pdf", "h1", extraction_backend="claude-vision"),)),
+        WalkSnapshot((walked("docs/a.pdf", "h2"),), (sidecar("docs/a.pdf", doc),)),
+        effective_backend="pypdfium2",
+        paid_backend_names=frozenset({"claude-vision"}),
+    )
+    assert describe(result) == {"PaidExtractionRequired": 1}
+    required = actions_of(result, PaidExtractionRequired)[0]
+    assert (required.doc_id, required.path, required.recorded_backend) == (
+        doc,
+        "docs/a.pdf",
+        "claude-vision",
+    )
+
+
+def test_force_alone_without_an_explicit_extract_does_not_override() -> None:
+    """`--force` alone changes nothing — only together with an explicit free `--extract`."""
+    doc = mint_doc_id()
+    result = pair(
+        IndexSnapshot((indexed(doc, "docs/a.pdf", "h1", extraction_backend="claude-vision"),)),
+        WalkSnapshot((walked("docs/a.pdf", "h1"),), (sidecar("docs/a.pdf", doc),)),
+        effective_backend="pypdfium2",
+        paid_backend_names=frozenset({"claude-vision"}),
+        force=True,
+        explicit_extract=False,
+    )
+    assert describe(result) == {"Skip": 1}
+    assert result.paid_extraction_protected == ("docs/a.pdf",)
+
+
+def test_force_with_an_explicit_extract_overwrites_and_says_so() -> None:
+    doc = mint_doc_id()
+    result = pair(
+        IndexSnapshot((indexed(doc, "docs/a.pdf", "h1", extraction_backend="claude-vision"),)),
+        WalkSnapshot((walked("docs/a.pdf", "h1"),), (sidecar("docs/a.pdf", doc),)),
+        effective_backend="pypdfium2",
+        paid_backend_names=frozenset({"claude-vision"}),
+        force=True,
+        explicit_extract=True,
+    )
+    assert describe(result) == {"Reembed": 1}
+    assert result.paid_extraction_overwritten == ("docs/a.pdf",)
+    assert result.paid_extraction_protected == ()
+
+
+def test_omitting_the_new_parameters_behaves_exactly_as_before() -> None:
+    """Every caller that has not been taught about backends yet (there are none left in this repo,
+    but the defaults are the contract) must see the pre-I5 behaviour: a paid-recorded, unchanged
+    document is skipped for the ordinary reason, not "protected" — there is no paid backend name to
+    even recognise it by."""
+    doc = mint_doc_id()
+    before = indexed(doc, "docs/a.pdf", "h1", "s1", extraction_backend="claude-vision")
+    result = pair(
+        IndexSnapshot((before,)),
+        WalkSnapshot((walked("docs/a.pdf", "h1"),), (sidecar("docs/a.pdf", doc, "s1"),)),
+    )
+    assert describe(result) == {"Skip": 1}
+    assert result.paid_extraction_protected == ()
+    assert result.paid_extraction_overwritten == ()

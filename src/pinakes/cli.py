@@ -341,6 +341,11 @@ def _sync_arguments(parser: argparse.ArgumentParser) -> None:
         help="override `[extraction] backend` for this run only",
     )
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="with an explicit free --extract: overwrite a paid extraction (prints what it drops)",
+    )
+    parser.add_argument(
         "--clear-cache",
         action="store_true",
         help="empty the extraction cache, after confirming (never the ledger)",
@@ -371,6 +376,7 @@ def run_sync(args: argparse.Namespace) -> int:
             offline=args.offline,
             force_unlock=args.force_unlock,
             extract=args.extract,
+            force=args.force,
         ),
     )
 

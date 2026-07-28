@@ -16,13 +16,30 @@ from pinakes.extract import (
     ExtractionContext,
     fingerprint,
     fingerprint_inputs,
+    is_paid_backend,
     load_extractor,
+    paid_backend_names,
     registered_extractors,
 )
 
 
 def test_all_three_backends_are_registered() -> None:
     assert registered_extractors() == sorted([CLAUDE_VISION, FAKE, PYPDFIUM2])
+
+
+def test_only_claude_vision_is_registered_as_paid() -> None:
+    assert paid_backend_names() == frozenset({CLAUDE_VISION})
+    assert is_paid_backend(CLAUDE_VISION)
+    assert not is_paid_backend(PYPDFIUM2)
+    assert not is_paid_backend(FAKE)
+
+
+def test_is_paid_backend_never_imports_the_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Registry metadata only (`ExtractorEntry.paid`'s own docstring) — §4.4's per-document
+    coherence check calls this on every query and must never import a paid client to answer it."""
+    monkeypatch.setattr(builtins, "__import__", _blocking("pypdfium2", "anthropic"))
+    assert is_paid_backend(CLAUDE_VISION)
+    assert paid_backend_names() == frozenset({CLAUDE_VISION})
 
 
 def test_an_unregistered_backend_lists_the_known_ones() -> None:

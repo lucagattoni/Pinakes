@@ -82,6 +82,10 @@ type FingerprintInputs = Callable[[], Mapping[str, str]]
 class ExtractorEntry:
     load: ExtractorFactory
     fingerprint_inputs: FingerprintInputs
+    paid: bool = False
+    """Whether this backend can spend money (§5's boundary) — declared at registration, never
+    derived from importing the client, so I5's per-document coherence check can tell a free
+    mismatch (refuse) from a paid one (warn and mark) without ever loading `anthropic`."""
 
 
 _REGISTRY: dict[str, ExtractorEntry] = {}
@@ -89,6 +93,12 @@ _REGISTRY: dict[str, ExtractorEntry] = {}
 
 def register_extractor(name: str, entry: ExtractorEntry) -> None:
     _REGISTRY[name] = entry
+
+
+def unregister_extractor(name: str) -> None:
+    """`register_extractor`'s counterpart — for tests that register a temporary backend and must
+    remove it again, without reaching into `_REGISTRY` directly from outside this module."""
+    del _REGISTRY[name]
 
 
 def registered_extractors() -> list[str]:
@@ -105,6 +115,15 @@ def _entry(name: str) -> ExtractorEntry:
 def load_extractor(name: str) -> Extractor:
     """Build the registered extractor. Imports, if any, happen inside the factory, lazily."""
     return _entry(name).load()
+
+
+def is_paid_backend(name: str) -> bool:
+    """Registry metadata only — never imports the backend it describes."""
+    return _entry(name).paid
+
+
+def paid_backend_names() -> frozenset[str]:
+    return frozenset(name for name in _REGISTRY if _REGISTRY[name].paid)
 
 
 def fingerprint_inputs(name: str) -> Mapping[str, str]:
@@ -196,6 +215,7 @@ def _fake_fingerprint_inputs() -> Mapping[str, str]:
 
 register_extractor(PYPDFIUM2, ExtractorEntry(_load_pypdfium2, _pypdfium2_fingerprint_inputs))
 register_extractor(
-    CLAUDE_VISION, ExtractorEntry(_load_claude_vision, _claude_vision_fingerprint_inputs)
+    CLAUDE_VISION,
+    ExtractorEntry(_load_claude_vision, _claude_vision_fingerprint_inputs, paid=True),
 )
 register_extractor(FAKE, ExtractorEntry(_load_fake, _fake_fingerprint_inputs))

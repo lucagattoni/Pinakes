@@ -45,10 +45,24 @@ class Chunk:
     char_end: int
     token_count: int
     heading_path: str | None
+    page_start: int | None = None
+    page_end: int | None = None
+    """1-indexed, `None` for a non-paged source. A chunk may legitimately span two pages — e.g. a
+    hyphenated word `join_hyphenation` (extract/layout.py) joined across a page break leaves no
+    separator there, so the same blank-line-delimited block this module already finds can straddle
+    the boundary with no special-casing; `page_start`/`page_end` just have to say so (I5)."""
 
-    def as_row(self) -> tuple[str, int, int, int, str | None]:
+    def as_row(self) -> tuple[str, int, int, int, str | None, int | None, int | None]:
         """The tuple `store.replace_chunks` expects."""
-        return (self.text, self.char_start, self.char_end, self.token_count, self.heading_path)
+        return (
+            self.text,
+            self.char_start,
+            self.char_end,
+            self.token_count,
+            self.heading_path,
+            self.page_start,
+            self.page_end,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,8 +111,15 @@ def chunk_document(
     max_tokens: int,
     overlap: int,
     kind: str = "markdown",
+    page_spans: Sequence[tuple[int, int]] | None = None,
 ) -> list[Chunk]:
-    """Split one document into chunks, preserving every character in at least one of them."""
+    """Split one document into chunks, preserving every character in at least one of them.
+
+    `page_spans` (I1's `ExtractedText.page_spans`, the same object on a cache hit and a cache
+    miss) is consumed only for PDFs: each resulting chunk's `page_start`/`page_end` is looked up
+    from it, never used to force an extra split — the existing block/fit machinery already
+    produces the right chunk boundaries; this only labels them.
+    """
     if overlap >= max_tokens:
         raise ChunkingError(
             f"overlap ({overlap}) must be smaller than max_tokens ({max_tokens}).",
@@ -112,7 +133,34 @@ def chunk_document(
     chunks: list[Chunk] = []
     for block in blocks:
         chunks.extend(_fit(block, counter=counter, max_tokens=max_tokens, overlap=overlap))
+
+    if page_spans is not None:
+        chunks = [_with_pages(chunk, page_spans) for chunk in chunks]
     return chunks
+
+
+def _with_pages(chunk: Chunk, page_spans: Sequence[tuple[int, int]]) -> Chunk:
+    return Chunk(
+        text=chunk.text,
+        char_start=chunk.char_start,
+        char_end=chunk.char_end,
+        token_count=chunk.token_count,
+        heading_path=chunk.heading_path,
+        page_start=_page_for(chunk.char_start, page_spans),
+        page_end=_page_for(max(chunk.char_start, chunk.char_end - 1), page_spans),
+    )
+
+
+def _page_for(position: int, page_spans: Sequence[tuple[int, int]]) -> int:
+    """1-indexed page containing `position` (I8's `path:page` citations). `page_spans` partitions
+    the text with no gaps (extract/layout.py's `assemble`), so any position a real chunk can carry
+    falls in exactly one span — anything else means the caller passed spans for different text."""
+    for index, (start, end) in enumerate(page_spans):
+        if start <= position < end:
+            return index + 1
+    raise RuntimeError(
+        f"position {position} falls outside every page span — page_spans does not match this text"
+    )
 
 
 def _markdown_blocks(text: str) -> list[Block]:

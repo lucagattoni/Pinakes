@@ -149,6 +149,89 @@ def skeleton(document: Path, *, title: str | None = None, created: str | None = 
     )
 
 
+def with_extraction_provenance(
+    sidecar: Sidecar, *, backend: str, fingerprint: str, extracted: str, content_hash: str
+) -> Sidecar:
+    """Merge `provenance.extraction` into an existing sidecar, preserving every other key (I5).
+
+    `provenance` is already a free-form mapping (`Sidecar.provenance`), so this needs no new field
+    — only an additive read-merge-write, which is the whole reason `--rebuild` can seed
+    `documents.extraction_backend`/`extraction_fingerprint` from the sidecar rather than losing
+    them the moment the index is discarded (docs/DESIGN.md §2.2, decision 11).
+
+    `content_hash` is the file's hash *at the time of this paid extraction* — deliberately not the
+    same thing DESIGN §2.2 refuses to store generally (a hash that dirties the sidecar on every
+    edit): this one changes only when a paid extraction itself runs, and it is what lets a later
+    sync answer "has this changed since" directly from the sidecar, without depending on whether
+    `extract/cache.py`'s entry (or any prior local index row) still happens to exist.
+    """
+    merged_provenance = {
+        **sidecar.provenance,
+        "extraction": {
+            "backend": backend,
+            "fingerprint": fingerprint,
+            "extracted": extracted,
+            "content_hash": content_hash,
+        },
+    }
+    return Sidecar(
+        id=sidecar.id,
+        title=sidecar.title,
+        tags=sidecar.tags,
+        created=sidecar.created,
+        links=sidecar.links,
+        provenance=merged_provenance,
+        extra=sidecar.extra,
+        present=sidecar.present | {"provenance"},
+    )
+
+
+def without_extraction_provenance(sidecar: Sidecar) -> Sidecar:
+    """Clear a `provenance.extraction` claim that just became false.
+
+    The one caller of this is `--force` plus an explicit free `--extract` overwriting what was a
+    paid extraction (decision 9): the file is no longer paid-protected, and leaving the old claim
+    in place would tell the next sync — or a different clone reading the same committed sidecar —
+    that it still is.
+    """
+    remaining = {key: value for key, value in sidecar.provenance.items() if key != "extraction"}
+    present = sidecar.present | {"provenance"} if remaining else sidecar.present - {"provenance"}
+    return Sidecar(
+        id=sidecar.id,
+        title=sidecar.title,
+        tags=sidecar.tags,
+        created=sidecar.created,
+        links=sidecar.links,
+        provenance=remaining,
+        extra=sidecar.extra,
+        present=present,
+    )
+
+
+def extraction_provenance(sidecar: Sidecar) -> tuple[str, str, str] | None:
+    """`(backend, fingerprint, content_hash)` if this sidecar records a prior extraction, else
+    `None`.
+
+    Deliberately tolerant of a malformed or hand-edited `provenance.extraction` block: a sidecar
+    is user-owned (module docstring), and a document whose provenance cannot be read back is
+    treated as never-extracted rather than failing the whole sync over a decoration field.
+    """
+    raw_extraction: object = sidecar.provenance.get("extraction")
+    if not isinstance(raw_extraction, dict):
+        return None
+    extraction = cast(dict[str, Any], raw_extraction)
+    backend = extraction.get("backend")
+    fingerprint = extraction.get("fingerprint")
+    content_hash = extraction.get("content_hash")
+    if (
+        not isinstance(backend, str)
+        or not isinstance(fingerprint, str)
+        or not isinstance(content_hash, str)
+    ):
+        return None
+    return backend, fingerprint, content_hash
+
+
 def resolve_link(raw: str, rel: str, *, owner: KbId) -> Link:
     """Parse one link, expanding `self` against the owning KB before it can be stored."""
     parsed: ParsedUri = parse_uri(raw)

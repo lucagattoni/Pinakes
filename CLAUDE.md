@@ -25,7 +25,10 @@ carries rules that change how you work.
 - **Document and KB ULIDs are permanent.** Never renumber, never regenerate. Every inbound link
   depends on them, and there is no migration machinery by design.
 - **`docs/` belongs to the user.** Never modify source documents, and never delete a sidecar without
-  an explicit `--prune`-style flag plus a printed list.
+  an explicit `--prune`-style flag plus a printed list. The one exception: a paid PDF extraction (or
+  `--force` discarding one) additively rewrites that document's own sidecar with
+  `provenance.extraction` (docs/DESIGN.md §2.2) — never any other key, and never for a free
+  extraction.
 - **`.pinakes/` is disposable except `ledger.jsonl`** — a rebuild must preserve spend history.
 - **The free path stays free.** No code path may make a paid API call outside `pnk ask --deep`.
 - Index schema changes bump `schema_version` and require a rebuild. Never write a migration.

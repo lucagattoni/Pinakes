@@ -181,6 +181,25 @@ would dirty two files on every document edit, and would be stale — silently wr
 document changed without a sync in between. Nothing in the pairing algorithm (§6.4) reads it:
 sidecars pair by adjacency, documents pair by the index's hashes.
 
+**A paid PDF extraction adds `provenance.extraction: {backend, fingerprint, extracted,
+content_hash}`** (v0.2, decision 11) — the one case where sync rewrites an *existing* sidecar rather
+than only minting or moving one. `content_hash` here is deliberately narrower than the general
+change-detection hash this section already refuses to store: it records the file's hash *at the
+moment this specific paid extraction ran*, changes only when a fresh paid extraction does, and exists
+solely so a later sync can answer "has this changed since" directly — without depending on whether
+`extract/cache.py`'s entry, or any prior local index row, still happens to exist (§6.4's own
+retrospective finding: a cache miss on its own proves nothing about whether the content changed — a
+`--clear-cache`, a rename, or a first sync after a fresh clone all miss identically, without the file
+having changed at all). It must live here rather than only in `index.db` because `pnk sync --rebuild`
+discards and rebuilds the index from an empty database (§6.4); a backend recorded only there would be
+invisible at the exact moment a rebuild needs it, and a paid extraction would either be silently
+re-billed or silently overwritten by whatever free backend the manifest names. The write is additive
+(existing `provenance` keys survive) and happens only when a *paid* extraction actually ran, or was
+explicitly discarded by `--force` (§6.4) — never for the common, no-money-involved case of an
+ordinary free extraction. The cost is real and accepted: PyYAML drops comments and re-sorts unknown
+keys on this one write, same as any other `write()` call would; a comment-preserving writer is `pnk
+link`'s problem (v0.3), not pulled forward here.
+
 Why sidecars rather than in-text links: a PDF cannot carry a wikilink without being rewritten, and
 mutating source documents breaks the "originals are the truth" contract. One mechanism that works
 for every source type beats two mechanisms that each work for half.
@@ -197,8 +216,8 @@ One SQLite file, `.pinakes/index.db`, in **WAL mode**. No server, no separate ve
 
 | Table | Purpose |
 |---|---|
-| `documents` | id, path (relative, POSIX separators), content_hash, sidecar_hash, mtime, source_type, title, metadata (JSON), state (`active` / `deleted`) — `sidecar_hash` is what lets §6.4 notice a sidecar-only edit |
-| `chunks` | id, doc_id, ordinal, text, char span, token count, heading path |
+| `documents` | id, path (relative, POSIX separators), content_hash, sidecar_hash, mtime, source_type, title, metadata (JSON), state (`active` / `deleted`), extraction_backend, extraction_fingerprint — `sidecar_hash` is what lets §6.4 notice a sidecar-only edit; the two extraction columns are `NULL` for a non-extracted source and otherwise the index's own cache of the sidecar's `provenance.extraction` (§2.2), reseeded from there on a rebuild |
+| `chunks` | id, doc_id, ordinal, text, char span, token count, heading path, page_start, page_end — the last two are `NULL` for a non-paged source (markdown/text/code) and 1-indexed otherwise; a chunk may legitimately span two pages (§4.6) |
 | `chunks_fts` | FTS5 external-content table over `chunks.text`, kept in sync by triggers — BM25 |
 | `embeddings` | chunk_id, vector (float32 BLOB) — the single representation; tier 1 loads it into one contiguous NumPy array at open |
 | `links` | src_kb_id, src_doc_id, dst_kb_id, dst_doc_id, rel, origin (`sidecar` = authored here, `reverse-scan` = discovered in a connected KB's sidecars). `src_kb_id` is required: a reverse link's *source* lives in another KB, and without it inbound and outbound edges are indistinguishable |
@@ -208,7 +227,9 @@ One SQLite file, `.pinakes/index.db`, in **WAL mode**. No server, no separate ve
 
 **Index schema migrations do not exist.** On `schema_version` mismatch the index refuses to open and
 instructs `pnk sync --rebuild`. Because `.pinakes/` is disposable and rebuilds are free, migration
-code would be pure liability — this is the payoff of the truth/derived split.
+code would be pure liability — this is the payoff of the truth/derived split. `schema_version` is
+`2` as of v0.2 (I5's page and extraction-backend columns above); a v0.1 index raises `IndexSchemaError`
+naming the same rebuild remedy, never a migration.
 
 ### 3.1 Vector search: what the tiers actually buy
 
@@ -306,6 +327,26 @@ Embeddings are meaningless across models. The manifest records provider, model a
 `.pinakes/index.db` was built with anything else, queries **refuse to run** and instruct a rebuild. A
 KB that silently returns garbage after a model upgrade is worse than one that stops.
 
+**Per-document extraction coherence (v0.2, decision 13).** A PDF's *extractor* can drift the same
+way an embedding model can: `pypdfium2` upgrades its running-head threshold, `claude-vision`'s prompt
+or schema changes. Every query re-derives each distinct recorded `(extraction_backend,
+extraction_fingerprint)` pair's *current* fingerprint and compares — from a dict of version strings
+and constants declared beside each registry entry, never by importing the backend itself, so this
+check costs nothing to run on every query, including ones touching no paid document at all. The two
+outcomes are asymmetric, on purpose:
+
+- A mismatch on a **free** backend refuses the whole query, naming the stale paths — the text can be
+  silently wrong (a running-head threshold fix can change what counts as body text) and re-extracting
+  costs nothing, so there is no reason to serve it.
+- A mismatch on a **paid** backend never refuses. The already-paid text is still correct, merely
+  older; every affected `Passage` is marked `stale_extraction` (the backend name) instead, and `pnk
+  doctor` reports it as a WARN. Refusing a query over documents someone already paid to extract,
+  because a prompt version ticked over, would make the paid path actively hostile to use.
+
+An **unrecognised** backend name (a future version's KB, or an extra that is not installed) is
+skipped entirely: it can be neither computed nor compared, and an otherwise-healthy KB must not
+refuse a query over that alone.
+
 ### 4.5 Embedding backends, install, and model weights
 
 `sentence-transformers` is the default backend: widest model selection, best quality ceiling, most
@@ -361,6 +402,14 @@ the model's `max_seq_length` minus special tokens (bge-small-en-v1.5: 512 → 51
 for more is a hard error, not a silent truncation — a truncated chunk is a chunk whose tail is
 unsearchable, and nothing in the output would reveal it. Chunks that cannot be encoded whole are
 split, never trimmed.
+
+**PDF chunks additionally carry `page_start`/`page_end`** (v0.2), a 1-indexed lookup against the
+extractor's own per-page character spans — no separate page-aware splitting algorithm, since the
+existing paragraph/blank-line block detection already produces a block that straddles a page
+boundary whenever the free path's own hyphenation-joining joined a word across one with no
+separator; a chunk spanning two pages records both rather than picking one. `heading_path` is always
+`None` for a PDF chunk — a PDF has pages, not headings, and stuffing "p. 7" into a free-text filter
+column is the opposite of what a structured `page_start` is for.
 
 ### 4.7 Server boundary and what publishing a KB exposes
 
@@ -515,8 +564,13 @@ Phase-2 rules, applied in order:
 | New path, no sidecar | Mint a ULID, write the sidecar |
 | Path gone, no hash match | Mark `state = deleted` (soft). **Leave the sidecar on disk** and report it as orphaned |
 | Same ID in two sidecars | Hard error naming both paths. Never silently renumber — that would break every inbound link |
+| Recorded extraction is **free**, this run's effective backend is **paid** | Stale regardless of hash — re-extract and re-embed |
+| Recorded extraction is **paid**, effective backend is **free**, hash **unchanged** | Never re-extracted — not by a hook, not by `--rebuild`, not by a rename, not by an explicit free `--extract`. Say once which paths were protected. Whether the text itself is reused from this same sync's connection, the old index a rebuild is replacing, or `extract/cache.py`, "unchanged" is decided once, from the sidecar's own recorded content_hash — never from any of those three happening to still hold an answer |
+| Recorded extraction is **paid**, effective backend is **free**, hash **changed** | Neither a silent Skip nor a silent overwrite: a `failures` row naming the path, remedy pointing at the paid `--extract` (decision 14). Under `--rebuild` specifically, the *old* (now stale) text is carried forward rather than the document vanishing from the rebuilt index — matching what a normal sync already leaves searchable in the identical situation |
+| Recorded extraction is **paid**, hash **unchanged**, but the extracted text is not available anywhere on this machine | An honest, distinct failure (`PaidExtractionUnavailableError`) — never conflated with "content changed" above. The common case is the first sync after cloning a KB whose paid PDFs were extracted elsewhere: no cache, no prior local index, but the file itself did not change (a known, accepted limitation — see §9) |
+| `--force` **with** an explicit free `--extract`, against a paid-recorded document | The one override: re-extracts, discards the paid text, and names what it discarded. `--force` alone changes nothing |
 
-Three consequences the table implies but must be stated:
+Four consequences the table implies but must be stated:
 
 - **Soft delete removes the searchable trace, keeps the identity.** Executing a soft delete deletes
   the document's chunks and embeddings (FTS rows follow via triggers) so a deleted document can
@@ -532,6 +586,36 @@ Three consequences the table implies but must be stated:
   re-embedded, and **no soft delete is emitted for that ID**. If the sidecar did not travel,
   soft-delete + mint is the honest outcome, and sync reports it as a likely moved-without-sidecar
   case (§9's most-likely-corruption risk, surfaced at the moment it happens).
+- **`--rebuild`'s empty `before` cannot see a recorded backend, so it is not asked to (v0.2).**
+  `pair()`'s comparison-based rows above only ever run against the same, populated `before` a normal
+  sync sees; `--rebuild` builds into a brand-new `.pinakes/index.db.new` (§6.5) and reads `before`
+  from that empty file, so every document looks new to it regardless — including a document that was
+  *renamed* just before the rebuild, since there is no `before` for pairing to compare the rename
+  against either. The paid-protection rows are still honoured during a rebuild, but by a separate
+  mechanism: before the new database is even created, sync reads the *old* `index.db` (still on disk
+  until the atomic swap at the very end) for every actively-indexed, paid-extracted document, keyed
+  on **`doc_id` alone** — this table's own primary key, therefore unique by construction, and the one
+  identifier a renamed sidecar still carries unchanged (a content_hash-only key would additionally let
+  a *different*, later-minted document sharing that same content_hash incorrectly inherit the paid
+  one's chunks, embeddings and backend label). When this run's effective backend is free, that
+  document's row, chunks and embeddings are copied straight across via SQLite's `ATTACH DATABASE`,
+  never re-extracted — at the file's *old* content_hash, not necessarily its current one:
+  - If the current file's hash still matches, this is the ordinary "protected" case above.
+  - If it does not (the file changed since the paid extraction), the old row is copied forward
+    exactly the same way, but the run also records a `failures` entry, matching decision 14's normal
+    outcome rather than letting the document silently vanish from the rebuilt index.
+
+  This is deliberately independent of `extract/cache.py`: a `--clear-cache` immediately before
+  `--rebuild` empties the cache but never touches `index.db`, so a mechanism keyed on the cache would
+  wrongly conclude the content had changed, or silently re-extract for free, the moment both ran back
+  to back. Reading the old index directly is what makes the two commands compose safely in either
+  order — and the identical reasoning is why a **rename** (not a rebuild) also cannot rely on the
+  cache: it reaches `pair()`'s `Adopt`/`Rename` rows, never the same-path comparison, so a sync
+  additionally checks whether *this same connection* already holds an active row for the document's
+  own `doc_id` at its unchanged content_hash before ever consulting `extract/cache.py` at all. Only
+  when neither this connection, the old index during a rebuild, nor the cache has an answer does
+  decision 9 fall back to the sidecar's own recorded content_hash alone — which can prove the file is
+  unchanged even when nothing local can produce its text (see §9's "no local copy anywhere" case).
 
 Deletion is soft and sidecars are never removed automatically: `pnk doctor --prune` does that, only
 on explicit request, after printing the list. Deleting a user's file because a hash didn't match is
@@ -685,6 +769,7 @@ once, and a tool called `kb_search` is a collision waiting to happen. Every tool
 | **Scope creep via `--deep`** | The paid loop is where this design could grow a second, worse agent framework. Bounded by: same tools as MCP, hard caps, and no orchestration the free path doesn't have |
 | **Environment assumptions** | FTS5 and (for v0.5) loadable extensions are not universal in system Pythons. Probed by `pnk doctor` with a named remedy; uv-managed CPython is the supported baseline (§3.1) |
 | **Accidental publication** | Publishing a KB repo exposes `docs/` and every sidecar, provenance URLs included (§4.7). Mitigated by shipped `.gitignore`, an index/ledger that never leaves the machine, and explicit docs — not by anything the engine can enforce |
+| **A paid extraction's text has no durable, cross-machine home (v0.2)** | The sidecar's `provenance.extraction` proves a file is *unchanged* since a paid extraction anywhere (§6.4) — but the extracted *text* itself lives only in one machine's `extract/cache.py` or `index.db`, both gitignored. A fresh clone's first sync over a KB whose paid PDFs were extracted elsewhere gets an honest `PaidExtractionUnavailableError`, never a false "content changed" claim, but also cannot avoid paying again without one of those two local stores. Accepted for v0.2, not solved: a shared or committed store for paid extraction results is a real design question (would it live in git, defeating "originals are the truth"? A remote cache?) deliberately deferred rather than answered under this increment's own scope |
 
 ---
 

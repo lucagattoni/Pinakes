@@ -65,7 +65,9 @@ def _document(
 
 
 def _chunks(connection: sqlite3.Connection, doc_id: str, *texts: str) -> list[int]:
-    return replace_chunks(connection, doc_id, [(text, 0, len(text), 3, "H1") for text in texts])
+    return replace_chunks(
+        connection, doc_id, [(text, 0, len(text), 3, "H1", None, None) for text in texts]
+    )
 
 
 def _chunk(connection: sqlite3.Connection, doc_id: str, text: str) -> int:
@@ -86,6 +88,29 @@ def test_create_builds_the_schema_and_stamps_the_version(index_path: Path) -> No
     assert {"documents", "chunks", "embeddings", "links", "kb_refs", "failures", "meta"} <= tables
     assert get_meta(connection)["schema_version"] == str(SCHEMA_VERSION)
     assert str(connection.execute("PRAGMA journal_mode").fetchone()[0]).lower() == "wal"
+
+
+def test_schema_version_is_2_for_i5s_page_and_backend_columns() -> None:
+    """I5 bumps the schema (chunks.page_start/page_end, documents.extraction_backend/
+    extraction_fingerprint) — pinned explicitly so a future bump doesn't silently drift past it
+    unnoticed, the same way I2's own version constant is pinned."""
+    assert SCHEMA_VERSION == 2
+
+
+def test_new_columns_exist_and_default_to_null(index_path: Path) -> None:
+    connection = tracked(create(index_path))
+    doc = _document(connection)
+    chunk_id = _chunk(connection, doc, "text")
+    chunk_row = connection.execute(
+        "SELECT page_start, page_end FROM chunks WHERE id = ?", (chunk_id,)
+    ).fetchone()
+    assert chunk_row["page_start"] is None
+    assert chunk_row["page_end"] is None
+    doc_row = connection.execute(
+        "SELECT extraction_backend, extraction_fingerprint FROM documents WHERE id = ?", (doc,)
+    ).fetchone()
+    assert doc_row["extraction_backend"] is None
+    assert doc_row["extraction_fingerprint"] is None
 
 
 def test_create_refuses_to_clobber_an_existing_index(index_path: Path) -> None:
@@ -201,6 +226,21 @@ def test_a_schema_version_mismatch_refuses_to_open_and_says_rebuild(index_path: 
         assert "no migration machinery" in exc_info.value.remedy
 
 
+def test_a_v1_index_refuses_to_open_and_says_rebuild(index_path: Path) -> None:
+    """The literal upgrade case I5 introduces: an index built before page/backend columns
+    existed must refuse, not silently query a schema it does not match."""
+    connection = create(index_path)
+    set_meta(connection, {"schema_version": "1"})
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(IndexSchemaError) as exc_info:
+        connect_rw(index_path)
+    assert exc_info.value.found == "1"
+    assert exc_info.value.expected == 2
+    assert "pnk sync --rebuild" in exc_info.value.remedy
+
+
 def test_opening_a_missing_index_is_a_clear_error(index_path: Path) -> None:
     for opener in (connect_rw, connect_ro):
         with pytest.raises(StoreError) as exc_info:
@@ -218,7 +258,7 @@ def test_opening_something_that_is_not_an_index(tmp_path: Path) -> None:
 def test_foreign_keys_are_enforced(index_path: Path) -> None:
     connection = tracked(create(index_path))
     with pytest.raises(sqlite3.IntegrityError):
-        replace_chunks(connection, "no-such-document", [("t", 0, 1, 1, None)])
+        replace_chunks(connection, "no-such-document", [("t", 0, 1, 1, None, None, None)])
 
 
 def test_document_state_is_constrained(index_path: Path) -> None:
@@ -274,7 +314,9 @@ def test_loading_vectors_does_not_double_the_peak(index_path: Path) -> None:
     connection = tracked(create(index_path))
     doc = _document(connection)
     wide = 256
-    ids = replace_chunks(connection, doc, [(f"c{n}", 0, 1, 1, None) for n in range(2000)])
+    ids = replace_chunks(
+        connection, doc, [(f"c{n}", 0, 1, 1, None, None, None) for n in range(2000)]
+    )
     for chunk_id in ids:
         store_embedding(connection, chunk_id, np.ones(wide, dtype=np.float32))
 
