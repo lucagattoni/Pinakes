@@ -131,14 +131,15 @@ them, because `init` cannot see which extras you installed. `pnk sync` says so r
 you to guess:
 
 ```
-0 indexed, 0 renamed, 0 metadata-only, 1 unchanged, 0 removed
-1 file(s) matched no `include` pattern: .pdf (1) — add "**/*.pdf" to `[sources] include` to
-index them, or `exclude` them to silence this.
+0 indexed, 0 renamed, 0 metadata-only, 0 unchanged, 0 removed
+1 file(s) matched no `include` pattern: .pdf (1) — add "**/*.pdf" to `[sources] include` to index them, or `exclude` them to silence this.
 ```
 
 That line lists any file pinakes could have indexed but had no pattern for, grouped by extension.
 Files it could not read either way — images, archives, anything not valid UTF-8 — are never
-mentioned, since adding a glob for them would only produce a failed document.
+mentioned, since adding a glob for them would only produce a failed document. It also names
+`pinakes[pdf]` when a PDF is waiting and the extractor is not installed, because adding the glob
+alone would turn a skipped file into a failed one. `pnk sync --quiet` still prints it, on stderr.
 
 Add the glob to your manifest:
 

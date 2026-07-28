@@ -20,9 +20,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the commonest up and a pointer to `exclude` for silencing it instead:
 
   ```text
-  0 indexed, 0 renamed, 0 metadata-only, 1 unchanged, 0 removed
-  1 file(s) matched no `include` pattern: .pdf (1) — add "**/*.pdf" to `[sources] include` to
-  index them, or `exclude` them to silence this.
+  0 indexed, 0 renamed, 0 metadata-only, 0 unchanged, 0 removed
+  1 file(s) matched no `include` pattern: .pdf (1) — add "**/*.pdf" to `[sources] include` to index them, or `exclude` them to silence this.
   ```
 
   **Only files pinakes could actually index are reported**, and the test is the one indexing itself
@@ -42,11 +41,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `init` cannot see whether `pinakes[pdf]` is installed, and a glob stamped without it turns every
   PDF into a *failed* document rather than a skipped one. Off, but no longer undiscoverable.
 
-  Tests: seven cases in `tests/test_sync.py` (the bare-PDF case, the mixed case, binaries and UTF-16
-  staying silent, an unknown-but-decodable `.rst` being reported, `exclude`/dotted paths staying
-  silent, matched and unmatched being disjoint, and the by-extension grouping with its cap) plus one
-  in `tests/test_init.py` asserting the template mentions both the glob and the extra while
-  `sources.include` still does not contain it. Each was confirmed to fail against the pre-fix code.
+  An independent adversarial review caught two defects that each handed the silence straight back,
+  plus five smaller ones — all fixed here:
+
+  - **The probe read a fixed 8 KB prefix and decoded it in one go**, so a multi-byte character
+    straddling the boundary raised `UnicodeDecodeError` on a perfectly valid document — about two
+    times in three for CJK, Cyrillic or Greek prose. A non-English corpus therefore got exactly the
+    pre-fix behaviour: PDF beside the notes, `0 indexed`, no explanation. Now decoded incrementally,
+    which holds a partial trailing character instead of failing on it.
+  - **With more than one `[sources] root`, matched and unmatched were not disjoint.** The unmatched
+    pass ran inside the per-root loop, testing each file against a matched-set the later roots had
+    not contributed to yet — so a document indexed via root B was *also* reported as having no
+    pattern, and swapping the two roots in the manifest made it disappear. Now a second pass, after
+    every root's include walk.
+  - `pnk sync --quiet` never printed the line, and the git hooks `docs/GUIDE.md` recommends run
+    exactly that — leaving the project's own documented workflow as the one place the fix could not
+    reach. `-q` prints only problems, and this is one; it now goes to stderr.
+  - The suggested glob was lowercased, so `Report.PDF` was told to add `"**/*.pdf"` — which
+    `pathlib` glob, case-sensitive on POSIX whatever the filesystem does, will not match. Suffixes
+    are now grouped as they appear on disk.
+  - An unmatched `.pdf` now names `pinakes[pdf]` when the extractor is genuinely not importable:
+    adding the glob alone on a core-only install turns a skipped file into a *failed* one, the same
+    trap the binary exclusion exists to avoid.
+  - Probing is capped per root (`MAX_PROBED_PER_ROOT`), because a `node_modules/` under a root is
+    thousands of `open()` calls per sync — a network round trip each on an SMB or NFS mount — to
+    produce advice nobody wants. Truncation is stated (`500+ file(s)`), never silent.
+  - A symlinked source root resolving outside the KB raised an uncaught `ValueError` out of the
+    walk; ties in the extension ranking no longer let `(no extension)` take the hint slot from a
+    real suffix; and "and N more" now says "extension(s)", since it counts extensions while the
+    number beside it counts files.
+
+  Tests: 22 cases across `tests/test_sync.py` and `tests/test_init.py`, each confirmed to fail
+  against the code before its fix by mutating the source and watching the right one break. One of
+  them — the PDF-extra hint — was first written as a self-consistency check that agreed with itself
+  under every extras leg and survived deleting the feature; it now forces the extractor missing.
 
 ### Added
 
