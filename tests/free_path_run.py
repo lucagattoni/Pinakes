@@ -148,6 +148,11 @@ def _run_free_surfaces(root: Path) -> None:
         raise SystemExit(f"free-path run: `pnk sync` wrote no index under {root}")
     if main(["search", "retrieval", "--kb", str(root)]) != 0:
         raise SystemExit(f"free-path run: `pnk search` failed on {root}")
+    # `pnk budget` reads the spend ledger and the price table (I6b). It can never spend — which is
+    # exactly why it belongs here: a money-shaped command is the most plausible future home for an
+    # accidental paid import, and it is on the free path by definition.
+    if main(["budget", "--kb", str(root)]) != 0:
+        raise SystemExit(f"free-path run: `pnk budget` failed on {root}")
     main(["doctor", "--kb", str(root)])
 
 
@@ -187,6 +192,7 @@ def main_script(output: Path) -> None:
         with redirect_stdout(report):
             main(["sync", "--kb", str(paid_kb)])
             main(["doctor", "--kb", str(paid_kb)])
+            main(["budget", "--kb", str(paid_kb)])
         printed = report.getvalue()
         print(printed, end="")
         if CLAUDE_VISION not in printed:

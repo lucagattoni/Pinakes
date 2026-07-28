@@ -430,6 +430,41 @@ class ContextWindowExceededError(PinakesError):
         self.model = model
 
 
+class LedgerError(PinakesError):
+    """`.pinakes/ledger.jsonl` cannot be written or read (I6b). Never a per-call failure to shrug
+    off: the ledger is the one part of `.pinakes/` a rebuild cannot recreate, so a call whose
+    reservation cannot be written must not be made."""
+
+
+class BudgetConfirmationError(PinakesError):
+    """A run owes a `confirm_above_eur` confirmation and has no way to obtain one — no terminal and
+    no `--yes` (I6b, docs/DESIGN.md §5). Deliberately narrow: it fires only when a confirmation is
+    *actually* owed, never on every non-interactive sync."""
+
+    def __init__(self, *, amount_eur: str, threshold_eur: str) -> None:
+        super().__init__(
+            f"this run is estimated at €{amount_eur}, above the €{threshold_eur} "
+            "`confirm_above_eur` threshold, and there is no terminal to confirm from.",
+            remedy=(
+                "Re-run interactively, or pass `--yes` to authorise the estimate. `--yes` answers "
+                "this prompt only — it raises no cap and authorises no cache deletion."
+            ),
+        )
+        self.amount_eur = amount_eur
+        self.threshold_eur = threshold_eur
+
+
+class UnknownCallError(PinakesError):
+    """`pnk budget --resolve` names a `call_id` the ledger has no open reservation for."""
+
+    def __init__(self, call_id: str, *, reason: str) -> None:
+        super().__init__(
+            f"cannot resolve call {call_id}: {reason}.",
+            remedy="`pnk budget` lists every call still reported as `unknown outcome`.",
+        )
+        self.call_id = call_id
+
+
 def _rebuild(cls: type[PinakesError], message: str, remedy: str) -> PinakesError:
     """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable.
 

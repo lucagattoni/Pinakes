@@ -10,9 +10,11 @@ from pinakes import __version__
 from pinakes.cli import COMMANDS, EXIT_FAILURE, EXIT_OK, EXIT_USAGE, main
 from pinakes.errors import NotImplementedYetError, PinakesError
 
-# docs/DESIGN.md §8's v0.1 command list. Hard-coded rather than derived from COMMANDS: a test that
-# reads the same source it checks would pass even if a command were dropped.
+# docs/DESIGN.md §8's command list, by the release that introduced each. Hard-coded rather than
+# derived from COMMANDS: a test that reads the same source it checks would pass even if a command
+# were dropped.
 DESIGN_V01_COMMANDS = frozenset({"init", "sync", "search", "doctor", "install-hooks", "serve"})
+DESIGN_COMMANDS = DESIGN_V01_COMMANDS | frozenset({"budget"})  # `budget` lands in I6b (v0.2)
 
 
 def test_version_is_set() -> None:
@@ -24,21 +26,21 @@ def test_version_is_set() -> None:
 
 
 def test_surface_matches_the_design() -> None:
-    assert {command.name for command in COMMANDS} == DESIGN_V01_COMMANDS
+    assert {command.name for command in COMMANDS} == DESIGN_COMMANDS
 
 
 def test_bare_invocation_prints_help_and_succeeds(capsys: pytest.CaptureFixture[str]) -> None:
     assert main([]) == EXIT_OK
     out = capsys.readouterr().out
     assert "portable, agent-first knowledge base" in out
-    for name in DESIGN_V01_COMMANDS:
+    for name in DESIGN_COMMANDS:
         assert name in out
 
 
-IMPLEMENTED = frozenset({"sync", "init", "search", "doctor", "install-hooks", "serve"})
+IMPLEMENTED = frozenset({"sync", "init", "search", "doctor", "install-hooks", "serve", "budget"})
 
 
-@pytest.mark.parametrize("command", sorted(DESIGN_V01_COMMANDS - IMPLEMENTED))
+@pytest.mark.parametrize("command", sorted(DESIGN_COMMANDS - IMPLEMENTED))
 def test_unimplemented_commands_fail_loudly_rather_than_pretending(
     command: str, capsys: pytest.CaptureFixture[str]
 ) -> None:

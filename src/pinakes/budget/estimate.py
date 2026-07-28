@@ -53,7 +53,9 @@ PROMPT_TOKENS: Final = 300
 #: 5-page slice against this leaves 2x headroom, so a truncation retry is rare.
 MAX_TOKENS: Final = 8_000
 
-_TIMESTAMP_FORMAT: Final = "%Y%m%d %H:%M"
+#: The one spelling of a price-table date. `pnk doctor`'s staleness WARN parses `as_of` with it too
+#: (I6b), so the warning and the refusal can never disagree about what "30 days old" means.
+TIMESTAMP_FORMAT: Final = "%Y%m%d %H:%M"
 
 #: Documented maximum input tokens, by model name. Not a price, so it does not live in
 #: `prices.toml` — a model absent here cannot be context-window-checked, which `estimate_document`
@@ -112,8 +114,8 @@ def estimate_document(
             f"estimate_document: pages_estimated={estimated} must be between 1 and pages={pages}"
         )
 
-    as_of = datetime.strptime(prices.as_of, _TIMESTAMP_FORMAT)
-    current = datetime.strptime(now, _TIMESTAMP_FORMAT)
+    as_of = datetime.strptime(prices.as_of, TIMESTAMP_FORMAT)
+    current = datetime.strptime(now, TIMESTAMP_FORMAT)
     if (current - as_of).days > max_price_age_days:
         raise StalePricesError(as_of=prices.as_of, max_age_days=max_price_age_days)
 

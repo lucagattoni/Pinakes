@@ -428,9 +428,8 @@ state the exposure plainly. The engine repo itself contains no real KB: only the
 
 ## 5. Cost control
 
-**Nothing shipped today costs money.** The budget system ships in the same release as the first
-thing that can spend, which is the honest ordering — and the first spender is no longer
-`pnk ask --deep`. `plans/v0.2.md` decision 2 moved that role to the **opt-in Claude-vision PDF
+**The budget system ships in the same release as the first thing that can spend**, which is the
+honest ordering — and the first spender is no longer `pnk ask --deep`. `plans/v0.2.md` decision 2 moved that role to the **opt-in Claude-vision PDF
 extractor**, dragging the whole budget machinery earlier with it. Field definitions and defaults are
 in [MANIFEST](MANIFEST.md#budget); whether any of it is wired up yet is in
 [STATUS](STATUS.md#the-surface-you-can-use-today).
@@ -443,7 +442,7 @@ in [MANIFEST](MANIFEST.md#budget); whether any of it is wired up yet is in
 | **What "operation" means** | One user-facing invocation — a whole `pnk sync` or `pnk ask --deep`, not one API call. Both are loops, so the cap is a *running total* across every call made; the loop halts when the next reservation would breach it. A per-call cap would let an N-step loop spend N× the stated limit |
 | **The whole document is checked first** | Per-call reservation alone bounds each call and nothing else — a document that will certainly breach a window by call 15 is refused at call 0, with every blocked window named at once and the exact manifest edit that would admit the run. Discovering the real ceiling by raising one cap at a time is the failure this prevents |
 | **Rolling ledger** | `.pinakes/ledger.jsonl`, append-only. Windows computed in `[budget] timezone`. Each line is a single sub-4KB `O_APPEND` write, atomic on POSIX, so concurrent processes cannot interleave a record |
-| **Visibility** | `pnk budget` shows spend by day/month/operation. Real per-KB cost data, not vibes |
+| **Visibility** | `pnk budget` shows spend by day/month/operation, each window with the rate and price date behind its total. `pnk budget --resolve <call_id> --actual <eur>` closes a call whose outcome is unknown — by *appending* a reconciliation, never editing. Real per-KB cost data, not vibes |
 
 **A request is the unit of estimation** — for the paid extractor, a fixed-size page slice, never a
 whole document and never a single page. The unit matters: a whole-document request makes input
@@ -465,9 +464,24 @@ budget with no way to release it.
 cap compared against a float is not a cap: `0.05` has no exact binary representation, so the ceiling
 enforced would differ from the one configured by an amount nobody can predict or explain.
 
-**The ledger stores no query text and no document content** — timestamp, operation, model, token
-counts, cost, KB id, nothing more. It is diagnostics, not a transcript, and must never become an
-accidental log of what you asked.
+**The ledger stores no query text and no document content** — timestamp, `operation_id`, `call_id`,
+record kind, operation kind, model, token counts, `cost_usd`, the `usd_per_eur` rate it was priced
+at, the price table's `as_of`, KB id, nothing more. It is diagnostics, not a transcript, and must
+never become an accidental log of what you asked.
+
+**Cost is recorded in USD with its conversion provenance, never as a bare number**; EUR is computed
+at read time. A line saying only `cost: 0.043` is unreadable a month later — neither the currency
+nor the rate that produced it is recoverable — and the rate is exactly the input that drifts.
+
+**Two identifiers, because one word covered two things.** `operation_id` is one invocation, the unit
+`per_operation_eur` bounds; `call_id` is one API call, the unit a reservation/outcome pair keys on
+and what a cache entry joins against. Collapsing them made `per_operation_eur` ambiguous between
+"one sync" and "one call", a difference of a factor of forty.
+
+**A reservation with neither a reconciliation nor a void is `unknown outcome`** — a timeout may or
+may not have billed. It counts at its reserved amount rather than being dropped or zeroed, which is
+why `pnk budget` surfaces those records prominently and `pnk doctor` warns once their total passes a
+quarter of a window: without a documented way back, a handful of them makes a KB unusable.
 
 Pricing lives in a data file with an explicit `as_of` date, shipped as package data so an installed
 wheel and a source checkout price identically. `pnk doctor` warns when it is stale, and estimation
@@ -550,8 +564,11 @@ was paid for is the one mistake this cache must not make. `pnk doctor` reports e
 
 `pnk sync --clear-cache` empties `cache/extract/` entirely — paid or free, active or orphaned —
 after confirming: it prints the entry count and bytes about to go and requires a `y`; `--yes` skips
-the prompt for cron use. `ledger.jsonl` is never touched, the same guarantee `--rebuild` already
-gives. Selective removal of paid orphans alone lands with the ledger reader that can price them
+that prompt for cron use. **`--yes` does not authorise destroying entries a paid backend wrote** —
+that needs the explicit `--clear-cache=paid`, which no hook and no generated workflow writes.
+Otherwise a cron line carrying `--yes` for freshness would also throw away paid extractions
+unattended, which is precisely what this guarantee claims to forbid. `ledger.jsonl` is never
+touched, the same guarantee `--rebuild` already gives. Selective removal of paid orphans alone lands with the ledger reader that can price them
 (I7c) — building it sooner would mean pricing entries against a ledger that does not exist yet.
 
 `pnk install-hooks` writes **three** hooks, split by what each may touch:
@@ -570,6 +587,18 @@ gives. Selective removal of paid orphans alone lands with the ledger reader that
 validated against the registered extractors the same way the manifest is — no importing either.
 
 `pnk init --ci` drops a GitHub Actions workflow that syncs and caches `.pinakes/`. No daemon.
+
+**All four machine-driven callers — the three hooks and that workflow — write
+`pnk sync --extract=pypdfium2` explicitly, forcing the free backend regardless of the manifest**,
+print one line saying so at write time, and carry the same line as a comment in what they generate.
+All four are non-interactive, so on a KB configured for a paid backend the alternatives are both
+wrong: without the flag there is no terminal to answer a `confirm_above_eur` prompt from and every
+commit aborts; with a `--yes` in the hook, every commit spends afresh under a fresh per-operation
+allowance. Forcing the free backend indexes a scanned PDF's (empty) free extraction honestly **and
+recoverably** — §6.4's backend-drift rule leaves that document stale until a paid run picks it up,
+rather than skipped forever behind a content hash that never changes again. Paid extraction stays a
+deliberate human invocation, and `pnk doctor` reports the combination so the split is visible rather
+than surprising.
 
 Because freshness is git-triggered, **a KB is normally a git repo** — an assumption of the design,
 not an accident. A loose folder still works via manual or cron `pnk sync`, and `pnk doctor` reports
@@ -777,7 +806,7 @@ cut, and [STATUS](STATUS.md#release-roadmap) is where the mapping lives.
 | v0.2 — PDF extraction | Parsing is the single biggest quality risk (§9), so it is isolated from core-design feedback rather than mixed into it. Scope covers **both** paths: the free `pypdfium2` default, and the opt-in paid Claude-vision extractor that is the only answer to a scanned page (§9) — which is what drags the budget machinery into this release, per the governing rule below |
 | v0.3 — cross-KB links | Needs two populated KBs to be worth anything. Build order: [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
 | v0.3.x — graph channels | Each is **eval-gated rather than scheduled** — it ships only if the golden set justifies it (`graph/PINAKES_APPROACH.md` §9) |
-| v0.4 — `pnk ask --deep` | A paid loop and its guardrails ship together, never apart |
+| v0.4 — `pnk ask --deep` | A paid loop and its guardrails ship together, never apart — and the guardrails are already here: the §5 accountant, the ledger and all three enforced windows ship in v0.2 with the paid extractor, so v0.4 adds the loop, not the machinery |
 | v0.5 — templates, `sqlite-vec` | Generalisation, once real usage has shaped one template well |
 
 The governing rule across all of them: **the budget machinery ships in the same release as the first

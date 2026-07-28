@@ -99,7 +99,11 @@ class SyncOptions:
     force_unlock: bool = False
     extract: str | None = None  # overrides `[extraction] backend` for one run
     clear_cache: bool = False  # a standalone mode (I4): empties the extraction cache, nothing else
-    yes: bool = False  # skip --clear-cache's confirmation (cron use)
+    clear_cache_paid: bool = False
+    """`--clear-cache=paid` (I6b): authorises destroying entries a paid backend wrote. `yes` alone
+    does not, so `pnk sync --yes --clear-cache` in a cron job cannot throw away paid extractions
+    unattended."""
+    yes: bool = False  # answer the confirmations this run owes (cron use); raises no cap
     force: bool = False
     """Only meaningful together with an explicit `extract=` naming a *free* backend (I5): the one
     combination allowed to overwrite a paid extraction. `--force` alone changes nothing."""
@@ -142,6 +146,10 @@ class SyncReport:
     cache_clear_aborted: bool = False  # requested but not confirmed (no --yes)
     cache_pending_entries: int = 0  # what --clear-cache *would* remove, for the caller's prompt
     cache_pending_bytes: int = 0
+    cache_pending_paid_entries: int = 0
+    """How many of `cache_pending_entries` a paid backend wrote (I6b). Its own number because
+    `--yes` alone must never authorise destroying paid extractions unattended — that needs the
+    explicit `--clear-cache=paid`, which no hook and no CI workflow writes."""
 
     @property
     def ok(self) -> bool:
@@ -503,11 +511,17 @@ def _clear_cache(manifest: Manifest, options: SyncOptions) -> SyncReport:
     pending_entries, pending_bytes = extract_cache.total_stats(cache_dir)
     if pending_entries == 0:
         return SyncReport(cache_cleared=0, cache_cleared_bytes=0)
-    if not options.yes:
+    paid_entries, _paid_bytes = extract_cache.paid_stats(cache_dir)
+    # Two authorisations, not one (I6b). `--yes` answers the "this many entries will go" prompt;
+    # destroying paid work needs `--clear-cache=paid` on top of it, so a cron line carrying `--yes`
+    # for freshness cannot also throw away extractions somebody paid for.
+    authorised = options.yes and (paid_entries == 0 or options.clear_cache_paid)
+    if not authorised:
         return SyncReport(
             cache_clear_aborted=True,
             cache_pending_entries=pending_entries,
             cache_pending_bytes=pending_bytes,
+            cache_pending_paid_entries=paid_entries,
         )
     removed, removed_bytes = extract_cache.clear_all(cache_dir)
     return SyncReport(cache_cleared=removed, cache_cleared_bytes=removed_bytes)

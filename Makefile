@@ -11,7 +11,7 @@ SHELL := /bin/sh
 DEMO_KB := tests/demo-kb
 
 .PHONY: help install check fmt fmt-check lint types types-fast test test-model eval demo doctor \
-        corpus pdf-eval build smoke clean release-check
+        budget corpus pdf-eval build smoke clean release-check
 
 help:  ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -49,6 +49,9 @@ demo:  ## Index the synthetic demo KB
 
 doctor:  ## Health-check the demo KB
 	uv run --frozen pnk doctor --kb $(DEMO_KB)
+
+budget:  ## Show the demo KB's spend ledger (free: it only reads)
+	uv run --frozen pnk budget --kb $(DEMO_KB)
 
 eval:  ## Golden-set evaluation against the baseline (needs `make demo` first)
 	uv run --frozen python -m pinakes.eval $(DEMO_KB)

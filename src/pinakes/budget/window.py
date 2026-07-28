@@ -55,6 +55,21 @@ class WindowTotals:
     month: Decimal
 
 
+def in_window(reserved_at: datetime, *, now: datetime, timezone: ZoneInfo) -> tuple[bool, bool]:
+    """`(falls in today, falls in this month)` for one reservation moment.
+
+    The attribution rule lives here alone. `aggregate` sums with it and `pnk budget` (I6b) reports
+    per-window rates with it, so the totals and the provenance shown beside them can never be
+    computed from two different readings of "today".
+    """
+    local = reserved_at.astimezone(timezone)
+    local_now = now.astimezone(timezone)
+    return (
+        local.date() == local_now.date(),
+        (local.year, local.month) == (local_now.year, local_now.month),
+    )
+
+
 def aggregate(
     records: Sequence[CallRecord],
     *,
@@ -68,13 +83,12 @@ def aggregate(
     records themselves were constructed in (`reserved_at` need only be tz-aware; it is converted
     here, not assumed to already be in `timezone`).
     """
-    local_now = now.astimezone(timezone)
     day_total = Decimal("0")
     month_total = Decimal("0")
     for record in records:
-        local = record.reserved_at.astimezone(timezone)
-        if local.date() == local_now.date():
+        today, this_month = in_window(record.reserved_at, now=now, timezone=timezone)
+        if today:
             day_total += record.effective_eur
-        if (local.year, local.month) == (local_now.year, local_now.month):
+        if this_month:
             month_total += record.effective_eur
     return WindowTotals(operation=operation, day=day_total, month=month_total)

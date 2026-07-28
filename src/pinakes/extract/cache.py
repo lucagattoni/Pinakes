@@ -243,6 +243,32 @@ def total_stats(cache_dir: Path) -> tuple[int, int]:
     return len(paths), sum(path.stat().st_size for path in paths)
 
 
+def paid_stats(cache_dir: Path) -> tuple[int, int]:
+    """Entries a *paid* backend wrote, and their bytes — active or orphaned alike.
+
+    `survey`'s `paid_orphans` deliberately excludes active entries, because sweeping is only ever
+    about orphans. `--clear-cache` is the opposite question (I6b): it deletes everything, so what
+    matters is how much paid work would go, whether or not the document is still active. An entry
+    is paid when it records an `operation_id`, the same marker `_classify` reads.
+    """
+    if not cache_dir.is_dir():
+        return 0, 0
+    entries = 0
+    bytes_used = 0
+    for candidate in sorted(cache_dir.glob("*.json")):
+        try:
+            raw: object = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(raw, dict):
+            continue
+        if cast(dict[str, Any], raw).get("operation_id") is None:
+            continue
+        entries += 1
+        bytes_used += candidate.stat().st_size
+    return entries, bytes_used
+
+
 def clear_all(cache_dir: Path) -> tuple[int, int]:
     """`--clear-cache`: empties `cache/extract/` unconditionally — paid or free, active or
     orphaned. This is the one operation in this module that does not distinguish paid entries,

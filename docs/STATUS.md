@@ -16,13 +16,13 @@
 
 | Command | State | Notes |
 |---|---|---|
-| `pnk init` | shipped | one template (`notes`) |
-| `pnk sync` | shipped | `--rebuild`, `--sidecars-only`, `--index-only`, `--extract`, `--force`, `--clear-cache` |
+| `pnk init` | shipped | one template (`notes`); `--ci` writes the workflow (on `main`, unreleased) |
+| `pnk sync` | shipped | `--rebuild`, `--sidecars-only`, `--index-only`, `--extract`, `--force`, `--clear-cache[=paid]` |
 | `pnk search` | shipped | BM25 + vector + rerank, metadata filters, `--json` |
 | `pnk doctor` | shipped | environment, coherence, orphans, links, hooks, cache |
-| `pnk install-hooks` | shipped | the three-hook split |
+| `pnk install-hooks` | shipped | the three-hook split; all three force `--extract=pypdfium2` (on `main`, unreleased) |
 | `pnk serve` | shipped | MCP: `pinakes_search`, `pinakes_get`, `pinakes_list_kbs` |
-| `pnk budget` | **not built** | v0.2 · I6b |
+| `pnk budget` | on `main`, unreleased | I6b. Day/month/operation spend, `--resolve` for an unknown outcome |
 | `pnk ask --deep` | **not built** | v0.4 |
 
 | Capability | State | Notes |
@@ -34,7 +34,7 @@
 | Extraction quality scoring | shipped | `make pdf-eval` against `tests/pdf-corpus/` |
 | **PDF ingest, paid path** (scanned PDFs) | **not built** | v0.2 · I7b. `claude-vision` is a stub that names its increment |
 | Budget estimator, caps, window aggregation | shipped 0.2.2, **inert** | I6a. The pure logic only — nothing calls it, so nothing can spend |
-| Budget ledger, `pnk budget`, spend enforcement | **not built** | v0.2 · I6b. Reading `ledger.jsonl` and wiring I6a's decisions to a real call |
+| Budget ledger, `pnk budget`, the accountant | on `main`, unreleased | I6b. `ledger.jsonl`, the reservation/outcome protocol, and I6a's decisions read from it. **Still nothing calls it** — the paid extractor is I7b |
 | `path:page` citations | **not built** | v0.2 · I8 |
 | Cross-KB links (`pnk link`, `pinakes_links`) | **not built** | v0.3 |
 | `sqlite-vec` tier, template ecosystem | **not built** | v0.5 |
@@ -86,7 +86,7 @@ landing with its own tests.
 | I4 | The extraction cache | shipped 0.2.0 |
 | I5 | PDF chunking, page provenance, backend-aware sync (`schema_version` 2) | shipped 0.2.0 |
 | I6a | Budget core, pure — estimator, reservation, `prices.toml` | shipped 0.2.2 (inert) |
-| I6b | Budget I/O — ledger, prompt, `pnk budget`, hooks that cannot spend | **planned** |
+| I6b | Budget I/O — ledger, prompt, `pnk budget`, hooks that cannot spend | on `main`, unreleased |
 | I7a | The paid-path allowlist gate and the invariant amendments | on `main`, unreleased |
 | I7b | The paid Claude-vision extractor — request shape, validation, retries | **planned** |
 | I7c | The completeness audit, staging, all-or-nothing commit | **planned** |
