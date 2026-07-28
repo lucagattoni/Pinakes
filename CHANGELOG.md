@@ -1,11 +1,41 @@
 # Changelog
 
+> ℹ️ **Version numbers below reflect the convention in use when this was written.** Unbuilt
+> work is now **named, not numbered** ([STATUS.md](docs/STATUS.md)). This record is left as it was.
+
 All notable changes to this project are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Changed
+
+- **🚫 Unbuilt work is named, never numbered — a project-wide convention, and a rule other agents
+  will meet in `CLAUDE.md`.** A version number now belongs to a release only when it is cut. Unbuilt
+  bodies of work are **the paid-extraction release**, **the graph release**, **the deep release** and
+  **the template release**; increment IDs (`I7b`, `I8`) are unaffected, since they name work inside a
+  written plan rather than a release.
+
+  **Why now.** `docs/` and `docs/graph/` had used `v0.3` for months to mean the cross-KB links
+  release. Once 0.2.2 shipped, the *next* MINOR was numerically 0.3.0 — so one number meant two
+  different releases, and resolving it either way meant renumbering ~60 committed references,
+  research records included. `docs/STATUS.md` had flagged this as blocking the next release. A name
+  cannot collide, never needs renumbering, and says what the work *is* rather than when it arrives.
+
+  Applied across every live surface — `docs/STATUS.md` (which carries the rule and the mapping),
+  `DESIGN.md` §8, `CLI.md`, `MANIFEST.md`, `GUIDE.md`, `KB-UPDATES.md`, `docs/README.md`,
+  `docs/graph/README.md` and `PINAKES_APPROACH.md` — and, because a convention that stops at the
+  docs is not a convention, in **user-facing output** too: `pnk search`'s escalation note now reads
+  "planned for the deep release", and four `pnk doctor` messages name the template and graph
+  releases instead of `v0.5`/`v0.3` (`tests/test_cli_search.py` updated with them). Internal
+  docstrings in `manifest.py` and `sidecar.py` follow.
+
+  **Historical records keep their numbers.** `CHANGELOG.md`, `docs/RETROSPECTIVES.md`, `plans/` and
+  the dated research in `docs/graph/` are records of what was decided at a time; rewriting them would
+  falsify that. Each now opens with a one-line note saying the numbering convention has changed and
+  pointing at `docs/STATUS.md`.
 
 ### Added
 

@@ -88,7 +88,7 @@ def test_an_uncalibrated_kb_says_so_without_naming_a_command_that_does_not_exist
 ) -> None:
     main(["search", "sourdough", "--kb", str(kb)])
     out = capsys.readouterr().out
-    assert "planned for v0.4" in out
+    assert "planned for the deep release" in out
 
 
 def test_json_output_has_a_stable_shape(kb: Path, capsys: pytest.CaptureFixture[str]) -> None:

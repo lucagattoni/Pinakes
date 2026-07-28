@@ -1,5 +1,8 @@
 # Graph, RAG and agents — what the research says, and what pinakes should do
 
+> ℹ️ **Version numbers below reflect the convention in use when this was written.** Unbuilt
+> work is now **named, not numbered** ([STATUS.md](../STATUS.md)). This record is left as it was.
+
 **Status:** research summary + recommendations · **Date:** 20260725 15:12 (file mtime — the doc
 predates its commit)
 **Scope:** whether pinakes should acquire a graph layer, and if so, which one

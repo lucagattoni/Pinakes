@@ -137,7 +137,10 @@ def _environment() -> Iterator[Check]:
         "loadable extensions " + ("available" if can_load_extensions else "unavailable"),
         None
         if can_load_extensions
-        else "Only needed for the sqlite-vec tier (v0.5); the NumPy tier is unaffected.",
+        else (
+            "Only needed for the sqlite-vec tier (the template release); "
+            "the NumPy tier is unaffected."
+        ),
     )
 
 
@@ -153,7 +156,7 @@ def _template(manifest: Manifest) -> Check:
             "template",
             Status.WARN,
             f"{recorded} is not installed here",
-            "The KB still works; `pnk upgrade` (v0.5) is what will diff templates.",
+            "The KB still works; `pnk upgrade` (the template release) is what will diff templates.",
         )
     if installed.version != version:
         return Check(
@@ -450,8 +453,8 @@ def _index(manifest: Manifest) -> Iterator[Check]:
                 "scale",
                 Status.WARN,
                 f"{counts['chunks']} chunks is past the {LARGE_CORPUS_CHUNKS} NumPy-tier threshold",
-                "Every tier is a linear scan; the sqlite-vec tier (v0.5) bounds memory, and "
-                "splitting the KB is the documented answer past ~2M chunks.",
+                "Every tier is a linear scan; the sqlite-vec tier (the template release) "
+                "bounds memory, and splitting the KB is the documented answer past ~2M chunks.",
             )
         else:
             yield Check("scale", Status.OK, f"{counts['chunks']} chunks, within the NumPy tier")
@@ -514,7 +517,7 @@ def _links(connection: sqlite3.Connection, manifest: Manifest, active: int) -> C
     dangling = [doc for kb_id, doc in targets if kb_id == manifest.kb.id and doc not in known]
     external = sum(1 for kb_id, _ in targets if kb_id != manifest.kb.id)
 
-    detail = f"{len(targets)} links, {external} cross-KB (unchecked until v0.3)"
+    detail = f"{len(targets)} links, {external} cross-KB (unchecked until the graph release)"
     if dangling:
         return Check(
             "links",

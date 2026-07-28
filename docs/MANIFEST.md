@@ -95,7 +95,7 @@ in the output would reveal it.
 | `fusion_top_k` | `20` | Survivors handed to the reranker |
 | `final_k` | `8` | Passages actually returned. `pnk search -k` overrides per query |
 | `rerank` | `local` | `local` or `none` |
-| `vector_tier` | `auto` | `auto`, `numpy` or `sqlite-vec`. **Only the NumPy tier is built** — `sqlite-vec` is v0.5 |
+| `vector_tier` | `auto` | `auto`, `numpy` or `sqlite-vec`. **Only the NumPy tier is built** — `sqlite-vec` is the template release |
 
 Three separate widths rather than one `top_k`, because they are three different cut-offs.
 
@@ -149,7 +149,7 @@ numbers (`0.05`); the exactness is on pinakes's side.
 
 ## `[[links.kb]]`
 
-Connected KBs. The schema ships today because IDs cannot be retrofitted; traversal is v0.3.
+Connected KBs. The schema ships today because IDs cannot be retrofitted; traversal is the graph release.
 
 | Key | Notes |
 |---|---|
@@ -189,7 +189,7 @@ provenance:
 | `title` | you | Shown in results |
 | `tags` | you | What `pnk search --tag` filters on |
 | `created` | sync | Optional; date filters use the document's mtime instead, since every document has one |
-| `links[].to` | you / `pnk link` (v0.3) | A `pnk://` URI. Aliases and `self` are resolved to ULIDs **on write**, so what reaches disk survives being shared |
+| `links[].to` | you / `pnk link` (the graph release) | A `pnk://` URI. Aliases and `self` are resolved to ULIDs **on write**, so what reaches disk survives being shared |
 | `links[].rel` | you | Free-form relation, e.g. `cites`, `supersedes` |
 | `provenance.source` | you | Where the document came from |
 | `provenance.extraction` | **sync, paid PDFs only** | `{backend, fingerprint, extracted, content_hash}` |
