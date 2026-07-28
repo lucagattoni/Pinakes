@@ -1287,6 +1287,15 @@ hard-coded byte threshold either never splits or recurses straight to the single
 which one it does is a property of the corpus, not of the code. `slice_windows` and `slice_bytes`
 lost their underscores in the process: they are the two things a reader most wants to check.
 
+**LOW, sixth pass — nothing drove `pnk sync` itself.** Every test exercised a piece: the slice
+loop, the ledger pairing, the cache's join key, the accountant's windows. The pieces were wired
+together across four modules, and "each part works" is not the claim "the parts are connected" —
+which is the seam an increment is most likely to get wrong. One end-to-end test now runs a real
+`pnk sync` over a paid KB and checks the whole chain: the document indexed under `claude-vision`,
+the ledger's call reconciled, and the cache entry carrying the `operation_id`/`call_ids` that §6.3
+left `null` until this increment. It passed first time; recorded because its absence was the last
+thing five passes had not noticed.
+
 **LOW, third pass — markdown emphasis reached a terminal.** `--estimate-only`'s help text carried
 `**A network call**`, which argparse renders as literal asterisks: the emphasis was written for
 CLI.md and pasted into a surface that has no renderer. Now checked against every command's

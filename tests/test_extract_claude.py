@@ -910,3 +910,88 @@ def test_with_no_fitted_floor_the_paid_path_refuses_to_spend_at_all(
     # `--force` must not buy a way past a *missing guard*, only past a healthy-PDF refusal.
     with pytest.raises(FloorsMissingError):
         claude_module.check_worth_paying_for(CORPUS / "baseline-12p.pdf", force=True)
+
+
+# --- the whole wiring, in one test ---------------------------------------------------------------
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_real_sync_extracts_indexes_records_and_caches(
+    make_fake_kb: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Everything above tests a piece. This drives `pnk sync` itself, because the pieces were
+    wired together across four modules and "each part works" is not the same claim as "the parts
+    are connected" — which is exactly the seam an increment is most likely to get wrong."""
+    import json as json_module
+    import shutil
+
+    from pinakes import store
+    from pinakes.cli import EXIT_OK, main
+    from pinakes.extract import (
+        CLAUDE_VISION,
+        ExtractorEntry,
+        register_extractor,
+        unregister_extractor,
+    )
+    from pinakes.extract import claude as claude_module
+    from pinakes.extract.claude import ClaudeVisionExtractor
+
+    root = make_fake_kb(
+        extraction_backend=CLAUDE_VISION,
+        budget={"per_operation_eur": "50.00", "daily_eur": "50.00", "monthly_eur": "50.00"},
+    )
+    manifest_path = root / "pinakes.toml"
+    manifest_path.write_text(
+        manifest_path.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md", "**/*.txt"]', 'include = ["**/*.pdf"]'
+        ),
+        encoding="utf-8",
+    )
+    shutil.copyfile(CORPUS / "baseline-1p.pdf", root / "docs" / "scan.pdf")
+
+    transport = RecordedTransport("short-final-slice")  # one slice, and this PDF has one page
+    transport.entries[0]["content"] = [
+        {"type": "text", "text": json_module.dumps({"pages": [{"page": 1, "text": "paid text"}]})}
+    ]
+    original = claude_module.default_transport
+    register_extractor(
+        CLAUDE_VISION,
+        ExtractorEntry(
+            lambda: ClaudeVisionExtractor(transport),
+            claude_module.fingerprint_inputs,
+            paid=True,
+            requires=("anthropic", "claude"),
+        ),
+    )
+    monkeypatch.setattr(claude_module, "default_transport", lambda: transport)
+    try:
+        # `--force`: the corpus PDF is healthy by design, so the free-yield guard would refuse it.
+        assert main(["sync", "--kb", str(root), "--force", "--yes"]) == EXIT_OK
+    finally:
+        unregister_extractor(CLAUDE_VISION)
+        claude_module.default_transport = original
+
+    assert transport.calls == 1
+
+    connection = store.connect_ro(root / ".pinakes" / "index.db")
+    try:
+        rows = connection.execute(
+            "SELECT path, extraction_backend FROM documents WHERE state = 'active'"
+        ).fetchall()
+    finally:
+        connection.close()
+    assert [(str(r["path"]), str(r["extraction_backend"])) for r in rows] == [
+        ("docs/scan.pdf", CLAUDE_VISION)
+    ]
+
+    # The ledger recorded the call, reconciled.
+    ledger = resolve(read(ledger_path(root / ".pinakes")).records).calls
+    assert [call.state for call in ledger] == [CallState.RECONCILED]
+
+    # And the cache entry carries the join key back to it — the `null` §6.3 left open until now.
+    entries = list((root / ".pinakes" / "cache" / "extract").glob("*.json"))
+    assert len(entries) == 1
+    cached: Any = json_module.loads(entries[0].read_text(encoding="utf-8"))
+    assert cached["operation_id"]
+    assert cached["call_ids"] == [ledger[0].call_id]
