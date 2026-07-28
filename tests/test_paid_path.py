@@ -28,7 +28,6 @@ import pytest
 REPO_ROOT = Path(__file__).parent.parent
 GATE_SCRIPT = REPO_ROOT / "tools" / "paid_path_gate.py"
 FREE_PATH_RUN = REPO_ROOT / "tests" / "free_path_run.py"
-ALLOWLIST = REPO_ROOT / ".paid-path-allowlist"
 
 # The modules that cost money, as `sys.modules` spells them. Kept in step with
 # `tools/paid_path_gate.py`'s PAID_CLIENTS minus the regex escaping —

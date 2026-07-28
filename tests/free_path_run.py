@@ -27,9 +27,11 @@ Nothing here can spend: `claude-vision` is configured, never invoked. No documen
 PDF that any extractor is asked to read.
 """
 
+import io
 import json
 import sys
 from collections.abc import Sequence
+from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -37,6 +39,7 @@ import numpy as np
 
 from pinakes.cli import main
 from pinakes.embed import ModelInfo, Vectors, register_embedding_backend, register_reranker
+from pinakes.extract import CLAUDE_VISION
 from pinakes.manifest import load
 
 DIM = 3
@@ -131,9 +134,13 @@ def _build(root: Path, *, backend: str) -> Path:
 
 
 def _run_free_surfaces(root: Path) -> None:
-    """Every free command, in the order a user meets them. Exit codes are not asserted here:
-    `pnk doctor` legitimately returns non-zero on a WARN (an unpinned revision, a missing extra),
-    and gate 4's claim is about the import graph, not about the health of a throwaway KB.
+    """Every free command, in the order a user meets them.
+
+    `sync` and `search` must succeed, and the index must exist afterwards — a run that failed at
+    the first command would import almost nothing and satisfy "no paid client" for the emptiest of
+    reasons. `doctor`'s exit code is deliberately **not** asserted: it legitimately returns non-zero
+    on a WARN (an unpinned revision, a missing extra), and gate 4's claim is about the import graph,
+    never about the health of a throwaway KB.
     """
     if main(["sync", "--kb", str(root)]) != 0:
         raise SystemExit(f"free-path run: `pnk sync` failed on {root}")
@@ -168,10 +175,26 @@ def main_script(output: Path) -> None:
         _mcp_handshake(free_kb)
 
         # The KB that makes this gate real: a paid backend configured, never invoked.
-        paid_kb = _build(area / "paid-kb", backend="claude-vision")
+        paid_kb = _build(area / "paid-kb", backend=CLAUDE_VISION)
         (paid_kb / "docs" / "scan.pdf").write_bytes(b"%PDF-1.4\n")  # unmatched by `include`
-        main(["sync", "--kb", str(paid_kb)])
-        main(["doctor", "--kb", str(paid_kb)])
+
+        # Captured, then echoed, so the run can *prove* it reached the paid-availability probe
+        # instead of assuming it. "The KB is configured for claude-vision" and "doctor actually
+        # ran the paid branch" are different claims, and only the second is the one gate 4 leans
+        # on — a future refactor could skip the branch entirely and leave every other assertion
+        # here green.
+        report = io.StringIO()
+        with redirect_stdout(report):
+            main(["sync", "--kb", str(paid_kb)])
+            main(["doctor", "--kb", str(paid_kb)])
+        printed = report.getvalue()
+        print(printed, end="")
+        if CLAUDE_VISION not in printed:
+            raise SystemExit(
+                f"free-path run: neither `pnk sync` nor `pnk doctor` mentioned {CLAUDE_VISION!r} "
+                "on the paid KB, so the paid-availability probe this KB exists to exercise never "
+                "ran — gate 4 would be passing for the wrong reason"
+            )
 
     output.write_text(json.dumps(sorted(sys.modules)), encoding="utf-8")
 
