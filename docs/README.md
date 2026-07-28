@@ -27,6 +27,7 @@ When an increment lands, this table says which file to edit — usually exactly 
 | A manifest or sidecar field, its default, its validation | **MANIFEST.md** | DESIGN gives the rationale and links here |
 | How to accomplish a task | **GUIDE.md** | README links to it |
 | Why a design decision was taken, and what it costs | **DESIGN.md** | — |
+| Which code paths are allowed to spend money | **`.paid-path-allowlist`** + CLAUDE.md's invariant | DESIGN §1 gives the rationale; `check.sh`, CI and `tests/test_paid_path.py` read the file itself |
 | A measured number (recall, latency, false-confidence) | **STATUS.md** | cited with its date wherever quoted |
 | What changed in a release | **CHANGELOG.md** | — |
 | What an increment taught us | **RETROSPECTIVES.md** | — |

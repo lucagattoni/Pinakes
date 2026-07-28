@@ -12,14 +12,31 @@ uv run --frozen ruff check .
 # installed — unlike pyright, which only warns (I2, docs/RETROSPECTIVES.md).
 uv run --frozen ty check --extra-search-path stubs .
 uv run --frozen pyright
-uv run --frozen pytest -q
+uv run --frozen pytest -q -rs
 
-# extras-not-core (I1): pypdfium2/anthropic must never enter [project.dependencies] — a light
-# core install is torch-free by design, and a PDF extractor is opt-in (docs/DESIGN.md §4.5).
+# paid-path allowlist, gates 1 and 2 (I7a): every path in .paid-path-allowlist exists, and no file
+# under src/ outside that list imports a paid-API client. Replaces the unconditional grep that
+# lived only in CI's build job — unconditional admits no exceptions, so it would have turned main
+# red the moment I7b adds `import anthropic` to the one module allowed to have it.
+#
+# Plain `python3`, not `uv run`: the script is stdlib-only and imports nothing from this project,
+# which is what lets CI's build job run it without installing the package first.
+python3 tools/paid_path_gate.py
+
+# extras-not-core (I1), reused as the allowlist's gate 3: pypdfium2/anthropic must never enter
+# [project.dependencies] — a light core install is torch-free by design, and a PDF extractor is
+# opt-in (docs/DESIGN.md §4.5). Also asserted from the other side by
+# tests/test_packaging.py::test_paid_and_pdf_clients_stay_out_of_core, which is how CI gets it.
 if awk '/^dependencies = \[/,/^\]/' pyproject.toml | grep -qiE 'pypdfium2|anthropic'; then
     echo "pypdfium2 or anthropic found inside [project.dependencies] — they must stay extras" >&2
     exit 1
 fi
+
+# Gate 4 — the free path never imports a paid client, observed at runtime rather than grepped —
+# runs inside `pytest` above (tests/test_paid_path.py). It is named here because it is the gate
+# that actually matters and the one a reader of this file would otherwise assume is missing; it
+# skips with a printed reason when pinakes[claude] is absent, and CI's [light,pdf,claude] leg is
+# where it is meaningful.
 
 # corpus-regenerates (I2): the sixteen text-layer fixtures must reproduce byte-identically from
 # their own committed generator, and the three scanned ones within the pixel tolerance.

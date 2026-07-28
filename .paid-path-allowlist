@@ -1,0 +1,17 @@
+# Paths under src/ permitted to import a paid-API client.
+#
+# One repo-relative path per line. `#` starts a comment; blank lines are ignored.
+# `check.sh`, .github/workflows/ci.yml and tests/test_paid_path.py all read THIS file — three
+# copies of the list is three chances for it to drift, which is the whole reason it is a file.
+#
+# The gate that reads it lives in tools/paid_path_gate.py:
+#   gate 1 — every path listed here must exist, so a stale entry cannot rot unnoticed
+#   gate 2 — the paid-client import grep runs over src/ EXCLUDING these paths
+#
+# Deliberately EMPTY at I7a. The gate lands before `src/pinakes/extract/claude.py` exists, because
+# a gate arriving in the same increment as the thing it guards has never once refused that thing
+# (plans/v0.2.md, I7a). I7b adds the single line below in the same commit that creates the module —
+# which is itself gate 1 working.
+#
+# Adding an entry point here edits CLAUDE.md's paid-path allowlist and docs/DESIGN.md §1 in the
+# same commit.

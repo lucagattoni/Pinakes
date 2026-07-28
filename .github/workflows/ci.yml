@@ -64,7 +64,7 @@ jobs:
 
       - name: Tests
         # Warnings are errors here (pyproject), which is how a deprecation reaches a human.
-        run: uv run --frozen pytest -q
+        run: uv run --frozen pytest -q -rs
 
       - name: Model-backed tests
         # Pinned to the [light] leg alone (I1): `_runnable()` skips only when fastembed is absent or
@@ -150,17 +150,16 @@ jobs:
 
       # plans/v0.1.md promised this gate under "Verification of the whole" and it never shipped:
       # the item carried no increment number, so no increment owned it (see that plan's close-out,
-      # rule 8). The invariant holds structurally today — core deps are jinja2, mcp, numpy,
-      # python-ulid, pyyaml — but "holds today" is not "cannot break", and CLAUDE.md calls the free
-      # path non-negotiable.
+      # rule 8). I7a replaces the unconditional grep that stood here with the allowlist gate: an
+      # unconditional grep admits no exceptions, so it would have turned main red on every commit
+      # from I7b — which adds `import anthropic` to the one module permitted to have it — until
+      # someone noticed. The permitted paths live in .paid-path-allowlist, which this script,
+      # check.sh and tests/test_paid_path.py all read, so three copies cannot drift.
+      #
+      # Stdlib-only and importing nothing from this project, so it runs in the build job without
+      # installing the package.
       - name: The free path stays free — no paid-API client imported in src/
-        run: |
-          set -e
-          if grep -rniE '^[[:space:]]*(import|from)[[:space:]]+(anthropic|openai|cohere|mistralai|google\.generativeai)\b' src/; then
-            echo "::error::A paid-API client is imported in src/. DESIGN §1: no code path may make a paid call outside 'pnk ask --deep'." >&2
-            exit 1
-          fi
-          echo "no paid-API imports in src/"
+        run: python3 tools/paid_path_gate.py
 
       - uses: actions/upload-artifact@v4
         with:

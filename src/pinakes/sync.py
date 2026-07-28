@@ -39,7 +39,9 @@ from pinakes.errors import (
 from pinakes.extract import (
     ExtractedText,
     ExtractionContext,
+    backend_requirement,
     fingerprint,
+    is_backend_installed,
     load_extractor,
     paid_backend_names,
     registered_extractors,
@@ -412,16 +414,22 @@ def _missing_pdf_extra(unmatched: Sequence[str], extraction_backend: str) -> str
     has to carry the second half. Only when the extractor genuinely will not import: telling someone
     to install what they already have is noise, and this line is competing for the attention of a
     person who has just been told something was skipped.
+
+    Probed through the registry's declared `(module, extra)`, never by *loading* the backend. The
+    factory imports the client, so a KB configured for `claude-vision` used to import `anthropic`
+    right here — on the free path, while building a hint about a file it had just skipped. That is
+    what I7a's gate 4 forbids, and it was the second of two such probes (`doctor._extraction` was
+    the other).
     """
     if not any(Path(path).suffix.lower() in PDF_SUFFIXES for path in unmatched):
         return None
     try:
-        load_extractor(extraction_backend)
-    except ExtractorMissingError as exc:
-        return exc.extra
-    except (ExtractionError, PinakesError):
-        return None  # registered but unimplemented, or unknown — not a missing-extra story
-    return None
+        requires = backend_requirement(extraction_backend)
+        if requires is None or is_backend_installed(extraction_backend):
+            return None
+    except BackendUnknownError:
+        return None  # unknown backend — not a missing-extra story
+    return requires[1]
 
 
 def _excluded(relative: str, patterns: Sequence[str], root: Path, candidate: Path) -> bool:

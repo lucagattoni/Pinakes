@@ -7,6 +7,57 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **The paid-path allowlist gate (I7a)** — `.paid-path-allowlist` names every module under `src/`
+  permitted to import a paid-API client, and `check.sh`, CI and `tests/test_paid_path.py` all read
+  that one file, so three copies cannot drift. It ships **empty**: the gate lands before
+  `src/pinakes/extract/claude.py` exists, because a gate arriving in the same increment as the thing
+  it guards has never once refused that thing — v0.1 promised this check under a heading with no
+  increment number, so nobody owned it and it never shipped.
+
+  Four gates: every listed path exists and lives under `src/`; no paid-client import outside the
+  list; `anthropic` never in `[project.dependencies]`; and the one that matters — a **full free-path
+  run** (`init`, `sync`, `search`, `doctor`, an MCP handshake, over a free KB *and* a
+  `claude-vision`-configured one) in a fresh subprocess, asserting no paid client reached
+  `sys.modules`. Each gate has a test that makes it *fail*, including the path-exclusion trap an
+  entry of `claude.py` implemented as a prefix match would open. The runtime gate skips with a
+  printed reason where `pinakes[claude]` is absent — with the package missing, the assertion is true
+  by construction and proves nothing — and runs for real on CI's `[light,pdf,claude]` leg.
+
+  This replaces the unconditional `grep` that lived only in CI's `build` job. Unconditional admits
+  no exceptions, so it would have turned `main` red on every commit from I7b onward.
+
+### Fixed
+
+- **`pnk doctor` and `pnk sync` imported the paid API client on a KB configured for
+  `claude-vision`.** Both reported a backend's availability by *loading* it —
+  `doctor._extraction` on every run, and `sync._missing_pdf_extra` when building the "matched no
+  `include` pattern" hint for a skipped `.pdf` — and the registry's factory imports the client. Two
+  commands that cannot spend therefore pulled `anthropic` into a free-path process.
+
+  Found by the new gate rather than by reading, and each confirmed by mutation: restoring either one
+  alone puts `anthropic` back in `sys.modules`. Availability now resolves through
+  `importlib.util.find_spec` against a `(module, extra)` pair declared on the registry entry, which
+  for a top-level module adds nothing to `sys.modules`. No released version could spend from either
+  path — `claude-vision` is a stub — so the effect was a needless import, never a charge.
+
+### Changed
+
+- **CLAUDE.md's paid-path invariant is now an enumerated allowlist**, rather than "no paid API call
+  outside `pnk ask --deep`", matching DESIGN §1 and `.paid-path-allowlist`. DESIGN §1's prose covers
+  paid LLM *work* (reasoning **and** PDF extraction), its decisions table no longer reads "Claude for
+  reasoning only", §8's v0.2 row states both extraction paths, and §9 gains four risk rows:
+  allowlist erosion, unbounded spend across invocations, price-table staleness, and the scanned-page
+  audit blind spot.
+- `pytest` runs with `-rs` in `check.sh` and CI, so a skipped gate prints its reason instead of
+  reading as a pass.
+- `pyright` now type-checks `tools/` alongside `src/` and `tests/`.
+- Gate 4's runtime check matches paid modules on a dotted-prefix boundary against
+  `google.generativeai` in full, not on the bare root `google` — which would have made
+  `google.protobuf` (transitive via onnxruntime and grpc) a paid client and failed the flagship
+  safety gate for an unrelated reason on some future CI leg.
+
 ## [0.2.2] — 20260728 18:49
 
 ### Fixed
