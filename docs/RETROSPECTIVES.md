@@ -1202,6 +1202,66 @@ one was written for it.
 
 ---
 
+## I7b — the paid Claude-vision extractor (20260729 00:24)
+
+**HIGH — the reconciliation recorded the *reserved* amount, which makes the whole
+reservation/reconciliation protocol a no-op.** `_billed_call` closed each successful call with
+`cost_usd=reserved_eur * usd_per_eur` — the estimate again, not what the response said it cost. The
+shape was perfect: a reservation, then a reconciliation superseding it, exactly as I6b's protocol
+requires, with a ledger pair per call and every test about *pairing* passing. What it superseded the
+reservation with was the reservation. Every window would have charged worst-case forever, `pnk
+budget` would have reported an estimate as spend, and the reconciliation record's presence is
+precisely what would have made it look settled. Fixed with `actual_cost_usd`, derived from the
+response's own usage and the model's price. *Lesson: I6b's tests could only ever check that a
+reconciliation **exists** and supersedes; that it carries the **right number** is a claim only the
+increment that produces the number can make. A protocol test and a value test look alike and are
+not — and every mutation I planted over the retry logic passed straight through this, because the
+bug was in the one line none of them touched.*
+
+**HIGH — one bad PDF would have crashed a 1,000-document sync.** `TransportError` and
+`RequestTooLargeError` were plain `Exception`s. `sync` isolates each document behind
+`except (PinakesError, OSError, ValueError)`, so an exhausted 429, a 500, or an oversized page
+would have escaped that handler and taken the entire run down — the exact opposite of the
+per-document isolation §6.4 promises and `pnk sync`'s own "one broken PDF cannot block a
+1,000-document corpus". Not caught by any test, because every test called `extract_slice` directly
+and asserted `pytest.raises(TransportError)`, which passes identically whichever base class it has.
+*Lesson: an exception's **type** is part of its contract with a caller several layers up, and a
+test that catches the exception it just raised cannot see that contract at all.*
+
+**MEDIUM — two mutation survivors, both the finding.** A cap check hoisted out of the transport
+retry loop survived because every attempt inside that loop voids at zero: nothing the loop does
+moves the total, so the omission looks harmless. It is not — between a 429 and its backoff another
+process syncing the same KB can spend the headroom, and the retry would go out anyway. And the
+per-slice semantic budget survived because every test used a single slice, where "per slice" and
+"per document" are the same number; that was a defect I had found and fixed while writing the loop
+and then never put under tension. *Lesson: a bound that is only ever exercised at N = 1 is not
+tested, it is agreed with.*
+
+**MEDIUM — the module imported `pypdfium2` at module scope, which §4.4 cannot afford.** The
+fingerprint path reaches this module on *every query*, on whatever install the user has, so a
+top-level `pdfium` import made a coherence check on a `claude-vision` KB fail outright on a
+core-only install. Caught by `test_coherence_never_imports_a_paid_client` — a test written in I2 for
+a different reason, which happened to be the exact shape of this mistake. *Recorded because it is
+the second time this project has been saved by an import-graph test that nobody wrote for the case
+that caught them.*
+
+**LOW, worth keeping — the gate refused the commit, which is the gate working.**
+`.paid-path-allowlist` shipped empty at I7a specifically so that its first real entry would be
+*earned*, and it was: the commit creating `claude.py` failed until the line was added. Its test then
+turned out to assert only "0 exempt paths", which would have passed on any addition at all, so it
+now pins the expected contents — widening an allowlist is how a gate like this one dies. Two dead
+exception classes (`TruncatedResponseError`, `RefusalError`) were also removed: the `stop_reason`
+branches replaced them and nothing ever raised either.
+
+Also: `stubs/anthropic.pyi` joins `stubs/pypdfium2.pyi`, because the strict type gate runs on the
+`[light]` leg where the package is absent. It records the one relationship easy to get wrong from
+memory — `APIConnectionError` is a *sibling* of `APIStatusError`, and `APITimeoutError` a subclass
+of the former — because checking them in the wrong order classifies every timeout as a plain
+connection failure, which is the difference between recording €0 and admitting a possible charge.
+12 mutations planted in total, 12 detected after the two survivors got tests.
+
+---
+
 ---
 
 ## Design review passes 1–7 (pre-implementation)

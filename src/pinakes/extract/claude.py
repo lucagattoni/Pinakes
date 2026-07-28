@@ -64,6 +64,7 @@ from typing import Any, Final, Protocol, cast
 
 from pinakes.budget.accountant import Accountant
 from pinakes.budget.estimate import MAX_TOKENS, TIMESTAMP_FORMAT, K, estimate_document
+from pinakes.budget.prices import ModelPrice
 from pinakes.errors import ExtractionError, ExtractorMissingError
 from pinakes.extract import ExtractedText, ExtractionContext
 from pinakes.extract.floors import load_floors
@@ -150,18 +151,28 @@ class Billability(Enum):
     UNKNOWN = "unknown"
 
 
-class TransportError(Exception):
+class TransportError(ExtractionError):
     """A call that did not return a usable response, classified by what it cost.
 
     `retryable` is about whether *re-sending* could succeed; `billability` is about what already
     happened. They are independent: a timeout is billable-unknown and not automatically retried,
     while a 429 is not billed and is.
+
+    An `ExtractionError`, and therefore a `PinakesError`, on purpose: `sync` isolates each document
+    behind `except (PinakesError, OSError, ValueError)`, so a bare `Exception` here would take the
+    whole run down over one PDF — the opposite of the per-document isolation §6.4 promises.
     """
 
     def __init__(
         self, message: str, *, billability: Billability, retryable: bool, status: int | None = None
     ) -> None:
-        super().__init__(message)
+        super().__init__(
+            message,
+            remedy=(
+                "The document is recorded as a failure; the rest of the corpus is unaffected. "
+                "`pnk budget` shows what the attempts cost, and whether any is still unresolved."
+            ),
+        )
         self.billability = billability
         self.retryable = retryable
         self.status = status
@@ -231,14 +242,15 @@ def build_request(
     }
 
 
-class RequestTooLargeError(Exception):
+class RequestTooLargeError(ExtractionError):
     """A slice whose base64 payload exceeds the per-request limit. Caught by the slicing loop,
     which halves the slice and retries — down to a single page, which is a page failure by name."""
 
     def __init__(self, *, encoded_bytes: int, pages: int) -> None:
         super().__init__(
             f"a {pages}-page slice encodes to {encoded_bytes:,} bytes, over the "
-            f"{MAX_REQUEST_BYTES:,}-byte per-request limit"
+            f"{MAX_REQUEST_BYTES:,}-byte per-request limit.",
+            remedy="Re-save or downsample the pages in that slice; nothing was sent or spent.",
         )
         self.encoded_bytes = encoded_bytes
         self.pages = pages
@@ -247,17 +259,6 @@ class RequestTooLargeError(Exception):
 class SchemaFailureError(Exception):
     """A response that returned but cannot be used: invalid JSON, the wrong number of pages, or a
     leaked internal tag. Retryable within the semantic budget; each retry is billed and reserved."""
-
-
-class TruncatedResponseError(Exception):
-    """`stop_reason == "max_tokens"`. Checked *before* schema validation: a truncated response is
-    invalid JSON, and without this branch it would be retried identically three times, all paid,
-    all truncating at the same place."""
-
-
-class RefusalError(Exception):
-    """`stop_reason == "refusal"`. Checked before `content` is read at all — a pre-output refusal
-    is not billed for output, which makes it the cheap failure."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -456,6 +457,21 @@ def _usage(response: Mapping[str, Any]) -> tuple[int, int]:
     )
 
 
+def actual_cost_usd(response: Mapping[str, Any], *, price: ModelPrice) -> Decimal:
+    """What the call really cost, from the response's own usage.
+
+    The reservation is a worst case; **the reconciliation must supersede it with this**, or the
+    protocol is a no-op that records the estimate twice and charges every window worst-case
+    forever — the reservation stands, nothing corrects it, and `pnk budget` reports an estimate as
+    if it were spend.
+    """
+    input_tokens, output_tokens = _usage(response)
+    million = Decimal(1_000_000)
+    return (Decimal(input_tokens) / million) * price.input_per_mtok_usd + (
+        Decimal(output_tokens) / million
+    ) * price.output_per_mtok_usd
+
+
 def _responded_model(response: Mapping[str, Any]) -> str:
     """The model that actually answered.
 
@@ -474,7 +490,7 @@ def _billed_call(
     request: Mapping[str, Any],
     model: str,
     reserved_eur: Decimal,
-    usd_per_eur: Decimal,
+    price: ModelPrice,
     tally: CallTally,
     sleep: Callable[[float], None] = time.sleep,
 ) -> Mapping[str, Any]:
@@ -510,7 +526,7 @@ def _billed_call(
                 call.response_received()
                 input_tokens, output_tokens = _usage(response)
                 call.reconcile(
-                    cost_usd=reserved_eur * usd_per_eur,
+                    cost_usd=actual_cost_usd(response, price=price),
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                 )
@@ -547,7 +563,7 @@ def extract_slice(
     pages_in_slice: int,
     model: str,
     reserved_eur: Decimal,
-    usd_per_eur: Decimal,
+    price: ModelPrice,
     tally: CallTally,
     sleep: Callable[[float], None] = time.sleep,
 ) -> SliceResult:
@@ -589,7 +605,7 @@ def extract_slice(
             request=request,
             model=model,
             reserved_eur=reserved_eur,
-            usd_per_eur=usd_per_eur,
+            price=price,
             tally=tally,
             sleep=sleep,
         )
@@ -738,7 +754,7 @@ def extract_document(
                 pages_in_slice=payload_pages,
                 model=model,
                 reserved_eur=estimate.per_request_eur,
-                usd_per_eur=prices.usd_per_eur,
+                price=prices.for_model(model),
                 tally=tally,
                 sleep=sleep,
             )

@@ -135,6 +135,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`pnk budget` printed its windows in `[budget] timezone` and its operation list in the machine's
   local zone**, and `pnk doctor` printed a raw 28-digit `Decimal` division as a euro amount.
 
+- **A paid call's reconciliation recorded the reserved amount rather than what it cost (I7b
+  review)** — the protocol's shape was right and its content was the estimate again, so every
+  budget window would have charged worst-case forever with a reconciliation record present to make
+  it look settled.
+
+- **A transport failure would have crashed a whole sync.** `TransportError` and
+  `RequestTooLargeError` sat outside `PinakesError`, so an exhausted 429 or an oversized page
+  escaped the per-document isolation that keeps one broken PDF from blocking a corpus.
+
 - **`pnk init --ci` explained the git hooks instead of the workflow it had just written** — one
   shared notice with a subject baked into it, printed by two callers.
 

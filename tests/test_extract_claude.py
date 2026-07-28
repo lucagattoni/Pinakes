@@ -21,7 +21,7 @@ import pytest
 from conftest import paid_runnable, pdf_extraction_runnable
 
 from pinakes.budget.accountant import Accountant
-from pinakes.budget.ledger import CallState, ledger_path, read, resolve
+from pinakes.budget.ledger import CallState, ledger_path, quantise, read, resolve
 from pinakes.budget.prices import Prices, load_prices
 from pinakes.errors import ExtractionError
 from pinakes.extract import CLAUDE_VISION, fingerprint_inputs
@@ -171,7 +171,7 @@ def run_slice(
         pages_in_slice=pages,
         model=MODEL,
         reserved_eur=Decimal("0.04"),
-        usd_per_eur=Decimal("1.08"),
+        price=load_prices().for_model(MODEL),
         tally=tally or CallTally(),
         sleep=never_sleeps,
     )
@@ -348,7 +348,10 @@ def test_a_rate_limit_is_voided_and_retried_under_a_fresh_reservation(
 
     states = [call.state for call in ledger_calls(accountant)]
     assert states == [CallState.VOIDED, CallState.RECONCILED]
-    assert accountant.spent().day == Decimal("0.04")  # the void consumed nothing
+
+    voided, reconciled = ledger_calls(accountant)
+    assert voided.effective_eur == Decimal("0"), "the void consumed nothing"
+    assert accountant.spent().day == reconciled.effective_eur
 
 
 def test_transport_attempts_are_bounded_without_consuming_a_schema_retry(
@@ -385,7 +388,7 @@ def test_a_backoff_actually_waits_between_transport_attempts(accountant: Account
         pages_in_slice=5,
         model=MODEL,
         reserved_eur=Decimal("0.04"),
-        usd_per_eur=Decimal("1.08"),
+        price=load_prices().for_model(MODEL),
         tally=CallTally(),
         sleep=slept.append,
     )
@@ -712,3 +715,49 @@ def test_the_semantic_budget_is_per_slice_not_per_document(accountant: Accountan
     assert transport.calls == SCHEMA_RETRIES + 1, (
         "this slice gets its own full budget regardless of what earlier slices used"
     )
+
+
+def test_the_reconciliation_supersedes_with_the_real_cost_not_the_reservation(
+    accountant: Accountant,
+) -> None:
+    """The reservation is a worst case; the reconciliation is what corrects it. Recording the
+    reserved amount again would leave the protocol looking complete while charging every window
+    worst-case forever — `pnk budget` reporting an estimate as if it were spend, with a
+    reconciliation record present to make it look settled."""
+    from pinakes.extract.claude import actual_cost_usd
+
+    transport = RecordedTransport("happy-five-page-slice")
+    run_slice(accountant, transport)
+
+    (call,) = ledger_calls(accountant)
+    assert call.state is CallState.RECONCILED
+    assert call.outcome is not None
+
+    expected = actual_cost_usd(transport.entries[0], price=load_prices().for_model(MODEL))
+    assert call.outcome.cost_usd == quantise(expected)
+    assert call.outcome.cost_usd != call.reservation.cost_usd, (
+        "an outcome identical to its reservation means nothing was reconciled"
+    )
+    # Derived from the response's own usage, not from anything the caller reserved. (The
+    # reservation here is an arbitrary test constant, so comparing the two magnitudes would assert
+    # a property of the fixture rather than of the code.)
+    assert call.outcome.input_tokens == 30_300
+    assert call.effective_eur == call.outcome.cost_eur
+
+
+def test_a_transport_failure_is_a_document_failure_not_a_crashed_run() -> None:
+    """`sync` isolates each document behind `except (PinakesError, OSError, ValueError)`. A
+    transport error outside that hierarchy would take a 1,000-document corpus down over one PDF,
+    which is precisely the isolation §6.4 promises."""
+    from pinakes.errors import PinakesError
+    from pinakes.extract.claude import RequestTooLargeError
+
+    transport_error = TransportError(
+        "boom", billability=Billability.NOT_BILLED, retryable=False, status=500
+    )
+    assert isinstance(transport_error, PinakesError)
+    assert transport_error.remedy
+
+    too_large = RequestTooLargeError(encoded_bytes=MAX_REQUEST_BYTES + 1, pages=5)
+    assert isinstance(too_large, PinakesError)
+    assert too_large.remedy
