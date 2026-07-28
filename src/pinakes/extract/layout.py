@@ -30,13 +30,21 @@ LAYOUT_VERSION = 1
 _HYPHENS = ("-", "­")
 _DIGITS = re.compile(r"\d+")
 
-# Lines on the same line of text land within this many points of each other's baseline — a
-# tolerance, not an equality, because two characters on one visual line rarely share one exact y.
-_LINE_TOLERANCE = 2.0
-# Two characters separated by less than this, on the same line, are the same word-space; more, and
-# a space is inserted even if the font's own space glyph did not produce one (rule: geometry
-# decides, never which content-stream operator a character happened to arrive in).
-_WORD_GAP = 0.4
+# Lines on the same line of text land within this many points of each other's *bounding-box*
+# bottom — not the baseline itself, and the gap between those two is the reason this is 3.5, not a
+# tighter number a hand-built fixture would have suggested. A descender (g, y, q, j, p) genuinely
+# extends below the baseline its neighbours sit on: measured against real pdfium extraction across
+# every non-scanned fixture in this project's own corpus (not just one), the deepest descender's
+# box-bottom sits 2.299 pt below the same line's non-descender characters — a maximum, not a typical
+# case. I3a's original 2.0 was tuned only against `test_extract_layout.py`'s hand-built fixtures
+# (zero measured descender depth, since `mkchar`/`word` place every character at one shared `y`), so
+# it silently split every descender onto its own one-character "line" the first time real font
+# geometry reached this function — verified by reproducing it against
+# `tests/pdf-corpus/baseline-1p.pdf` before this fix (docs/RETROSPECTIVES.md, I3b). 3.5 clears the
+# measured 2.299 pt worst case with margin and stays far under any real line spacing (typically
+# >=1.2x font size, i.e. several times this tolerance even for a small font) — a `_LINE_TOLERANCE`
+# this size cannot merge two genuinely different lines.
+_LINE_TOLERANCE = 3.5
 # One shared constant for "this gap is column-sized", used both to split same-line characters into
 # separate Blocks (two columns printed at the same height must never read as one line spanning the
 # page) and to cluster already-formed Blocks into columns in `reading_order`. Two separately-tuned
@@ -110,14 +118,13 @@ class RunningHeadResult:
 def blocks_from_chars(chars: Sequence[CharSpan], *, page_index: int = 0) -> list[Block]:
     """Group one page's characters into line-level `Block`s from geometry alone.
 
-    Three passes: cluster characters into lines by baseline proximity (`_LINE_TOLERANCE`); within
-    each line, split into runs wherever the gap between consecutive characters reaches
-    `_COLUMN_GAP` — two columns printed at the same height are two runs, never one line spanning the
-    page; then, within a run, concatenate left to right, inserting a space wherever the (smaller)
-    gap exceeds `_WORD_GAP` and the source did not already supply one. Never asks which
-    content-stream operator produced a character — a word arriving as two text runs looks identical,
-    geometrically, to one arriving as a single run, which is what makes that case free to handle
-    correctly rather than a special case to detect.
+    Two passes: cluster characters into lines by baseline proximity (`_LINE_TOLERANCE`); within each
+    line, split into runs wherever the gap between consecutive characters reaches `_COLUMN_GAP` —
+    two columns printed at the same height are two runs, never one line spanning the page — then
+    concatenate each run's characters exactly as the source gives them (`_block_from_run`). Never
+    asks which content-stream operator produced a character — a word arriving as two text runs looks
+    identical, geometrically, to one arriving as a single run, which is what makes that case free to
+    handle correctly rather than a special case to detect.
     """
     if not chars:
         return []
@@ -127,7 +134,21 @@ def blocks_from_chars(chars: Sequence[CharSpan], *, page_index: int = 0) -> list
     for char in ordered:
         placed = False
         for line in lines:
-            if abs(line[0].y0 - char.y0) <= _LINE_TOLERANCE:
+            # Against *any* existing member, not only the first: a hyphen sits up to 2.365 pt
+            # *above* its own line's baseline (vertically centred near x-height, never touching the
+            # baseline it separates two words on) while a descender sits up to 2.299 pt *below* it
+            # — both maxima measured across every non-scanned fixture in this project's own corpus,
+            # a combined ~4.66 pt spread neither `_LINE_TOLERANCE` alone nor a single fixed anchor
+            # can bridge if that anchor happens to be whichever of the two outliers the
+            # descending-y0 sort visits first. Matching any member works because most characters
+            # on a real line of prose sit
+            # exactly on the baseline (the majority, by character count) — once one has joined a
+            # line, every outlier on either side matches *that* member independently, never needing
+            # to match the outlier on the opposite side directly (verified by reproducing this
+            # exact failure — a hyphen anchoring line 2 of `baseline-1p.pdf`, its own descenders
+            # then falling 4.5pt away from that anchor — before this fix; docs/RETROSPECTIVES.md,
+            # I3b).
+            if any(abs(existing.y0 - char.y0) <= _LINE_TOLERANCE for existing in line):
                 line.append(char)
                 placed = True
                 break
@@ -156,16 +177,35 @@ def blocks_from_chars(chars: Sequence[CharSpan], *, page_index: int = 0) -> list
 
 
 def _block_from_run(run: Sequence[CharSpan], *, page_index: int, body_size: float) -> Block | None:
-    text_parts: list[str] = []
-    prev: CharSpan | None = None
-    for char in run:
-        if prev is not None:
-            gap = char.x0 - prev.x1
-            if gap > _WORD_GAP and not text_parts[-1].endswith(" ") and char.char != " ":
-                text_parts.append(" ")
-        text_parts.append(char.char)
-        prev = char
-    text = "".join(text_parts)
+    """Concatenate a run's characters exactly as the source stream gives them — no gap-inferred
+    space insertion.
+
+    I3a's original design inserted a synthetic space wherever the x-gap between two characters
+    exceeded a small threshold, reasoning that geometry should decide word breaks rather than
+    which content-stream operator a character arrived in. Measured against real pdfium extraction
+    (`tests/pdf-corpus`, I3b), that reasoning didn't survive contact with real font metrics:
+    ordinary kerned *intra-word* gaps (e.g. between 'g' and 'u' in "catalogue") ran as high as
+    1.44 pt at an 11 pt body size, comfortably past any threshold small enough to avoid firing on
+    nearly every letter pair, while genuine inter-word gaps measured no larger — the two
+    distributions overlap, so no geometric threshold separates them. pdfium's own text extraction
+    already emits an explicit `' '` `CharSpan` for every real word-space in this corpus (and in any
+    PDF whose content stream places a literal space glyph, which is how most generators — including
+    this project's own `pdfwriter.py` — produce text), so word boundaries come from the source
+    stream's own characters, never a re-derived gap. A PDF that encodes spacing purely through `TJ`
+    positioning with no space glyph at all would run words together under this simpler rule; no
+    fixture in this corpus does that, and recovering it reliably needs calibration against real
+    documents outside I3b's own corpus, which is exactly the class of fix
+    `docs/RETROSPECTIVES.md` flags rather than guesses at.
+
+    `\r`/`\n` characters are dropped, never concatenated: a `Tj` string authored with an embedded
+    line break (this corpus's own multi-line fixtures do this) reports that break as a real,
+    zero-width `CharSpan` sharing the *first* line's own y0 — geometrically part of the line above,
+    not a separator `assemble` should see twice. `assemble` already inserts exactly one `\n` between
+    blocks that don't join; keeping a source-embedded one too produced a `"\n\n"` where every other
+    block boundary produced one `"\n"`, verified by reproducing it against real pdfium output before
+    this fix (docs/RETROSPECTIVES.md, I3b).
+    """
+    text = "".join(char.char for char in run if char.char not in ("\r", "\n"))
     if not text.strip():
         return None
     line_size = max(c.font_size for c in run)
@@ -193,27 +233,147 @@ def reading_order(page: Page) -> Page:
     """Column-aware ordering: cluster blocks by `x0` gap, then top-to-bottom within each column,
     columns left to right. A single-column page is one cluster and this is a no-op beyond sorting.
 
+    A block that bridges from its own column's cluster into the *next* column's own territory
+    (`_spanning_blocks`) is never a column member, however its `x0` happens to line up: a caption
+    spanning two columns shares its `x0` with whichever column starts at the same margin, and
+    clustering it by that alone would read it as that column's own last line, immediately after
+    the line above it, rather than at its own correct position — after every column above it,
+    before every column below. Spanning blocks split the page into Y-ordered sections; each
+    section's non-spanning blocks are column-clustered exactly as a page with no spanning blocks
+    would be (`_columns_in_order`), and a spanning block is emitted between sections at its own
+    position.
+
+    **Not "wide relative to the page," which is not the same thing.** An earlier version of this
+    function flagged a block as spanning whenever its own width reached a fixed fraction
+    (`_SPANNING_WIDTH_FRACTION`) of the page's total content span — measured against
+    `tests/pdf-corpus/two-column-b.pdf`'s own caption (79% of the span) against that page's widest
+    genuine column line (42%). That measurement was real, but the fraction it produced was never
+    safe in general: a narrow sidebar beside a much wider main column (reproduced independently,
+    not hypothetical) put the main column's own lines at 77% of the page's content span with
+    nothing actually overlapping the sidebar at all, and the width-fraction check misread every one
+    of them as spanning, interleaving the two columns line by line. Bridging into the *next*
+    column's own `x0` is the geometric fact the caption case and the sidebar case actually differ
+    on — a caption's `x1` reaches past where the right column starts; a wide-but-legitimate
+    column's does not, because there is nothing to its own right to reach into
+    (docs/RETROSPECTIVES.md, I3b retrospective).
+    """
+    if len(page.blocks) < 2:
+        return page
+
+    spanning = _spanning_blocks(page.blocks)
+    if not spanning:
+        return Page(blocks=tuple(_columns_in_order(page.blocks)))
+
+    ordered: list[Block] = []
+    section: list[Block] = []
+    for block in sorted(page.blocks, key=lambda b: -b.y0):
+        if block in spanning:
+            ordered.extend(_columns_in_order(section))
+            section = []
+            ordered.append(block)
+        else:
+            section.append(block)
+    ordered.extend(_columns_in_order(section))
+    return Page(blocks=tuple(ordered))
+
+
+def _cluster_by_x0(blocks: Sequence[Block]) -> list[list[Block]]:
+    """Group `blocks` into columns by `x0` gap — the clustering step both `_columns_in_order`'s
+    final ordering and `_spanning_blocks`' bridging check build on, so the two never disagree
+    about where one column ends and the next begins.
+
     Each candidate is compared against the column's own *start* (`columns[-1][0]`), never its most
     recently added member: comparing to the last-placed block lets a column's accepted range chain
     forward one small step at a time — each step individually under `_COLUMN_GAP`, the total drift
     from the column's start well past it — and, sorted by `x0`, can merge a genuine third column
-    into what should be its neighbour's cluster.
+    into what should be its neighbour's cluster. Sorting by `x0` alone, never `x1`: a block's own
+    width has no bearing on which bucket *it* joins or which bucket any *other* block joins, which
+    is what makes clustering safe to run before spanning blocks have even been identified.
     """
-    if not page.blocks:
-        return page
-
-    by_x = sorted(page.blocks, key=lambda b: b.x0)
+    by_x = sorted(blocks, key=lambda b: b.x0)
     columns: list[list[Block]] = [[by_x[0]]]
     for block in by_x[1:]:
         if block.x0 - columns[-1][0].x0 >= _COLUMN_GAP:
             columns.append([block])
         else:
             columns[-1].append(block)
+    return columns
 
+
+def _spanning_blocks(blocks: Sequence[Block]) -> set[Block]:
+    """Which blocks bridge from their own column's cluster into the very next column's territory.
+
+    A block is spanning if its `x1` reaches at or past the next column's own `x0` — genuinely
+    overlapping that column's space, not merely being wide. The last column has no "next" column to
+    bridge into, so nothing in it is ever spanning by this test alone (a page whose one real column
+    happens to be wide is not, on its own, evidence of anything spanning).
+    """
+    if len(blocks) < 2:
+        return set()
+    columns = _cluster_by_x0(blocks)
+    if len(columns) < 2:
+        return set()
+    column_starts = [column[0].x0 for column in columns]
+    spanning: set[Block] = set()
+    for index, column in enumerate(columns[:-1]):
+        next_start = column_starts[index + 1]
+        for block in column:
+            if block.x1 >= next_start:
+                spanning.add(block)
+    return spanning
+
+
+def _columns_in_order(blocks: Sequence[Block]) -> list[Block]:
+    """Cluster `blocks` into columns by `x0` gap, then read each column top to bottom, columns left
+    to right."""
+    if not blocks:
+        return []
     ordered: list[Block] = []
-    for column in columns:
+    for column in _cluster_by_x0(blocks):
         ordered.extend(sorted(column, key=lambda b: -b.y0))
-    return Page(blocks=tuple(ordered))
+    return ordered
+
+
+def block_signatures(
+    pages: RawPages,
+) -> tuple[dict[tuple[int, str], set[int]], dict[Block, tuple[int, str]]]:
+    """Every block's `(y_band, digit-normalised text)` key: which page indices each key appears
+    on, and which key each individual block itself resolves to. Exposed on its own so fitting *T*
+    (`quality.py`, I3b) uses the exact same notion of "signature" production does, never a second,
+    hand-rewritten copy of this logic that could quietly drift from it — and so
+    `strip_running_heads` itself only ever computes a block's key once, from the one shared set of
+    y-band anchors below, rather than re-deriving it from scratch in a second pass that could
+    resolve a different band for the same y0 (`_RUNNING_HEAD_Y_TOLERANCE`'s clustering depends on
+    anchor *order*, so re-running it from an empty anchor list a second time is not guaranteed to
+    reproduce the first pass's answer).
+
+    One shared set of y-band anchors for the whole document: a given y0 always resolves to the same
+    band regardless of which page contributed the anchor, so two pages' otherwise-identical running
+    heads compare equal even if the very first instance of that band came from a different page.
+    """
+    band_anchors: list[float] = []
+
+    def y_band(y0: float) -> int:
+        for index, anchor in enumerate(band_anchors):
+            if abs(y0 - anchor) <= _RUNNING_HEAD_Y_TOLERANCE:
+                return index
+        band_anchors.append(y0)
+        return len(band_anchors) - 1
+
+    def block_key(block: Block) -> tuple[int, str]:
+        return (y_band(block.y0), _DIGITS.sub("#", block.text.strip()))
+
+    signatures: dict[tuple[int, str], set[int]] = {}
+    keys_by_block: dict[Block, tuple[int, str]] = {}
+    for page_num, page in enumerate(pages):
+        seen_this_page: set[tuple[int, str]] = set()
+        for block in page.blocks:
+            key = block_key(block)
+            keys_by_block[block] = key
+            seen_this_page.add(key)
+        for key in seen_this_page:
+            signatures.setdefault(key, set()).add(page_num)
+    return signatures, keys_by_block
 
 
 def strip_running_heads(pages: RawPages, *, threshold: float) -> RunningHeadResult:
@@ -232,29 +392,7 @@ def strip_running_heads(pages: RawPages, *, threshold: float) -> RunningHeadResu
     if total == 0:
         return RunningHeadResult(pages=pages, suppressed=0, total_pages=0)
 
-    # One shared set of anchors for the whole document, built once and reused for both passes
-    # below, so a given y0 always resolves to the same band regardless of which page contributed
-    # the anchor or which pass is asking.
-    band_anchors: list[float] = []
-
-    def y_band(y0: float) -> int:
-        for index, anchor in enumerate(band_anchors):
-            if abs(y0 - anchor) <= _RUNNING_HEAD_Y_TOLERANCE:
-                return index
-        band_anchors.append(y0)
-        return len(band_anchors) - 1
-
-    def block_key(block: Block) -> tuple[int, str]:
-        return (y_band(block.y0), _DIGITS.sub("#", block.text.strip()))
-
-    signatures: dict[tuple[int, str], set[int]] = {}
-    for page_num, page in enumerate(pages):
-        seen_this_page: set[tuple[int, str]] = set()
-        for block in page.blocks:
-            seen_this_page.add(block_key(block))
-        for key in seen_this_page:
-            signatures.setdefault(key, set()).add(page_num)
-
+    signatures, keys_by_block = block_signatures(pages)
     running: set[tuple[int, str]] = {
         key
         for key, pages_seen in signatures.items()
@@ -266,7 +404,7 @@ def strip_running_heads(pages: RawPages, *, threshold: float) -> RunningHeadResu
     for page in pages:
         new_blocks: list[Block] = []
         for block in page.blocks:
-            if block_key(block) in running:
+            if keys_by_block[block] in running:
                 suppressed_count += 1
                 new_blocks.append(
                     Block(

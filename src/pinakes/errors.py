@@ -243,6 +243,23 @@ class ExtractionError(PinakesError):
     """A registered extractor could not produce text from this document."""
 
 
+class FloorsMissingError(PinakesError):
+    """`extract/floors.toml` is missing or unreadable. Never a single document's fault — every
+    pypdfium2 extraction needs the fitted running-head threshold *T* it carries, so this is an
+    environment/packaging problem, raised the same way for every document rather than isolated to
+    one (`docs/RETROSPECTIVES.md`, I3b)."""
+
+    def __init__(self, *, reason: str) -> None:
+        super().__init__(
+            f"pinakes.extract's floors.toml is missing or unreadable ({reason}).",
+            remedy=(
+                "This ships as package data; reinstall `pinakes[pdf]` or rebuild the wheel "
+                "(`uv build`). From a source checkout, `make pdf-eval` fits and writes it."
+            ),
+        )
+        self.reason = reason
+
+
 class TemplateError(PinakesError):
     """A template is missing or unusable."""
 

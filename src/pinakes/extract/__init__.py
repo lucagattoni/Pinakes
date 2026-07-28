@@ -134,14 +134,26 @@ def _import(module: str, extra: str, name: str) -> Any:
 
 def _load_pypdfium2() -> Extractor:
     _import("pypdfium2", "pdf", PYPDFIUM2)
-    raise ExtractionError(
-        "the pypdfium2 adapter lands in I3b.",
-        remedy="See plans/v0.2.md for the build order; core-only free-text ingest is unaffected.",
-    )
+    from pinakes.extract.pdfium import Pypdfium2Extractor
+
+    return Pypdfium2Extractor()
 
 
 def _pypdfium2_fingerprint_inputs() -> Mapping[str, str]:
-    return {"backend": PYPDFIUM2, "pypdfium2_version": _installed_version("pypdfium2")}
+    """Deliberately omits pypdfium2's bundled PDFium *build* number — see `pdfium.py`'s own
+    docstring for why: it exists only as an attribute of the imported module, and this function
+    must never import the backend it describes (`test_fingerprint_inputs_never_import_the_backend`,
+    I1), since §4.4 calls it on every query, not only at sync."""
+    from pinakes.extract.floors import load_floors
+    from pinakes.extract.layout import LAYOUT_VERSION
+
+    floors = load_floors()
+    return {
+        "backend": PYPDFIUM2,
+        "pypdfium2_version": _installed_version("pypdfium2"),
+        "layout_version": str(LAYOUT_VERSION),
+        "running_head_threshold": str(floors.running_head_threshold),
+    }
 
 
 def _load_claude_vision() -> Extractor:

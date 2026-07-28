@@ -719,3 +719,83 @@ moment either was ever imported. Fixed to match on the module boundary (`name ==
 name.startswith(f"{module}.")`) before it was ever committed. *Lesson: two-letter module names are not
 safe substring needles — `os`/`io` collide with ordinary English inside almost any longer identifier
 — so "does this file import X" must match on the dotted-name boundary, never bare containment.*
+
+## I3b — the pypdfium2 adapter, extraction-quality metrics, and the two fitted floors (20260728 03:06)
+
+**HIGH — an empty page list is not an empty request; it is pypdfium2's spelling of "every page."**
+`slice_pages(path, first, last)` clamped `last` to the document's own last page but never validated
+that `first` still fell before it. Whenever `first > last` after clamping — a reversed range, or a
+`first` entirely beyond the document — `range(first, last_clamped + 1)` is empty, and an empty list
+is falsy in Python: pypdfium2's own `import_pages` treats a falsy `pages` argument identically to
+`pages=None`, its own spelling of "import every page." Verified directly against the real 12-page
+`baseline-12p.pdf`: `slice_pages(5, 2)`, `slice_pages(100, 200)` and `slice_pages(20, 30)` each
+silently returned all 12 pages, no exception. `slice_pages` is stated as I7b's future paid-path
+request unit; a future off-by-one computing a page window (the last window of a document whose
+length isn't a multiple of the window size is the obvious candidate) would have silently sent the
+*entire* document to a paid API instead of a small slice — a cost-control failure, not merely a
+wrong answer, in a project whose one hard invariant is that the free path stays free and spending is
+never accidental. Fixed with explicit validation (`first >= 0`, `first <= last_clamped`) before the
+range is ever built, raising `ValueError`. *Lesson: an empty collection is not automatically "no
+items requested" to the function receiving it — some APIs (documented or not) treat empty/`None`
+identically as "unfiltered," and a range-clamping function must validate the range is still
+non-empty itself, not merely non-negative.*
+
+**MEDIUM — "wide relative to the page" and "spans multiple columns" are not the same fact, and only
+one of them is safe to test for.** `reading_order`'s spanning-block detection was measured against
+exactly one fixture (`two-column-b.pdf`'s caption, 79% of the page's content span, against a 42%
+maximum for any genuine column line) and shipped as a fixed fraction, `_SPANNING_WIDTH_FRACTION =
+0.6`. An independently-constructed asymmetric layout — a narrow sidebar beside a much wider main
+column, a real and common shape, not a contrived one — put the main column's own lines at 77% of
+the page's content span with nothing in it actually overlapping the sidebar at all; the
+width-fraction test misread every line of the wider column as spanning and interleaved the two
+columns line by line, silently, with no error. Fixed by replacing the global-width test with a
+geometric one: a block is spanning only if its own `x1` reaches at or past the *next* column's own
+`x0` — genuinely bridging into that column's territory, which the caption does (its `x1` passes the
+right column's `x0`) and the wide sidebar-adjacent column does not (there is nothing to its own
+right to reach into). Both the original caption case and the new asymmetric-column case are now
+committed regression tests. *Lesson: a measurement taken from one fixture is a fact about that
+fixture, not evidence the derived threshold generalises — check whether the underlying mechanism the
+threshold approximates (here, "does this block's own geometry actually overlap another column's")
+can be tested directly instead, before shipping the approximation.*
+
+**MEDIUM — a fitting function that raises on a missing upper bound but silently guesses at a missing
+lower bound is not applying one policy, it is applying two, only one of which is stated.**
+`fit_running_head_threshold` raised loudly when no true-positive recurrence was ever observed, but
+silently fell back to `max_true_negative = 0.0` when no true-negative was ever observed — and a
+*lower* fallback threshold makes `strip_running_heads` more aggressive, so this fallback was
+assuming the best case (no decoy content ever recurs) with no evidence for it, dormant only because
+the current corpus happens to have 76 true negatives. Made symmetric: both empty cases now raise.
+Refactored the pure midpoint arithmetic out of the corpus-walking function
+(`threshold_from_fractions`, taking fraction lists directly) specifically so both raise paths are
+covered by a direct unit test, not only reachable in principle through a synthetic corpus directory.
+*Lesson: check every "if empty, fall back to X" for whether X is a measured true value (`0.0`
+non-whitespace characters *is* the true yield of a page with no native text layer — the sibling
+floor's own fallback, left alone) or merely a plausible-sounding guess standing in for missing data —
+only the former is safe to leave silent.*
+
+**MEDIUM — every extraction-quality metric whitespace-flattens its input by design, which means a
+duplicated-newline regression is invisible to the very gate meant to catch regressions.** The
+`\r`/`\n`-character fix (dropping embedded line-break characters that were duplicating `assemble()`'s
+own inter-block separator) shipped with zero regression coverage anywhere in the suite: reverting it
+and re-running every test file, plus the real `make pdf-eval` gate end to end, produced zero
+failures, because `score_document`'s own documented design whitespace-flattens both extraction and
+ground truth before scoring *any* of the five metrics. Added a structural test asserting the raw,
+unflattened extraction contains no `"\n\n"` — verified to actually fail against the reverted code
+before being trusted. *Lesson: "every metric flattens whitespace by design" is a correct, deliberate
+choice for what those metrics should measure, and also a standing blind spot for anything whose only
+symptom is whitespace — a fix in that category needs its own structural test, in a file that doesn't
+flatten, or it ships permanently unguarded.*
+
+**LOW, bundled — three findings from the same review, each small alone.** `slice_pages` with a
+negative `first` leaked a raw `pdfium.PdfiumError` instead of the module's own `ExtractionError`
+(resolved by the same upfront validation as the HIGH finding above, which now catches it before
+pdfium is ever reached). `test_check_script.py`'s guard test asserted three substrings existed
+*somewhere* in `check.sh`, which stayed green even after deliberately replacing the real `make
+pdf-eval` call with a no-op while leaving the explanatory comment above it untouched — rewritten to
+match the actual `if`/`then`/`else`/`fi` block and assert *where* each string falls (inside `then`,
+absent from `else`), verified to fail against the gutted version before being trusted. `Rate`'s
+`numerator`/`denominator` were typed `float` though every call site produces an `int` (character,
+word, and pair counts, and sums of the same) — corrected to `int`, the type they actually are, with
+no behavioural effect found. *Lesson, shared: "does this test still pass if I break the thing it
+claims to guard" is a cheap, five-minute check worth running on every new test before trusting it —
+two of these three would have shipped a false sense of coverage without it.*

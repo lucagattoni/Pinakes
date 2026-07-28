@@ -36,6 +36,17 @@ def pdf_runnable() -> bool:
     )
 
 
+def pdf_extraction_runnable() -> bool:
+    """`pinakes[pdf]` importable and the corpus present — never Pillow, unlike `pdf_runnable()`.
+
+    I3b's own tests (`test_extract_pdfium.py`, `test_extract_quality.py`) extract text; nothing
+    in that path renders or compares pixels, so requiring Pillow too would skip them on a
+    `[pdf]`-only install that could actually run them (Pillow is dev-group-only, per
+    `pdf_runnable()`'s own note).
+    """
+    return find_spec("pypdfium2") is not None and PDF_CORPUS.is_dir()
+
+
 def paid_runnable() -> bool:
     """All three: `anthropic` importable, a key present, and the pytest-only spend opt-in set.
 

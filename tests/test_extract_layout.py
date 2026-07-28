@@ -173,6 +173,44 @@ def test_reading_order_empty_page() -> None:
     assert reading_order(Page(blocks=())).blocks == ()
 
 
+def test_reading_order_spanning_caption_reads_after_both_columns() -> None:
+    """The caption shares its `x0` with the left column but its `x1` reaches into the right
+    column's own territory — spanning, not a column member, however its `x0` lines up."""
+    left = Block(text="L1", x0=0, y0=700, x1=40, y1=710, page_index=0)
+    right = Block(text="R1", x0=300, y0=700, x1=340, y1=710, page_index=0)
+    caption = Block(text="caption", x0=0, y0=680, x1=320, y1=690, page_index=0)
+    page = Page(blocks=(right, caption, left))
+    ordered = reading_order(page)
+    assert [b.text for b in ordered.blocks] == ["L1", "R1", "caption"]
+
+
+def test_reading_order_a_wide_column_beside_a_narrow_one_is_not_spanning() -> None:
+    """A narrow sidebar beside a much wider main column is a real, if asymmetric, two-column
+    layout — not evidence of spanning. Reproduced independently (not hypothetical): an earlier
+    version of `reading_order` flagged any block wide enough relative to the *page's total content
+    span*, which misread every line of the wider column here (77% of the span) as spanning and
+    interleaved the two columns line by line (docs/RETROSPECTIVES.md, I3b retrospective). Neither
+    column's own lines reach into the other's territory, so neither should ever be spanning."""
+    sidebar = [
+        Block(text=f"side{i}", x0=72, y0=700 - i * 20, x1=117, y1=710 - i * 20, page_index=0)
+        for i in range(3)
+    ]
+    main = [
+        Block(text=f"main{i}", x0=150, y0=700 - i * 20, x1=490, y1=710 - i * 20, page_index=0)
+        for i in range(3)
+    ]
+    page = Page(blocks=tuple(sidebar + main))
+    ordered = reading_order(page)
+    assert [b.text for b in ordered.blocks] == [
+        "side0",
+        "side1",
+        "side2",
+        "main0",
+        "main1",
+        "main2",
+    ]
+
+
 # --------------------------------------------------------------------------------------------
 # strip_running_heads — T is a parameter, never a constant read from a file
 # --------------------------------------------------------------------------------------------
