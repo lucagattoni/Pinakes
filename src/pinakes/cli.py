@@ -434,9 +434,11 @@ def _sync_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--estimate-only",
         action="store_true",
+        # No markdown here: `--help` renders in a terminal, and `**bold**` reaches the user as
+        # literal asterisks. The emphasis belongs in CLI.md, which is rendered.
         help=(
             "price the first slice against the real tokeniser and exit without extracting. "
-            "**A network call** — it needs a key; it generates nothing and bills no output"
+            "This is a NETWORK CALL and needs a key; it generates nothing and bills no output"
         ),
     )
     parser.add_argument(

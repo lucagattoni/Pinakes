@@ -1260,6 +1260,14 @@ reporting nothing. Built on the first PDF now. Also cleaned up in the same pass:
 call is committed — the size question belongs before anything is built), and a repeated
 `"claude-vision"` literal where the module already imports the constant.
 
+**LOW, third pass — markdown emphasis reached a terminal.** `--estimate-only`'s help text carried
+`**A network call**`, which argparse renders as literal asterisks: the emphasis was written for
+CLI.md and pasted into a surface that has no renderer. Now checked against every command's
+*rendered* `--help` output rather than argparse's internals — the artefact a user actually sees.
+Backticks are deliberately allowed, since `[extraction] backend` reads fine in a terminal and is
+the convention this CLI already used; flagging those too would have been a style crusade over
+pre-existing text rather than a defect.
+
 Also: `stubs/anthropic.pyi` joins `stubs/pypdfium2.pyi`, because the strict type gate runs on the
 `[light]` leg where the package is absent. It records the one relationship easy to get wrong from
 memory — `APIConnectionError` is a *sibling* of `APIStatusError`, and `APITimeoutError` a subclass
