@@ -672,29 +672,6 @@ def test_the_real_client_disables_sdk_retries() -> None:
 # --- document level, which needs a real PDF -------------------------------------------------------
 
 
-@pytest.mark.pdf
-@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
-def test_the_free_path_refuses_to_pay_for_a_healthy_pdf() -> None:
-    """Paying to re-extract a PDF that already has a good text layer is the most likely way a user
-    loses money by accident."""
-    from pinakes.extract.claude import check_worth_paying_for
-
-    with pytest.raises(ExtractionError) as exc_info:
-        check_worth_paying_for(CORPUS / "baseline-12p.pdf", force=False)
-    assert "already reads" in exc_info.value.message
-    assert "--force" in exc_info.value.remedy
-
-
-@pytest.mark.pdf
-@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
-def test_force_is_what_overrides_the_healthy_pdf_refusal() -> None:
-    from pinakes.extract.claude import check_worth_paying_for
-
-    survey = check_worth_paying_for(CORPUS / "baseline-12p.pdf", force=True)
-    assert survey.pages_total == 12
-    assert not survey.needs_the_paid_path
-
-
 # --- `--estimate-only`, which must never generate ----------------------------------------------
 
 
@@ -991,28 +968,6 @@ def test_a_single_page_that_is_still_too_large_fails_by_name(
         claude_module.slice_bytes(CORPUS / "baseline-12p.pdf", 0, 0, pages_in_slice=1)
     assert "page 1" in exc_info.value.message
     assert "baseline-12p.pdf" in exc_info.value.message
-
-
-@pytest.mark.pdf
-@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
-def test_with_no_fitted_floor_the_paid_path_refuses_to_spend_at_all(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A paid path running with its own cost-control check disabled is worse than one that does
-    not run: the check exists to stop the most likely accidental spend, so its absence is a
-    refusal, never a shrug."""
-    from pinakes.errors import FloorsMissingError
-    from pinakes.extract import claude as claude_module
-
-    def no_floors() -> Any:
-        raise FloorsMissingError(reason="floors.toml is missing")
-
-    monkeypatch.setattr(claude_module, "load_floors", no_floors)
-    with pytest.raises(FloorsMissingError):
-        claude_module.check_worth_paying_for(CORPUS / "baseline-12p.pdf", force=False)
-    # `--force` must not buy a way past a *missing guard*, only past a healthy-PDF refusal.
-    with pytest.raises(FloorsMissingError):
-        claude_module.check_worth_paying_for(CORPUS / "baseline-12p.pdf", force=True)
 
 
 # --- the whole wiring, in one test ---------------------------------------------------------------

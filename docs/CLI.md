@@ -131,6 +131,19 @@ fusion → local cross-encoder rerank → cited passages plus a confidence signa
 
 Filters compose and are applied in SQL *before* retrieval, not as a post-filter.
 
+**Citations name a page when the source has pages.** A PDF passage cites `docs/paper.pdf:p7`, or
+`docs/paper.pdf:p7-8` when the chunk straddles a page break — which happens legitimately, since a
+word hyphenated across the break is joined into one block. Every other source keeps the character
+offsets it always rendered: `docs/notes.md:12-480`. **The `p` is not decoration** — without it,
+`:12-480` would mean character offsets and `:12-13` would mean pages, in the same syntax, told
+apart only by knowing the file.
+
+`--json` carries `page_start` / `page_end` as separate integer fields (both `null` for a source
+with no pages) alongside the rendered `citation`, so nothing has to parse a citation back apart. It
+also carries `stale_extraction`: the recorded fingerprint when a document's *paid* extraction
+backend has since moved on. Such a passage is **marked, never withheld** — the text is correct,
+merely older — and the human-readable output prints the same marker under the citation.
+
 Queries **refuse to run** against an index built by a different embedding model, or one whose free
 PDF extractor's fingerprint has drifted — returning garbage silently would be worse. `pnk sync
 --rebuild` clears both, for free.
@@ -148,10 +161,24 @@ pnk doctor [--kb PATH] [--prune]
 Health check. Reports environment (SQLite version, FTS5, loadable extensions), backend and cached
 weights, template drift, index/model coherence, extraction coherence, calibration validity,
 orphaned sidecars, duplicate IDs, dangling links and link coverage, recorded failures, extraction
-cache stats, the completeness audit's below-median pages, the 50k-chunk NumPy threshold, held sync
-locks, hook status, the price table's age,
+cache stats, PDF text yield, the completeness audit's below-median pages, the 50k-chunk NumPy
+threshold, held sync locks, hook status, the price table's age,
 unknown-outcome ledger records, and whether a paid backend is configured on a KB whose hooks force
 the free one.
+
+**`text yield` reports per page, never per document.** It prints the median non-whitespace
+characters per page over the PDFs it could measure, then the pages falling below the fitted floor —
+by path *and* page (`docs/scan.pdf p4-9`). A document-level median would stay silent on a 200-page
+report with eight scanned inserts, which is precisely the document worth knowing about. Pages
+below the floor have no text layer, so nothing on them is searchable; the remedy names the paid
+extractor and says that it spends.
+
+It measures the **extraction cache**, never by re-extracting: the cache entry is the text the index
+was built from. A document whose entry has been swept is counted as unmeasured and said to be —
+`.pinakes/cache` is disposable, and `pnk sync` repopulates it. A document already extracted by a
+paid backend is left out and named, since the question this check asks — *does the free path
+suffice?* — is settled for it. With no fitted floor installed, the distribution is reported and
+nothing is judged.
 
 | Flag | Notes |
 |---|---|
@@ -227,8 +254,6 @@ Listed so the shape is known in advance; each names the increment that lands it
 
 | Surface | Increment | Adds |
 |---|---|---|
-| `path:page` citations | I8 | `docs/paper.pdf:7` / `:7-8` on both the CLI and MCP surfaces; page spans are already in the index |
-| `stale_extraction` on MCP results | I8 | The marker a paid-fingerprint mismatch sets, reaching the agent surface and not only the CLI |
 | `pnk ask --deep` | the deep release | Bounded, budgeted synthesis for CLI and cron use, where no agent is present |
 | `pnk link`, `pinakes_links`, `pnk links` | the links release | Authoring and traversing cross-KB links |
 | `pnk upgrade` | the template release | Diffs a KB's template version against the installed one and *prints* a migration — never applies one |

@@ -8,6 +8,7 @@ from types import ModuleType
 import numpy as np
 import pytest
 import yaml
+from conftest import pdf_extraction_runnable
 
 from pinakes import store
 from pinakes.budget.prices import Prices, load_prices
@@ -640,3 +641,144 @@ def test_an_unaudited_entry_is_left_out_rather_than_counted_as_a_pass(kb: Path) 
     status, detail = checks(kb)["completeness"]
     assert status is Status.OK
     assert "no paid extractions to audit" in detail, "not '1 paid extraction, nothing below median'"
+
+
+# --- text yield: per page, never per document ---------------------------------------------------
+
+
+PDF_CORPUS = Path(__file__).parent / "pdf-corpus"
+
+
+@pytest.fixture
+def pdf_kb(kb: Path) -> Path:
+    """The healthy 12-page baseline beside a wholly scanned 3-page fixture.
+
+    A real mixed corpus rather than a hand-built cache entry: the check reads what `pnk sync`
+    wrote, so a fixture that wrote it by hand would be testing the test.
+    """
+    path = kb / "pinakes.toml"
+    body = path.read_text(encoding="utf-8")
+    include = 'include = ["**/*.md", "**/*.txt"]'
+    assert include in body, "the template's include line has changed shape"
+    path.write_text(
+        body.replace(include, 'include = ["**/*.md", "**/*.txt", "**/*.pdf"]'), encoding="utf-8"
+    )
+    for name in ("baseline-12p.pdf", "scanned-clean.pdf"):
+        (kb / "docs" / name).write_bytes((PDF_CORPUS / name).read_bytes())
+    sync(load(kb), options=SyncOptions(), now="20260729 05:10")
+    return kb
+
+
+def test_text_yield_is_quiet_when_there_are_no_pdfs(kb: Path) -> None:
+    sync(load(kb), options=SyncOptions(), now="20260729 05:10")
+    status, detail = checks(kb)["text yield"]
+    assert status is Status.OK
+    assert detail == "no PDF documents"
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_text_yield_flags_pages_not_documents(pdf_kb: Path) -> None:
+    """The whole reason the check reports per page: the median is healthy — twelve good pages
+    against six empty ones — and it must fire anyway, naming the pages that have no text.
+
+    A document-level median against a per-page floor would stay silent here *and* the paid path's
+    own pre-check would still refuse to pay for the healthy document. Both quietly right, jointly
+    useless.
+    """
+    status, detail = checks(pdf_kb)["text yield"]
+
+    assert status is Status.WARN
+    assert "scanned-clean.pdf p1-6" in detail, "by path and page, as a range rather than a list"
+    assert "baseline-12p" not in detail, "the healthy document must not be named as a problem"
+    assert "pages below the" in detail and "6 of 18" in detail
+
+    match = re.search(r"median (\d+) chars/page", detail)
+    assert match is not None, "the check must report the distribution it judged against"
+    median_reported = int(match.group(1))
+    assert median_reported > 100, (
+        f"the median is healthy ({median_reported}/page) and the check fired regardless — "
+        "that is the statistic the plan says a document-level check would get wrong"
+    )
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_text_yield_names_the_paid_path_and_its_cost_in_the_remedy(pdf_kb: Path) -> None:
+    """ "Out of scope" is not a remedy. The pages have no text layer; something can read them, it
+    costs money, and the check says which and that it does."""
+    remedy = next(c.remedy for c in diagnose(load(pdf_kb)).checks if c.name == "text yield")
+    assert remedy is not None
+    assert "--extract=claude-vision" in remedy
+    assert "spends" in remedy and "pnk budget" in remedy
+    assert "--force" in remedy
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_with_no_fitted_floor_the_distribution_is_reported_and_nothing_is_judged(
+    pdf_kb: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Absent the floor, the check reports what it measured and says the floor is missing — it
+    does not invent a threshold, and it does not fall silent either."""
+    from pinakes import doctor as doctor_module
+    from pinakes.errors import FloorsMissingError
+
+    def no_floors() -> object:
+        raise FloorsMissingError(reason="floors.toml is missing")
+
+    monkeypatch.setattr(doctor_module, "load_floors", no_floors)
+    status, detail = checks(pdf_kb)["text yield"]
+
+    assert status is Status.WARN
+    assert "no fitted floor" in detail
+    assert "median" in detail, "the distribution is still reported"
+    assert "below the" not in detail, "nothing may be judged against a floor that is not installed"
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_swept_cache_entry_is_counted_as_unmeasured_rather_than_as_a_pass(
+    pdf_kb: Path,
+) -> None:
+    """`.pinakes/cache` is disposable by design, so an absent entry is expected — but a document
+    nobody measured must never be reported as one that cleared the floor."""
+    for entry in (pdf_kb / ".pinakes" / "cache" / "extract").glob("*.json"):
+        entry.unlink()
+
+    status, detail = checks(pdf_kb)["text yield"]
+    assert status is Status.WARN
+    assert "0 of 2 PDF document(s) could be measured" in detail
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_partly_swept_cache_still_names_what_it_could_not_measure(pdf_kb: Path) -> None:
+    """The mixed case, and the one a wholly-swept cache cannot cover: when *some* documents were
+    measured, the ones that were not must be named in the same line as the median — otherwise a
+    reader takes a healthy-looking distribution for a statement about the whole corpus.
+
+    Found by mutation: deleting the unmeasured tally left the wholly-swept test green, because
+    that test reads a branch which counts documents rather than the tally.
+    """
+    connection = store.connect_ro(load(pdf_kb).index_path)
+    try:
+        row = connection.execute(
+            "SELECT content_hash FROM documents WHERE path = 'docs/scanned-clean.pdf'"
+        ).fetchone()
+    finally:
+        connection.close()
+    assert row is not None
+    bare = str(row["content_hash"]).removeprefix("sha256:")
+
+    removed = [
+        entry
+        for entry in (pdf_kb / ".pinakes" / "cache" / "extract").glob(f"{bare}-*.json")
+        if not entry.unlink()  # unlink() returns None, so this keeps every path it deleted
+    ]
+    assert len(removed) == 1, "exactly one document's entry must go, or this is the swept case"
+
+    status, detail = checks(pdf_kb)["text yield"]
+    assert "1 of 2 PDF document(s)" in detail
+    assert "1 not in the extraction cache" in detail
+    assert status is Status.OK, "the one document still measurable is healthy"

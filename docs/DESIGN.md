@@ -246,7 +246,14 @@ query
  └─ Reciprocal Rank Fusion (k=60) → fusion_top_k (20)
  └─ local cross-encoder rerank (optional, on by default) → final_k (8)
  └─ cited passages + doc IDs + confidence signal
+      citation: path:char_start-char_end, or path:pN / path:pN-M for a paged source
+      plus the stale_extraction marker a paid-fingerprint mismatch sets (§4.4)
 ```
+
+**A paged citation carries an explicit `p`, and that is load-bearing.** `report.pdf:12-480` already
+means character offsets, so a bare `report.pdf:12-13` would be a page range and a character range in
+one syntax, told apart only by knowing the file — a citation that can be misread is worse than one
+that is ugly. Non-paged sources are unchanged.
 
 Each stage's width is a distinct manifest field (§2.1); a single `top_k` would be ambiguous across
 three different cut-offs. The date filter is the document's **mtime**: every document has one,
@@ -417,12 +424,19 @@ tags and titles, which routinely carry more signal than people expect. `pnk init
 `.gitignore` covering `.pinakes/` (so the ledger and index never leave the machine), and the docs
 state the exposure plainly. The engine repo itself contains no real KB: only the synthetic demo (§7).
 
-> ⏳ **Pending amendment (noted 20260728 16:40).** The agent surface does not yet carry two things
-> the rest of this document assumes: `page_start`/`page_end` on `pinakes_search` results (with
-> `pinakes_get` accepting a page range), and the `stale_extraction` marker §4.4 sets on a
-> paid-fingerprint mismatch — which today reaches the CLI's `Passage` but stops there. Both are
-> increment **I8** ([STATUS.md](STATUS.md#v02-increment-ledger)). Page spans are already stored per
-> chunk; only the surfacing is missing.
+**Page provenance and the stale-extraction marker reach both surfaces, or neither counts.**
+`pinakes_search` results carry `page_start`/`page_end` beside the rendered citation, `pinakes_get`
+accepts a page range and marks boundaries with a `[page N]` line, and both carry the
+`stale_extraction` marker §4.4 sets on a paid-fingerprint mismatch. Shipping any of this on the CLI
+alone would recreate the divergence v0.1 pass 2 removed for filters — on the surface §1 calls
+primary, in the release whose subject is page-citable PDFs. The marker in particular reached
+*neither* surface before this: it was computed in `search.py` and dropped by both renderers, so
+"and not only the CLI" understated the gap by half.
+
+A `get` cannot serve a PDF's bytes, so it serves the **extraction cache** entry the index was built
+from — never a fresh extraction. A free re-extraction would return text the index does not contain;
+a paid one would spend money inside a read-only tool call. A swept entry is an error naming
+`pnk sync`, which is the honest answer rather than either.
 
 ---
 

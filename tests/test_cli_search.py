@@ -104,10 +104,28 @@ def test_json_output_has_a_stable_shape(kb: Path, capsys: pytest.CaptureFixture[
         "heading_path",
         "char_start",
         "char_end",
+        "page_start",
+        "page_end",
+        "citation",
+        "stale_extraction",
         "text",
         "rerank_score",
         "fused_score",
     }
+
+
+def test_a_non_paged_source_reports_null_pages_and_the_offset_citation(
+    kb: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Markdown has no pages, and its citation keeps the character offsets it always rendered —
+    `path:12-480` must not start meaning page 12 to page 480 because PDFs arrived (I8)."""
+    main(["search", "retrieval", "--kb", str(kb), "--json"])
+    passage = json.loads(capsys.readouterr().out)["passages"][0]
+
+    assert passage["page_start"] is None
+    assert passage["page_end"] is None
+    assert passage["citation"].startswith(f"{passage['path']}:{passage['char_start']}-")
+    assert ":p" not in passage["citation"]
 
 
 def test_filters_reach_the_pipeline(kb: Path, capsys: pytest.CaptureFixture[str]) -> None:

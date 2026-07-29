@@ -69,8 +69,7 @@ from pinakes.errors import ExtractionError, ExtractorMissingError
 from pinakes.extract import CLAUDE_VISION, ExtractedText, ExtractionContext
 from pinakes.extract import cache as extract_cache
 from pinakes.extract.audit import AUDIT_KEY, as_provenance, audit_completeness
-from pinakes.extract.floors import load_floors
-from pinakes.extract.quality import text_yield
+from pinakes.extract.pageyield import FreeYield, check_worth_paying_for
 from pinakes.extract.textpolicy import TEXT_POLICY_VERSION, normalise
 
 #: Bumped whenever the prompt text changes — it is part of what produced a given extraction.
@@ -107,12 +106,6 @@ SCHEMA_RETRIES: Final = 3
 #: Backoff attempts for 429/5xx *within* one semantic attempt. Separate counter, on purpose.
 TRANSPORT_ATTEMPTS: Final = 2
 BACKOFF_SECONDS: Final = (1.0, 4.0)
-
-#: The paid path refuses to spend when fewer than this fraction of pages fall below I3b's fitted
-#: text-yield floor. Per page for the measurement, per document for the decision: a 200-page report
-#: with eight scanned inserts has a healthy median and still needs the paid path, so a median would
-#: be the wrong statistic.
-SCANNED_PAGE_FRACTION: Final = 0.10
 
 #: Recorded in `per_page_provenance` for a page a resume took from staging rather than from a
 #: call, so "which model answered for this page" stays answerable — the honest answer being that
@@ -375,82 +368,6 @@ def assemble_pages(page_texts: Sequence[str]) -> ExtractedText:
             position += len(piece)
         spans.append((start, position))
     return ExtractedText(text="".join(parts), page_spans=tuple(spans))
-
-
-# --- the free pre-checks, which all run before any paid call --------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class FreeYield:
-    """What the *free* backend already got out of this document, per page."""
-
-    pages_total: int
-    pages_below_floor: int
-    floor: float
-    native: ExtractedText | None = None
-    """The extraction the measurement was taken from, kept rather than discarded: it is also the
-    completeness audit's ground truth, and running the free backend a second time to recover text
-    this function already had would double the cost of the one step that is supposed to be free."""
-
-    @property
-    def scanned_fraction(self) -> float:
-        return self.pages_below_floor / self.pages_total if self.pages_total else 0.0
-
-    @property
-    def needs_the_paid_path(self) -> bool:
-        """At least `SCANNED_PAGE_FRACTION` of pages yielded nothing.
-
-        The floor is per page and the decision is per document, and the aggregation is stated
-        rather than left to the reader: a median would be the wrong statistic, because a 200-page
-        report with eight scanned inserts has a healthy median and still needs the paid path.
-        """
-        return self.scanned_fraction >= SCANNED_PAGE_FRACTION
-
-
-def survey_free_yield(path: Path) -> FreeYield:
-    """Run the free extractor and measure each page against I3b's fitted floor.
-
-    Free, and it is the check that stops the most likely way a user loses money by accident:
-    paying to re-extract a PDF that already has a perfectly good text layer.
-    """
-    from pinakes.extract.pdfium import Pypdfium2Extractor
-
-    floors = load_floors()
-    extracted = Pypdfium2Extractor().extract(path, ExtractionContext())
-    below = 0
-    for start, end in extracted.page_spans:
-        page_text = extracted.text[start:end]
-        if text_yield(page_text, pages=1).numerator < floors.text_yield_floor:
-            below += 1
-    return FreeYield(
-        pages_total=len(extracted.page_spans),
-        pages_below_floor=below,
-        floor=floors.text_yield_floor,
-        native=extracted,
-    )
-
-
-def check_worth_paying_for(path: Path, *, force: bool) -> FreeYield:
-    """Refuse to spend on a document the free path already handles, unless `--force`.
-
-    With **no fitted floor installed this refuses to spend at all** rather than proceeding without
-    its guard: a paid path running with its own cost-control check disabled is worse than one that
-    does not run.
-    """
-    survey = survey_free_yield(path)
-    if survey.needs_the_paid_path or force:
-        return survey
-    raise ExtractionError(
-        f"{path.name}: the free extractor already reads "
-        f"{survey.pages_total - survey.pages_below_floor} of {survey.pages_total} page(s) "
-        f"({survey.scanned_fraction:.0%} below the fitted floor of {survey.floor:g} "
-        f"non-whitespace characters per page), so a paid extraction would spend money to "
-        f"re-read text you already have.",
-        remedy=(
-            "Run `pnk sync` with the free backend, or pass `--force` if you have a reason to pay "
-            "for a re-extraction anyway."
-        ),
-    )
 
 
 # --- one billed call, reserved before it is made --------------------------------------------
