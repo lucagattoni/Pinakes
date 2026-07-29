@@ -1,11 +1,11 @@
 # The links release and the graph release — implementation plan
 
 **Status:** draft — revised after adversarial passes 1 (22 HIGH), 2 (26 HIGH), 3 (24 HIGH),
-4 (13 HIGH) and 5 (3 HIGH). **Not yet implementable.** The count is falling and the findings are
-localising, but pass 5 still found a decision resting on a false premise — so assume this revision
+4 (13 HIGH), 5 (3 HIGH) and 6 (2 HIGH). **Not yet implementable.** The count rose at pass 2 and has fallen since (22, 26, 24, 13, 3), and
+the findings are localising, but pass 5 still found a decision resting on a false premise — so assume this revision
 has defects too, and run pass 6 before building.
 
-**Date:** written 20260729 02:52 · rewritten 03:31, 04:05, 04:27, 04:46, 05:06
+**Date:** written 20260729 02:52 · rewritten 03:31, 04:05, 04:27, 04:46, 05:06, 05:43
 
 **Source of truth:** [`docs/DESIGN.md`](../docs/DESIGN.md). Where this plan and DESIGN disagree on
 anything *not* in the amendments tables, DESIGN wins and this plan has a bug.
@@ -17,15 +17,15 @@ adversarial passes) and `docs/RETROSPECTIVES.md` **together with any unspliced f
 [`retro.d/`](../retro.d/)** — the newest findings live there until a release splices them, so
 reading only the document systematically misses them.
 
-## Baseline — `main` at `5ff5897`, 20260729 04:27
+## Baseline — `main` at `64f210c`, 20260729 05:43
 
 Re-verify before L1. `main` moved fifteen commits and cut a release under the first three drafts.
 
 | Fact | Value |
 |---|---|
-| Latest release | **0.3.0**, the paid-extraction release, tagged and published |
+| Latest release | **0.4.0** — page-citable PDFs and the verification-table gate |
 | `schema_version` | 2 |
-| I8, I9 | **Still planned.** 0.3.0 was cut at I7c, so these belong to a later release and are not this plan's concern |
+| I8, I9 | **Shipped in 0.4.0** (20260729 03:37). Not this plan's concern; noted because the previous revision called them planned, and `docs/CLI.md` line numbers moved when I8 landed |
 | Golden set | 41 questions · recall@5 0.909 · MRR 0.812 · rerank precision 0.758 · false-abstain 0.03 · false-confidence 0.25 |
 | Per class | `lexical` 1.00 · `filter` 1.00 · `no-answer` 1.00 · `multi-hop` **1.00 (n=5, at ceiling)** · `paraphrase` 0.75 |
 | `links` | PK is `(src_kb_id, src_doc_id, dst_kb_id, dst_doc_id, rel)` — **`origin` is not in it** |
@@ -100,7 +100,7 @@ earlier.
 | 12 | The multi-hop class is majority single-KB | 04:00–04:05 | G2 — **superseded by 14** |
 | 13 | **The edge weights** are frozen at APPROACH §3's priors, committed before G2's questions are authored | 04:00–04:05 | G3, G5 |
 | 14 | **The golden set gains no cross-KB questions at all.** The multi-hop class stays single-KB, and cross-KB behaviour is verified by direct traversal tests instead | 04:27 (pass 3) | L1–L7, G2. `eval.py` is single-KB in its bones — one connection, one backend, `retrieved` as local paths. A cross-KB question scored through it is 0.00 by construction (the hop can never be followed) or 1.00 by construction (it merely confirms a link L1 hand-authored). Neither can decide anything, and pass 2 already established such questions cannot respond to `graph_channel` |
-| 15 | **Ordering reproducibility is measured before anything is changed.** No tiebreak is specified in advance | 04:27 (pass 3) | G1. The previous revision's three tiebreaks would have changed nothing observable: cross-document ties are already totalised by `documents.path`, and within a document rowid order *is* ordinal order in every write path that exists. **That is a fact about writes, and it reaches the output only through `_hydrate`'s unordered `WHERE c.id IN (…)` — an undocumented SQLite behaviour the tiebreak would have removed the dependency on.** So: measure first, and let the measurement scope the fix |
+| 15 | **Ordering reproducibility is measured before anything is changed.** No tiebreak is specified in advance | 04:27 (pass 3) | G1. The previous revision's three tiebreaks would have changed nothing observable: cross-document ties are already totalised by `documents.path`, and within a document rowid order *is* ordinal order in every write path that exists (`store.replace_chunks` enumerates; the rebuild carry-over in `sync.py` selects `ORDER BY ordinal`). **That is a fact about writes, and it reaches the output only through `_hydrate`'s unordered `WHERE c.id IN (…)` — an undocumented SQLite behaviour the tiebreak would have removed the dependency on.** So: measure first, and let the measurement scope the fix |
 | 16 | **The traversal surface serves document-level neighbours only, and a cross-KB neighbour is terminal at any depth** | 04:46 (pass 4) | L3–L5, G3, G5. Two findings collapse into this. First, terminality is **a policy, and needs an explicit suppression in the core** — an earlier draft of this row claimed K's index has "nothing to walk" past a cross-KB neighbour, which is false: `store.py` states that *"a reverse link's source lives in another KB"*, so a reverse-scanned row is keyed on the **foreign** document and a depth-2 query from one returns K documents. The reason to stop is not emptiness but **partiality**: K only ever holds the partner's links that point *back at* K, never the partner's internal links, so expanding through a foreign document would show a systematically incomplete slice of its graph that no caller could distinguish from the whole. Second, structural nodes (tag, directory, heading, chunk) have **no `doc_id`**, so serving them would break the neighbour shape L4 pins with a test. Keeping the tool document-level means **G3 changes no released surface at all** and G5 flips no filter: the structural graph is internal to the expansion channel, permanently, and the authored graph is what `pnk links` shows |
 | 17 | **Traversal `confidence` is always `unknown`** in both releases | 04:46 (pass 4) | L5, amending APPROACH §5. The calibrated thresholds are fitted per KB on the reranker score of the *top retrieved passage* for a golden-set query (`calibrate.py`). A traversal neighbour is not a retrieved passage, a cross-KB neighbour list has no single manifest whose thresholds apply, and no fitted data for a traversal signal exists. DESIGN §4.2's rule is that an absent signal is `unknown`, never invented |
 
@@ -239,7 +239,10 @@ writes inbound rows with `origin='reverse-scan'`, recording alias, resolved path
 happens when a manifest lists itself as a `[[links.kb]]`, or two aliases resolve to one KB. Insert
 with `ON CONFLICT DO NOTHING`.
 
-**Stale reverse edges are deleted on re-scan**, scoped **per scanned `src_kb_id`**.
+**Stale reverse edges are deleted on re-scan**, scoped **per scanned `src_kb_id` *and*
+`origin = 'reverse-scan'`** — both, because under the self-listing fixture the scanned `src_kb_id`
+*is* the local KB, and an origin-blind delete would remove the authored rows the
+`ON CONFLICT DO NOTHING` insert exists to protect.
 
 **Cost, because this runs on a hook.** Bounded by `kb_refs.last_scan` with a TTL — **a code constant,
 not a manifest key**, stated here because "how stale may a cross-KB link be" is user-visible and the
@@ -265,7 +268,7 @@ L4, L5 and L7.
 **Exit criteria.** All green; `pnk doctor` clean. **Docs:** `docs/CLI.md` (`--scan-links`),
 `docs/DESIGN.md` §6.2 and §6.3, `docs/STATUS.md`, a `changelog.d/` fragment.
 
-**Mutation targets.** The `src_kb_id` assignment; `DO NOTHING` → `OR REPLACE`; the delete's scoping;
+**Mutation targets.** The `src_kb_id` assignment; `DO NOTHING` → `OR REPLACE`; the delete's scoping **and its `origin` filter** (drop the filter and the self-listing fixture must fail);
 the TTL check; the "sidecars, not index" selection — **whose fixture must hold an index that
 contradicts the sidecars**, since a rebuild has no index to read.
 
@@ -284,7 +287,11 @@ similarity as a **provider-supplied score per candidate** — the provider embed
 only ranks, caps and dedups.
 
 **The core is generic over node identity**, so one implementation serves both the document provider
-(L4) and G5's structural expansion. A candidate carries an opaque `node_key` the provider defines
+(L4) and G5's structural expansion — and G5 uses this core rather than writing a second expander,
+which is why its caps fall under this increment's gate. Two consequences, stated because an opaque
+key cannot carry them implicitly: terminality is a **provider-set flag on the candidate**, not a
+KB-id comparison inside the core, and a `frontier` entry carries the opaque `node_key`, which each
+surface projects into its own shape. A candidate carries an opaque `node_key` the provider defines
 and totally orders — `(kb_id, doc_id)` for documents, `(kind, key)` for structural nodes — and the
 core's dedup and tie-break use only that. Without this, G5 would need a second expander outside
 L3's traversal-cap gate.
@@ -304,7 +311,9 @@ never succeed.
 This departs from APPROACH §5's `[{doc_id, rel}]` and from its "unexpanded **next hops**" wording — a
 fan-out-dropped candidate is not a next hop — and carries an amendment row.
 
-**`adjacent_k`** is a `[retrieval]` key, code default 8, documented — and **not stamped into the
+**`adjacent_k`** is a `[retrieval]` key, code default 8, **server-capped at 64** — the traversal-cap
+gate drives it with `adjacent_k=10_000` and needs a maximum to assert against, which no earlier
+revision defined — documented — and **not stamped into the
 `notes` template**, in this release or the next. `_toml.py` hard-errors on unknown keys, and
 `requires_pinakes` (G4) **cannot help retroactively**: a pinakes built before G4 has no pre-pass and
 fails on `requires_pinakes` itself. Deferring the stamp to G4 buys nothing, so the key stays
@@ -378,7 +387,7 @@ list gains `pinakes.graph.traverse` and the provider — it enumerates modules, 
 Planned row is split so `pnk link` and `pinakes_links` stay listed.
 
 **Docs:** `docs/CLI.md`, `docs/GUIDE.md` (a cross-KB walkthrough, every command run),
-`docs/DESIGN.md` §8, `docs/STATUS.md`, the "🚫 Unbuilt work is named" table in **both** `CLAUDE.md` and `docs/STATUS.md` (the links-release
+`docs/DESIGN.md` §6.2 (cross-KB traversal is one hop) and §8, `docs/STATUS.md`, the "🚫 Unbuilt work is named" table in **both** `CLAUDE.md` and `docs/STATUS.md` (the links-release
 row in each gains `pnk links`; not the "Naming (fixed…)" table), a `changelog.d/` fragment.
 
 **Mutation targets.** The `kb_id` field; the ULID-not-name selection; the depth clamp; the per-hop
@@ -394,7 +403,7 @@ query-language argument ever, **score and frontier on every return**, and the lo
 description, labelled by origin.
 
 **One boundary rule.** A neighbour is *reachable* iff its KB is one the **server was pointed at**
-(`serve.py`'s roots) — a server-invocation property, not a manifest one. Unreachable neighbours
+(`Server.kbs`; `roots` is a constructor parameter, not an attribute) — a server-invocation property, not a manifest one. Unreachable neighbours
 still return `kb_id`, `doc_id`, `rel` and a reason.
 
 **Confidence is always `unknown`** (decision 17), amending APPROACH §5. Thresholds are fitted **per
@@ -415,8 +424,8 @@ mean something); `::test_depth_is_capped_server_side`;
 
 **Exit criteria.** `free_path_run.py`'s MCP handshake **invokes** `pinakes_links`; today it asserts
 `if not tools` and never calls one.
-**Docs:** `docs/CLI.md` (MCP tool table), `docs/GUIDE.md`, `docs/STATUS.md`, a `changelog.d/`
-fragment.
+**Docs:** `docs/CLI.md` (MCP tool table), `docs/GUIDE.md`, `docs/DESIGN.md` §8 (every tool takes an
+explicit `kb`), `docs/STATUS.md`, a `changelog.d/` fragment.
 
 **Mutation targets.** The unconditional `unknown`; the served-KB boundary check; the depth clamp.
 
@@ -449,6 +458,9 @@ survive via `extra`, per-link keys do not.
 `docs/`-ownership amendment all land here.
 **Docs:** `docs/CLI.md`, `docs/GUIDE.md`, `docs/MANIFEST.md`, `docs/DESIGN.md` §2.2,
 `docs/STATUS.md`, a `changelog.d/` fragment.
+
+**Also lands.** `tests/free_path_run.py` gains `pnk link` — L8's verification step 4 checks that the
+gate covers it, and no earlier revision assigned the edit.
 
 **Mutation targets.** The alias→ULID resolution; the per-link `extra` merge; the atomic rename.
 
@@ -486,8 +498,9 @@ WARN with the count; a malformed `pnk://` in a committed sidecar → FAIL; an ab
    MCP handshake that **invokes** `pinakes_links`.
 5. `make eval` unchanged — this release touches no retrieval, so any movement is a defect.
 6. **`store.SCHEMA_VERSION` is still 2.**
-7. `pnk doctor` exits 0 on both corpora — "clean" means no FAIL; WARNs are expected, since the
-   density cap guarantees most documents carry no authored link.
+7. `pnk doctor` exits 0 on both corpora — "clean" means no FAIL. WARNs are possible and do not
+   block; the zero-link nudge is KB-wide (L7), so it does not fire on a corpus with any authored
+   links at all.
 8. The ClaudeKB realism check is **run, or declined in writing**.
 
 **The cut.** `python3 tools/fragments.py --apply` (splices `changelog.d/` and `retro.d/`, deleting
@@ -658,7 +671,7 @@ No stored `degree` — that would be derived state inside derived state.
 | `in-section` | chunk ↔ heading node (per-doc) | 1/section-size |
 | `co-located` | doc ↔ directory node | 1/dir-size |
 | `shared-tag` | doc ↔ tag node | 1/tag-degree |
-| authored | doc ↔ doc | 2.0 — **read from `links`, not copied into `edges`**, so there is one home for an authored link and `pnk doctor`'s coverage number and the channel cannot disagree |
+| authored | doc ↔ doc | 2.0 — **read from `links`, not copied into `edges`**, so an authored link has one home. The channel unions it in by resolving each `links` row's `(kb_id, doc_id)` pair to its `doc` node via `nodes(kind='doc', key=<ulid>)`; `pnk doctor` reports the `origin='sidecar'` subset, and the difference between the two populations is stated in L7 rather than discovered |
 
 Composition across a hub is the **product of both spokes**.
 
@@ -722,8 +735,10 @@ releases (L3), rather than being deferred to this increment as if it licensed th
 `::test_the_pre_pass_runs_before_strict_validation`;
 `::test_an_absent_requires_pinakes_is_not_an_error`.
 
-**Exit criteria.** The floor is read from `pinakes.__version__`; G6 verifies the shipped message
-names the released number.
+**Exit criteria.** The floor is read from `pinakes.__version__`, and **the shipped message naming the
+released number is verified at whichever cut ships this increment** — G6 normally, the fallback
+release if G3/G5 do not run. Naming only G6 would leave it unverified on the path where G6 never
+happens.
 **Docs:** `docs/MANIFEST.md`, `docs/DESIGN.md` §2.1, `docs/KB-UPDATES.md`, `docs/STATUS.md`, a
 `changelog.d/` fragment.
 
@@ -743,6 +758,14 @@ Chunk neighbours rank by cosine; non-chunk nodes pass through by edge weight and
 member chunks, **excluding same-document chunks reachable *only* through their own document's
 membership edges** — excluded from the output **and from the fan-out budget**. A same-document chunk
 also reachable by `sibling` or `in-section` is not excluded.
+
+**The gate is computed twice — with and without authored edges** (the guard G3 promises and no
+earlier revision delivered here). Authored `doc ↔ doc` links are in the channel, and L1 hand-authored
+them into both corpora while G2 hand-authored the questions that traverse them: a gate passed only
+*with* authored edges is evidence that a human's links help, not that derived structure does. Both
+counts, both p-values, and an explicit statement of which of the two licensed the default go in the
+commit message and `docs/STATUS.md`. **If the gate passes only with authored edges, `expand` still
+ships `off`** — the same "1.00 by construction" reasoning that cut cross-KB questions in decision 14.
 
 **One configuration is gated.** In-degree salience and the link-distance rerank are measured in the
 same matrix and **reported**, not gated — three variables against one threshold is not a decision
@@ -774,14 +797,26 @@ outcomes, `expand` defaults **on** only if all three hold:
    re-baseline is legitimate here precisely because a default was deliberately changed; G2's "once"
    applies to growing the set, not to shipping a new default.
 
-4. **No other `compare()` metric may be absorbed silently by that re-baseline.** Rewriting
-   `baseline.json` disarms every guard in it, and `false_confidence` is sensitive to the channel by
-   the same mechanism as `false_abstain` — a third RRF input changes the top passage, which changes
-   the calibrated confidence. It is **not** covered by clause 2, because `by_kind["no-answer"]` is
-   hit-based: a no-answer question can stay a clean non-hit while flipping to HIGH. One flip is
-   0.125 against a 0.02 tolerance. So `false_confidence` and `confidence_coverage` before/after go
-   in `docs/STATUS.md` and the commit message, and a rise in either is a **stop**, not a
-   re-baseline. This clause exists because the clause-3 remedy opened the hole it closes.
+4. **The re-baseline absorbs the decomposed `false_abstain` term and nothing else.** Rewriting
+   `baseline.json` disarms *every* guard in it, so each of `compare()`'s six families is named here
+   with the direction `eval.py` actually checks:
+
+   | Metric | A regression is | Verdict |
+   |---|---|---|
+   | `false_abstain` | a rise | the only term the re-baseline may absorb, and only its newly-found-at-low-confidence part |
+   | `false_confidence` | a **rise** | **stop** |
+   | `confidence_coverage` | a **drop** | **stop** |
+   | `recall_at_k`, `mrr`, `rerank_precision` | a drop | **stop** |
+   | question count | a drop | **stop** |
+
+   `false_confidence` matters most and is **not** covered by clause 2: `by_kind["no-answer"]` is
+   hit-based, so a no-answer question can stay a clean non-hit while flipping to HIGH. One flip is
+   0.125 against a 0.02 tolerance. `confidence_coverage` is the one an earlier draft got backwards —
+   it is 1.0 in the baseline and *cannot rise*, so "a rise is a stop" was a condition that could
+   never fire while the guard the re-baseline actually removes (a drop, `eval.py`: *"losing the
+   ability to say anything is a regression too"*) went unrestored. Before/after for every row goes in
+   `docs/STATUS.md` and the commit message. This clause exists because the clause-3 remedy opened
+   the hole it closes.
 
 **Why the sign test, and why not "net".** Paired binary before/after on the same questions is
 McNemar, whose exact form is the sign test on discordant pairs. "≥ 5 net" is a different quantity:
@@ -799,13 +834,16 @@ broken into returning nothing produces the same blessed outcome as one that hone
 `::test_a_chunk_reachable_only_by_membership_never_appears`;
 `::test_a_same_document_chunk_reachable_by_sibling_is_not_excluded`;
 `::test_membership_neighbours_do_not_consume_the_fanout_budget`;
-`::test_pnk_links_output_is_unchanged_with_the_channel_on`.
+`::test_pnk_links_output_is_unchanged_with_the_channel_on`;
+`::test_the_gate_is_computed_with_and_without_authored_edges`;
+`::test_a_rise_in_false_confidence_stops_the_gate`;
+`::test_a_drop_in_confidence_coverage_stops_the_gate`.
 
 **Exit criteria.** Per-class before/after numbers and the gate's counts and p-value in the commit
 message and `docs/STATUS.md`. Query-time latency reported with the channel on and off — the double
 cap bounds response size, not time, and this runs on every query.
-**Docs:** `docs/DESIGN.md` §4.1 and new §4.8, `docs/CLI.md`, `docs/MANIFEST.md`, `docs/STATUS.md`, a
-`changelog.d/` fragment.
+**Docs:** `docs/DESIGN.md` §2.1 (`graph_channel`), §4.1 and new §4.8, `docs/CLI.md`, `docs/MANIFEST.md`,
+`docs/STATUS.md`, a `changelog.d/` fragment.
 
 **Mutation targets.** The membership exclusion at both points; `graph_channel`'s default; the
 empty-edge degradation path; the third-channel RRF contribution; the false-abstain decomposition.
@@ -855,8 +893,8 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | Sidecar writes are rename-atomic | v0.1 rule 12 | L6 | `test_the_write_is_atomic_under_an_interrupted_rename` |
 | Server reaches only its configured KBs | DESIGN §4.7 | L5 | `test_a_neighbour_outside_the_served_kbs_returns_its_kb_id_and_a_reason` |
 | Every tool takes an explicit `kb` | DESIGN §8 | L4, L5 | the CLI grammar and the tool signature |
-| A neighbour is identifiable **and fetchable** | decision 11 | L5 | `test_pinakes_get_resolves_a_neighbour_returned_by_pinakes_links` |
-| Typed verbs, hard caps, no query language | APPROACH §5 | L3, L5 | `test_depth_is_capped_server_side` |
+| A neighbour is identifiable **and fetchable** | decision 16 | L5 | `test_pinakes_get_resolves_a_neighbour_returned_by_pinakes_links` |
+| Typed verbs, hard caps, no query language | APPROACH §5 | L5 | `test_depth_is_capped_server_side` |
 | Score + frontier on every return | APPROACH §5 | L3 core, L5 surface | `test_pinakes_links_returns_score_and_frontier_on_every_return` |
 | Double cap: rows **and** token budget | APPROACH §5 | L3 | `test_the_token_budget_sets_truncated_independently_of_the_row_cap` |
 | Both ranking modes, with and without `query` | APPROACH §5 | L3 | two named tests |
@@ -866,7 +904,8 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | Per-depth Python loop, not a recursive CTE | APPROACH §4A | L4 | `test_one_query_per_hop_not_a_recursive_cte` |
 | Visited-edge dedup | APPROACH §4A | L3 | `test_a_hub_is_expanded_once_globally` |
 | Membership excluded from output **and** budget | APPROACH §3 | G5 | three named tests |
-| Hub damping on every shared-value hub | APPROACH §3 | G3 | `test_a_shared_tag_produces_linear_not_quadratic_edges` |
+| Hub damping on every shared-value hub | APPROACH §3 | G3 | `test_a_dropped_tag_lowers_the_divisor` |
+| Hub edges stay linear, not quadratic | APPROACH §3 | G3 | `test_a_shared_tag_produces_linear_not_quadratic_edges` |
 | One row per spoke | this plan | G3 | `test_a_hub_spoke_is_stored_once_not_twice` |
 | Weight across a hub is the product of spokes | APPROACH §3 | G3 | `test_weight_across_a_hub_is_the_product_of_both_spokes` |
 | Heading nodes scoped per document | APPROACH §3 | G3 | `test_a_heading_hub_never_connects_two_documents` |
@@ -883,6 +922,8 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | The channel-reachable ceiling is measured before the schema bumps | APPROACH §9 | G2 | the in-memory probe |
 | In-degree salience and link-distance rerank evaluated | APPROACH §4A, §10 | G5 | the matrix runner and its recorded results |
 | A channel regressing simple lookup stays off | APPROACH §9 | G5 | `compare()` plus gate clause 2 |
+| The re-baseline absorbs only `false_abstain` | this plan | G5 | `test_a_rise_in_false_confidence_stops_the_gate`, `test_a_drop_in_confidence_coverage_stops_the_gate` |
+| The gate is not satisfiable by hand-authored links alone | decision 14's reasoning | G5 | `test_the_gate_is_computed_with_and_without_authored_edges` |
 | Free path stays free | CLAUDE.md | L4, L5, L6 | the subprocess gate, extended per increment |
 | No `schema_version` bump before the links release | this plan | L8 | verification step 6 |
 | The ClaudeKB realism check happens or is declined | decision 1 | L8 | verification step 8 |
@@ -917,3 +958,4 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | 20260729 04:27 | **Pass 3** — 24 HIGH across two reviewers. Three collapsed into one root cause: **the links release never needed the golden set**, and forcing cross-KB questions through a structurally single-KB harness produced a class pinned at 0.00 or 1.00 by construction. Cross-KB eval cut entirely (decision 14); all eval work moved to the graph release; the determinism increment became a *measurement* after its proposed fix was shown to be a provable no-op (decision 15); the per-question artifact the sign test needs was found to exist nowhere and given an owner; twelve increments were still instructing a future agent to edit `CHANGELOG.md`, forbidden by a convention that landed while this plan was being written. **Pass 4 required** |
 | 20260729 04:46 | **Pass 4** — two reviewers, **13 HIGH, down from 24**, and no self-refuting fixes for the first time. Five findings collapsed into decision 16: the traversal surface serves **documents only**, so structural nodes (which have no `doc_id`) never reach the pinned neighbour shape, G3 becomes genuinely inert, and G5 flips no filter. Cross-KB neighbours are terminal, and the Goal was a one-hop claim all along (the *reason* this pass gave was wrong — see 05:06). Also: `frontier` was contract text with no owner and no definition, now L3's with stated reasons; G5's clause 3 conflicted with `compare()`, a hard CI gate, so turning the channel on re-baselines in the same commit; the headroom precondition measured failure without reachability, and APPROACH §9's channel-reachable ceiling comes back as an in-memory probe; the node identity scheme spanned five incompatible id spaces and is now specified; and G1/G2/G4 have a stated fallback if the precondition fails. **Pass 5 required**, scoped to these seams |
 | 20260729 05:06 | **Pass 5** — **3 HIGH, down from 13.** All three on the pass-4 seams. Decision 16's *conclusion* survived but its *premise* did not: the plan claimed K's index has nothing to walk past a cross-KB neighbour, and `store.py` says a reverse link's source lives in another KB — so the hop is walkable and terminality is a policy needing an explicit suppression, which no test or mutation target had. The real reason to stop is partiality, not emptiness, and the user reconfirmed on the corrected basis. Whether authored `doc ↔ doc` edges are in the channel was never stated while three things depended on it — they are, and stating it exposed a circularity (the gate satisfiable by hand-authored links bridging hand-authored questions) now guarded by reporting reachability and the gate with and without them. And the clause-3 remedy had disarmed `compare()`'s guard on `false_confidence`, which clause 4 restores. **Pass 6 required** |
+| 20260729 05:43 | **Pass 6** — **2 HIGH**, both narrow, and the pass-5 fixes verified correct. Gate clause 4 stated one of its two guards backwards: it made a *rise* in `confidence_coverage` a stop, but a rise is an improvement and the metric is 1.0 in the baseline — so the clause could never fire while the guard the re-baseline actually removes (a drop) stayed unrestored. It now names all six `compare()` families with the direction `eval.py` checks. And the anti-circularity guard was asserted to live in G5 and appeared only in G2 and G3, so an engineer building G5 would have computed the sign test once over all edges including L1's hand-authored links, passed, and flipped the default. G5 now computes it twice and ships `off` if only the authored run passes. **Pass 7 required**, scoped to G5's clauses and L2's delete |
