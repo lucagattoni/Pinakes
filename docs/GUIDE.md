@@ -46,7 +46,7 @@ uv add "pinakes[light] @ git+https://github.com/lucagattoni/Pinakes"
 | `[st]` | `sentence-transformers` (~2 GB, torch) | Default backend; widest model choice |
 | `[light]` | `fastembed` (~100 MB, ONNX) | Same default models, no torch |
 | `[pdf]` | `pypdfium2` | Free PDF text extraction |
-| `[claude]` | Anthropic SDK — **requires `[pdf]`** | The opt-in paid extractor. [Not built yet](STATUS.md) |
+| `[claude]` | Anthropic SDK — **requires `[pdf]`** | The opt-in paid extractor. Built, but [in no release yet](STATUS.md) — `main` only |
 
 Extras compose: `pinakes[light,pdf]` is a normal install. A core-only install fails with the exact
 extra to add, rather than a traceback:
@@ -169,7 +169,7 @@ What the free path does and does not do:
 | ✅ | Text-layer PDFs: columns, running heads stripped, hyphenation joined across line and page breaks |
 | ✅ | Page spans recorded per chunk in the index |
 | ⚠️ | **Tables are read column by column, not row by row.** Column detection is geometric, not structural — a disclosed limitation, measured by `pair_adjacency` in the quality harness |
-| ❌ | **Scanned / image-only PDFs.** The free path yields nothing. Needs the paid extractor, [not built yet](STATUS.md) |
+| ❌ | **Scanned / image-only PDFs.** The free path yields nothing. Needs the paid extractor, which is built but [in no release yet](STATUS.md) |
 | ❌ | `path:page` citations in results — page spans are in the index but not yet in output ([I8](STATUS.md#v02-increment-ledger)) |
 
 Filter to PDFs with `--source-type pdf`.
@@ -374,7 +374,7 @@ traversing them lands in the graph release; the *schema* ships today precisely b
 |---|---|---|
 | `the sentence-transformers backend is not installed` | `[light]` install, default manifest | Set `provider = "fastembed"` in `[embedding]` **and** `[rerank]` |
 | `N file(s) matched no include pattern` | Those files are in your roots but no glob picks them up | Add the glob it names ([above](#indexing-pdfs)), or `exclude` them |
-| A PDF indexes with no text | Scanned / image-only — the free path has no OCR | Needs the paid extractor, [not built yet](STATUS.md) |
+| A PDF indexes with no text | Scanned / image-only — the free path has no OCR | Needs the paid extractor, [in no release yet](STATUS.md) |
 | `no extractor for .pdf` | `[pdf]` extra missing | `uv add "pinakes[pdf]"` |
 | Queries refuse to run, naming a model mismatch | Embedding model changed since the index was built | `pnk sync --rebuild` — free |
 | Index refuses to open, naming `schema_version` | Index predates 0.2.0 | `pnk sync --rebuild`. There are no migrations, by design |

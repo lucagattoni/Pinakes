@@ -39,8 +39,11 @@
 | Cross-KB links (`pnk link`, `pinakes_links`) | **not built** | the graph release |
 | `sqlite-vec` tier, template ecosystem | **not built** | the template release |
 
-**Nothing in the shipped surface can spend money.** The only paid code path in the design is the
-`claude-vision` extractor, and it is a stub. See [DESIGN §5](DESIGN.md#5-cost-control).
+**Nothing in the shipped surface can spend money.** The only paid code path is the `claude-vision`
+extractor, and it is **in no release** — it landed with I7b and exists on `main` only. Installing
+from PyPI gets a build with no way to spend, whatever the manifest says. **Installing from `main`
+does not**: there, a KB configured for `claude-vision` can bill a real key. See
+[DESIGN §5](DESIGN.md#5-cost-control).
 
 Since I7a (on `main`, unreleased) that is enforced rather than asserted: `.paid-path-allowlist`
 names every module permitted to import a paid client — one line since I7b — and four gates in

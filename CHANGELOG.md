@@ -10,6 +10,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Five docs still called the paid extractor a stub, or unbuilt, after I7b built it.**
+  `docs/STATUS.md` contradicted itself within eight lines — one row correctly read "`claude-vision`
+  is a real extractor", while the paragraph below still explained that nothing can spend money
+  *because it is a stub*. `extract/claude.py` is 945 lines of working adapter.
+
+  The conclusion was right and the reason was wrong, which is the more dangerous shape: nothing in a
+  **released** build can spend, but that is now because I7b is unreleased, not because the code is
+  absent. The distinction matters to anyone installing from `main` — there, a KB configured for
+  `claude-vision` can bill a real key. Each claim now says "built, but in no release yet" and
+  `STATUS.md` spells out that PyPI and `main` differ on exactly this point.
+
+  Also corrected in `docs/GUIDE.md` (the `[claude]` extra, the scanned-PDF row, and the
+  troubleshooting entry) and `docs/MANIFEST.md`'s `[extraction] backend`. `docs/CLI.md` needed no
+  change — it had already moved `pnk budget`, `--estimate-only` and `--clear-cache=paid` out of its
+  Planned table.
+
 ### Changed
 
 - **pinakes is on PyPI, and every install line in the docs now says so.** `PUBLISH_TO_PYPI` was set
