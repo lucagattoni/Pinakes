@@ -152,6 +152,61 @@ def render(stream: Stream, repo: Path) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
+def grouped_bodies(stream: Stream, repo: Path) -> dict[str, list[str]]:
+    """Fragment bodies keyed by category, for a stream that has one."""
+    grouped: dict[str, list[str]] = {}
+    for path in fragments_of(stream, repo):
+        category = category_of(stream, path)
+        assert category is not None
+        grouped.setdefault(category, []).append(path.read_text(encoding="utf-8").strip("\n"))
+    return grouped
+
+
+def _merge_into_section(
+    stream: Stream, lines: list[str], anchor_index: int, grouped: dict[str, list[str]]
+) -> str:
+    """Merge fragments into the anchor's section, reusing a `### Category` heading if one is there.
+
+    Found by cutting a release with it: dumping every rendered `### Category` block under the anchor
+    produced a `[Unreleased]` with **two** `### Added` headings, because the section already had one
+    from prose nobody had migrated. Keep a Changelog expects one heading per category, and a reader
+    scanning for "what was added" would stop at the first.
+
+    The region is the anchor's own section — up to the next `##` heading — so a `### Added`
+    belonging to an *older release* further down is never written into.
+    """
+    end = len(lines)
+    for index in range(anchor_index + 1, len(lines)):
+        if lines[index].startswith("## "):
+            end = index
+            break
+
+    existing: dict[str, int] = {}
+    for index in range(anchor_index + 1, end):
+        heading = lines[index].rstrip("\n")
+        if heading.startswith("### "):
+            existing.setdefault(heading[4:].strip().lower(), index)
+
+    # Applied last-first so that an insertion never shifts an index still to be used.
+    additions: list[tuple[int, str]] = []
+    fresh: list[str] = []
+    for category in stream.categories or ():
+        if category not in grouped:
+            continue
+        body = "\n\n".join(grouped[category])
+        if category in existing:
+            additions.append((existing[category] + 1, "\n" + body + "\n"))
+        else:
+            fresh.append(f"### {category.capitalize()}\n\n{body}\n")
+
+    out = list(lines)
+    for index, block in sorted(additions, reverse=True):
+        out.insert(index, block)
+    if fresh:
+        out.insert(anchor_index + 1, "\n" + "\n".join(fresh))
+    return "".join(out)
+
+
 def splice(stream: Stream, rendered: str, repo: Path) -> str:
     """`rendered` inserted at the stream's anchor, leaving everything else byte-identical."""
     text = (repo / stream.target).read_text(encoding="utf-8")
@@ -160,6 +215,8 @@ def splice(stream: Stream, rendered: str, repo: Path) -> str:
     if stream.insert_after is not None:
         for index, line in enumerate(lines):
             if line.rstrip("\n") == stream.insert_after:
+                if stream.categories is not None:
+                    return _merge_into_section(stream, lines, index, grouped_bodies(stream, repo))
                 head, tail = lines[: index + 1], lines[index + 1 :]
                 return "".join(head) + "\n" + rendered + "".join(tail)
         raise FragmentError(f"{stream.target}: anchor {stream.insert_after!r} not found")

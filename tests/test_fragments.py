@@ -197,3 +197,63 @@ def test_both_streams_apply_in_one_run(repo: Path) -> None:
     assert "## I7d" in (repo / "docs" / "RETROSPECTIVES.md").read_text(encoding="utf-8")
     assert list((repo / "changelog.d").glob("*.md")) == []
     assert list((repo / "retro.d").glob("*.md")) == []
+
+
+def test_fragments_merge_into_a_category_heading_that_already_exists(repo: Path) -> None:
+    """Found by cutting a release with this tool: dumping rendered blocks under the anchor gave
+    `[Unreleased]` **two** `### Added` headings, because the section already had one from prose
+    nobody had migrated. A reader scanning for "what was added" stops at the first."""
+    write(
+        repo,
+        "CHANGELOG.md",
+        "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- an existing added entry\n\n"
+        "### Fixed\n\n- an existing fix\n\n## [0.1.0] - 20260101 09:00\n\n### Added\n\n- older\n",
+    )
+    write(repo, "changelog.d/added-one.md", "- **A new thing.**")
+
+    assert run(repo, "--stream", "changelog", "--apply").returncode == 0
+
+    after = changelog(repo)
+    unreleased = after[after.index("## [Unreleased]") : after.index("## [0.1.0]")]
+    assert unreleased.count("### Added") == 1, "one heading per category"
+    assert "- an existing added entry" in unreleased and "A new thing." in unreleased
+    assert unreleased.index("### Added") < unreleased.index("### Fixed"), (
+        "the existing heading order is preserved, not rebuilt"
+    )
+
+
+def test_a_category_heading_in_an_older_release_is_never_written_into(repo: Path) -> None:
+    """The merge region stops at the next `##`. Writing into a shipped release's `### Added` would
+    silently amend history that is already published."""
+    write(
+        repo,
+        "CHANGELOG.md",
+        "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 20260101 09:00\n\n### Added\n\n- older\n",
+    )
+    write(repo, "changelog.d/added-one.md", "- **A new thing.**")
+
+    run(repo, "--stream", "changelog", "--apply")
+
+    after = changelog(repo)
+    released = after[after.index("## [0.1.0]") :]
+    assert "A new thing." not in released, "a shipped release must not be amended"
+    assert "A new thing." in after[: after.index("## [0.1.0]")]
+
+
+def test_a_new_category_is_added_in_the_streams_declared_order(repo: Path) -> None:
+    write(
+        repo,
+        "CHANGELOG.md",
+        "# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- an existing fix\n\n## [0.1.0]\n",
+    )
+    write(repo, "changelog.d/added-one.md", "- **A new thing.**")
+    write(repo, "changelog.d/removed-two.md", "- **A removed thing.**")
+
+    run(repo, "--stream", "changelog", "--apply")
+
+    after = changelog(repo)
+    unreleased = after[: after.index("## [0.1.0]")]
+    assert unreleased.index("### Added") < unreleased.index("### Removed"), (
+        "new sections follow the stream's declared order"
+    )
+    assert "- an existing fix" in unreleased

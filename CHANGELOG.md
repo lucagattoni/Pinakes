@@ -10,7 +10,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] — 20260729 04:17
+
 ### Added
+
+- **Two agents can no longer quietly overwrite each other's shared-document edits.** Several agents
+  work in this repo at once, and the collision has two shapes — only one of which anybody notices.
+  `git merge` conflicting is the loud one. The quiet one is `git merge` **succeeding** because the
+  two edits landed on different lines: git merges edits that do not overlap textually, never edits
+  that agree, so two agents can state contradictory things in one file with every command reporting
+  success. Both shapes were hit on 20260729, when three parallel branches edited `CHANGELOG.md`,
+  `docs/STATUS.md` and `docs/DESIGN.md` inside one hour.
+
+  Two complementary answers:
+
+  - **`tools/fragments.py` removes the cause** for the two documents every change must write to. A
+    change now adds `changelog.d/<category>-<slug>.md` or `retro.d/<slug>.md` instead of editing
+    `CHANGELOG.md` or `docs/RETROSPECTIVES.md`, and the fragments are spliced in at release time by
+    one actor with nothing else running. Two agents cannot conflict in separate files, so for these
+    documents the conflict class stops existing rather than being managed. The category lives in the
+    **filename**, where it cannot drift from the content. Existing `[Unreleased]` prose is left
+    exactly where it is — adoption needs no migration commit, which would itself have collided.
+  - **`tools/shared_file_overlap.py` reports what remains.** It names the files this branch touches
+    that the default branch has touched too since they diverged, marking the high-contention ones.
+    Generic, so it covers `docs/STATUS.md` and `docs/DESIGN.md`, which are living documents that
+    fragments do not suit. Offline and advisory in `check.sh`; `--fetch --strict` is a gate before
+    merging.
+
+  Both are stdlib-only and import nothing from this project, so CI's `build` job runs them before
+  the package builds.
 
 - **[`plans/links-and-graph.md`](plans/links-and-graph.md) — the build order for the links release
   and the graph release, in fourteen increments (L1–L10, G1–G4).**
@@ -69,136 +97,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Ten fixtures stay authored **permanently**, not pending: they encode the API misbehaving (a body
   violating the schema it was constrained to, a short page array, a leaked internal tag) or a
   failure that cannot be induced without abusing a live service (429, 500, timeout).
-
-### Fixed
-
-- **A refusal discarded the reason the API gave for it.** A refusal arrives with a structured
-  `stop_details` naming a `category` and an `explanation`; the extractor recorded the bare sentence
-  "the model refused the request", leaving an operator unable to tell a policy category from a
-  malformed PDF. `refusal_reason` now surfaces both, defensively — details missing or the wrong
-  shape still degrade to the plain sentence, because this runs on the failure path where a raise
-  would turn one refused document into a crashed run.
-
-  Found only by recording: the authored fixture had no `stop_details` at all, so nothing in the
-  test suite could have pointed at it. Recording also settled that the authored bodies were right
-  about every branch's control flow and wrong about the response shape in five ways — the API
-  returns the model **alias** rather than a dated snapshot, a text block carries `citations`, a
-  response carries five more top-level fields, `usage` carries seven more, and a refusal bills
-  **1** output token rather than 0.
-
-- **A reconciliation test asserted a property of its fixture rather than of the code.** It compared
-  the reconciled input-token count against the literal `30_300` — the authored body's number — so
-  recording a real response broke it while the code under test was correct. It now reads the count
-  from the fixture and requires it to differ from the pre-call estimate, which is what actually
-  proves the reconciliation read the response.
-
-- **The multi-hop class measured nothing about hopping, and two of its five questions asked about
-  one document while demanding another.** `Outcome.hops_followed` was computed for every scripted
-  question and read by no metric — not `recall_at_k`, not `by_kind`, nothing CI compares. Deleting
-  the hop loop outright left `by_kind["multi-hop"]` bit-identical, which is the definition of a
-  vacuous metric ([DESIGN §7](docs/DESIGN.md#7-quality)). A multi-hop question was in effect a
-  single-shot search of its last hop's query.
-
-  That hid a second defect in the golden set itself. Three questions named their *last* hop's
-  document in `expect`; two named their *first*, so the scorer ran a query about brittle-paper
-  conservation and demanded the annual report. Nothing caught the disagreement, because `hops` fed
-  no metric that could notice.
-
-  A hit now requires **every** hop to land its own document by its own query, and `expect` is
-  exactly the union of the hops' documents — asserted for the committed set, so the two
-  inconsistent questions cannot come back.
-
-  **The numbers moved because the scorer was wrong, not because retrieval changed** (no retrieval
-  code was touched): recall@5 0.8788 → 0.9091, MRR 0.7737 → 0.8116, rerank precision 0.7273 →
-  0.7576, `by_kind["multi-hop"]` 0.80 → 1.00. Stricter scoring, higher score — because the two
-  inverted questions had been asked about the wrong document all along. `false_abstain` (0.0303),
-  `false_confidence` (0.25) and `confidence_coverage` (1.0) are unchanged. Baseline re-cut
-  20260729 03:23, `[light]` models, three identical consecutive runs.
-
-  Two gaps in the comparator closed alongside it, both of which let a real regression pass green:
-  `compare()` wrote `by_kind` into every baseline and **never read it back**, so a change lifting
-  one class and dropping another by the same amount moved the aggregate by almost nothing; and the
-  question count was written and never compared, so a golden set that silently lost its hard
-  questions would have scored *better*.
-
-- **`HashingBackend`, the "cheap deterministic embedder" the eval tests rank with, was not
-  deterministic.** It hashed each word with `hash()`, which Python randomises per process for `str`
-  unless `PYTHONHASHSEED` is set — and nothing sets it, nor can a `conftest.py`, since the value is
-  read before the interpreter starts. Which words collided in the 64-dimensional space therefore
-  changed from run to run. Measured before the fix: **one failure in 40 runs**; after switching to
-  `zlib.crc32`, **zero in 60**. A fake that cannot reproduce itself cannot tell a real regression
-  from its own noise.
-
-- **Five docs still called the paid extractor a stub, or unbuilt, after I7b built it.**
-  `docs/STATUS.md` contradicted itself within eight lines — one row correctly read "`claude-vision`
-  is a real extractor", while the paragraph below still explained that nothing can spend money
-  *because it is a stub*. `extract/claude.py` is 945 lines of working adapter.
-
-  The conclusion was right and the reason was wrong, which is the more dangerous shape: nothing in a
-  **released** build can spend, but that is now because I7b is unreleased, not because the code is
-  absent. The distinction matters to anyone installing from `main` — there, a KB configured for
-  `claude-vision` can bill a real key. Each claim now says "built, but in no release yet" and
-  `STATUS.md` spells out that PyPI and `main` differ on exactly this point.
-
-  Also corrected in `docs/GUIDE.md` (the `[claude]` extra, the scanned-PDF row, and the
-  troubleshooting entry) and `docs/MANIFEST.md`'s `[extraction] backend`. `docs/CLI.md` needed no
-  change — it had already moved `pnk budget`, `--estimate-only` and `--clear-cache=paid` out of its
-  Planned table.
-
-### Changed
-
-- **pinakes is on PyPI, and every install line in the docs now says so.** `PUBLISH_TO_PYPI` was set
-  `true` at 20260728 17:15 UTC and **0.2.2 uploaded 108 seconds later** — the first and, so far,
-  only published version: 0.2.0 and 0.2.1 predate publishing and cannot be installed by pin.
-
-  Verified rather than assumed, per the repo's own rule that docs are checked by running what they
-  show: `pinakes[light]` was installed from the published wheel into an empty venv and driven
-  through `init` → `sync` → `search` (20260729 01:01). All four extras (`st`, `light`, `pdf`,
-  `claude`) resolve from the index, and `requires-python` is `>=3.13`.
-
-  Every `git+https://…` install line becomes `uv add "pinakes[st]"`; the MCP `uvx` example loses its
-  git URL; the README gains a PyPI version badge; and `docs/STATUS.md`'s *Not published yet* section
-  is now *Published on PyPI*, carrying the published-version caveat. One git install line is kept on
-  purpose, relabelled — it is how a contributor installs unreleased work sitting on `main`.
-
-  **`CLAUDE.md` gains the consequence, because it changes how releases must be done:** a tag is no
-  longer a safe rehearsal. It publishes, and PyPI does not allow re-uploading a version, so
-  `make release-check` runs *before* pushing a tag rather than after.
-- **🚫 Unbuilt work is named, never numbered — a project-wide convention, and a rule other agents
-  will meet in `CLAUDE.md`.** A version number now belongs to a release only when it is cut. Unbuilt
-  bodies of work are **the paid-extraction release**, **the links release**, **the graph release**,
-  **the deep release** and **the template release**; increment IDs (`I7b`, `I8`) are unaffected,
-  since they name work inside a written plan rather than a release.
-
-  **The links release was split out of the graph release on 20260729**, while sequencing
-  [`plans/links-and-graph.md`](plans/links-and-graph.md): `pnk link`, `pnk links`, `pinakes_links`
-  and reverse-scan need no `schema_version` bump and no rebuild, while structural edges and the
-  expansion channel need both. Shipping the first half under a name defined as including the second
-  would have reintroduced exactly the ambiguity this convention exists to end — one name meaning two
-  releases — three days after it was adopted. The naming tables in `CLAUDE.md` and `docs/STATUS.md`
-  carry both rows, and `docs/graph/PINAKES_APPROACH.md` keeps its single-release §10 with a header
-  note, since it is dated research rather than a live specification.
-
-  **Why now.** `docs/` and `docs/graph/` had used `v0.3` for months to mean the cross-KB links
-  release. Once 0.2.2 shipped, the *next* MINOR was numerically 0.3.0 — so one number meant two
-  different releases, and resolving it either way meant renumbering ~60 committed references,
-  research records included. `docs/STATUS.md` had flagged this as blocking the next release. A name
-  cannot collide, never needs renumbering, and says what the work *is* rather than when it arrives.
-
-  Applied across every live surface — `docs/STATUS.md` (which carries the rule and the mapping),
-  `DESIGN.md` §8, `CLI.md`, `MANIFEST.md`, `GUIDE.md`, `KB-UPDATES.md`, `docs/README.md`,
-  `docs/graph/README.md` and `PINAKES_APPROACH.md` — and, because a convention that stops at the
-  docs is not a convention, in **user-facing output** too: `pnk search`'s escalation note now reads
-  "planned for the deep release", and four `pnk doctor` messages name the template and graph
-  releases instead of `v0.5`/`v0.3` (`tests/test_cli_search.py` updated with them). Internal
-  docstrings in `manifest.py` and `sidecar.py` follow.
-
-  **Historical records keep their numbers.** `CHANGELOG.md`, `docs/RETROSPECTIVES.md`, `plans/` and
-  the dated research in `docs/graph/` are records of what was decided at a time; rewriting them would
-  falsify that. Each now opens with a one-line note saying the numbering convention has changed and
-  pointing at `docs/STATUS.md`.
-
-### Added
 
 - **The completeness audit, staging, and the all-or-nothing commit (I7c)** — three things that
   make a paid extraction trustworthy rather than merely possible.
@@ -305,6 +203,99 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **[`plans/links-and-graph.md`](plans/links-and-graph.md) rewritten after a second adversarial
+  pass — six of the first pass's own fixes were wrong.** Two reviewers returned 26 HIGH, 30 MEDIUM
+  and 8 LOW against the revision that pass 1 produced, roughly the 40–45% fix-induced rate
+  `plans/v0.2.md`'s iteration log predicts. Still a draft; a third pass is required before any of it
+  is built.
+
+  What was wrong, and now is not:
+
+  - **The determinism increment chose the rowid as its rebuild-stable sort key**, while `store.py`
+    says two lines above the table that *"a chunk has no identity across rebuilds"*. It also framed
+    the hazard as run-to-run variance, which does not exist — all three named sites are
+    deterministic for a fixed index, which is why `make eval` was already byte-identical three runs
+    running. The key is now `(doc_id, ordinal)`, the hazard is cross-build and cross-machine, and a
+    fourth site (`_hydrate`, which has no `ORDER BY`) joins the three.
+  - **A cross-KB neighbour had no way to be identified at all.** The tool contract returns `title`,
+    which lives only in the local index; the fix added a title-from-sidecars mechanism and missed
+    that the neighbour carried no KB identifier either, so an agent could neither fetch it nor name
+    where it lived. Neighbours now carry `kb` and, for cross-KB, no `title` — which also drops a
+    per-query filesystem walk of another KB that DESIGN §6.2 sanctions only at sync time.
+  - **The eval gate cited a statistic the sign test does not measure.** "≥ 5 questions **net**" was
+    justified with 0.5⁵ = 0.031, but the sign test counts *discordant* questions: 8 improved / 3
+    regressed is also net +5 and gives p = 0.113. The gate admitted results up to eight times the
+    claimed p while rejecting 4/0 at p = 0.063. It is now the exact test itself, tabulated.
+  - **The gate was also unreachable.** It can only read single-KB questions, and the golden set had
+    been sized "most cross-KB" — leaving ≤ 7 improvable against a 5-question threshold. The class is
+    now majority single-KB, cross-KB questions get their own `kind` so `compare()` gates them
+    separately, and a headroom check must pass **before** `schema_version` bumps rather than being
+    reported after every KB has already been forced to rebuild.
+  - **A rule invented for cross-KB scoring would have rescored the 41 questions its own exit
+    criterion promised to leave untouched** — all five committed multi-hop questions are hopped. It
+    was also redundant: `eval.py` has required every hop to land since the scorer was repaired. A
+    cross-KB question is simply a hopped question whose later hop lands in the other KB.
+  - **Banning docs-sweep increments left the docs with no owner at all** — the plan contained zero
+    occurrences of `GUIDE`, `CLI.md` or `--help`, while `docs/CLI.md` and `docs/STATUS.md` both
+    carry rows this work falsifies. Every increment now names its doc homes, and both releases
+    regained a run-it-don't-reason-about-it verification section.
+
+  Three decisions were taken with the user in response: cross-KB neighbours carry no title; the
+  multi-hop class is majority single-KB; and G1's edge weights are **frozen** at the research
+  document's priors rather than fitted against the golden set that then gates them — `calibrate.py`
+  already records that circularity for the confidence thresholds and calls the result optimistic.
+
+- **pinakes is on PyPI, and every install line in the docs now says so.** `PUBLISH_TO_PYPI` was set
+  `true` at 20260728 17:15 UTC and **0.2.2 uploaded 108 seconds later** — the first and, so far,
+  only published version: 0.2.0 and 0.2.1 predate publishing and cannot be installed by pin.
+
+  Verified rather than assumed, per the repo's own rule that docs are checked by running what they
+  show: `pinakes[light]` was installed from the published wheel into an empty venv and driven
+  through `init` → `sync` → `search` (20260729 01:01). All four extras (`st`, `light`, `pdf`,
+  `claude`) resolve from the index, and `requires-python` is `>=3.13`.
+
+  Every `git+https://…` install line becomes `uv add "pinakes[st]"`; the MCP `uvx` example loses its
+  git URL; the README gains a PyPI version badge; and `docs/STATUS.md`'s *Not published yet* section
+  is now *Published on PyPI*, carrying the published-version caveat. One git install line is kept on
+  purpose, relabelled — it is how a contributor installs unreleased work sitting on `main`.
+
+  **`CLAUDE.md` gains the consequence, because it changes how releases must be done:** a tag is no
+  longer a safe rehearsal. It publishes, and PyPI does not allow re-uploading a version, so
+  `make release-check` runs *before* pushing a tag rather than after.
+- **🚫 Unbuilt work is named, never numbered — a project-wide convention, and a rule other agents
+  will meet in `CLAUDE.md`.** A version number now belongs to a release only when it is cut. Unbuilt
+  bodies of work are **the paid-extraction release**, **the links release**, **the graph release**,
+  **the deep release** and **the template release**; increment IDs (`I7b`, `I8`) are unaffected,
+  since they name work inside a written plan rather than a release.
+
+  **The links release was split out of the graph release on 20260729**, while sequencing
+  [`plans/links-and-graph.md`](plans/links-and-graph.md): `pnk link`, `pnk links`, `pinakes_links`
+  and reverse-scan need no `schema_version` bump and no rebuild, while structural edges and the
+  expansion channel need both. Shipping the first half under a name defined as including the second
+  would have reintroduced exactly the ambiguity this convention exists to end — one name meaning two
+  releases — three days after it was adopted. The naming tables in `CLAUDE.md` and `docs/STATUS.md`
+  carry both rows, and `docs/graph/PINAKES_APPROACH.md` keeps its single-release §10 with a header
+  note, since it is dated research rather than a live specification.
+
+  **Why now.** `docs/` and `docs/graph/` had used `v0.3` for months to mean the cross-KB links
+  release. Once 0.2.2 shipped, the *next* MINOR was numerically 0.3.0 — so one number meant two
+  different releases, and resolving it either way meant renumbering ~60 committed references,
+  research records included. `docs/STATUS.md` had flagged this as blocking the next release. A name
+  cannot collide, never needs renumbering, and says what the work *is* rather than when it arrives.
+
+  Applied across every live surface — `docs/STATUS.md` (which carries the rule and the mapping),
+  `DESIGN.md` §8, `CLI.md`, `MANIFEST.md`, `GUIDE.md`, `KB-UPDATES.md`, `docs/README.md`,
+  `docs/graph/README.md` and `PINAKES_APPROACH.md` — and, because a convention that stops at the
+  docs is not a convention, in **user-facing output** too: `pnk search`'s escalation note now reads
+  "planned for the deep release", and four `pnk doctor` messages name the template and graph
+  releases instead of `v0.5`/`v0.3` (`tests/test_cli_search.py` updated with them). Internal
+  docstrings in `manifest.py` and `sidecar.py` follow.
+
+  **Historical records keep their numbers.** `CHANGELOG.md`, `docs/RETROSPECTIVES.md`, `plans/` and
+  the dated research in `docs/graph/` are records of what was decided at a time; rewriting them would
+  falsify that. Each now opens with a one-line note saying the numbering convention has changed and
+  pointing at `docs/STATUS.md`.
+
 - **`PROMPT_TOKENS` was measured and was wrong in the unsafe direction** — 571 against an estimated
   300, so the one term of the "worst case" that no page count compensates for was understating
   itself by 1.9×. Now 700. `PAGE_TOKEN_CEILING` was measured too (~1,574/page against a 6,000
@@ -350,7 +341,94 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--clear-cache=paid` as well, which no hook and no generated workflow writes. `--yes`'s `--help`
   now states what it authorises: this run's prompts, no cap raised.
 
+- **CLAUDE.md's paid-path invariant is now an enumerated allowlist**, rather than "no paid API call
+  outside `pnk ask --deep`", matching DESIGN §1 and `.paid-path-allowlist`. DESIGN §1's prose covers
+  paid LLM *work* (reasoning **and** PDF extraction), its decisions table no longer reads "Claude for
+  reasoning only", §8's v0.2 row states both extraction paths, and §9 gains four risk rows:
+  allowlist erosion, unbounded spend across invocations, price-table staleness, and the scanned-page
+  audit blind spot.
+- `pytest` runs with `-rs` in `check.sh` and CI, so a skipped gate prints its reason instead of
+  reading as a pass.
+- `pyright` now type-checks `tools/` alongside `src/` and `tests/`.
+- Gate 4's runtime check matches paid modules on a dotted-prefix boundary against
+  `google.generativeai` in full, not on the bare root `google` — which would have made
+  `google.protobuf` (transitive via onnxruntime and grpc) a paid client and failed the flagship
+  safety gate for an unrelated reason on some future CI leg.
+
 ### Fixed
+
+- **A refusal discarded the reason the API gave for it.** A refusal arrives with a structured
+  `stop_details` naming a `category` and an `explanation`; the extractor recorded the bare sentence
+  "the model refused the request", leaving an operator unable to tell a policy category from a
+  malformed PDF. `refusal_reason` now surfaces both, defensively — details missing or the wrong
+  shape still degrade to the plain sentence, because this runs on the failure path where a raise
+  would turn one refused document into a crashed run.
+
+  Found only by recording: the authored fixture had no `stop_details` at all, so nothing in the
+  test suite could have pointed at it. Recording also settled that the authored bodies were right
+  about every branch's control flow and wrong about the response shape in five ways — the API
+  returns the model **alias** rather than a dated snapshot, a text block carries `citations`, a
+  response carries five more top-level fields, `usage` carries seven more, and a refusal bills
+  **1** output token rather than 0.
+
+- **A reconciliation test asserted a property of its fixture rather than of the code.** It compared
+  the reconciled input-token count against the literal `30_300` — the authored body's number — so
+  recording a real response broke it while the code under test was correct. It now reads the count
+  from the fixture and requires it to differ from the pre-call estimate, which is what actually
+  proves the reconciliation read the response.
+
+- **The multi-hop class measured nothing about hopping, and two of its five questions asked about
+  one document while demanding another.** `Outcome.hops_followed` was computed for every scripted
+  question and read by no metric — not `recall_at_k`, not `by_kind`, nothing CI compares. Deleting
+  the hop loop outright left `by_kind["multi-hop"]` bit-identical, which is the definition of a
+  vacuous metric ([DESIGN §7](docs/DESIGN.md#7-quality)). A multi-hop question was in effect a
+  single-shot search of its last hop's query.
+
+  That hid a second defect in the golden set itself. Three questions named their *last* hop's
+  document in `expect`; two named their *first*, so the scorer ran a query about brittle-paper
+  conservation and demanded the annual report. Nothing caught the disagreement, because `hops` fed
+  no metric that could notice.
+
+  A hit now requires **every** hop to land its own document by its own query, and `expect` is
+  exactly the union of the hops' documents — asserted for the committed set, so the two
+  inconsistent questions cannot come back.
+
+  **The numbers moved because the scorer was wrong, not because retrieval changed** (no retrieval
+  code was touched): recall@5 0.8788 → 0.9091, MRR 0.7737 → 0.8116, rerank precision 0.7273 →
+  0.7576, `by_kind["multi-hop"]` 0.80 → 1.00. Stricter scoring, higher score — because the two
+  inverted questions had been asked about the wrong document all along. `false_abstain` (0.0303),
+  `false_confidence` (0.25) and `confidence_coverage` (1.0) are unchanged. Baseline re-cut
+  20260729 03:23, `[light]` models, three identical consecutive runs.
+
+  Two gaps in the comparator closed alongside it, both of which let a real regression pass green:
+  `compare()` wrote `by_kind` into every baseline and **never read it back**, so a change lifting
+  one class and dropping another by the same amount moved the aggregate by almost nothing; and the
+  question count was written and never compared, so a golden set that silently lost its hard
+  questions would have scored *better*.
+
+- **`HashingBackend`, the "cheap deterministic embedder" the eval tests rank with, was not
+  deterministic.** It hashed each word with `hash()`, which Python randomises per process for `str`
+  unless `PYTHONHASHSEED` is set — and nothing sets it, nor can a `conftest.py`, since the value is
+  read before the interpreter starts. Which words collided in the 64-dimensional space therefore
+  changed from run to run. Measured before the fix: **one failure in 40 runs**; after switching to
+  `zlib.crc32`, **zero in 60**. A fake that cannot reproduce itself cannot tell a real regression
+  from its own noise.
+
+- **Five docs still called the paid extractor a stub, or unbuilt, after I7b built it.**
+  `docs/STATUS.md` contradicted itself within eight lines — one row correctly read "`claude-vision`
+  is a real extractor", while the paragraph below still explained that nothing can spend money
+  *because it is a stub*. `extract/claude.py` is 945 lines of working adapter.
+
+  The conclusion was right and the reason was wrong, which is the more dangerous shape: nothing in a
+  **released** build can spend, but that is now because I7b is unreleased, not because the code is
+  absent. The distinction matters to anyone installing from `main` — there, a KB configured for
+  `claude-vision` can bill a real key. Each claim now says "built, but in no release yet" and
+  `STATUS.md` spells out that PyPI and `main` differ on exactly this point.
+
+  Also corrected in `docs/GUIDE.md` (the `[claude]` extra, the scanned-PDF row, and the
+  troubleshooting entry) and `docs/MANIFEST.md`'s `[extraction] backend`. `docs/CLI.md` needed no
+  change — it had already moved `pnk budget`, `--estimate-only` and `--clear-cache=paid` out of its
+  Planned table.
 
 - **The budget accountant handed out a `PaidCall` instead of a context manager (I6b review).** That
   put the void-vs-unknown decision and the closing write back in the caller's hands — undoing the
@@ -405,22 +483,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `importlib.util.find_spec` against a `(module, extra)` pair declared on the registry entry, which
   for a top-level module adds nothing to `sys.modules`. No released version could spend from either
   path — `claude-vision` is a stub — so the effect was a needless import, never a charge.
-
-### Changed
-
-- **CLAUDE.md's paid-path invariant is now an enumerated allowlist**, rather than "no paid API call
-  outside `pnk ask --deep`", matching DESIGN §1 and `.paid-path-allowlist`. DESIGN §1's prose covers
-  paid LLM *work* (reasoning **and** PDF extraction), its decisions table no longer reads "Claude for
-  reasoning only", §8's v0.2 row states both extraction paths, and §9 gains four risk rows:
-  allowlist erosion, unbounded spend across invocations, price-table staleness, and the scanned-page
-  audit blind spot.
-- `pytest` runs with `-rs` in `check.sh` and CI, so a skipped gate prints its reason instead of
-  reading as a pass.
-- `pyright` now type-checks `tools/` alongside `src/` and `tests/`.
-- Gate 4's runtime check matches paid modules on a dotted-prefix boundary against
-  `google.generativeai` in full, not on the bare root `google` — which would have made
-  `google.protobuf` (transitive via onnxruntime and grpc) a paid client and failed the flagship
-  safety gate for an unrelated reason on some future CI leg.
 
 ## [0.2.2] — 20260728 18:49
 
@@ -1270,7 +1332,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.3.0
 [0.2.2]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.2.2
 [0.2.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.2.1
 [0.2.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.2.0

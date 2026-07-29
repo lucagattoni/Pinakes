@@ -1,6 +1,6 @@
 # Status — what ships today
 
-**Latest release: 0.2.2** · last reviewed 20260728 19:16
+**Latest release: 0.3.0** · last reviewed 20260729 04:17
 
 > **This file is the only place in the repo that says what is built.** Every other doc describes
 > *how* something works or *why* it was designed that way, and links here for whether you can use it
@@ -16,13 +16,13 @@
 
 | Command | State | Notes |
 |---|---|---|
-| `pnk init` | shipped | one template (`notes`); `--ci` writes the workflow (on `main`, unreleased) |
+| `pnk init` | shipped | one template (`notes`); `--ci` writes the workflow (0.3.0) |
 | `pnk sync` | shipped | `--rebuild`, `--sidecars-only`, `--index-only`, `--extract`, `--force`, `--clear-cache[=paid]` |
 | `pnk search` | shipped | BM25 + vector + rerank, metadata filters, `--json` |
 | `pnk doctor` | shipped | environment, coherence, orphans, links, hooks, cache |
-| `pnk install-hooks` | shipped | the three-hook split; all three force `--extract=pypdfium2` (on `main`, unreleased) |
+| `pnk install-hooks` | shipped | the three-hook split; all three force `--extract=pypdfium2` (0.3.0) |
 | `pnk serve` | shipped | MCP: `pinakes_search`, `pinakes_get`, `pinakes_list_kbs` |
-| `pnk budget` | on `main`, unreleased | I6b. Day/month/operation spend, `--resolve` for an unknown outcome |
+| `pnk budget` | shipped 0.3.0 | I6b. Day/month/operation spend, `--resolve` for an unknown outcome |
 | `pnk ask --deep` | **not built** | the deep release |
 
 | Capability | State | Notes |
@@ -32,20 +32,28 @@
 | Extraction cache | shipped | `.pinakes/cache/extract/` |
 | Page provenance (`page_start`/`page_end`) | shipped in the **index** | not yet surfaced in results — I8 |
 | Extraction quality scoring | shipped | `make pdf-eval` against `tests/pdf-corpus/` |
-| **PDF ingest, paid path** (scanned PDFs) | on `main`, unreleased | I7b. `claude-vision` is a real extractor, **measured against the live API 20260729** — 1.000 on every metric over the synthetic scanned stratum, where the free path scores 0.000 ([DESIGN §9](DESIGN.md#9-known-risks)) |
+| **PDF ingest, paid path** (scanned PDFs) | shipped 0.3.0 | I7b. `claude-vision` is a real extractor, **measured against the live API 20260729** — 1.000 on every metric over the synthetic scanned stratum, where the free path scores 0.000 ([DESIGN §9](DESIGN.md#9-known-risks)) |
 | Budget estimator, caps, window aggregation | shipped 0.2.2, **inert** | I6a. The pure logic only — nothing calls it, so nothing can spend |
-| Budget ledger, `pnk budget`, the accountant | on `main`, unreleased | I6b. `ledger.jsonl`, the reservation/outcome protocol, and I6a's decisions read from it — now driven by I7b's extractor |
+| Budget ledger, `pnk budget`, the accountant | shipped 0.3.0 | I6b. `ledger.jsonl`, the reservation/outcome protocol, and I6a's decisions read from it — now driven by I7b's extractor |
 | `path:page` citations | **not built** | I8 |
 | Cross-KB links (`pnk link`, `pinakes_links`) | **not built** | the links release |
 | `sqlite-vec` tier, template ecosystem | **not built** | the template release |
 
-**Nothing in the shipped surface can spend money.** The only paid code path is the `claude-vision`
-extractor, and it is **in no release** — it landed with I7b and exists on `main` only. Installing
-from PyPI gets a build with no way to spend, whatever the manifest says. **Installing from `main`
-does not**: there, a KB configured for `claude-vision` can bill a real key. See
-[DESIGN §5](DESIGN.md#5-cost-control).
+⚠️ **0.3.0 is the first release that can spend money — and it will not, unless you ask it to.**
+Every earlier version had no paid code path at all. The only one now is the `claude-vision`
+extractor, and reaching it takes a deliberate act: `EXTRACTION_BACKEND_DEFAULT` is `pypdfium2`, so
+a KB spends only when its manifest says `[extraction] backend = "claude-vision"` or a command
+carries `--extract=claude-vision`, **and** a real `ANTHROPIC_API_KEY` is in the environment. Absent
+any one of those, 0.3.0 behaves exactly like 0.2.2.
 
-Since I7a (on `main`, unreleased) that is enforced rather than asserted: `.paid-path-allowlist`
+What stands behind that rather than merely asserting it: an enumerated allowlist
+(`.paid-path-allowlist`) with four gates, the decisive one running the whole free path in a fresh
+subprocess and asserting no paid client ever reaches `sys.modules`; every call reserved before it is
+made and reconciled from the response's own usage; and caps that refuse rather than overspend.
+Measured live on 20260729, the reservation over-reserved **11.5×** — wrong in the safe direction.
+See [DESIGN §5](DESIGN.md#5-cost-control) and `pnk budget`.
+
+Since I7a (0.3.0) that is enforced rather than asserted: `.paid-path-allowlist`
 names every module permitted to import a paid client — one line since I7b — and four gates in
 `check.sh` and CI hold it, the decisive one running the whole free path in a fresh subprocess and
 asserting no paid client reached `sys.modules`. It found two real leaks the day it landed: both
@@ -89,10 +97,10 @@ landing with its own tests.
 | I4 | The extraction cache | shipped 0.2.0 |
 | I5 | PDF chunking, page provenance, backend-aware sync (`schema_version` 2) | shipped 0.2.0 |
 | I6a | Budget core, pure — estimator, reservation, `prices.toml` | shipped 0.2.2 (inert) |
-| I6b | Budget I/O — ledger, prompt, `pnk budget`, hooks that cannot spend | on `main`, unreleased |
-| I7a | The paid-path allowlist gate and the invariant amendments | on `main`, unreleased |
-| I7b | The paid Claude-vision extractor — request shape, validation, retries | on `main`, unreleased |
-| I7c | The completeness audit, staging, all-or-nothing commit | on `main`, unreleased |
+| I6b | Budget I/O — ledger, prompt, `pnk budget`, hooks that cannot spend | shipped 0.3.0 |
+| I7a | The paid-path allowlist gate and the invariant amendments | shipped 0.3.0 |
+| I7b | The paid Claude-vision extractor — request shape, validation, retries | shipped 0.3.0 |
+| I7c | The completeness audit, staging, all-or-nothing commit | shipped 0.3.0 |
 | I8 | `pnk doctor` text yield, `path:page` citations on both surfaces | **planned** |
 | I9 | Docs sweep, template, CI | **planned** |
 
@@ -134,17 +142,24 @@ documenting the audit's absence plainly. This is a bet on I7c landing soon, not 
 and it expires if that bet stops paying. (Its *number* is assigned when it is cut, per the naming
 rule below — naming a number here is exactly the habit that rule exists to stop.)
 
-### Both reasons have now expired — 20260729, I7c landed
+### Cut as 0.3.0 — 20260729 04:17
 
-The audit, the staging and the all-or-nothing commit are on `main`. **Nothing in this file argues
-against cutting the paid-extraction release any more**, and the project's own rule says complete
-work does not sit in `[Unreleased]`.
+Every reason for holding had expired by the time I7c landed: the budget command was no longer
+structurally vacuous (I7b gave it real numbers to report) and the audit that makes a paid
+extraction trustworthy was on `main`. The remaining question was never about the code — pushing the
+tag publishes to PyPI, which cannot be re-uploaded or truly withdrawn, so it took a human saying
+yes. That yes was given on 20260729 and the release was cut the same hour.
 
-It is **not** cut automatically, and the reason is not doubt about the code: `PUBLISH_TO_PYPI` is
-`true`, so pushing the tag publishes to PyPI, and a PyPI version cannot be re-uploaded or truly
-withdrawn. That is a decision with a one-way door in it, so it takes a human saying yes — which is
-the same rule that governs every other irreversible outward-facing action here, not a special case
-for releases.
+**It is a MINOR, never a patch**, and the reason is the ⚠️ above: a KB that can spend money is new
+capability. What shipped is I6a–I7c together — the budget core and its ledger, `pnk budget`, the
+paid-path allowlist and its four gates, the Claude-vision extractor, and the completeness audit
+with all-or-nothing commit — plus the live measurement behind every number in
+[DESIGN §9](DESIGN.md#9-known-risks).
+
+**What it deliberately does not include.** `path:page` citations are still index-only and not
+surfaced in results (I8); the shipped surface therefore reads scanned pages it cannot yet cite
+precisely. That is a gap, named here rather than discovered by a user, and it is I8's whole
+subject.
 
 ### The measurement run has been done — 20260729 03:17, €0.43
 
