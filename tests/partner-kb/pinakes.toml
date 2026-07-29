@@ -1,0 +1,43 @@
+[kb]
+name     = "partner"
+id       = "01KYP11WY2ZGX9B2Q5V7PJ8DW1"
+template = "notes@1.0"
+created  = "20260729 06:12"
+
+[sources]
+roots   = ["docs/"]
+include = ["**/*.md"]
+
+# The archive this museum transacts with. `path` is relative to this KB's root; its non-existence
+# on a given machine is not an error, because a KB is shared without its partners.
+[[links.kb]]
+name = "archive"
+id   = "01KYCPTN72ZXC1DDWS6054MGZV"
+path = "../demo-kb"
+
+[embedding]
+provider = "fastembed"
+model    = "BAAI/bge-small-en-v1.5"
+dim      = 384
+
+[chunking]
+strategy   = "structural"
+max_tokens = 120
+overlap    = 16
+
+[retrieval]
+candidates_per_source = 30
+fusion                = "rrf"
+fusion_top_k          = 12
+final_k               = 5
+rerank                = "local"
+vector_tier           = "numpy"
+
+# Deliberately no [retrieval.confidence]. Thresholds are fitted per KB against a golden set
+# (`pinakes.calibrate`), and this corpus has none by design — decision 14 verifies cross-KB
+# behaviour by direct traversal rather than by scoring it. An unfitted KB reports `unknown`, which
+# is the honest answer and the one §4.2 requires.
+
+[rerank]
+provider = "fastembed"
+model    = "BAAI/bge-reranker-base"

@@ -248,7 +248,7 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.3.0** ✅ | Budget machinery, the opt-in paid Claude-vision extractor (I6–I7c) |
 | **0.4.0** ✅ | `path:page` citations on both surfaces, `pnk doctor` text yield (I8); the verification table and its gate (I9) |
 | **0.4.1** ✅ | A sidecar that will not parse is no longer overwritten by a freshly minted one, and no longer aborts the whole sync — data loss present since v0.1 |
-| *the links release* | `pnk link`, `pinakes_links`, reverse-scan, link-coverage reporting — no `schema_version` bump, so no rebuild |
+| *the links release* | `pnk link`, `pinakes_links`, reverse-scan, link-coverage reporting — no `schema_version` bump, so no rebuild. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate |
 | *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
 | *the deep release* | `pnk ask --deep` |

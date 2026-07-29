@@ -34,7 +34,7 @@ Re-verify before L1. `main` moved fifteen commits and cut a release under the fi
 | `links` | PK is `(src_kb_id, src_doc_id, dst_kb_id, dst_doc_id, rel)` — **`origin` is not in it** |
 | `kb_refs` | Four columns, never written |
 | `chunks.id` | The rowid. `store.py`: *"a chunk has no identity across rebuilds"* |
-| Authored links in `tests/demo-kb/` | **Zero**, across 30 documents |
+| Authored links | **L1 landed 20260729 08:44.** demo-kb 16 links across 8 of 30 documents; partner-kb 13 across 6 of 21. Was zero in both when this plan was written |
 | `eval.py` | Structurally **single-KB**: one connection, one manifest, one backend; `retrieved` is local `passage.path` strings; per-question outcomes are computed and discarded |
 | Conventions | `changelog.d/` and `retro.d/` fragments — **editing `CHANGELOG.md` or `RETROSPECTIVES.md` directly is forbidden**; `tools/fragments.py --check` and `tools/shared_file_overlap.py` are `check.sh` gates |
 

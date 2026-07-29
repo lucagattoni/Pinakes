@@ -51,6 +51,25 @@ test, or write **none** and say why in the same commit.
 | a sidecar that arrives after the walk asks for a rerun | fix | `tests/test_sync.py::test_a_sidecar_that_appears_after_the_walk_asks_for_a_rerun` |
 | a write failure is recorded, never raised, on the pre-commit path | fix | `tests/test_sync.py::test_a_write_failure_on_the_pre_commit_path_is_recorded_not_raised` |
 | minting refuses a dangling symlink too | fix | `tests/test_sidecar.py::test_create_refuses_a_dangling_symlink_too` |
+| both committed corpora load and name each other by ULID | L1 | `tests/test_partner_kb.py::test_both_corpora_load_and_validate` |
+| every sidecar ULID is well-formed and unique across both KBs | L1 | `tests/test_partner_kb.py::test_every_sidecar_ulid_is_wellformed_and_unique_across_both_kbs` |
+| every authored link target is a resolvable URI | L1 | `tests/test_partner_kb.py::test_every_link_target_is_a_resolvable_uri` |
+| authored links are sparse (the density cap) | L1 | `tests/test_partner_kb.py::test_a_corpus_over_the_density_cap_fails_the_gate` |
+| ...and the cap's boundary passes from the other side | L1 | `tests/test_partner_kb.py::test_a_corpus_exactly_at_the_cap_passes` |
+| no single hub document, whatever the density | L1 | `tests/test_partner_kb.py::test_a_corpus_with_a_hub_document_fails_the_gate` |
+| a corpus linked only outward is refused | L1 | `tests/test_partner_kb.py::test_a_corpus_whose_links_are_all_cross_kb_fails_the_gate` |
+| ...but a corpus with no links at all is not | L1 | `tests/test_partner_kb.py::test_a_corpus_with_no_links_at_all_passes` |
+| the gate runs without an index, and builds none | L1 | `tests/test_partner_kb.py::test_the_gate_runs_without_an_index` |
+| the gate's count is the population `pnk doctor` reports | L1 | `tests/test_partner_kb.py::test_the_committed_split_is_pinned` |
+| the corpus carries L2's `self`-form fixture | L1 | `tests/test_partner_kb.py::test_the_partner_corpus_carries_a_self_form_link` |
+| the corpus carries L7's dangling-target fixture | L1 | `tests/test_partner_kb.py::test_the_partner_corpus_carries_a_target_in_a_kb_nothing_provides` |
+| a hub behind a shared filename still fails the gate | L1 | `tests/test_partner_kb.py::test_a_hub_hiding_behind_a_shared_filename_still_fails` |
+| an orphaned sidecar does not dilute density | L1 | `tests/test_partner_kb.py::test_an_orphaned_sidecar_does_not_dilute_the_density` |
+| a document with no sidecar is still counted | L1 | `tests/test_partner_kb.py::test_a_document_without_a_sidecar_is_still_counted` |
+| both corpora parse through the product's own sidecar reader | L1 | `tests/test_partner_kb.py::test_both_corpora_survive_the_products_own_sidecar_reader` |
+| the gate's link count agrees with the product's | L1 | `tests/test_partner_kb.py::test_the_gate_and_the_product_agree_on_the_link_count` |
+| `check.sh` still invokes the link-density gate | L1 | `tests/test_check_script.py::test_check_sh_declares_the_link_density_gate` |
+| CI runs it and proves it can fail | L1 | `tests/test_check_script.py::test_ci_runs_the_link_density_gate_and_proves_it_can_fail` |
 
 ## The PDF corpus
 

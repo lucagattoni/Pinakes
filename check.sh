@@ -87,6 +87,21 @@ except ValueError as exc:
     sys.exit(1)
 "
 
+# link-density (L1): authored links in the two committed corpora stay sparse — a ceiling on
+# density, a ceiling on any one document's degree, and at least one intra-KB link per corpus.
+# One author writes the corpus, its links and (later) the questions that traverse them, so a
+# quietly over-linked fixture would make cross-KB traversal look easy and the graph release's eval
+# look better than any real corpus ever will.
+#
+# Reads the committed sidecars, never an index — which is what lets it run here at all, and what
+# makes the number it enforces the same population `pnk doctor` reports to a user (L7). Those two
+# numbers disagreeing by three is how 0.4.1's data-loss bug was found; keeping them the same
+# population is not tidiness.
+#
+# `uv run` rather than plain `python3`: it needs PyYAML. Unlike the paid-path gate, nothing has to
+# run this before the package is installed.
+uv run --frozen python3 tools/link_density_gate.py
+
 # changelog/retrospective fragments are well-formed. Cheap, offline, and it fails *here* rather
 # than at release time — `--apply` deletes the fragments it consumed, so a malformed one found then
 # would be found with the evidence already gone.

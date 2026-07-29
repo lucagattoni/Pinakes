@@ -123,6 +123,36 @@ jobs:
           uv run --frozen python -m pinakes.extract.quality tests/pdf-corpus \
             --check-floors src/pinakes/extract/floors.toml
 
+  link-density:
+    # Its own job because `ci.yml` never invokes `check.sh` — a gate that lives only there runs
+    # only on the machine of whoever remembers to run it. Needs no models and no index (it reads
+    # the committed sidecars), so it is the cheapest job here and runs on core alone.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      - name: Authored links in both corpora stay sparse
+        run: uv run --frozen python tools/link_density_gate.py
+
+      - name: The gate can still fail
+        # A gate nobody has watched fail is a gate nobody knows works. Drives the same artifact at
+        # an impossible threshold and asserts a non-zero exit AND the stated reason: a crash, a
+        # missing corpus, or `uv` itself falling over all satisfy a bare non-zero exit too.
+        run: |
+          if uv run --frozen python tools/link_density_gate.py --max-degree 0; then
+            echo "link-density passed at --max-degree 0 — the gate is not gating" >&2
+            exit 1
+          fi
+          uv run --frozen python tools/link_density_gate.py --max-degree 0 2>&1 \
+            | grep -q "above the degree cap of 0"
+
   build:
     runs-on: ubuntu-latest
     steps:

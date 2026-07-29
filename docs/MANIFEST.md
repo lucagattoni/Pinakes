@@ -160,6 +160,14 @@ Connected KBs. The schema ships today because IDs cannot be retrofitted; travers
 Aliases live here and **never inside a `pnk://` URI** — a URI carrying an alias would break the
 moment the KB reached a machine where that alias means something else.
 
+`path` is stored but **not yet read by anything** — nothing resolves it and no check inspects it.
+When it is (the links release), it will be resolved **relative to this KB's root** with `~`
+expanded; an absolute path will be accepted and **warned about** by `pnk doctor`, because a
+manifest is committed and an absolute path in one publishes your filesystem layout to everyone who
+clones it. A path that does not exist on this machine will **not** be an error: a KB is routinely
+shared without its partners, and refusing to load would make every connected KB a hard dependency
+of every other.
+
 ---
 
 # The sidecar — `<file>.pnk.yaml`

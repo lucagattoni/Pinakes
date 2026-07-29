@@ -114,10 +114,12 @@ that holds it, and a test asserts every one of those tests exists.
 
 ## Your data stays yours
 
-This repository contains the **engine only**. Real knowledge bases live outside it. The sole KB here
-is a small synthetic corpus used for tests and retrieval benchmarking, and the only other committed
-content is `tests/pdf-corpus/` — PDFs generated from scratch by a committed script to exercise hard
-extraction cases. Neither was harvested from anywhere; no real-world document is committed here.
+This repository contains the **engine only**. Real knowledge bases live outside it. The only KBs
+here are two small synthetic corpora — an archive and a partner museum that transacts with it —
+used for tests, retrieval benchmarking and cross-KB linking, and the only other committed content
+is `tests/pdf-corpus/` — PDFs generated from scratch by a committed script to exercise hard
+extraction cases. None of it was harvested from anywhere; no real-world document is committed
+here.
 
 `pnk init` ships a `.gitignore` covering `.pinakes/`, so your index — and your spend ledger — never
 leaves your machine. Note that publishing a KB repo publishes `docs/` *and* every sidecar: titles,
