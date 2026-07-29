@@ -10,6 +10,84 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] — 20260729 07:48
+
+### Changed
+
+- **[`plans/links-and-graph.md`](plans/links-and-graph.md) revised after a sixth adversarial pass —
+  2 HIGH, and the pass-5 fixes verified correct.** Both were narrow, and both were introduced by the
+  previous round's own repairs.
+
+  **A gate clause stated one of its two guards backwards.** Clause 4 made a *rise* in
+  `confidence_coverage` a stop. A rise is an improvement — `eval.py` treats the *drop* as the
+  regression, with the comment *"losing the ability to say anything is a regression too"* — and the
+  metric is 1.0 in the committed baseline, so it cannot rise at all. The clause was a stop condition
+  that could never fire, while the guard the same-commit re-baseline actually removes went
+  unrestored. It now enumerates all six `compare()` families with the direction the code checks, and
+  says which single term the re-baseline may absorb.
+
+  **The anti-circularity guard was asserted to live in an increment it never reached.** The
+  structural-edge increment says *"the guard is in G2 and G5"*; the phrase appeared in G2 and G3 and
+  nowhere in G5. An engineer building G5 from G5 would compute the sign test once over all edges —
+  including the links hand-authored into both corpora by an earlier increment — pass, flip
+  `graph_channel` to default-on, and cut the release. The gate is now computed **twice, with and
+  without authored edges**, both p-values recorded, and the channel ships `off` if only the authored
+  run passes. That is the same "1.00 by construction" reasoning that removed cross-KB questions from
+  the golden set three passes ago.
+
+  Also closed: the stale-reverse-edge delete is now scoped by `origin` as well as source KB (under
+  the plan's own self-listing fixture, an origin-blind delete removes the authored rows the insert
+  guard exists to protect); `adjacent_k` gained the server cap its own gate asserts against;
+  `pnk link`'s free-path gate edit found an owner; the version floor is verified at whichever cut
+  ships it, rather than only on the path where the final increment runs; and five amendment rows
+  gained a home in their increment's Docs line.
+
+- `plans/links-and-graph.md` revised after adversarial pass 7 (6 HIGH across two reviewers), and
+  the `pnk link` YAML question settled. L1–L8 are now implementable; G1–G6 are not — G5's gate
+  clauses are re-reviewed before G5 is built. L2 was rewritten around four defects: a per-KB delete
+  that turned any mid-walk failure into the mass deletion the same section forbids, a delisted
+  partner whose rows no delete could reach, a scan that could not compute `src_kb_id` from sidecars
+  at all (a sidecar does not carry its KB's ULID) and whose natural workaround would re-target a
+  partner's `self` links at the local KB, and a failure taxonomy whose only recording channel makes
+  `pnk sync` exit non-zero on a git hook. G5 was rewritten around two: the gate made the
+  *without*-authored run binding while shipping the *with*-authored configuration, and G2's headroom
+  threshold never said which of its two reachability numbers licensed an irreversible
+  `schema_version` bump.
+
+### Fixed
+
+- **0.4.0 shipped without the three-document post-release sweep** — the rule added to `CLAUDE.md`
+  eight minutes before it was cut. `docs/STATUS.md` still read *"Latest release: 0.3.0"*, its
+  *Published on PyPI* table still listed *"0.2.2 and 0.3.0"*, and the roadmap had no 0.4.0 row while
+  the 0.3.0 row still described `path:page` citations as unreleased — they shipped in 0.4.0. Swept,
+  with the upload time taken from the index (0.4.0, 20260729 03:37 UTC).
+
+  **A caveat the rule needs, learned while checking this one:** `https://pypi.org/pypi/<pkg>/json`
+  is CDN-cached, and a query moments after an upload can return the *previous* release list. The
+  first check here reported 0.4.0 missing from an index that already had it — which would have
+  turned a correct release into a false alarm, or worse, licensed a re-upload attempt. Query with
+  cache-busting, and cross-check `https://pypi.org/simple/<pkg>/`, before concluding a publish
+  failed.
+
+  The release itself was correct end to end: tag `v0.4.0`, `__version__` agreeing, wheel smoke test
+  green, GitHub release published, and the `Publish to PyPI` step succeeded with its
+  *"Explain why nothing was published"* fallback skipped.
+
+- **`pnk sync` no longer destroys a sidecar it cannot parse, and no longer aborts over one.** A
+  sidecar that failed to load — a hand-edited `links[]` entry with one wrong character in a ULID is
+  the cheapest way there — was dropped from the walk, which made its document look like one that
+  had never been ingested, and the mint path then wrote a freshly minted sidecar **over** it. The
+  document's permanent ULID and every authored link went with it, `pnk sync` reported success with
+  no failures, and `pnk doctor` afterwards reported every sidecar readable and no duplicate ids,
+  because the evidence had been overwritten by the thing that destroyed it. Minting now refuses
+  where a file already exists, and names the parse error rather than merely the existence. A second
+  path had the opposite fault: for an *already-indexed* document whose sidecar breaks while its
+  content is unchanged — the likeliest way a user meets this at all — the error escaped `sync()`
+  entirely, so one hand-broken file aborted the whole corpus with no failures row and no commit.
+  Both now record a failure and let the run continue. One consequence to know about: because
+  `--sidecars-only` can now fail, a `pre-commit` hook blocks a commit that stages a document whose
+  sidecar will not parse. Present since v0.1.
+
 ## [0.4.0] — 20260729 05:32
 
 ### Added
@@ -1593,7 +1671,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.4.1
 [0.4.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.4.0
 [0.3.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.3.0
 [0.2.2]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.2.2
