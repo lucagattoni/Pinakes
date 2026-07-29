@@ -1,11 +1,11 @@
 # The links release and the graph release — implementation plan
 
-**Status:** draft — revised after adversarial passes 1 (22 HIGH), 2 (26 HIGH), 3 (24 HIGH) and
-4 (13 HIGH). **Not yet implementable.** Pass 4 was the first with no self-refuting fix and no
-finding that invalidated a decision's premise, and both its reviewers put the remainder on two
-seams rather than throughout — but assume this revision has defects too.
+**Status:** draft — revised after adversarial passes 1 (22 HIGH), 2 (26 HIGH), 3 (24 HIGH),
+4 (13 HIGH) and 5 (3 HIGH). **Not yet implementable.** The count is falling and the findings are
+localising, but pass 5 still found a decision resting on a false premise — so assume this revision
+has defects too, and run pass 6 before building.
 
-**Date:** written 20260729 02:52 · rewritten 03:31, 04:05, 04:27, 04:46
+**Date:** written 20260729 02:52 · rewritten 03:31, 04:05, 04:27, 04:46, 05:06
 
 **Source of truth:** [`docs/DESIGN.md`](../docs/DESIGN.md). Where this plan and DESIGN disagree on
 anything *not* in the amendments tables, DESIGN wins and this plan has a bug.
@@ -44,6 +44,12 @@ Re-verify before L1. `main` moved fifteen commits and cut a release under the fi
 | **the links release** | `pnk link`, `pnk links`, `pinakes_links`, reverse-scan, link coverage | **No** | **No** |
 | **the graph release** | Structural edges, the expansion channel, `schema_version` 3 | Yes, once | Yes — it is the whole gate |
 
+**A third outcome exists and is planned for**, not discovered: if G2's precondition fails, G3 and G5
+do not run, and G1 + G2 + G4 ship as their own release — a reproducibility measurement, a larger and
+better-instrumented golden set, and a manifest forward-compatibility pre-pass. Its verification is
+G6's minus the edge-dependent steps, its deliverable is not edge-hub reporting, and it is named at
+the cut like any other.
+
 **The links release changes no retrieval**, so no golden-set work is on its critical path. Pass 3
 made this unavoidable: `eval.py` is structurally single-KB, and every attempt to score a cross-KB
 question through it produced a class pinned at 0.00 or 1.00 by construction. Traversal correctness
@@ -59,11 +65,14 @@ two documents were related and pinakes remembered — and the structure that mak
 when nobody has authored anything is derived for free afterwards, if and only if the golden set says
 it helps.
 
-**One hop, stated plainly** (decision 16): a cross-KB neighbour is terminal. `K`'s index holds its
-own outbound links and its inbound ones, never a third KB's outbound links, and reading another KB's
-index is forbidden (DESIGN §6.2). Multi-hop *within* a KB is unbounded to the cap; multi-hop
-*across* KBs is one step. DESIGN §6.2 already calls this out as the honest limitation; the plan now
-says it too rather than implying more.
+**One hop, stated plainly** (decision 16): a cross-KB neighbour is terminal — **by policy, enforced
+by an explicit suppression**, not because the query comes back empty. It does not: K's index holds
+each partner document's links *that target K*, so a depth-2 hop through one would return K
+documents. It is suppressed because that view is **partial** — the partner's internal links are not
+in K's index and never will be — and a silently incomplete result is the failure mode this project
+refuses. Multi-hop *within* a KB is unbounded to the cap; multi-hop *across* KBs is one step. This
+is a **new** DESIGN §6.2 amendment (L4): §6.2's existing "honest limitation" is about link
+*coverage*, not traversal depth, and the plan should not claim DESIGN already says this.
 
 **Nothing here can spend money.** `.paid-path-allowlist` is unchanged; the free-path gate's
 *coverage* is extended per increment, which is required.
@@ -83,7 +92,7 @@ earlier.
 | 4 | Minimum of [KB-UPDATES](../docs/KB-UPDATES.md): the `requires_pinakes` pre-pass only | 02:30–03:10 | G4 |
 | 5 | `pnk link` writes forward only, into the source document's sidecar | 02:30–03:10 | L6 |
 | 6 | PPR and the `[ner]` extra are out | 02:30–03:10 | — |
-| 7 | Adversarial subagent passes until one comes back clean | 02:30–03:10 | Passes 1–3 done; **pass 4 required** |
+| 7 | Adversarial subagent passes until one comes back clean | 02:30–03:10 | Passes 1–5 done; **pass 6 required** |
 | 8 | `pinakes_search`'s `entities`/`concepts` are cut | 03:20–03:35 | RRF here is unweighted by construction |
 | 9 | The eval harness is repaired before it is grown | 03:20–03:35 | Landed `b637be4`, released in 0.3.0 |
 | 10 | Retrieval reproducibility is established before a finer gate depends on it | 03:20–03:35 | G1 — **reframed by 15**: measured first, fixed only if measurement says so |
@@ -92,7 +101,7 @@ earlier.
 | 13 | **The edge weights** are frozen at APPROACH §3's priors, committed before G2's questions are authored | 04:00–04:05 | G3, G5 |
 | 14 | **The golden set gains no cross-KB questions at all.** The multi-hop class stays single-KB, and cross-KB behaviour is verified by direct traversal tests instead | 04:27 (pass 3) | L1–L7, G2. `eval.py` is single-KB in its bones — one connection, one backend, `retrieved` as local paths. A cross-KB question scored through it is 0.00 by construction (the hop can never be followed) or 1.00 by construction (it merely confirms a link L1 hand-authored). Neither can decide anything, and pass 2 already established such questions cannot respond to `graph_channel` |
 | 15 | **Ordering reproducibility is measured before anything is changed.** No tiebreak is specified in advance | 04:27 (pass 3) | G1. The previous revision's three tiebreaks would have changed nothing observable: cross-document ties are already totalised by `documents.path`, and within a document rowid order *is* ordinal order in every write path that exists. **That is a fact about writes, and it reaches the output only through `_hydrate`'s unordered `WHERE c.id IN (…)` — an undocumented SQLite behaviour the tiebreak would have removed the dependency on.** So: measure first, and let the measurement scope the fix |
-| 16 | **The traversal surface serves document-level neighbours only, and a cross-KB neighbour is terminal at any depth** | 04:46 (pass 4) | L3–L5, G3, G5. Two findings collapse into this. First, KB *K*'s `links` table never holds another KB's *outbound* rows, so a depth-2 hop *through* a cross-KB neighbour has nothing to walk without opening that KB's index — which DESIGN §6.2 forbids. Second, structural nodes (tag, directory, heading, chunk) have **no `doc_id`**, so serving them would break the neighbour shape L4 pins with a test. Keeping the tool document-level means **G3 changes no released surface at all** and G5 flips no filter: the structural graph is internal to the expansion channel, permanently, and the authored graph is what `pnk links` shows |
+| 16 | **The traversal surface serves document-level neighbours only, and a cross-KB neighbour is terminal at any depth** | 04:46 (pass 4) | L3–L5, G3, G5. Two findings collapse into this. First, terminality is **a policy, and needs an explicit suppression in the core** — an earlier draft of this row claimed K's index has "nothing to walk" past a cross-KB neighbour, which is false: `store.py` states that *"a reverse link's source lives in another KB"*, so a reverse-scanned row is keyed on the **foreign** document and a depth-2 query from one returns K documents. The reason to stop is not emptiness but **partiality**: K only ever holds the partner's links that point *back at* K, never the partner's internal links, so expanding through a foreign document would show a systematically incomplete slice of its graph that no caller could distinguish from the whole. Second, structural nodes (tag, directory, heading, chunk) have **no `doc_id`**, so serving them would break the neighbour shape L4 pins with a test. Keeping the tool document-level means **G3 changes no released surface at all** and G5 flips no filter: the structural graph is internal to the expansion channel, permanently, and the authored graph is what `pnk links` shows |
 | 17 | **Traversal `confidence` is always `unknown`** in both releases | 04:46 (pass 4) | L5, amending APPROACH §5. The calibrated thresholds are fitted per KB on the reranker score of the *top retrieved passage* for a golden-set query (`calibrate.py`). A traversal neighbour is not a retrieved passage, a cross-KB neighbour list has no single manifest whose thresholds apply, and no fitted data for a traversal signal exists. DESIGN §4.2's rule is that an absent signal is `unknown`, never invented |
 
 ---
@@ -117,8 +126,8 @@ earlier.
 - **A gate that cannot run says so and is still a gate**, with a test asserting the printed reason.
 - **Worktree + branch per increment**, `YYYYMMDD_HHMM-<id>-<slug>`, timestamp from `date`.
 - **Before merging, run `python3 tools/shared_file_overlap.py --fetch --strict`** and read the merged
-  state of anything it names. A clean auto-merge is not a correct merge. Nine of these increments
-  touch `docs/DESIGN.md` or `docs/STATUS.md`.
+  state of anything it names. A clean auto-merge is not a correct merge. Thirteen of these fourteen
+  increments touch `docs/DESIGN.md` or `docs/STATUS.md` by their own Docs lines.
 - **The changelog entry is a [`changelog.d/`](../changelog.d/README.md) fragment**, in the same
   commit as the code. **Never edit `CHANGELOG.md`.** Retrospective findings are a
   [`retro.d/`](../retro.d/README.md) fragment; **never edit `docs/RETROSPECTIVES.md`.** No gate
@@ -168,6 +177,8 @@ earlier.
 | §10 | Cross-KB golden-set questions are not built (decision 14) | G2 |
 | §5 | `confidence` on a traversal response is always `unknown` (decision 17) | L5 |
 | §5 | Neighbours are documents only; a cross-KB neighbour is terminal (decision 16) | L4 |
+| §5 | `frontier` entries gain `kb_id` and a five-valued `reason`, and include fan-out-dropped candidates, not only next hops | L3 |
+| §5, §10 | `pinakes_search`'s `entities`/`concepts` parameters are not built (decision 8) | — |
 
 ## CLAUDE.md amendments
 
@@ -272,13 +283,26 @@ link distance, deterministically tie-broken on `(kb_id, doc_id)`. The core stays
 similarity as a **provider-supplied score per candidate** — the provider embeds and scores, the core
 only ranks, caps and dedups.
 
+**The core is generic over node identity**, so one implementation serves both the document provider
+(L4) and G5's structural expansion. A candidate carries an opaque `node_key` the provider defines
+and totally orders — `(kb_id, doc_id)` for documents, `(kind, key)` for structural nodes — and the
+core's dedup and tie-break use only that. Without this, G5 would need a second expander outside
+L3's traversal-cap gate.
+
 **`frontier` is defined here and produced here**, not in the MCP layer — it is core work, and the
-previous revision left APPROACH §5's other half unowned. A frontier entry is a neighbour that was
-*discovered and not expanded*, and it carries **why**, because four different mechanisms stop an
-expansion and they mean different things to a caller: `depth` (the hop limit), `fanout` (the
-`adjacent_k` cap), `rows` / `tokens` (the response caps), and `terminal` — a cross-KB neighbour,
-which is never expandable at any depth (decision 16). A caller that cannot tell `fanout` from
-`terminal` will retry a hop that can never succeed.
+previous revision left APPROACH §5's other half unowned. A frontier entry is
+`{kb_id, doc_id, rel, reason}` — a neighbour *discovered and not expanded* — and `reason` is one of
+**five**, because five distinct mechanisms stop an expansion and they mean different things to a
+caller: `terminal` (a cross-KB neighbour, never expandable at any depth — decision 16), `depth` (the
+hop limit), `fanout` (the `adjacent_k` cap), `rows` and `tokens` (the two response caps, which L3
+already requires to be independently observable on `truncated`, so they cannot share one reason).
+**Precedence when several apply is that order**, stated because it is otherwise the implementer's
+choice: a cross-KB neighbour dropped by the fan-out cap reports `terminal`, since retrying with a
+larger cap cannot help. A caller that cannot tell `fanout` from `terminal` retries a hop that can
+never succeed.
+
+This departs from APPROACH §5's `[{doc_id, rel}]` and from its "unexpanded **next hops**" wording — a
+fan-out-dropped candidate is not a next hop — and carries an amendment row.
 
 **`adjacent_k`** is a `[retrieval]` key, code default 8, documented — and **not stamped into the
 `notes` template**, in this release or the next. `_toml.py` hard-errors on unknown keys, and
@@ -290,8 +314,11 @@ settable-but-unstamped until a release deliberately accepts the break.
 `::test_fanout_keeps_the_highest_ranked_neighbours_not_the_first_k`;
 `::test_ranking_without_a_query_uses_edge_weight_then_distance`;
 `::test_ranking_with_a_query_uses_provider_supplied_similarity`;
-`::test_a_frontier_entry_carries_the_reason_it_was_not_expanded` (four cases);
-`::test_a_cross_kb_neighbour_is_frontier_terminal_at_every_depth`;
+`::test_a_frontier_entry_carries_the_reason_it_was_not_expanded` (five cases);
+`::test_terminal_outranks_fanout_when_both_apply`;
+`::test_a_cross_kb_neighbour_is_frontier_terminal_at_every_depth` — **its fixture must contain the
+back-link rows that make the hop walkable** (a partner document with links targeting the local KB,
+in both directions), or the test passes against an implementation with no suppression at all;
 `::test_a_hub_is_expanded_once_globally`;
 `::test_a_cycle_terminates`; `::test_unresolved_targets_survive_to_the_caller`;
 `::test_the_token_budget_sets_truncated_independently_of_the_row_cap`.
@@ -303,7 +330,8 @@ stated rather than left as a name: it drives the core with a caller asking for `
 **Docs:** `docs/MANIFEST.md`, `docs/DESIGN.md` §2.1, `docs/STATUS.md`, a `changelog.d/` fragment.
 
 **Mutation targets.** Rank-then-truncate ordering; the visited-edge set; the `unresolved`
-accumulation; the depth comparison; the token-budget check.
+accumulation; the depth comparison; the token-budget check; **the cross-KB suppression** — delete it
+and the terminality test must fail, which it can only do against the back-link fixture above.
 
 ---
 
@@ -350,8 +378,8 @@ list gains `pinakes.graph.traverse` and the provider — it enumerates modules, 
 Planned row is split so `pnk link` and `pinakes_links` stay listed.
 
 **Docs:** `docs/CLI.md`, `docs/GUIDE.md` (a cross-KB walkthrough, every command run),
-`docs/DESIGN.md` §8, `docs/STATUS.md`, `CLAUDE.md` and `docs/STATUS.md`'s naming tables (both gain
-`pnk links`), a `changelog.d/` fragment.
+`docs/DESIGN.md` §8, `docs/STATUS.md`, the "🚫 Unbuilt work is named" table in **both** `CLAUDE.md` and `docs/STATUS.md` (the links-release
+row in each gains `pnk links`; not the "Naming (fixed…)" table), a `changelog.d/` fragment.
 
 **Mutation targets.** The `kb_id` field; the ULID-not-name selection; the depth clamp; the per-hop
 loop replaced by one unbounded query.
@@ -508,7 +536,9 @@ contradicts the previous revision's assumptions.
 So the artifact and the questions that populate it land together.
 
 - **Per-question outcomes become a committed artifact** beside `baseline.json`: one row per question
-  — id, kind, hit, hit_rank, confidence. This is what a sign test reads, and what makes "which
+  — id, kind, hit, hit_rank, confidence. **Questions have no id today**, so `questions.yaml` gains a
+  stable `id` per entry in this increment; pairing before/after needs one and nothing else supplies
+  it. This is what a sign test reads, and what makes "which
   questions flipped" answerable at all.
 - **~18 single-KB multi-hop questions** (13 new), and **~20 `simple-lookup`**. **No cross-KB
   questions** (decision 14).
@@ -543,7 +573,9 @@ APPROACH §9 already names the right instrument — the **channel-reachable ceil
 previous revision dropped it because it appeared in the `ppr` row. It comes back here, as an
 **in-memory probe**: derive the edge set in memory from the committed corpora, with no schema change
 and no rebuild, and report the share of multi-hop questions whose evidence lies within 2 logical
-hops of the fused seeds, minus what the membership exclusion forbids. That probe is throwaway
+hops of the fused seeds, minus what the membership exclusion forbids — **computed twice, with and
+without authored edges**, because a corpus reachable only through links its own author wrote cannot
+tell you whether derived structure helps. That probe is throwaway
 measurement code, not the G3 deriver, and it is what makes the stop/go sound.
 
 All five committed multi-hop questions score 1.00, so every failure must come from the 13 new ones —
@@ -559,8 +591,9 @@ order.
 reproducibility measurement, a larger and better-instrumented golden set, and a manifest
 forward-compatibility pre-pass. The project's rule is that complete self-contained work never
 lingers in `[Unreleased]`, and "the graph release did not happen" is not a reason to strand three
-finished increments. G6's verification then drops its edge-dependent steps (2, 3, 6, 7), which is
-recorded at the cut rather than discovered.
+finished increments. G6's verification then drops the *edge-dependent clauses* of steps 2, 3, 6 and 7 — the fresh-KB
+end-to-end run in step 2 still happens, without the channel — and the release does not carry G6's
+edge-hub reporting, which has nothing to report.
 
 **The re-baseline.** Once, here, per-class before/after in the commit message, the previous
 `baseline.json` preserved.
@@ -604,7 +637,9 @@ revision named a `nodes` table it never described. A node is `(kind, key)`:
 **Orientation, stated because the divisor depends on it.** A hub spoke is **one row** with the hub
 always as `src`, so the damping divisor is well defined. The non-hub kinds are symmetric or
 bidirectional and are also stored once, with an explicit rule: `sibling` as lower→higher ordinal,
-`parent`/`child` as parent→child, `membership` as doc→chunk. The provider therefore queries
+`parent`/`child` as parent→child, `membership` as doc→chunk, **`authored` as the direction the
+sidecar wrote it** (a reverse-scanned row keeps the foreign document as `src`, exactly as `links`
+stores it). The provider therefore queries
 `src = ? OR dst = ?` for those kinds and `src = ?` for hub kinds — the distinction is part of the
 edge-kind table, not left to the implementer, because a `src`-only query silently drops half of
 every symmetric relation.
@@ -623,9 +658,19 @@ No stored `degree` — that would be derived state inside derived state.
 | `in-section` | chunk ↔ heading node (per-doc) | 1/section-size |
 | `co-located` | doc ↔ directory node | 1/dir-size |
 | `shared-tag` | doc ↔ tag node | 1/tag-degree |
-| authored | doc ↔ doc | 2.0 |
+| authored | doc ↔ doc | 2.0 — **read from `links`, not copied into `edges`**, so there is one home for an authored link and `pnk doctor`'s coverage number and the channel cannot disagree |
 
 Composition across a hub is the **product of both spokes**.
+
+**Authored edges are in the channel** — APPROACH §4A's whole argument for counting depth in logical
+hops is that physical counting "would strand the highest-trust authored edges beyond depth 2", so
+the channel traverses them. The previous revision left this unstated while three things depended on
+it, and stating it exposes a circularity the plan has already refused once elsewhere: **G5's gate
+could be satisfied by L1's hand-authored links bridging G2's hand-authored questions** — the same
+"1.00 by construction" shape decision 14 used to cut cross-KB questions. The guard is in G2 and G5:
+reachability and the gate are both reported **twice, with and without authored edges**, and a gate
+that passes only *with* them is recorded as such rather than counted as evidence that structure
+helps.
 
 **Edge removal.** `documents.state='deleted'` is a soft delete: a soft-deleted document's edges are
 removed and hub nodes reaching degree zero are reaped, so the channel can never surface deleted
@@ -729,6 +774,15 @@ outcomes, `expand` defaults **on** only if all three hold:
    re-baseline is legitimate here precisely because a default was deliberately changed; G2's "once"
    applies to growing the set, not to shipping a new default.
 
+4. **No other `compare()` metric may be absorbed silently by that re-baseline.** Rewriting
+   `baseline.json` disarms every guard in it, and `false_confidence` is sensitive to the channel by
+   the same mechanism as `false_abstain` — a third RRF input changes the top passage, which changes
+   the calibrated confidence. It is **not** covered by clause 2, because `by_kind["no-answer"]` is
+   hit-based: a no-answer question can stay a clean non-hit while flipping to HIGH. One flip is
+   0.125 against a 0.02 tolerance. So `false_confidence` and `confidence_coverage` before/after go
+   in `docs/STATUS.md` and the commit message, and a rise in either is a **stop**, not a
+   re-baseline. This clause exists because the clause-3 remedy opened the hole it closes.
+
 **Why the sign test, and why not "net".** Paired binary before/after on the same questions is
 McNemar, whose exact form is the sign test on discordant pairs. "≥ 5 net" is a different quantity:
 8 improved / 3 regressed is also net +5 and gives p = 0.113.
@@ -789,6 +843,7 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 |---|---|---|---|
 | Reverse links computed by scanning committed sidecars | DESIGN §6.2 | L2 | `test_rebuild_reconstructs_reverse_rows_from_sidecars_alone` |
 | `kb_refs` records alias, path and scan time | DESIGN §3 | L2 | `test_kb_refs_records_alias_path_and_scan_time` |
+| Stale reverse edges are removed on re-scan | DESIGN §6.2, amended | L2 | `test_a_removed_link_removes_its_reverse_row`, `test_the_delete_is_scoped_to_the_scanned_kb` |
 | Each failure mode reported with a reason | DESIGN §6.2 | L2 | `test_each_failure_mode_is_recorded_with_its_reason` |
 | Dangling cross-KB targets surfaced | DESIGN §6.2 | L7 | `test_a_dangling_cross_kb_target_warns_with_a_reason` |
 | Link coverage reported as the ceiling | DESIGN §6.2 | L7 | `test_link_coverage_counts_authored_links_only` |
@@ -859,5 +914,6 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | 20260729 02:52 | Written. Seven decisions with the user; no adversarial pass |
 | 20260729 03:31 | **Pass 1** — 22 HIGH. Three findings were live defects on `main`, fixed there first (`b637be4`, released in 0.3.0). Release split in two; `entities`/`concepts` cut |
 | 20260729 04:05 | **Pass 2** — 26 HIGH. Six of pass 1's fixes were wrong, two self-refuting. Decisions 11–13 |
-| 20260729 04:46 | **Pass 4** — two reviewers, **13 HIGH, down from 24**, and no self-refuting fixes for the first time. Five findings collapsed into decision 16: the traversal surface serves **documents only**, so structural nodes (which have no `doc_id`) never reach the pinned neighbour shape, G3 becomes genuinely inert, and G5 flips no filter. Cross-KB neighbours are terminal — KB *K* never holds another KB's outbound links, so the Goal was a one-hop claim all along. Also: `frontier` was contract text with no owner and no definition, now L3's with four stated reasons; G5's clause 3 conflicted with `compare()`, a hard CI gate, so turning the channel on re-baselines in the same commit; the headroom precondition measured failure without reachability, and APPROACH §9's channel-reachable ceiling comes back as an in-memory probe; the node identity scheme spanned five incompatible id spaces and is now specified; and G1/G2/G4 have a stated fallback if the precondition fails. **Pass 5 required**, scoped to these seams |
 | 20260729 04:27 | **Pass 3** — 24 HIGH across two reviewers. Three collapsed into one root cause: **the links release never needed the golden set**, and forcing cross-KB questions through a structurally single-KB harness produced a class pinned at 0.00 or 1.00 by construction. Cross-KB eval cut entirely (decision 14); all eval work moved to the graph release; the determinism increment became a *measurement* after its proposed fix was shown to be a provable no-op (decision 15); the per-question artifact the sign test needs was found to exist nowhere and given an owner; twelve increments were still instructing a future agent to edit `CHANGELOG.md`, forbidden by a convention that landed while this plan was being written. **Pass 4 required** |
+| 20260729 04:46 | **Pass 4** — two reviewers, **13 HIGH, down from 24**, and no self-refuting fixes for the first time. Five findings collapsed into decision 16: the traversal surface serves **documents only**, so structural nodes (which have no `doc_id`) never reach the pinned neighbour shape, G3 becomes genuinely inert, and G5 flips no filter. Cross-KB neighbours are terminal, and the Goal was a one-hop claim all along (the *reason* this pass gave was wrong — see 05:06). Also: `frontier` was contract text with no owner and no definition, now L3's with stated reasons; G5's clause 3 conflicted with `compare()`, a hard CI gate, so turning the channel on re-baselines in the same commit; the headroom precondition measured failure without reachability, and APPROACH §9's channel-reachable ceiling comes back as an in-memory probe; the node identity scheme spanned five incompatible id spaces and is now specified; and G1/G2/G4 have a stated fallback if the precondition fails. **Pass 5 required**, scoped to these seams |
+| 20260729 05:06 | **Pass 5** — **3 HIGH, down from 13.** All three on the pass-4 seams. Decision 16's *conclusion* survived but its *premise* did not: the plan claimed K's index has nothing to walk past a cross-KB neighbour, and `store.py` says a reverse link's source lives in another KB — so the hop is walkable and terminality is a policy needing an explicit suppression, which no test or mutation target had. The real reason to stop is partiality, not emptiness, and the user reconfirmed on the corrected basis. Whether authored `doc ↔ doc` edges are in the channel was never stated while three things depended on it — they are, and stating it exposed a circularity (the gate satisfiable by hand-authored links bridging hand-authored questions) now guarded by reporting reachability and the gate with and without them. And the clause-3 remedy had disarmed `compare()`'s guard on `false_confidence`, which clause 4 restores. **Pass 6 required** |
