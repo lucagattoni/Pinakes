@@ -760,6 +760,15 @@ A golden set of questions, each with known-correct source chunks, lives with the
 each template. CI scores **recall@k, MRR, rerank precision, and the false-abstain / false-confidence
 rates of the §4.2 signal**, and fails the build on regression beyond a small tolerance.
 
+**Per class, not only in aggregate** — and the question count is itself a gated number. An aggregate
+hides a trade: a change that lifts one kind of question and pays for it out of another moves the
+headline rates by almost nothing, which is precisely the shape a graph channel has. A golden set
+that *shrank* is caught the same way, because losing its hard questions improves every rate.
+
+**A scripted multi-hop question is scored on every hop**: it counts as found only when each hop's
+own query retrieves the document that hop names, so its `expect` is exactly the union of those
+documents. Scoring only the last search would make the class a single-shot lookup wearing a label.
+
 This is what makes fusion weights, chunk sizes and reranker choices *decidable* instead of
 superstitious. It is also unglamorous work that must not be deferred: retrieval tuning without a
 scoreboard is guessing, and guessing at the foundation is expensive later.

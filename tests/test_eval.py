@@ -1,7 +1,9 @@
 """The scoreboard, against the real demo KB — the thing that makes retrieval changes decidable."""
 
 import json
+import zlib
 from collections.abc import Iterator, Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +13,15 @@ from pinakes import store
 from pinakes.calibrate import fit
 from pinakes.embed import ModelInfo, Vectors, register_embedding_backend, register_reranker
 from pinakes.errors import CalibrationError, EvalError
-from pinakes.eval import compare, evaluate, load_questions, read_baseline, write_baseline
+from pinakes.eval import (
+    Hop,
+    Question,
+    compare,
+    evaluate,
+    load_questions,
+    read_baseline,
+    write_baseline,
+)
 from pinakes.manifest import load
 from pinakes.search import HIGH, LOW
 from pinakes.sync import SyncOptions, sync
@@ -25,6 +35,13 @@ class HashingBackend:
 
     The point of these tests is that the harness measures correctly, not that a particular model
     scores well — the real numbers come from CI with real weights (§7).
+
+    `crc32`, not `hash()`. Python randomises `hash()` of a `str` per process unless
+    `PYTHONHASHSEED` is set, which nothing here sets and no conftest *can* set — it is read before
+    the interpreter starts. So which words collided in the 64-dimensional space changed from run
+    to run, and every ranking assertion in this file was a coin toss weighted heavily enough to
+    look stable: measured 20260729 03:31, one failure in 40 runs. A fake that is not reproducible
+    cannot tell a real regression from its own noise (v0.1 rule 5, test machinery).
     """
 
     def embed(self, texts: Sequence[str]) -> Vectors:
@@ -32,7 +49,7 @@ class HashingBackend:
         for text in texts:
             vector = np.zeros(DIM, dtype=np.float32)
             for word in text.lower().split():
-                vector[hash(word.strip(".,:;()")) % DIM] += 1.0
+                vector[zlib.crc32(word.strip(".,:;()").encode("utf-8")) % DIM] += 1.0
             rows.append(vector)
         if not rows:
             return np.zeros((0, DIM), dtype=np.float32)
@@ -100,6 +117,14 @@ def test_the_committed_golden_set_is_well_formed() -> None:
         for hop in question.hops:
             assert hop.expect in documents
 
+        # The consistency that was missing. Two committed questions named one document in `expect`
+        # and reached a different one in their last hop, so the scorer asked about A and demanded
+        # B. Nothing caught it, because `hops` fed no metric at all.
+        if question.hops:
+            assert set(question.expect) == {hop.expect for hop in question.hops}, (
+                f"{question.question}: `expect` must be exactly the hops' own documents"
+            )
+
 
 def test_no_answer_questions_expect_nothing() -> None:
     """They score by abstention; an expectation would quietly turn them into ordinary questions."""
@@ -145,6 +170,41 @@ def test_multi_hop_questions_follow_their_script(demo: Path) -> None:
     assert any(outcome.hops_followed > 0 for outcome in outcomes)
 
 
+def test_a_hop_that_misses_denies_the_hit_even_when_the_last_hop_lands(demo: Path) -> None:
+    """The test the class never had: scoring must depend on the hops, not only the final search.
+
+    The first hop asks something the corpus cannot answer with the document it names, so it cannot
+    land. The last hop is a near-certain lexical hit. Before 20260729 the question scored as a hit
+    on the strength of that last search alone; `hops_followed` existed and reached no metric, so
+    deleting the hop loop changed nothing. If `Outcome.hit` stops consulting the hops, this fails.
+    """
+    unreachable = Hop(query="parking permits for delivery vans", expect="docs/opening-hours.md")
+    lands = Hop(
+        query="What temperature and humidity are the stacks held at?",
+        expect="docs/storage-environment.md",
+    )
+    scripted = Question(
+        question="A scripted question whose first hop cannot land.",
+        kind="multi-hop",
+        expect=("docs/opening-hours.md", "docs/storage-environment.md"),
+        hops=(unreachable, lands),
+    )
+
+    connection = store.connect_ro(demo / ".pinakes" / "index.db")
+    try:
+        _, outcomes = evaluate(
+            connection, load(demo), [scripted], backend=HashingBackend(), reranker=OverlapReranker()
+        )
+    finally:
+        connection.close()
+
+    outcome = outcomes[0]
+    assert "docs/storage-environment.md" in outcome.retrieved, "the last hop was meant to land"
+    assert outcome.hit_rank is not None, "a document from `expect` was retrieved"
+    assert outcome.hops_followed == 1, "exactly one of the two hops landed"
+    assert not outcome.hit, "a question is not a hit when one of its hops missed"
+
+
 def test_a_baseline_round_trips_and_detects_a_regression(tmp_path: Path, demo: Path) -> None:
     questions = load_questions(demo / "eval" / "questions.yaml")
     connection = store.connect_ro(demo / ".pinakes" / "index.db")
@@ -165,6 +225,52 @@ def test_a_baseline_round_trips_and_detects_a_regression(tmp_path: Path, demo: P
     pretend_better["recall_at_k"] = min(1.0, metrics.recall_at_k + 0.5)
     regressions = compare(metrics, pretend_better)
     assert regressions and "recall_at_k" in regressions[0]
+
+
+def test_a_per_class_regression_is_caught_when_the_aggregate_hides_it(demo: Path) -> None:
+    """One class paying for another is the shape a graph channel has, and the aggregate hides it.
+
+    `compare()` checked six aggregates and never read `by_kind`, though it wrote it into every
+    baseline. A channel lifting multi-hop while dropping simple lookup by the same number of
+    questions moves `recall_at_k` by almost nothing and passed green.
+    """
+    questions = load_questions(demo / "eval" / "questions.yaml")
+    connection = store.connect_ro(demo / ".pinakes" / "index.db")
+    try:
+        metrics, _ = evaluate(
+            connection, load(demo), questions, backend=HashingBackend(), reranker=OverlapReranker()
+        )
+    finally:
+        connection.close()
+
+    baseline = metrics.as_dict()
+    assert compare(metrics, baseline) == []
+
+    # Every aggregate is left exactly as measured; only one class is claimed to have been better.
+    traded = dict(baseline)
+    traded["by_kind"] = dict(baseline["by_kind"]) | {"lexical": 1.0}
+    metrics_with_a_worse_class = replace(metrics, by_kind=dict(metrics.by_kind) | {"lexical": 0.5})
+
+    regressions = compare(metrics_with_a_worse_class, traded)
+    assert regressions and any("by_kind[lexical]" in line for line in regressions)
+
+
+def test_a_golden_set_that_shrank_is_a_regression(demo: Path) -> None:
+    """Losing the hard questions improves every rate. Only the count can see it."""
+    questions = load_questions(demo / "eval" / "questions.yaml")
+    connection = store.connect_ro(demo / ".pinakes" / "index.db")
+    try:
+        metrics, _ = evaluate(
+            connection, load(demo), questions, backend=HashingBackend(), reranker=OverlapReranker()
+        )
+    finally:
+        connection.close()
+
+    baseline = dict(metrics.as_dict())
+    baseline["questions"] = metrics.questions + 5
+
+    regressions = compare(metrics, baseline)
+    assert regressions and any("the golden set shrank" in line for line in regressions)
 
 
 def test_a_rise_in_false_confidence_is_a_regression(demo: Path) -> None:

@@ -64,7 +64,15 @@ class Outcome:
 
     @property
     def hit(self) -> bool:
-        return self.hit_rank is not None
+        """A scripted question is a hit only when **every** hop landed its own document.
+
+        Before 20260729 this read `hit_rank is not None`, which ignored `hops` entirely:
+        `hops_followed` was computed and never consulted, so a multi-hop question scored as a
+        single-shot search of its last hop's query and the class measured nothing about hopping.
+        Deleting the hop loop left `by_kind["multi-hop"]` bit-identical — the definition of a
+        vacuous metric (§7).
+        """
+        return self.hit_rank is not None and self.hops_followed == len(self.question.hops)
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +189,12 @@ def _run_question(
         if passage.path not in retrieved:
             retrieved.append(passage.path)
 
+    # The last hop is a hop like any other: its own document has to be found by its own query.
+    # It is scored here rather than in the loop above only because its search carries the
+    # question's filters and is the one whose ranking feeds MRR.
+    if question.hops and question.hops[-1].expect in retrieved:
+        followed += 1
+
     hit_rank = next(
         (index + 1 for index, path in enumerate(retrieved) if path in question.expect), None
     )
@@ -282,6 +296,28 @@ def compare(metrics: Metrics, baseline: dict[str, Any], *, tolerance: float = 0.
     if metrics.confidence_coverage < before_coverage - tolerance:
         regressions.append(
             f"confidence_coverage: {before_coverage:.3f} -> {metrics.confidence_coverage:.3f}"
+        )
+
+    # Per-class, because an aggregate hides the trade. A change that lifts one kind and drops
+    # another by the same amount moves `recall_at_k` by almost nothing, and that is exactly the
+    # shape a graph channel has: gains on multi-hop paid for out of simple lookup (§7).
+    before_kinds = baseline.get("by_kind")
+    if isinstance(before_kinds, dict):
+        for kind, before_value in sorted(cast(dict[str, Any], before_kinds).items()):
+            after_kind = metrics.by_kind.get(kind)
+            if after_kind is None:
+                regressions.append(f"by_kind[{kind}]: the class vanished from the golden set")
+            elif after_kind < float(before_value) - tolerance:
+                regressions.append(
+                    f"by_kind[{kind}]: {float(before_value):.3f} -> {after_kind:.3f}"
+                )
+
+    # A set that shrank scores better by losing its hard questions, and every rate above would
+    # improve while the system got worse.
+    before_questions = int(baseline.get("questions", 0))
+    if metrics.questions < before_questions:
+        regressions.append(
+            f"questions: {before_questions} -> {metrics.questions} (the golden set shrank)"
         )
     return regressions
 

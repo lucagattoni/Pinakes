@@ -12,6 +12,43 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The multi-hop class measured nothing about hopping, and two of its five questions asked about
+  one document while demanding another.** `Outcome.hops_followed` was computed for every scripted
+  question and read by no metric — not `recall_at_k`, not `by_kind`, nothing CI compares. Deleting
+  the hop loop outright left `by_kind["multi-hop"]` bit-identical, which is the definition of a
+  vacuous metric ([DESIGN §7](docs/DESIGN.md#7-quality)). A multi-hop question was in effect a
+  single-shot search of its last hop's query.
+
+  That hid a second defect in the golden set itself. Three questions named their *last* hop's
+  document in `expect`; two named their *first*, so the scorer ran a query about brittle-paper
+  conservation and demanded the annual report. Nothing caught the disagreement, because `hops` fed
+  no metric that could notice.
+
+  A hit now requires **every** hop to land its own document by its own query, and `expect` is
+  exactly the union of the hops' documents — asserted for the committed set, so the two
+  inconsistent questions cannot come back.
+
+  **The numbers moved because the scorer was wrong, not because retrieval changed** (no retrieval
+  code was touched): recall@5 0.8788 → 0.9091, MRR 0.7737 → 0.8116, rerank precision 0.7273 →
+  0.7576, `by_kind["multi-hop"]` 0.80 → 1.00. Stricter scoring, higher score — because the two
+  inverted questions had been asked about the wrong document all along. `false_abstain` (0.0303),
+  `false_confidence` (0.25) and `confidence_coverage` (1.0) are unchanged. Baseline re-cut
+  20260729 03:23, `[light]` models, three identical consecutive runs.
+
+  Two gaps in the comparator closed alongside it, both of which let a real regression pass green:
+  `compare()` wrote `by_kind` into every baseline and **never read it back**, so a change lifting
+  one class and dropping another by the same amount moved the aggregate by almost nothing; and the
+  question count was written and never compared, so a golden set that silently lost its hard
+  questions would have scored *better*.
+
+- **`HashingBackend`, the "cheap deterministic embedder" the eval tests rank with, was not
+  deterministic.** It hashed each word with `hash()`, which Python randomises per process for `str`
+  unless `PYTHONHASHSEED` is set — and nothing sets it, nor can a `conftest.py`, since the value is
+  read before the interpreter starts. Which words collided in the 64-dimensional space therefore
+  changed from run to run. Measured before the fix: **one failure in 40 runs**; after switching to
+  `zlib.crc32`, **zero in 60**. A fake that cannot reproduce itself cannot tell a real regression
+  from its own noise.
+
 - **Five docs still called the paid extractor a stub, or unbuilt, after I7b built it.**
   `docs/STATUS.md` contradicted itself within eight lines — one row correctly read "`claude-vision`
   is a real extractor", while the paragraph below still explained that nothing can spend money

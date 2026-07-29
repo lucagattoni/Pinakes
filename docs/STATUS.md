@@ -223,12 +223,23 @@ unverified.
 
 | Metric | Value | Measured |
 |---|---|---|
-| recall@5 | 0.879 | 20260725 18:55, demo KB, `[light]` models |
-| MRR | 0.774 | 20260725 18:55 |
-| rerank precision | 0.727 | 20260725 18:55 |
-| false-abstain | 0.03 | 20260725 18:55 |
-| **false-confidence** | **0.25** | 20260725 18:55 — one no-answer question in four still gets a confident answer |
+| recall@5 | 0.909 | 20260729 03:23, demo KB, `[light]` models |
+| MRR | 0.812 | 20260729 03:23 |
+| rerank precision | 0.758 | 20260729 03:23 |
+| false-abstain | 0.03 | 20260729 03:23 |
+| **false-confidence** | **0.25** | 20260729 03:23 — one no-answer question in four still gets a confident answer |
 | NumPy vector tier | 2.25 ms/query at 50k×384, 77 MB resident | 20260725 13:49 |
+
+Per class, same run: `lexical` 1.00, `filter` 1.00, `no-answer` 1.00 (abstained correctly),
+`multi-hop` 1.00, `paraphrase` 0.75. **Paraphrase is the only class with room in it**, and
+`multi-hop` sits at ceiling on five questions — a class at 1.00 can only ever show damage, which is
+why nothing should be tuned against it until it is both larger and harder.
+
+⚠️ **These numbers moved on 20260729 because the scorer was wrong, not because retrieval improved.**
+A multi-hop question was scored as a single-shot search of its last hop's query — `hops_followed`
+was computed and reached no metric — and two of the five questions consequently asked about one
+document while demanding another. Recall@5 rose 0.879 → 0.909 and MRR 0.774 → 0.812 when the class
+started requiring every hop to land. Nothing about retrieval changed in that commit.
 
 The false-confidence figure is fitted and scored on the same 41-question set (8 of them no-answer),
 so treat it as a floor rather than an estimate. Publishing it is the point:
