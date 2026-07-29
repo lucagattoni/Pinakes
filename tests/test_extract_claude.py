@@ -25,6 +25,8 @@ from pinakes.budget.ledger import CallState, ledger_path, quantise, read, resolv
 from pinakes.budget.prices import Prices, load_prices
 from pinakes.errors import ExtractionError
 from pinakes.extract import CLAUDE_VISION, fingerprint_inputs
+from pinakes.extract import fingerprint as extraction_fingerprint
+from pinakes.extract.cache import stage_page, staged_pages
 from pinakes.extract.claude import (
     LEAKED_TAG_PATTERN,
     MAX_REQUEST_BYTES,
@@ -44,6 +46,7 @@ from pinakes.extract.claude import (
     parse_pages,
 )
 from pinakes.manifest import load
+from pinakes.sync import hash_file
 
 FIXTURES = Path(__file__).parent / "fixtures" / "claude"
 CORPUS = Path(__file__).parent / "pdf-corpus"
@@ -998,3 +1001,147 @@ def test_a_real_sync_extracts_indexes_records_and_caches(
     cached: Any = json_module.loads(entries[0].read_text(encoding="utf-8"))
     assert cached["operation_id"]
     assert cached["call_ids"] == [ledger[0].call_id]
+
+
+# --- staging: what an interrupted run must not pay for twice ------------------------------------
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_resumed_run_re_asks_nothing_that_was_staged(
+    accountant: Accountant, tmp_path: Path
+) -> None:
+    """The whole reason staging exists. A 12-page document is three slices; if the first two
+    survived an earlier run, a resume must pay for the third and only the third — counted from
+    the transport, not inferred from the absence of an error."""
+    from pinakes.extract.claude import extract_document
+
+    staging = tmp_path / "partial"
+    # Two slices land, the third times out — a real interruption rather than a contrived one, and
+    # one the caller isolates as a document failure.
+    first_run = RecordedTransport("happy-five-page-slice", "happy-five-page-slice", "timeout")
+    with pytest.raises(TransportError):
+        extract_document(
+            CORPUS / "baseline-12p.pdf",
+            transport=first_run,
+            accountant=accountant,
+            model=MODEL,
+            pages_total=12,
+            force=True,
+            staging=staging,
+            sleep=never_sleeps,
+        )
+    assert first_run.calls == 3
+    assert sorted(staged_pages(staging)) == list(range(10)), "two slices staged, ten pages"
+
+    resumed = RecordedTransport("short-final-slice")
+    extracted, tally = extract_document(
+        CORPUS / "baseline-12p.pdf",
+        transport=resumed,
+        accountant=accountant,
+        model=MODEL,
+        pages_total=12,
+        force=True,
+        staging=staging,
+        sleep=never_sleeps,
+    )
+    assert resumed.calls == 1, "the ten staged pages must cost nothing at all"
+    assert tally.calls == 1
+    assert len(extracted.page_spans) == 12
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_slice_interrupted_mid_flight_is_re_asked_whole(
+    accountant: Accountant, tmp_path: Path
+) -> None:
+    """Resume granularity is the slice, never the page: its pages were transcribed together, and
+    a page transcribed with different neighbours is a different extraction."""
+    from pinakes.extract.claude import extract_document
+
+    staging = tmp_path / "partial"
+    # Three of slice 1's five pages staged — as if it had been killed part-way through writing.
+    for page in range(3):
+        stage_page(staging, page=page, text=f"partial page {page}")
+
+    transport = RecordedTransport(
+        "happy-five-page-slice", "happy-five-page-slice", "short-final-slice"
+    )
+    extract_document(
+        CORPUS / "baseline-12p.pdf",
+        transport=transport,
+        accountant=accountant,
+        model=MODEL,
+        pages_total=12,
+        force=True,
+        staging=staging,
+        sleep=never_sleeps,
+    )
+    assert transport.calls == 3, "the partially staged slice is re-asked whole, not topped up"
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_partially_extracted_document_writes_no_complete_entry(
+    make_fake_kb: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A half-extracted document in the index is the silent truncation the design exists to
+    prevent, so it writes nothing and goes to `failures` — while its staged pages survive, which
+    is what makes the next run cheap rather than merely correct."""
+    import shutil
+
+    from pinakes.extract import (
+        CLAUDE_VISION,
+        ExtractorEntry,
+        register_extractor,
+        registered_entry,
+    )
+    from pinakes.extract import claude as claude_module
+    from pinakes.extract.cache import staging_dir
+    from pinakes.extract.claude import ClaudeVisionExtractor
+    from pinakes.manifest import load as load_manifest
+    from pinakes.sync import SyncOptions, sync
+
+    root = make_fake_kb(
+        extraction_backend=CLAUDE_VISION,
+        budget={"per_operation_eur": "50.00", "daily_eur": "50.00", "monthly_eur": "50.00"},
+    )
+    path = root / "pinakes.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md", "**/*.txt"]', 'include = ["**/*.pdf"]'
+        ),
+        encoding="utf-8",
+    )
+    shutil.copyfile(CORPUS / "baseline-12p.pdf", root / "docs" / "scan.pdf")
+
+    # Two slices succeed, the third times out: the run dies part-way through the document.
+    transport = RecordedTransport("happy-five-page-slice", "happy-five-page-slice", "timeout")
+    original_entry = registered_entry(CLAUDE_VISION)
+    register_extractor(
+        CLAUDE_VISION,
+        ExtractorEntry(
+            lambda: ClaudeVisionExtractor(transport),
+            claude_module.fingerprint_inputs,
+            paid=True,
+            requires=("anthropic", "claude"),
+        ),
+    )
+    try:
+        report = sync(load_manifest(root), options=SyncOptions(force=True, yes=True))
+    finally:
+        register_extractor(CLAUDE_VISION, original_entry)
+
+    assert not report.ok
+    assert [failure[0] for failure in report.failures] == ["docs/scan.pdf"]
+
+    cache_dir = root / ".pinakes" / "cache" / "extract"
+    assert list(cache_dir.glob("*.json")) == [], "no complete entry for a partial document"
+
+    manifest = load_manifest(root)
+    surviving = staging_dir(
+        cache_dir,
+        content_hash=hash_file(root / "docs" / "scan.pdf"),
+        fingerprint=extraction_fingerprint(CLAUDE_VISION, manifest.extraction.model),
+    )
+    assert len(staged_pages(surviving)) == 10, "the staged pages survive for the next run"

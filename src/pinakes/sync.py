@@ -1269,11 +1269,23 @@ def _extract_for_index(
         # Loading the extractor (importing pypdfium2, say) is deferred inside this closure, so a
         # cache hit never pays for it — only a miss does (I4).
         ctx = ExtractionContext(
-            model=manifest.extraction.model, force=options.force, accountant=accountant
+            model=manifest.extraction.model,
+            force=options.force,
+            accountant=accountant,
+            staging_dir=staging,
         )
         return load_extractor(extraction_backend).extract(source, ctx)
 
     used_fingerprint = fingerprint(extraction_backend, manifest.extraction.model)
+    staging = (
+        extract_cache.staging_dir(
+            manifest.extract_cache_dir,
+            content_hash=content_hash,
+            fingerprint=used_fingerprint,
+        )
+        if effective_is_paid
+        else None
+    )
     extracted = extract_cache.get_or_extract(
         manifest.extract_cache_dir,
         content_hash=content_hash,
@@ -1283,6 +1295,12 @@ def _extract_for_index(
         operation_id=None if accountant is None else accountant.operation_id,
         call_ids=None if accountant is None else accountant.call_ids_this_operation,
     )
+    if staging is not None:
+        # **After** the complete entry is written, never before: the reverse loses every staged
+        # page to a crash in between, which is exactly the re-payment staging exists to prevent.
+        # A document that failed never reaches here, so its staging survives for the next run —
+        # and it wrote no complete entry, which is the all-or-nothing half of the same rule.
+        extract_cache.clear_staging(staging)
     return extracted, extraction_backend, used_fingerprint
 
 
