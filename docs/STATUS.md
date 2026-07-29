@@ -70,8 +70,8 @@ of a pattern instead of reporting `0 indexed` and explaining nothing. It stays o
 because `init` cannot see whether `pinakes[pdf]` is installed, and a glob stamped without it turns
 every PDF into a failed document rather than a skipped one.
 
-⚠️ **A template change reaches new KBs only.** I9's line will not appear in any KB created before
-it, and nothing today detects or reports that divergence — so existing KBs stay PDF-blind
+⚠️ **A template change reaches new KBs only.** The explanatory line above shipped in 0.2.2 and
+appears in no KB created before it, and nothing today detects or reports that divergence — so existing KBs stay PDF-blind
 permanently unless their owner edits the manifest by hand. That gap, and what to do about it, is
 worked through in [KB-UPDATES.md](KB-UPDATES.md) (a proposal; its `requires_pinakes` half is
 assigned to G4 in [`plans/links-and-graph.md`](../plans/links-and-graph.md), still unbuilt).
@@ -103,7 +103,7 @@ landing with its own tests.
 | I7b | The paid Claude-vision extractor — request shape, validation, retries | shipped 0.3.0 |
 | I7c | The completeness audit, staging, all-or-nothing commit | shipped 0.3.0 |
 | I8 | `pnk doctor` text yield, `path:page` citations on both surfaces, the three end-to-end traces | **landed 20260729 04:55**, unreleased |
-| I9 | Docs sweep, template, CI | **planned** |
+| I9 | The verification audit (`docs/VERIFICATION.md` + its gate), the untested-check sweep, README extras, wheel-smoke assertions | **landed 20260729 05:29**, unreleased |
 
 **Decided 20260728 17:52 — I6–I9 accumulate, and cut as one MINOR release.** `plans/v0.2.md`
 assumed a single release at I9; 0.2.0 was instead released after I5, correctly, since I1–I5 was
