@@ -7,6 +7,7 @@
 | [**MANIFEST.md**](MANIFEST.md) | *What goes in `pinakes.toml`?* Every manifest and sidecar field, with defaults |
 | [**MEASUREMENT-RUN.md**](MEASUREMENT-RUN.md) | *How were the paid extractor's quality numbers obtained, and how do I re-run them?* The runbook, its steps and its euros |
 | [**STATUS.md**](STATUS.md) | *Does this exist yet?* Shipped vs planned, the increment ledger, measured numbers |
+| [**VERIFICATION.md**](VERIFICATION.md) | *What holds this promise?* Every claimed property and the test that checks it — `tests/test_verification.py` asserts each one exists |
 | [**DESIGN.md**](DESIGN.md) | *Why is it built this way?* Architecture, storage, sync semantics, concurrency, trade-offs |
 | [**RETROSPECTIVES.md**](RETROSPECTIVES.md) | *What did we learn?* Per-increment findings, and the design's own review passes |
 | [**KB-UPDATES.md**](KB-UPDATES.md) | *What happens to a KB somebody already has when pinakes changes?* Design note — **proposal, not built**; its `requires_pinakes` half is assigned in `plans/` |
@@ -40,6 +41,7 @@ When an increment lands, this table says which file to edit — usually exactly 
 | What an increment taught us | **RETROSPECTIVES.md** | written as a `retro.d/` fragment; spliced at release |
 | How to run the human-gated paid measurement | **MEASUREMENT-RUN.md** | STATUS carries the numbers it produced, with their date |
 | What is going to be built, and in what order | **`plans/`** | STATUS.md carries the shipped/planned state only |
+| Which test holds a given promise | **VERIFICATION.md** | a plan's own table records what was *predicted*, never what exists |
 
 The README is deliberately **version-free**: it describes what pinakes *is*, never what release you
 are on. That is why it does not go stale.

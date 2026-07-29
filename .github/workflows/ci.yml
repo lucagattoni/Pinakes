@@ -148,6 +148,63 @@ jobs:
           test -f /tmp/smoke/kb/eval/questions.yaml
           grep -q '.pinakes/' /tmp/smoke/kb/.gitignore
 
+      # `floors.toml` and `prices.toml` are the two package-data files whose absence silently
+      # disables a spending guard: a source-tree test finds them by path and passes on every
+      # installed copy that does not have them. Asserted here through `importlib.resources`,
+      # against the built wheel, because that is the only place the question is real.
+      - name: The wheel carries the files the spending guards read
+        run: |
+          set -e
+          uv run --isolated --no-project --with dist/*.whl python -c "
+          from pinakes.budget.prices import load_prices
+          from pinakes.extract.floors import load_floors
+          prices, floors = load_prices(), load_floors()
+          assert prices.models, 'prices.toml reached the wheel with no models in it'
+          assert floors.text_yield_floor > 0, 'floors.toml reached the wheel with no fitted floor'
+          print(f'prices as_of {prices.as_of}; text-yield floor {floors.text_yield_floor}')
+          "
+
+      # A core-only install can index nothing that needs embeddings and no PDF at all. Both are
+      # expected, and both must fail by *naming the extra to install* rather than with a traceback.
+      #
+      # **`pnk sync` cannot make the extractor half of that claim, and the obvious version of this
+      # step silently makes the wrong one.** The embedding backend loads before any extractor runs,
+      # so a PDF-only KB still fails on sentence-transformers and names `pinakes[st]` — a grep for
+      # `pinakes[` passes while proving nothing about PDFs. Verified by running it (I9). `pnk
+      # doctor` is the surface that reaches the extractor question, because it reports a failing
+      # backend as a check and carries on, so both assertions below are real ones.
+      - name: A core-only install names the extra it needs, and never traces back
+        run: |
+          set -e
+          uv run --isolated --no-project --with dist/*.whl pnk init /tmp/smoke/corekb --name core
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path("/tmp/smoke/corekb/pinakes.toml")
+          body = manifest.read_text(encoding="utf-8")
+          include = 'include = ["**/*.md", "**/*.txt"]'
+          assert include in body, "the template's include line has changed shape"
+          manifest.write_text(body.replace(include, 'include = ["**/*.pdf"]'), encoding="utf-8")
+          PY
+          cp tests/pdf-corpus/baseline-1p.pdf /tmp/smoke/corekb/docs/a.pdf
+
+          # (a) the embedding half: a clean, named refusal, not a stack trace.
+          set +e
+          out=$(uv run --isolated --no-project --with dist/*.whl pnk sync --kb /tmp/smoke/corekb 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          if [ "$code" -eq 0 ]; then echo "::error::a core-only install must not report success"; exit 1; fi
+          echo "$out" | grep -q 'pinakes\[st\]' || { echo "::error::it must name the embedding extra"; exit 1; }
+          if echo "$out" | grep -qi 'traceback'; then echo "::error::it must not be a traceback"; exit 1; fi
+
+          # (b) the extractor half, which only `doctor` reaches on a core-only install.
+          set +e
+          health=$(uv run --isolated --no-project --with dist/*.whl pnk doctor --kb /tmp/smoke/corekb 2>&1)
+          set -e
+          echo "$health"
+          echo "$health" | grep -q 'pinakes\[pdf\]' || { echo "::error::doctor must name the PDF extra"; exit 1; }
+          if echo "$health" | grep -qi 'traceback'; then echo "::error::doctor must not trace back"; exit 1; fi
+
       # plans/v0.1.md promised this gate under "Verification of the whole" and it never shipped:
       # the item carried no increment number, so no increment owned it (see that plan's close-out,
       # rule 8). I7a replaces the unconditional grep that stood here with the allowlist gate: an

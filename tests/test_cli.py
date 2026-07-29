@@ -131,3 +131,32 @@ def test_no_help_text_carries_markdown_emphasis(capsys: pytest.CaptureFixture[st
             main([command, "--help"])
         rendered = capsys.readouterr().out
         assert "**" not in rendered, f"`pnk {command} --help` shows literal asterisks"
+
+
+def test_every_sync_flag_documents_its_scope(capsys: pytest.CaptureFixture[str]) -> None:
+    """`pnk sync` is the only command that can spend money or destroy derived state, so a flag
+    whose reach nobody wrote down grows one (plans/v0.2.md, I7c).
+
+    Read out of the `--help` a user actually sees, not out of the parser's internals: the promise
+    is about what `pnk sync --help` tells someone, so that is the text asserted against.
+    """
+    with pytest.raises(SystemExit) as exit_info:
+        main(["sync", "--help"])
+    assert exit_info.value.code == 0
+    help_text = capsys.readouterr().out
+
+    # Each of these states a *limit*, not only a capability. The words are the flag's own; a
+    # rewrite that drops the limit fails here rather than shipping a wider flag than it documents.
+    must_bound = {
+        "--force": ("never widens", "exactly two"),
+        "--yes": ("Raises no cap", "does not"),
+        "--clear-cache": ("never the ledger",),
+        "--estimate-only": ("generates nothing",),
+    }
+    flat = " ".join(help_text.split())
+    for flag, phrases in must_bound.items():
+        assert flag in flat, f"{flag} is gone from `pnk sync --help`; this list must change with it"
+        for phrase in phrases:
+            assert phrase in flat, (
+                f"`pnk sync {flag}` no longer states its limit in --help: expected {phrase!r}"
+            )
