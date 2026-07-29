@@ -14,6 +14,12 @@
 
 Build plans live in [`plans/`](../plans/); the release history is [`CHANGELOG.md`](../CHANGELOG.md).
 
+**Two of these documents are written to indirectly.** `CHANGELOG.md` and `RETROSPECTIVES.md` are the
+files every piece of work touches, so a change adds a fragment to
+[`changelog.d/`](../changelog.d/README.md) or [`retro.d/`](../retro.d/README.md) and
+`python3 tools/fragments.py --apply` splices them at release time. **Never edit either document
+directly.** Reading them, note that anything unreleased is still sitting in its fragment directory.
+
 ---
 
 ## Where does a fact live?
@@ -30,8 +36,8 @@ When an increment lands, this table says which file to edit — usually exactly 
 | Why a design decision was taken, and what it costs | **DESIGN.md** | — |
 | Which code paths are allowed to spend money | **`.paid-path-allowlist`** + CLAUDE.md's invariant | DESIGN §1 gives the rationale; `check.sh`, CI and `tests/test_paid_path.py` read the file itself |
 | A measured number (recall, latency, false-confidence) | **STATUS.md** | cited with its date wherever quoted |
-| What changed in a release | **CHANGELOG.md** | — |
-| What an increment taught us | **RETROSPECTIVES.md** | — |
+| What changed in a release | **CHANGELOG.md** | written as a `changelog.d/` fragment; spliced at release |
+| What an increment taught us | **RETROSPECTIVES.md** | written as a `retro.d/` fragment; spliced at release |
 | How to run the human-gated paid measurement | **MEASUREMENT-RUN.md** | STATUS links to it while the numbers are still missing |
 | What is going to be built, and in what order | **`plans/`** | STATUS.md carries the shipped/planned state only |
 
@@ -50,7 +56,13 @@ The docs are built so an increment touches few files. In rough order:
 3. **MANIFEST.md** — add any new manifest or sidecar key, with its default.
 4. **GUIDE.md** — fill the stub if the increment made a task possible that wasn't before.
 5. **DESIGN.md** — only if the *rationale* changed. A new flag alone is not a design change.
-6. **CHANGELOG.md** — the `[Unreleased]` entry, in the same commit as the code.
+6. **A [`changelog.d/`](../changelog.d/README.md) fragment** — one file, named
+   `<category>-<slug>.md`, in the same commit as the code. **Never an edit to `CHANGELOG.md`**:
+   it is the one file every increment would otherwise touch, and two agents cannot conflict in
+   separate files.
+7. **A [`retro.d/`](../retro.d/README.md) fragment** if the increment's review found something
+   worth keeping — a real defect, or a fact expensive to rediscover. Same reason, same rule:
+   never edit `RETROSPECTIVES.md` directly. Trivia stays in the commit message.
 
 `plans/v0.2.md` carries a DESIGN.md amendment table assigning each spec edit to the increment that
 makes it true. **Amendments land with their increment, never in advance** — a spec describing
