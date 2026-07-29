@@ -154,7 +154,9 @@ Work left local is invisible to every other agent, machine and scheduled run.
   name from the unbuilt-names table above it), and `README.md`'s install lines if the release added
   an extra or a capability a new user would look for. Verify by querying the index
   (`curl -s https://pypi.org/pypi/pinakes/json`) and installing what the docs show — not by reading
-  them. Caught 20260729: `STATUS.md` still said "Published version: 0.2.2 **only**" after 0.3.0 had
+  them. **That endpoint is CDN-cached**: a query moments after an upload can return the previous
+  release list, so bust the cache and cross-check `https://pypi.org/simple/pinakes/` before
+  concluding a publish failed (20260729 — a correct 0.4.0 upload read as missing). Caught 20260729: `STATUS.md` still said "Published version: 0.2.2 **only**" after 0.3.0 had
   been on PyPI for three hours, and the roadmap still listed the paid-extraction release as unbuilt.
 - After anything lands on `main`, fast-forward the primary checkout (`git pull --ff-only`).
 
