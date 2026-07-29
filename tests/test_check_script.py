@@ -76,3 +76,28 @@ def test_check_sh_declares_the_prices_toml_gate() -> None:
     assert "load_prices" in text
     assert "strptime" in text
     assert "%Y%m%d %H:%M" in text
+
+
+def test_check_sh_declares_the_link_density_gate() -> None:
+    """L1 added a gate to `check.sh` and a job to `ci.yml` and asserted neither, so deleting
+    either left the whole suite green. Same reasoning as the pdf-quality guard above: match the
+    real invocation, not a substring an explanatory comment would also satisfy."""
+    text = CHECK_SH.read_text(encoding="utf-8")
+    assert re.search(
+        r"^uv run --frozen python3 tools/link_density_gate\.py\s*$", text, re.MULTILINE
+    ), "check.sh no longer invokes the link-density gate"
+
+
+def test_ci_runs_the_link_density_gate_and_proves_it_can_fail() -> None:
+    """`ci.yml` never invokes `check.sh`, so a gate living only there runs only where someone
+    remembers. The negative step matters as much as the positive one: a gate nobody has watched
+    fail is a gate nobody knows works."""
+    workflow = (Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+    job = re.search(r"^  link-density:\n(?P<body>(?:    .*\n|\n)*)", workflow, re.MULTILINE)
+    assert job is not None, "ci.yml has no link-density job"
+    body = job.group("body")
+    assert "tools/link_density_gate.py" in body
+    assert "--max-degree 0" in body, "the negative check is gone — nothing proves the gate gates"
+    assert "exit 1" in body, "the negative check no longer fails the job"

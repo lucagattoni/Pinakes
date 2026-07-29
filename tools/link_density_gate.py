@@ -6,11 +6,15 @@ make the graph release's eval look better than any real corpus will: APPROACH §
 that authored links are *rare*, and a fixture that quietly violates the premise the design rests on
 is worse than no fixture. So sparsity is asserted here rather than remembered.
 
-**Why the sidecars and not the index.** This runs in `check.sh`, which never builds an index — and
-the population the gate enforces has to be the same one `pnk doctor` reports to a user (L7), or the
-number a person reads and the number CI enforces can differ. A committed sidecar holds exactly the
-forward-authored links and nothing else: a reverse-scanned row is index state and can never appear
-in one.
+**Why the sidecars and not the index.** This runs in `check.sh`, which never builds an index. A
+committed sidecar holds exactly the forward-authored links and nothing else — a reverse-scanned row
+is index state and can never appear in one — so the *links* counted here are the same population
+`pnk doctor` reports to a user (L7), which is what stops the number a person reads and the number CI
+enforces from drifting apart.
+
+The *document* counts are a different matter and are only expected to agree when the index is in
+step: `pnk doctor` counts indexed documents, this counts files matching `[sources] include`. They
+coincide on the committed corpora and nothing enforces that they must.
 
 **Three limits, and the third is the one that is easy to miss.**
 
@@ -66,24 +70,40 @@ class Census:
         return max(self.degrees.items(), key=lambda item: (item[1], item[0]))
 
 
-def kb_id(root: Path) -> str:
-    """The KB's own ULID, read from its manifest without a TOML dependency of ours.
+def manifest_facts(root: Path) -> tuple[str, list[str], list[str]]:
+    """`([kb] id, [sources] roots, [sources] include)`, read without `pinakes.manifest`.
 
-    `tomllib` is stdlib, but the manifest is read here only for `[kb] id` — the gate deliberately
-    does not go through `pinakes.manifest`, so that a manifest change that breaks loading still
-    leaves the sparsity gate able to report.
+    `tomllib` is stdlib. Going through the product's loader would mean a manifest change that
+    breaks loading also takes the sparsity gate down with it, and this gate should still be able
+    to report then.
     """
     import tomllib
 
     with (root / "pinakes.toml").open("rb") as handle:
         data = tomllib.load(handle)
-    raw_section: object = data.get("kb")
-    if not isinstance(raw_section, dict):
-        raise SystemExit(f"{root}/pinakes.toml has no [kb] table")
-    identifier = cast(dict[str, object], raw_section).get("id")
+
+    def table(name: str) -> dict[str, object]:
+        raw: object = data.get(name)
+        if not isinstance(raw, dict):
+            raise SystemExit(f"{root}/pinakes.toml has no [{name}] table")
+        return cast(dict[str, object], raw)
+
+    identifier = table("kb").get("id")
     if not isinstance(identifier, str):
         raise SystemExit(f"{root}/pinakes.toml has no [kb] id")
-    return identifier
+
+    sources = table("sources")
+
+    def strings(key: str, default: list[str]) -> list[str]:
+        raw = sources.get(key)
+        if raw is None:
+            return default
+        if not isinstance(raw, list):
+            raise SystemExit(f"{root}/pinakes.toml: [sources] {key} is not a list")
+        values = [value for value in cast(list[object], raw) if isinstance(value, str)]
+        return values or default
+
+    return identifier, strings("roots", ["docs/"]), strings("include", ["**/*.md"])
 
 
 def target_kb(uri: str, *, owner: str) -> str:
@@ -99,14 +119,37 @@ def target_kb(uri: str, *, owner: str) -> str:
     return owner if head.lower() == "self" else head
 
 
+def documents_of(root: Path, roots: list[str], include: list[str]) -> list[Path]:
+    """The KB's *documents*, from `[sources]` — not its sidecars.
+
+    Counting sidecars instead was wrong in both directions and neither was theoretical: an
+    orphaned sidecar (which `pnk sync` deliberately keeps) inflated the denominator and diluted
+    density — 8 of 10 real documents linked read as 27% — while a document whose sidecar had not
+    been minted yet was invisible, so the gate reported nonsense on any KB where sync had not run.
+    """
+    found: set[Path] = set()
+    for name in roots:
+        base = (root / name).resolve()
+        if not base.is_dir():
+            continue
+        for pattern in include:
+            for candidate in base.glob(pattern):
+                if candidate.is_file() and not candidate.name.endswith(SIDECAR_SUFFIX):
+                    found.add(candidate)
+    return sorted(found)
+
+
 def census(root: Path) -> Census:
-    owner = kb_id(root)
+    owner, roots, include = manifest_facts(root)
     degrees: dict[str, int] = {}
     relations: Counter[str] = Counter()
-    intra = cross = documents = 0
+    intra = cross = 0
 
-    for path in sorted(root.rglob(f"*{SIDECAR_SUFFIX}")):
-        documents += 1
+    files = documents_of(root, roots, include)
+    for document in files:
+        path = document.with_name(document.name + SIDECAR_SUFFIX)
+        if not path.is_file():
+            continue
         loaded: object = yaml.safe_load(path.read_text(encoding="utf-8"))
         if not isinstance(loaded, dict):
             raise SystemExit(f"{path}: not a mapping")
@@ -122,7 +165,12 @@ def census(root: Path) -> Census:
         entries = cast(list[object], raw)
         if not entries:
             continue
-        name = path.name[: -len(SIDECAR_SUFFIX)]
+        # Keyed by path relative to the KB root, never by basename. Two documents sharing a
+        # filename in different folders collapsed to one key and the later one *overwrote* the
+        # earlier — so a degree-6 hub sat behind `docs/aaa/policy.md` while the gate reported
+        # "worst degree 1 (policy.md)" and exited 0. The degree cap exists separately from density
+        # precisely to catch that shape, and a basename key is the one way it cannot.
+        name = document.relative_to(root).as_posix()
         degrees[name] = len(entries)
         for item in entries:
             if not isinstance(item, dict):
@@ -140,7 +188,7 @@ def census(root: Path) -> Census:
 
     return Census(
         kb=root.name,
-        documents=documents,
+        documents=len(files),
         linked=len(degrees),
         degrees=degrees,
         intra=intra,
@@ -156,10 +204,15 @@ def failures(report: Census, *, max_density: float, max_degree: int) -> list[str
             f"{report.kb}: {report.linked}/{report.documents} documents carry authored links "
             f"({report.density:.0%}), above the {max_density:.0%} cap"
         )
-    document, degree = report.worst
-    if degree > max_degree:
+    # Every offender, not just the worst: reporting one at a time makes a corpus with three hubs
+    # take three CI runs to fix, and each run looks like a new failure.
+    over = sorted(
+        ((name, degree) for name, degree in report.degrees.items() if degree > max_degree),
+        key=lambda item: (-item[1], item[0]),
+    )
+    for name, degree in over:
         problems.append(
-            f"{report.kb}: {document} carries {degree} authored links, above the "
+            f"{report.kb}: {name} carries {degree} authored links, above the "
             f"degree cap of {max_degree} — density alone permits one hub wired to everything"
         )
     # `cross > 0` as well as `intra == 0`: a corpus with *no* authored links is not one whose links
@@ -174,14 +227,19 @@ def failures(report: Census, *, max_density: float, max_degree: int) -> list[str
     return problems
 
 
-def render(report: Census) -> str:
+def render(report: Census, *, max_density: float, max_degree: int) -> str:
+    """The caps in force are passed in, never read from the module constants.
+
+    Printing `MAX_DENSITY` while `--max-density` was in effect made the line say "27% of the 35%
+    cap" and then fail the corpus in the same breath — a report that contradicts its own verdict.
+    """
     document, degree = report.worst
     histogram = ", ".join(f"{rel} {count}" for rel, count in sorted(report.relations.items()))
     return (
         f"{report.kb}: {report.documents} documents, {report.linked} linked "
-        f"({report.density:.0%} of the {MAX_DENSITY:.0%} cap), "
+        f"({report.density:.0%} of the {max_density:.0%} cap), "
         f"{report.intra} intra-KB + {report.cross} cross-KB, "
-        f"worst degree {degree} ({document}), relations: {histogram or 'none'}"
+        f"worst degree {degree}/{max_degree} ({document}), relations: {histogram or 'none'}"
     )
 
 
@@ -199,7 +257,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"link-density: {root} is not a KB root", file=sys.stderr)
             return 1
         report = census(root)
-        print(f"link-density: {render(report)}")
+        print(
+            f"link-density: "
+            f"{render(report, max_density=args.max_density, max_degree=args.max_degree)}"
+        )
         problems.extend(failures(report, max_density=args.max_density, max_degree=args.max_degree))
 
     for problem in problems:

@@ -5,8 +5,9 @@ indexes the rest (which file owns which fact). This file only carries rules that
 
 ## This repository is PUBLIC
 
-- **Never commit real knowledge-base content.** The repo is the engine. The only KB here is the
-  synthetic demo corpus under `tests/` — written for the purpose, never harvested.
+- **Never commit real knowledge-base content.** The repo is the engine. The only KBs here are the
+  synthetic corpora under `tests/` (`demo-kb`, `partner-kb`) — written for the purpose, never
+  harvested.
 - **An API key lives in `.env`, which is gitignored by pattern (`.env`, `.env.*`).** The paid
   extractor needs a real key, so one on this machine is normal; one that is merely *untracked* is
   a `git add -A` away from a public repo. Pass it explicitly — `uv run --env-file .env pnk …` —

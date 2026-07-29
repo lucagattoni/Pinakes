@@ -71,15 +71,26 @@ def gate(*roots: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def corpus(root: Path, *, documents: int, links: dict[int, list[tuple[str, str]]]) -> Path:
-    """A throwaway KB. `links` maps a document's index to `(target-kb-id, rel)` pairs."""
+def corpus(
+    root: Path,
+    *,
+    documents: int,
+    links: dict[int, list[tuple[str, str]]],
+    names: dict[int, str] | None = None,
+) -> Path:
+    """A throwaway KB. `links` maps a document's index to `(target-kb-id, rel)` pairs.
+
+    `names` overrides a document's path within `docs/`, which is how the basename-collision case
+    is built — it needs two documents with one filename in different folders.
+    """
     (root / "docs").mkdir(parents=True)
     kb_id = mint_kb_id()
     (root / "pinakes.toml").write_text(
         MANIFEST.format(name=root.name, kb_id=kb_id), encoding="utf-8"
     )
     for index in range(documents):
-        name = f"doc{index}.md"
+        name = (names or {}).get(index, f"doc{index}.md")
+        (root / "docs" / name).parent.mkdir(parents=True, exist_ok=True)
         (root / "docs" / name).write_text(f"# Doc {index}\n\nText.\n", encoding="utf-8")
         body: dict[str, object] = {"id": str(mint_doc_id()), "title": f"doc {index}"}
         if index in links:
@@ -168,13 +179,13 @@ def test_the_committed_corpora_pass_their_own_gate() -> None:
     assert "intra-KB" in result.stdout and "relations:" in result.stdout
 
 
-def test_the_committed_split_is_what_pnk_doctor_counts() -> None:
+def test_the_committed_split_is_pinned() -> None:
     """Pins the real corpora's numbers, not just that the gate is happy with them.
 
-    The gate's count and `pnk doctor`'s must be the same population (L7) — a user reading one and
-    CI enforcing the other is how they drift apart. These are the numbers `pnk doctor` reports:
-    `16 links, 4 cross-KB` for demo and `13 links, 7 cross-KB` for partner, verified by running it.
-    A synthetic corpus cannot pin this; only the committed one can.
+    The *link* counts here are the same population `pnk doctor` reports (L7): `16 links, 4
+    cross-KB` for demo and `13 links, 7 cross-KB` for partner — run against both corpora on
+    20260729 08:35. That is a fact about today, not an invariant this test enforces, which is why
+    it is a comment rather than an assertion dressed up as one.
     """
     result = gate(DEMO, PARTNER)
     assert "12 intra-KB + 4 cross-KB" in result.stdout, result.stdout
@@ -191,7 +202,12 @@ def test_the_partner_corpus_carries_a_self_form_link() -> None:
     """`pnk://self/<doc>` in a *partner* sidecar is the trap L2 must not fall into: read with the
     local KB as `owner`, it resolves to the wrong KB and mints links the partner never wrote. The
     corpus carries the trap so L2's test cannot quietly build one it already knows how to
-    survive."""
+    survive.
+
+    **This fixture is not a fixed point of the product's own writer.** `sidecar.write` resolves
+    `self` to a ULID on write (MANIFEST §2.2), so anything that reads and rewrites this file
+    destroys the fixture — and `pnk link` (L6) writes exactly this key. This test catches it, but
+    a long way from the cause, so the hazard is named here rather than discovered."""
     found = [
         path
         for path, body in sidecars(PARTNER).items()
@@ -311,3 +327,113 @@ def test_the_caps_are_settable_so_the_boundary_is_testable(tmp_path: Path, flag:
     )
     assert tightened.returncode == 1
     assert gate(kb).returncode == 0
+
+
+def test_both_corpora_survive_the_products_own_sidecar_reader() -> None:
+    """The gate parses sidecars with its own looser reader, so a corpus can satisfy every gate in
+    the repo and still be rejected by `pinakes.sidecar.read` — an empty `rel`, a non-mapping
+    `links` entry, a `to` that will not resolve. Nothing else in the suite reads either corpus
+    through the product, so this is the only place that discrepancy can show up.
+
+    No index and no models: it is a parse, and it takes milliseconds.
+    """
+    from pinakes.sidecar import read as read_sidecar
+
+    for root in (DEMO, PARTNER):
+        owner = load(root).kb.id
+        for path in sorted(root.rglob(f"*{SIDECAR_SUFFIX}")):
+            parsed = read_sidecar(path, owner=owner)
+            assert parsed.id
+            for link in parsed.links:
+                assert link.rel.strip(), f"{path}: an empty `rel` survived"
+
+
+def test_the_gate_and_the_product_agree_on_the_link_count() -> None:
+    """The gate's own parser against `pinakes.sidecar.read`, over the committed corpora.
+
+    Two independent counts of one population is what exposed 0.4.1's data-loss bug — `pnk doctor`
+    said 10 links where the gate said 13, and the difference was a destroyed sidecar. Keeping a
+    second count is the point, so it is asserted rather than left to whoever next runs both.
+    """
+    from pinakes.sidecar import read as read_sidecar
+
+    for root in (DEMO, PARTNER):
+        owner = load(root).kb.id
+        through_product = sum(
+            len(read_sidecar(path, owner=owner).links)
+            for path in sorted(root.rglob(f"*{SIDECAR_SUFFIX}"))
+        )
+        reported = gate(root).stdout
+        intra = int(reported.split(" intra-KB")[0].split()[-1])
+        cross = int(reported.split(" cross-KB")[0].split()[-1])
+        assert intra + cross == through_product, (
+            f"{root.name}: {intra}+{cross} != {through_product}"
+        )
+
+
+def test_a_hub_hiding_behind_a_shared_filename_still_fails(tmp_path: Path) -> None:
+    """The gate keyed degree by *basename*, so two documents with one filename in different
+    folders collapsed to a single key and the later-sorted one overwrote the earlier.
+
+    Verified against the shipped gate before the fix: a degree-6 hub — 50% above the cap — exited
+    0 and was reported as "worst degree 1 (policy.md)". The degree cap exists separately from
+    density precisely to catch a hub, and a basename key is the one way it cannot.
+    """
+    collided = corpus(
+        tmp_path / "collided",
+        documents=10,
+        names={0: "aaa/policy.md", 1: "zzz/policy.md"},
+        links={
+            0: [("self", "related")] * 6,  # the hub, 50% over the cap
+            1: [("self", "related")],  # same basename, different folder
+        },
+    )
+    result = gate(collided)
+    assert result.returncode == 1, result.stdout
+    assert "aaa/policy.md carries 6" in result.stderr, result.stderr
+
+
+def test_an_orphaned_sidecar_does_not_dilute_the_density(tmp_path: Path) -> None:
+    """Documents come from `[sources] include`, not from a sidecar glob. `pnk sync` deliberately
+    keeps an orphaned sidecar, so counting sidecars inflated the denominator: 8 of 10 real
+    documents linked reported as 27% and passed a 35% cap."""
+    kb = corpus(
+        tmp_path / "orphans",
+        documents=10,
+        links={index: [("self", "related")] for index in range(8)},
+    )
+    for index in range(20):
+        (kb / "docs" / f"ghost{index}.md{SIDECAR_SUFFIX}").write_text(
+            f"id: {mint_doc_id()}\n", encoding="utf-8"
+        )
+    result = gate(kb)
+    assert "10 documents, 8 linked (80%" in result.stdout, result.stdout
+    assert result.returncode == 1
+
+
+def test_a_document_without_a_sidecar_is_still_counted(tmp_path: Path) -> None:
+    """The other direction: a KB where sync has not run yet has documents and no sidecars. It must
+    read as 0% linked, not as a corpus of three documents that are all linked."""
+    kb = corpus(tmp_path / "unsynced", documents=3, links={0: [("self", "related")]})
+    for index in range(20):
+        (kb / "docs" / f"fresh{index}.md").write_text("# Fresh\n\nNo sidecar.\n", encoding="utf-8")
+    result = gate(kb)
+    assert "23 documents, 1 linked (4%" in result.stdout, result.stdout
+    assert result.returncode == 0
+
+
+def test_the_report_names_the_cap_in_force_not_the_default(tmp_path: Path) -> None:
+    """`render` interpolated the module constant while the flag was in effect, so the line read
+    "27% of the 35% cap" and the very next line failed the corpus — a report contradicting its own
+    verdict, and the only output CI's negative step ever prints."""
+    kb = corpus(tmp_path / "capped", documents=10, links={0: [("self", "related")]})
+    tightened = subprocess.run(
+        [sys.executable, str(TOOL), str(kb), "--max-density", "0.05", "--max-degree", "0"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert tightened.returncode == 1
+    assert "of the 5% cap" in tightened.stdout, tightened.stdout
+    assert "of the 35% cap" not in tightened.stdout
+    assert "degree 1/0" in tightened.stdout, tightened.stdout

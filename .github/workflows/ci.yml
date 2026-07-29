@@ -143,13 +143,15 @@ jobs:
 
       - name: The gate can still fail
         # A gate nobody has watched fail is a gate nobody knows works. Drives the same artifact at
-        # an impossible threshold and asserts a non-zero exit: the step above only ever exercises
-        # the passing direction, and a gate degraded to `return 0` looks identical from there.
+        # an impossible threshold and asserts a non-zero exit AND the stated reason: a crash, a
+        # missing corpus, or `uv` itself falling over all satisfy a bare non-zero exit too.
         run: |
           if uv run --frozen python tools/link_density_gate.py --max-degree 0; then
             echo "link-density passed at --max-degree 0 — the gate is not gating" >&2
             exit 1
           fi
+          uv run --frozen python tools/link_density_gate.py --max-degree 0 2>&1 \
+            | grep -q "above the degree cap of 0"
 
   build:
     runs-on: ubuntu-latest

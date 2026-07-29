@@ -60,9 +60,16 @@ test, or write **none** and say why in the same commit.
 | a corpus linked only outward is refused | L1 | `tests/test_partner_kb.py::test_a_corpus_whose_links_are_all_cross_kb_fails_the_gate` |
 | ...but a corpus with no links at all is not | L1 | `tests/test_partner_kb.py::test_a_corpus_with_no_links_at_all_passes` |
 | the gate runs without an index, and builds none | L1 | `tests/test_partner_kb.py::test_the_gate_runs_without_an_index` |
-| the gate's count is the population `pnk doctor` reports | L1 | `tests/test_partner_kb.py::test_the_committed_split_is_what_pnk_doctor_counts` |
+| the gate's count is the population `pnk doctor` reports | L1 | `tests/test_partner_kb.py::test_the_committed_split_is_pinned` |
 | the corpus carries L2's `self`-form fixture | L1 | `tests/test_partner_kb.py::test_the_partner_corpus_carries_a_self_form_link` |
 | the corpus carries L7's dangling-target fixture | L1 | `tests/test_partner_kb.py::test_the_partner_corpus_carries_a_target_in_a_kb_nothing_provides` |
+| a hub behind a shared filename still fails the gate | L1 | `tests/test_partner_kb.py::test_a_hub_hiding_behind_a_shared_filename_still_fails` |
+| an orphaned sidecar does not dilute density | L1 | `tests/test_partner_kb.py::test_an_orphaned_sidecar_does_not_dilute_the_density` |
+| a document with no sidecar is still counted | L1 | `tests/test_partner_kb.py::test_a_document_without_a_sidecar_is_still_counted` |
+| both corpora parse through the product's own sidecar reader | L1 | `tests/test_partner_kb.py::test_both_corpora_survive_the_products_own_sidecar_reader` |
+| the gate's link count agrees with the product's | L1 | `tests/test_partner_kb.py::test_the_gate_and_the_product_agree_on_the_link_count` |
+| `check.sh` still invokes the link-density gate | L1 | `tests/test_check_script.py::test_check_sh_declares_the_link_density_gate` |
+| CI runs it and proves it can fail | L1 | `tests/test_check_script.py::test_ci_runs_the_link_density_gate_and_proves_it_can_fail` |
 
 ## The PDF corpus
 
