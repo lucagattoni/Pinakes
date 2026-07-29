@@ -41,3 +41,31 @@ mutations were detected. The survivor deleted `pnk doctor`'s unmeasured-document
 that test sweeps the *whole* cache and reads a branch that counts documents rather than the tally.
 The mixed case, where some documents measure and others do not, is the one the tally exists for, and
 it had no test. Its name claimed the general property; its body tested the degenerate one.
+
+### The review pass over I8's own diff
+
+Three defects, all in `pnk doctor`'s new check, all found by reading it adversarially rather than
+by any test:
+
+**HIGH — the health check crashed on an unhealthy KB.** `is_paid_backend` raises
+`BackendUnknownError` on a name it does not recognise, and the check passed it every PDF's recorded
+backend. A KB indexed by a newer pinakes, or with an extra since uninstalled, would make `pnk
+doctor` itself raise — the one command someone runs *because* their KB is in a state they do not
+understand. §4.4's coherence check has carried the identical guard, with the identical comment,
+since I5; the new code was written beside it and did not copy it.
+
+**MEDIUM — a KB whose PDFs are all paid-extracted got a permanent, unclearable warning**, with a
+remedy (`pnk sync`) that on those documents *spends money*. The check deliberately skips
+paid-extracted documents, then reported the resulting empty measurement through the branch meant
+for a swept cache. Skipped-on-purpose and lost look identical to a counter.
+
+**LOW — a single out-of-range page bound was reported as a backwards range.** `page_start=5` on a
+two-page document read "pages 5-2 is not a range within it", because the bounds were validated
+after the omitted one was defaulted. It describes a range the caller never asked for, and reads as
+pinakes' mistake rather than a bad argument. Found by running the tool, not by reading it.
+
+**What the tests could not have caught.** All three needed either a KB state no fixture builds
+(an unknown backend name, wholly paid extraction) or a human reading an error message. The
+increment's own tests were green throughout, and so was a sixteen-mutation pass — mutation only
+perturbs cases somebody already thought of, which is the same limit that let the fragment tooling
+ship a duplicate-heading bug at the 0.3.0 release.

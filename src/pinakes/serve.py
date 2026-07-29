@@ -59,19 +59,29 @@ def _paged(
     on the wrong text, which is the one failure a citation cannot survive.
     """
     total = len(extracted.page_spans)
-    first = 1 if page_start is None else page_start
-    last = total if page_end is None else page_end
-
     if total == 0:
         raise ServeError(
             f"{path} was extracted, but no page spans were recorded for it.",
             remedy="Run `pnk sync --rebuild` in that KB.",
         )
-    if first < 1 or last < first or last > total:
+
+    # Each supplied bound is checked *before* the other is defaulted, so the message names what the
+    # caller actually asked for. Validating the resolved pair instead reported `page_start=5` on a
+    # two-page document as "pages 5-2", which reads as a bug in pinakes rather than a bad argument.
+    for label, bound in (("page_start", page_start), ("page_end", page_end)):
+        if bound is not None and not 1 <= bound <= total:
+            raise ServeError(
+                f"{path} has {total} page(s), so {label}={bound} is not a page in it.",
+                remedy="Pages are 1-indexed and both bounds are inclusive. Omit both to read the "
+                "whole document.",
+            )
+
+    first = 1 if page_start is None else page_start
+    last = total if page_end is None else page_end
+    if last < first:
         raise ServeError(
-            f"{path} has {total} page(s); pages {first}-{last} is not a range within it.",
-            remedy="Pages are 1-indexed and both bounds are inclusive. Omit both to read the "
-            "whole document.",
+            f"{path}: pages {first}-{last} runs backwards.",
+            remedy="page_end must be at least page_start. Omit both to read the whole document.",
         )
 
     def one(page: int) -> str:
@@ -268,7 +278,7 @@ class Server:
                 remedy="Run `pnk sync` so it is extracted, or remove it from the KB.",
             ) from exc
 
-    def _extracted(self, served: ServedKb, *, path: str, row: Any) -> ExtractedText:
+    def _extracted(self, served: ServedKb, *, path: str, row: sqlite3.Row) -> ExtractedText:
         """The document's extracted text, from the extraction cache and nowhere else.
 
         Never re-extracts. A free re-extraction would be cheap but would hand back text that is

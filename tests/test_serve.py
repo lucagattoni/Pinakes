@@ -298,11 +298,24 @@ def test_a_page_range_outside_the_document_is_refused_by_its_own_bounds(
     result = pdf_server.search("Digitisation", k=None)[1]
     doc_id = next(p.doc_id for p in result.passages if "Digitisation" in p.text)
 
-    for start, end in ((0, 1), (1, 3), (2, 1)):
+    for start, end in ((0, 1), (1, 3)):
         with pytest.raises(ServeError) as exc_info:
             pdf_server.document(doc_id, page_start=start, page_end=end)
-        assert "2 page(s)" in exc_info.value.message
+        assert "has 2 page(s)" in exc_info.value.message
         assert "1-indexed" in exc_info.value.remedy
+
+    # A backwards range is its own error: both bounds exist, they are just the wrong way round.
+    with pytest.raises(ServeError) as exc_info:
+        pdf_server.document(doc_id, page_start=2, page_end=1)
+    assert "runs backwards" in exc_info.value.message
+
+    # …and a single out-of-range bound must name *that bound*, not a range the caller never asked
+    # for. Validating the resolved pair reported this as "pages 5-2", which reads as pinakes'
+    # mistake rather than the caller's.
+    with pytest.raises(ServeError) as exc_info:
+        pdf_server.document(doc_id, page_start=5)
+    assert "page_start=5 is not a page in it" in exc_info.value.message
+    assert "5-2" not in exc_info.value.message
 
 
 @pytest.mark.pdf

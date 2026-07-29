@@ -47,6 +47,7 @@ from pinakes.extract import (
     load_extractor,
     pageyield,
     paid_backend_names,
+    registered_extractors,
 )
 from pinakes.extract import cache as extract_cache
 from pinakes.extract.floors import load_floors
@@ -512,29 +513,35 @@ def _text_yield(manifest: Manifest, connection: sqlite3.Connection) -> Check:
     below: list[tuple[str, tuple[int, ...]]] = []
     pages_total = 0
     measured = 0
-    unmeasured: list[str] = []
+    uncached: list[str] = []
     paid: list[str] = []
+    unknown: list[str] = []
+    known = set(registered_extractors())
 
     for row in rows:
         path = str(row["path"])
-        backend = row["extraction_backend"]
-        if backend is not None and is_paid_backend(str(backend)):
+        recorded = row["extraction_backend"]
+        backend = None if recorded is None else str(recorded)
+        if backend is None or backend not in known:
+            # A future version's KB, or an extra no longer installed. `is_paid_backend` raises on a
+            # name it does not know, and a health check that crashes on an unhealthy KB is the one
+            # failure `pnk doctor` may not have — the same guard §4.4's coherence check already
+            # carries for the same reason.
+            unknown.append(path)
+            continue
+        if is_paid_backend(backend):
             # Its cached text is the *paid* extraction, so measuring it would answer "did the paid
             # backend produce text" — a real question, and the completeness audit's, not this
             # check's. This one asks whether the free path suffices, which for these is settled.
             paid.append(path)
             continue
-        cached = (
-            None
-            if backend is None
-            else extract_cache.peek(
-                manifest.extract_cache_dir,
-                content_hash=str(row["content_hash"]),
-                fingerprint=str(row["extraction_fingerprint"]),
-            )
+        cached = extract_cache.peek(
+            manifest.extract_cache_dir,
+            content_hash=str(row["content_hash"]),
+            fingerprint=str(row["extraction_fingerprint"]),
         )
         if cached is None:
-            unmeasured.append(path)
+            uncached.append(path)
             continue
         survey = pageyield.measure(cached, floor=floor if floor is not None else 0.0)
         measured += 1
@@ -544,12 +551,27 @@ def _text_yield(manifest: Manifest, connection: sqlite3.Connection) -> Check:
             below.append((path, survey.below))
 
     if not per_page:
+        if not uncached and not unknown:
+            # Every PDF was skipped deliberately, not lost. Reporting "0 could be measured" with a
+            # `pnk sync` remedy would be a permanent warning nothing can clear — and on a KB whose
+            # PDFs are paid-extracted, a remedy that spends.
+            return Check(
+                "text yield",
+                Status.OK,
+                f"{len(paid)} PDF document(s), all paid-extracted — whether the free path "
+                f"suffices is settled for them",
+            )
         return Check(
             "text yield",
             Status.WARN,
             f"0 of {len(rows)} PDF document(s) could be measured"
-            + (f" ({len(paid)} paid-extracted)" if paid else ""),
-            "The extraction cache holds no entry for them. Run `pnk sync` to repopulate it; "
+            + (f"; {len(paid)} paid-extracted" if paid else "")
+            + (
+                f"; {len(unknown)} extracted by a backend this install does not know"
+                if unknown
+                else ""
+            ),
+            "The extraction cache holds no entry for the rest. Run `pnk sync` to repopulate it; "
             "`.pinakes/cache` is disposable, so this is expected after clearing it.",
         )
 
@@ -559,8 +581,10 @@ def _text_yield(manifest: Manifest, connection: sqlite3.Connection) -> Check:
     )
     if paid:
         detail += f"; {len(paid)} paid-extracted, not measured here"
-    if unmeasured:
-        detail += f"; {len(unmeasured)} not in the extraction cache"
+    if uncached:
+        detail += f"; {len(uncached)} not in the extraction cache"
+    if unknown:
+        detail += f"; {len(unknown)} extracted by an unknown backend"
 
     if floor is None:
         return Check(

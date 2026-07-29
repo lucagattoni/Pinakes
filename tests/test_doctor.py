@@ -782,3 +782,53 @@ def test_a_partly_swept_cache_still_names_what_it_could_not_measure(pdf_kb: Path
     assert "1 of 2 PDF document(s)" in detail
     assert "1 not in the extraction cache" in detail
     assert status is Status.OK, "the one document still measurable is healthy"
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_kb_whose_pdfs_are_all_paid_extracted_is_ok_rather_than_permanently_warned(
+    pdf_kb: Path,
+) -> None:
+    """Skipped deliberately is not the same as lost.
+
+    Reporting "0 of N could be measured" with a `pnk sync` remedy would be a warning nothing can
+    clear — and on a KB whose PDFs are paid-extracted, a remedy that *spends*. The check has no
+    question to ask about these documents, and saying so is the honest answer.
+    """
+    connection = store.connect_rw(pdf_kb / ".pinakes" / "index.db")
+    try:
+        connection.execute(
+            "UPDATE documents SET extraction_backend = 'claude-vision' WHERE source_type = 'pdf'"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    status, detail = checks(pdf_kb)["text yield"]
+    assert status is Status.OK
+    assert "all paid-extracted" in detail
+    assert "could be measured" not in detail
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_an_unknown_extraction_backend_does_not_crash_the_health_check(pdf_kb: Path) -> None:
+    """A future version's KB, or an extra since uninstalled. `is_paid_backend` raises on a name it
+    does not know, and `pnk doctor` is precisely the command someone runs when a KB is in a state
+    they do not understand — it may not be the thing that crashes.
+
+    §4.4's coherence check already carries this guard for the same reason.
+    """
+    connection = store.connect_rw(pdf_kb / ".pinakes" / "index.db")
+    try:
+        connection.execute(
+            "UPDATE documents SET extraction_backend = 'from-the-future' "
+            "WHERE path = 'docs/scanned-clean.pdf'"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    status, detail = checks(pdf_kb)["text yield"]  # must not raise
+    assert status is Status.OK, "the one document still measurable is healthy"
+    assert "1 extracted by an unknown backend" in detail
