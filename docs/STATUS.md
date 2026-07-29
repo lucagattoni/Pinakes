@@ -73,7 +73,8 @@ every PDF into a failed document rather than a skipped one.
 ⚠️ **A template change reaches new KBs only.** I9's line will not appear in any KB created before
 it, and nothing today detects or reports that divergence — so existing KBs stay PDF-blind
 permanently unless their owner edits the manifest by hand. That gap, and what to do about it, is
-worked through in [KB-UPDATES.md](KB-UPDATES.md) (a proposal; no increment assigned).
+worked through in [KB-UPDATES.md](KB-UPDATES.md) (a proposal; its `requires_pinakes` half is
+assigned to G4 in [`plans/links-and-graph.md`](../plans/links-and-graph.md), still unbuilt).
 
 ### Caveat: the `[light]` backend needs a manifest edit
 
@@ -219,7 +220,6 @@ and this release can be numbered whenever it is cut.
 >
 > | Name | What it is |
 > |---|---|
-> | **the paid-extraction release** | Budget machinery, the opt-in paid Claude-vision extractor, `path:page` citations (I6–I9) |
 > | **the links release** | `pnk link`, `pinakes_links`, reverse-scan, link-coverage reporting |
 > | **the graph release** | Structural edges, the expansion channel — each eval-gated |
 > | **the deep release** | `pnk ask --deep` |
@@ -245,7 +245,7 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.2.0** ✅ | Free PDF ingest, extraction cache, page provenance in the index, extraction-quality scoring |
 | **0.2.1** ✅ | Documentation restructure — one fact one home; three stale-claim fixes |
 | **0.2.2** ✅ | `pnk sync` names files skipped for want of an `include` glob; budget core (inert) |
-| *the paid-extraction release* | Budget machinery, the opt-in paid Claude-vision extractor, `path:page` citations (I6–I9) |
+| **0.3.0** ✅ | Budget machinery, the opt-in paid Claude-vision extractor (I6–I7c). `path:page` citations landed with I8 and are unreleased |
 | *the links release* | `pnk link`, `pinakes_links`, reverse-scan, link-coverage reporting — no `schema_version` bump, so no rebuild |
 | *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
@@ -293,8 +293,8 @@ verified 20260729 01:01 by installing the published wheel into an empty venv and
 
 | | |
 |---|---|
-| Published version | **0.2.2 only.** 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails |
-| First upload | 20260728 17:16 UTC |
+| Published versions | **0.2.2 and 0.3.0.** 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails |
+| First upload | 20260728 17:16 UTC · latest 20260729 02:22 UTC (0.3.0) |
 | Extras available | `st`, `light`, `pdf`, `claude` — all four |
 | `requires-python` | `>=3.13` |
 

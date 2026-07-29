@@ -5,11 +5,11 @@
 | [**GUIDE.md**](GUIDE.md) | *How do I use this?* Install, first KB, PDFs, search, hooks, MCP, troubleshooting |
 | [**CLI.md**](CLI.md) | *What does this flag do?* Every command, every flag, exit codes |
 | [**MANIFEST.md**](MANIFEST.md) | *What goes in `pinakes.toml`?* Every manifest and sidecar field, with defaults |
-| [**MEASUREMENT-RUN.md**](MEASUREMENT-RUN.md) | *How do I get the numbers this project admits it lacks?* The paid run, its steps and its euros |
+| [**MEASUREMENT-RUN.md**](MEASUREMENT-RUN.md) | *How were the paid extractor's quality numbers obtained, and how do I re-run them?* The runbook, its steps and its euros |
 | [**STATUS.md**](STATUS.md) | *Does this exist yet?* Shipped vs planned, the increment ledger, measured numbers |
 | [**DESIGN.md**](DESIGN.md) | *Why is it built this way?* Architecture, storage, sync semantics, concurrency, trade-offs |
 | [**RETROSPECTIVES.md**](RETROSPECTIVES.md) | *What did we learn?* Per-increment findings, and the design's own review passes |
-| [**KB-UPDATES.md**](KB-UPDATES.md) | *What happens to a KB somebody already has when pinakes changes?* Design note — **proposal, not built** |
+| [**KB-UPDATES.md**](KB-UPDATES.md) | *What happens to a KB somebody already has when pinakes changes?* Design note — **proposal, not built**; its `requires_pinakes` half is assigned in `plans/` |
 | [**graph/**](graph/) | Graph-retrieval research shaping the links and graph releases — thirteen investigations plus the synthesis |
 
 Build plans live in [`plans/`](../plans/); the release history is [`CHANGELOG.md`](../CHANGELOG.md).
@@ -38,7 +38,7 @@ When an increment lands, this table says which file to edit — usually exactly 
 | A measured number (recall, latency, false-confidence) | **STATUS.md** | cited with its date wherever quoted |
 | What changed in a release | **CHANGELOG.md** | written as a `changelog.d/` fragment; spliced at release |
 | What an increment taught us | **RETROSPECTIVES.md** | written as a `retro.d/` fragment; spliced at release |
-| How to run the human-gated paid measurement | **MEASUREMENT-RUN.md** | STATUS links to it while the numbers are still missing |
+| How to run the human-gated paid measurement | **MEASUREMENT-RUN.md** | STATUS carries the numbers it produced, with their date |
 | What is going to be built, and in what order | **`plans/`** | STATUS.md carries the shipped/planned state only |
 
 The README is deliberately **version-free**: it describes what pinakes *is*, never what release you
