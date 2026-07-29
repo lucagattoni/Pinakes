@@ -100,4 +100,16 @@ is what stops the next plan from assuming a number that a parallel session has a
 - **Docs describe what ships.** Anything unbuilt is labelled with the increment or release that will
   bring it. Check by *running the commands a doc shows*, install line included — an audit at 0.1.2
   found four README claims contradicting the code while the CLI and CHANGELOG were correct.
+- **Editing a doc means auditing its neighbourhood, not its diff.** Before landing any docs change,
+  re-read the surrounding claims and ask four questions of each: is it **consistent** with the other
+  docs, does its **logic** still hold, has it been **superseded** by a decision taken since, and is
+  it **outdated** against the code, the index or the clock. Whatever made the line you came to fix
+  go stale almost certainly reached its neighbours too.
+
+  The cost of skipping it, measured 20260729: a one-line PyPI correction was asked for, and the
+  same sweep found five more — a release still listed as unbuilt in two tables, an install block
+  missing the last two releases' headline capability, a README sentence implying a feature that is
+  not built, a runbook still described as producing numbers the project "admits it lacks" after the
+  run had happened, and a design note saying "no increment assigned" for work a plan had since
+  assigned. Each was a single edit; none would have been found by reading the diff.
 - `make check` formats Python **inside Markdown fences**, so a docs-only commit can fail the gate.

@@ -189,6 +189,10 @@ only when the *reasoning* changes, never for a new flag or field alone.
   the design, because the design is what you're thinking about while writing it. An audit at 0.1.2
   found four README claims contradicting the code while `cli.py` and the CHANGELOG were correct in
   the same places (docs/RETROSPECTIVES.md, 20260727).
+- **Audit the neighbourhood, not the diff.** Any docs change re-reads the claims around it for
+  **consistency, logic, superseded decisions and outdated facts** — the cause of the line you came
+  to fix rarely stopped there. Full rule and the 20260729 measurement:
+  [`docs/README.md` § Conventions](docs/README.md#conventions).
 - **Every date carries a time** — `YYYYMMDD HH:MM`, local 24h — in the CHANGELOG, `docs/STATUS.md`,
   `docs/RETROSPECTIVES.md`, and any "verified on" claim.
 - **Read the clock; never compose a timestamp.** Run `date "+%Y%m%d %H:%M"` and paste the result —
