@@ -518,7 +518,7 @@ def _links(connection: sqlite3.Connection, manifest: Manifest, active: int) -> C
     dangling = [doc for kb_id, doc in targets if kb_id == manifest.kb.id and doc not in known]
     external = sum(1 for kb_id, _ in targets if kb_id != manifest.kb.id)
 
-    detail = f"{len(targets)} links, {external} cross-KB (unchecked until the graph release)"
+    detail = f"{len(targets)} links, {external} cross-KB (unchecked until the links release)"
     if dangling:
         return Check(
             "links",

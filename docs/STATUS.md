@@ -36,7 +36,7 @@
 | Budget estimator, caps, window aggregation | shipped 0.2.2, **inert** | I6a. The pure logic only — nothing calls it, so nothing can spend |
 | Budget ledger, `pnk budget`, the accountant | on `main`, unreleased | I6b. `ledger.jsonl`, the reservation/outcome protocol, and I6a's decisions read from it — now driven by I7b's extractor |
 | `path:page` citations | **not built** | I8 |
-| Cross-KB links (`pnk link`, `pinakes_links`) | **not built** | the graph release |
+| Cross-KB links (`pnk link`, `pinakes_links`) | **not built** | the links release |
 | `sqlite-vec` tier, template ecosystem | **not built** | the template release |
 
 **Nothing in the shipped surface can spend money.** The only paid code path is the `claude-vision`
@@ -183,7 +183,8 @@ and this release can be numbered whenever it is cut.
 > | Name | What it is |
 > |---|---|
 > | **the paid-extraction release** | Budget machinery, the opt-in paid Claude-vision extractor, `path:page` citations (I6–I9) |
-> | **the graph release** | `pnk link`, `pinakes_links`, cross-KB traversal, structural edges |
+> | **the links release** | `pnk link`, `pinakes_links`, reverse-scan, link-coverage reporting |
+> | **the graph release** | Structural edges, the expansion channel — each eval-gated |
 > | **the deep release** | `pnk ask --deep` |
 > | **the template release** | Template ecosystem, `pnk upgrade`, the `sqlite-vec` tier |
 >
@@ -208,7 +209,8 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.2.1** ✅ | Documentation restructure — one fact one home; three stale-claim fixes |
 | **0.2.2** ✅ | `pnk sync` names files skipped for want of an `include` glob; budget core (inert) |
 | *the paid-extraction release* | Budget machinery, the opt-in paid Claude-vision extractor, `path:page` citations (I6–I9) |
-| *the graph release* | `pnk link`, `pinakes_links`, cross-KB traversal, link-coverage reporting, free structural edges — build order in [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
+| *the links release* | `pnk link`, `pinakes_links`, reverse-scan, link-coverage reporting — no `schema_version` bump, so no rebuild |
+| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
 | *the deep release* | `pnk ask --deep` |
 | *the template release* | Template ecosystem, `pnk upgrade` migrations, the `sqlite-vec` tier |

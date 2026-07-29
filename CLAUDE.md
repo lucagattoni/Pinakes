@@ -23,7 +23,8 @@ name:
 | Name | What it is |
 |---|---|
 | **the paid-extraction release** | Budget machinery, the paid Claude-vision extractor, `path:page` citations (I6–I9) |
-| **the graph release** | `pnk link`, `pinakes_links`, cross-KB traversal, structural edges |
+| **the links release** | `pnk link`, `pinakes_links`, reverse-scan, link-coverage reporting |
+| **the graph release** | Structural edges, the expansion channel — each eval-gated |
 | **the deep release** | `pnk ask --deep` |
 | **the template release** | Template ecosystem, `pnk upgrade`, the `sqlite-vec` tier |
 

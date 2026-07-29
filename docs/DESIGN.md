@@ -61,7 +61,7 @@ in `sys.modules`.
 | Budget | Pre-call reservation · hard cap per operation · rolling ledger (§5) |
 | Blueprint | Instantiable template **and** reproducible recipe |
 | Federation | Cross-KB links you can follow (no fan-out query in v1) |
-| Retrieval | Hybrid (BM25 + vector) + rerank · metadata filters · multi-hop (single-KB in v0.1, cross-KB in the graph release) |
+| Retrieval | Hybrid (BM25 + vector) + rerank · metadata filters · multi-hop (single-KB in v0.1, cross-KB in the links release) |
 | Cost policy | Free path first; escalate only when it's insufficient |
 | Content vs repo | Engine public; real KBs live elsewhere; one synthetic demo KB in-repo |
 | Linking | Sidecar metadata files (originals never mutated) |
@@ -169,7 +169,7 @@ re-billed or silently overwritten by whatever free backend the manifest names. T
 explicitly discarded by `--force` (§6.4) — never for the common, no-money-involved case of an
 ordinary free extraction. The cost is real and accepted: PyYAML drops comments and re-sorts unknown
 keys on this one write, same as any other `write()` call would; a comment-preserving writer is `pnk
-link`'s problem (the graph release), not pulled forward here.
+link`'s problem (the links release), not pulled forward here.
 
 Why sidecars rather than in-text links: a PDF cannot carry a wikilink without being rewritten, and
 mutating source documents breaks the "originals are the truth" contract. One mechanism that works
@@ -286,7 +286,7 @@ Multi-hop is delivered by **making the tools composable rather than by building 
 Code already runs it in its own context on the caller's existing subscription.
 
 Scope, stated precisely: **v0.1 gives multi-hop within a single KB.** Cross-KB hops need
-`pinakes_links`, which ships in the graph release (§8).
+`pinakes_links`, which ships in the links release (§8).
 
 `pnk ask --deep` exists for CLI and cron use, where no agent is present. It runs a bounded version of
 the same loop with its own API key under the budget ledger (§5). Same tools, same evidence contract —
@@ -883,7 +883,8 @@ cut, and [STATUS](STATUS.md#release-roadmap) is where the mapping lives.
 | Release | Why here |
 |---|---|
 | PDF extraction (0.2.x, completed by the paid-extraction release) | Parsing is the single biggest quality risk (§9), so it is isolated from core-design feedback rather than mixed into it. Scope covers **both** paths: the free `pypdfium2` default, and the opt-in paid Claude-vision extractor that is the only answer to a scanned page (§9) — which is what drags the budget machinery into this release, per the governing rule below |
-| the graph release — cross-KB links | Needs two populated KBs to be worth anything. Build order: [`graph/PINAKES_APPROACH.md`](graph/PINAKES_APPROACH.md) §10 |
+| the links release — cross-KB links | Needs two populated KBs to be worth anything. Build order: [`plans/links-and-graph.md`](../plans/links-and-graph.md) |
+| the graph release — structural edges and the expansion channel | Edges are only worth deriving once there is a link graph to derive them beside, and the channel is gated on the golden set |
 | the graph release (staged) — graph channels | Each is **eval-gated rather than scheduled** — it ships only if the golden set justifies it (`graph/PINAKES_APPROACH.md` §9) |
 | the deep release — `pnk ask --deep` | A paid loop and its guardrails ship together, never apart — and the guardrails are already here: the §5 accountant, the ledger and all three enforced windows ship with the paid extractor, so the deep release adds the loop, not the machinery |
 | the template release — templates, `sqlite-vec` | Generalisation, once real usage has shaped one template well |

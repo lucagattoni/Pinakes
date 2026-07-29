@@ -149,7 +149,7 @@ numbers (`0.05`); the exactness is on pinakes's side.
 
 ## `[[links.kb]]`
 
-Connected KBs. The schema ships today because IDs cannot be retrofitted; traversal is the graph release.
+Connected KBs. The schema ships today because IDs cannot be retrofitted; traversal is the links release.
 
 | Key | Notes |
 |---|---|
@@ -189,7 +189,7 @@ provenance:
 | `title` | you | Shown in results |
 | `tags` | you | What `pnk search --tag` filters on |
 | `created` | sync | Optional; date filters use the document's mtime instead, since every document has one |
-| `links[].to` | you / `pnk link` (the graph release) | A `pnk://` URI. Aliases and `self` are resolved to ULIDs **on write**, so what reaches disk survives being shared |
+| `links[].to` | you / `pnk link` (the links release) | A `pnk://` URI. Aliases and `self` are resolved to ULIDs **on write**, so what reaches disk survives being shared |
 | `links[].rel` | you | Free-form relation, e.g. `cites`, `supersedes` |
 | `provenance.source` | you | Where the document came from |
 | `provenance.extraction` | **sync, paid PDFs only** | `{backend, fingerprint, extracted, content_hash}` |

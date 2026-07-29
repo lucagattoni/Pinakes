@@ -366,7 +366,7 @@ cannot enforce anything here; check before you push.
 
 Links between KBs use `pnk://<kb-ulid>/<doc-ulid>` — ULIDs, never aliases — so they survive renames,
 moves, and being shared with someone whose local alias for your KB is different. Authoring and
-traversing them lands in the graph release; the *schema* ships today precisely because IDs cannot be retrofitted.
+traversing them lands in the links release; the *schema* ships today precisely because IDs cannot be retrofitted.
 
 ## Troubleshooting
 

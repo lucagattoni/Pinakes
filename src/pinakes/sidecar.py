@@ -15,7 +15,7 @@ There is deliberately no `content_hash` here: change detection is the index's jo
 committed file would dirty two files per edit and go stale whenever sync had not run (§2.2).
 
 In v0.1 sidecars are *created* and *moved*, never rewritten in place, so PyYAML dropping comments on
-dump costs nothing yet. `pnk link` (the graph release) is what will need a
+dump costs nothing yet. `pnk link` (the links release) is what will need a
 comment-preserving writer.
 """
 

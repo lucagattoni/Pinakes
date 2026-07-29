@@ -10,7 +10,7 @@
 | [**DESIGN.md**](DESIGN.md) | *Why is it built this way?* Architecture, storage, sync semantics, concurrency, trade-offs |
 | [**RETROSPECTIVES.md**](RETROSPECTIVES.md) | *What did we learn?* Per-increment findings, and the design's own review passes |
 | [**KB-UPDATES.md**](KB-UPDATES.md) | *What happens to a KB somebody already has when pinakes changes?* Design note — **proposal, not built** |
-| [**graph/**](graph/) | Graph-retrieval research shaping the graph release — fourteen investigations plus the synthesis |
+| [**graph/**](graph/) | Graph-retrieval research shaping the links and graph releases — thirteen investigations plus the synthesis |
 
 Build plans live in [`plans/`](../plans/); the release history is [`CHANGELOG.md`](../CHANGELOG.md).
 
@@ -70,7 +70,8 @@ is what stops the next plan from assuming a number that a parallel session has a
 > ### 🚫 Unbuilt work is named, never numbered
 >
 > **A version number belongs to a release when it is cut — never before.** Refer to unbuilt work by
-> name: **the paid-extraction release**, **the graph release**, **the deep release**, **the template
+> name: **the paid-extraction release**, **the links release**, **the graph release**, **the deep
+> release**, **the template
 > release**. Never write `v0.4` for something that does not exist — not in docs, not in `--help`, not
 > in an error message, not in a code comment.
 >
