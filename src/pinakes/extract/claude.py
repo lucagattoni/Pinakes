@@ -55,7 +55,7 @@ import json
 import re
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
@@ -67,6 +67,8 @@ from pinakes.budget.estimate import MAX_TOKENS, TIMESTAMP_FORMAT, K, estimate_do
 from pinakes.budget.prices import ModelPrice
 from pinakes.errors import ExtractionError, ExtractorMissingError
 from pinakes.extract import CLAUDE_VISION, ExtractedText, ExtractionContext
+from pinakes.extract import cache as extract_cache
+from pinakes.extract.audit import AUDIT_KEY, as_provenance, audit_completeness
 from pinakes.extract.floors import load_floors
 from pinakes.extract.quality import text_yield
 from pinakes.extract.textpolicy import TEXT_POLICY_VERSION, normalise
@@ -111,6 +113,11 @@ BACKOFF_SECONDS: Final = (1.0, 4.0)
 #: with eight scanned inserts has a healthy median and still needs the paid path, so a median would
 #: be the wrong statistic.
 SCANNED_PAGE_FRACTION: Final = 0.10
+
+#: Recorded in `per_page_provenance` for a page a resume took from staging rather than from a
+#: call, so "which model answered for this page" stays answerable — the honest answer being that
+#: this run did not ask.
+RESUMED_FROM_STAGING: Final = "(resumed from staging)"
 
 #: A page whose text carries one of these is a schema failure. Generic on purpose — the vendor's own
 #: guidance is that naming thinking tags specifically is measurably less effective.
@@ -380,6 +387,10 @@ class FreeYield:
     pages_total: int
     pages_below_floor: int
     floor: float
+    native: ExtractedText | None = None
+    """The extraction the measurement was taken from, kept rather than discarded: it is also the
+    completeness audit's ground truth, and running the free backend a second time to recover text
+    this function already had would double the cost of the one step that is supposed to be free."""
 
     @property
     def scanned_fraction(self) -> float:
@@ -415,6 +426,7 @@ def survey_free_yield(path: Path) -> FreeYield:
         pages_total=len(extracted.page_spans),
         pages_below_floor=below,
         floor=floors.text_yield_floor,
+        native=extracted,
     )
 
 
@@ -709,6 +721,7 @@ def extract_document(
     model: str,
     pages_total: int,
     force: bool = False,
+    staging: Path | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> tuple[ExtractedText, CallTally]:
     """Every free step, then every paid one — in that order, which is the whole design.
@@ -716,8 +729,16 @@ def extract_document(
     **The whole document is checked before the first call**, not only per call: per-call
     reservation alone bounds each call and nothing else, and a document that will certainly breach
     a window by call 15 should be refused at call 0.
+
+    **`staging`, when given, is what stops an interrupted run re-paying.** Each validated page is
+    written there as its slice completes, and a resume skips any slice whose pages are *all*
+    already staged. Resume granularity is the **slice**, never the page: a slice interrupted
+    mid-flight is re-asked whole, because its pages were transcribed together and a page
+    transcribed with different neighbours is a different extraction. Under this release's request
+    shape that re-ask costs nothing extra — each request carries only its own slice, so there is no
+    prompt cache to re-prime and no cache-write premium to re-pay.
     """
-    check_worth_paying_for(path, force=force)
+    survey = check_worth_paying_for(path, force=force)
 
     prices = accountant.prices
     estimate = estimate_document(
@@ -740,10 +761,23 @@ def extract_document(
         )
 
     tally = CallTally()
+    already = extract_cache.staged_pages(staging) if staging is not None else {}
     page_texts: list[str] = []
     provenance: list[Mapping[str, str]] = []
     for first, last in slice_windows(pages_total):
         pages_in_slice = last - first + 1
+        window = range(first, last + 1)
+        if already and all(index in already for index in window):
+            # Every page of this slice survived an earlier run. Skipping it whole is the entire
+            # point of staging — and *whole* is the only granularity available, since a partially
+            # staged slice cannot be completed page by page.
+            page_texts.extend(already[index] for index in window)
+            provenance.extend(
+                {"backend": CLAUDE_VISION, "responded_model": RESUMED_FROM_STAGING} for _ in window
+            )
+            continue
+
+        produced: list[str] = []
         for payload, payload_pages in slice_bytes(path, first, last, pages_in_slice=pages_in_slice):
             result = extract_slice(
                 transport=transport,
@@ -756,20 +790,57 @@ def extract_document(
                 tally=tally,
                 sleep=sleep,
             )
-            page_texts.extend(result.pages)
+            produced.extend(result.pages)
             provenance.extend(
                 {"backend": CLAUDE_VISION, "responded_model": result.model} for _ in result.pages
             )
+        page_texts.extend(produced)
+        if staging is not None:
+            # Staged only once the whole slice has validated. A page written before its neighbours
+            # passed would let a later resume skip a slice that never actually completed.
+            for offset, text in enumerate(produced):
+                extract_cache.stage_page(staging, page=first + offset, text=text)
 
     assembled = assemble_pages(page_texts)
-    return (
-        ExtractedText(
-            text=assembled.text,
-            page_spans=assembled.page_spans,
-            per_page_provenance=tuple(provenance),
-        ),
-        tally,
+    extracted = ExtractedText(
+        text=assembled.text,
+        page_spans=assembled.page_spans,
+        per_page_provenance=tuple(provenance),
     )
+    return _audited(extracted, survey, tally)
+
+
+def _audited(
+    extracted: ExtractedText, survey: FreeYield, tally: CallTally
+) -> tuple[ExtractedText, CallTally]:
+    """Attach the completeness audit to each page's provenance.
+
+    **Report-only, and it spends nothing** — it compares two extractions that have already
+    happened. Carried in `per_page_provenance` because that is what the cache entry persists, so
+    `pnk doctor` can surface a low-coverage page later without re-running anything, let alone
+    re-paying for it.
+
+    A mismatched page count is reported rather than raised: the extraction itself succeeded, and
+    refusing to return text a user has already paid for because the *audit* could not run would
+    be the wrong trade by a wide margin.
+    """
+    if survey.native is None:
+        return extracted, tally
+    try:
+        report = audit_completeness(extracted, survey.native, text_yield_floor=survey.floor)
+    except ValueError as exc:
+        annotated = tuple(
+            {**page, AUDIT_KEY: f"not run ({exc})"} for page in extracted.per_page_provenance
+        )
+        return replace(extracted, per_page_provenance=annotated), tally
+
+    annotated = tuple(
+        {**provenance, AUDIT_KEY: value}
+        for provenance, value in zip(
+            extracted.per_page_provenance, as_provenance(report), strict=True
+        )
+    )
+    return replace(extracted, per_page_provenance=annotated), tally
 
 
 # --- the real transport, and the registry entry ------------------------------------------------
@@ -921,6 +992,7 @@ class ClaudeVisionExtractor:
             model=ctx.model,
             pages_total=page_count(path),
             force=ctx.force,
+            staging=ctx.staging_dir,
         )
         return extracted
 

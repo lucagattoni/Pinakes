@@ -92,7 +92,7 @@ landing with its own tests.
 | I6b | Budget I/O — ledger, prompt, `pnk budget`, hooks that cannot spend | on `main`, unreleased |
 | I7a | The paid-path allowlist gate and the invariant amendments | on `main`, unreleased |
 | I7b | The paid Claude-vision extractor — request shape, validation, retries | on `main`, unreleased |
-| I7c | The completeness audit, staging, all-or-nothing commit | **planned** |
+| I7c | The completeness audit, staging, all-or-nothing commit | on `main`, unreleased |
 | I8 | `pnk doctor` text yield, `path:page` citations on both surfaces | **planned** |
 | I9 | Docs sweep, template, CI | **planned** |
 
@@ -133,6 +133,24 @@ copy the workflow out of [CLI.md](CLI.md#pnk-init).
 documenting the audit's absence plainly. This is a bet on I7c landing soon, not a standing policy,
 and it expires if that bet stops paying. (Its *number* is assigned when it is cut, per the naming
 rule below — naming a number here is exactly the habit that rule exists to stop.)
+
+### Both reasons have now expired — 20260729, I7c landed
+
+The audit, the staging and the all-or-nothing commit are on `main`. **Nothing in this file argues
+against cutting the paid-extraction release any more**, and the project's own rule says complete
+work does not sit in `[Unreleased]`.
+
+It is **not** cut automatically, and the reason is not doubt about the code: `PUBLISH_TO_PYPI` is
+`true`, so pushing the tag publishes to PyPI, and a PyPI version cannot be re-uploaded or truly
+withdrawn. That is a decision with a one-way door in it, so it takes a human saying yes — which is
+the same rule that governs every other irreversible outward-facing action here, not a special case
+for releases.
+
+**What a reader of those release notes must be told, because it is the one thing this release
+cannot demonstrate:** the extractor's *output quality* is unmeasured. Every fixture behind it is
+authored from the documented response shape rather than captured from a live API, and the run that
+would measure quality needs a key, costs money, and is human-gated by design (`plans/v0.2.md`,
+I7b). The machinery is tested; what it produces is not yet scored.
 
 ✅ **The `0.3` collision is resolved — see [the naming rule](#release-roadmap)
 below.** Unbuilt work no longer carries a version number anywhere, so nothing competes for `0.3.0`

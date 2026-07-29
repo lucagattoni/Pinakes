@@ -74,6 +74,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The completeness audit, staging, and the all-or-nothing commit (I7c)** — three things that
+  make a paid extraction trustworthy rather than merely possible.
+
+  The **audit** computes `word_coverage` per page against pypdfium2's native layer and *reports*
+  it. Report-only on purpose: the re-extraction loop it would drive needs a floor, and the pair
+  that floor must be fitted against is (native layer → Claude output), which does not exist until
+  the first real runs produce it. Pages with no usable native layer are **exempt and reported as
+  exempt with their denominator** — scoring a scanned page zero would make the exact case the paid
+  path exists for look like its worst failure. Outliers are named against the document's own
+  median, so the measure needs no constant nobody has fitted.
+
+  **Staging** writes each validated page under `cache/extract/partial/` as its slice completes, so
+  an interrupted run does not re-pay for pages it already has. Resume granularity is the **slice**,
+  never the page: its pages were transcribed together, and a page transcribed with different
+  neighbours is a different extraction. The staging area is cleared only *after* the complete entry
+  is written — the reverse loses every staged page to a crash in between.
+
+  **All-or-nothing:** a partially extracted document writes no cache entry and lands in `failures`,
+  while its staged pages survive for the next run. `on_exceed` is honoured at the **corpus** level
+  — `partial` means "index fewer documents", never "index part of one", which would be the silent
+  truncation §4.6 exists to prevent. It was parsed and validated since v0.1 and read by nothing
+  until now.
+
 - **Paid PDF extraction: the Claude-vision backend (I7b)** — `src/pinakes/extract/claude.py`, the
   first and only module on `.paid-path-allowlist`. Reached only when the manifest says
   `backend = "claude-vision"` or `pnk sync --extract=claude-vision` does, and **every free step
@@ -155,6 +178,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no exceptions, so it would have turned `main` red on every commit from I7b onward.
 
 ### Changed
+
+- **`pnk sync --clear-cache` prices what it is about to destroy**, in euros, joined from the
+  ledger on each entry's own `call_ids` — not its `operation_id`, which prices a whole *run* and
+  would attribute every document's spend to each of them. A count answers "how many"; only the
+  euros answer "is this worth re-paying for".
+
+- **`--force`'s scope is stated in full, in `--help`.** It overrules exactly two refusals — paying
+  for a PDF whose free text layer is already healthy, and (only with an explicit free `--extract`)
+  overwriting a paid extraction. It never widens a budget cap, the stale-price refusal, the
+  missing-floor refusal, or the no-terminal abort.
 
 - **The extraction cache records the `operation_id` and `call_ids` behind a paid entry** — the join
   key back to `ledger.jsonl` that DESIGN §6.3 promised and left `null` until something could

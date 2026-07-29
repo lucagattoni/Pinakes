@@ -99,6 +99,12 @@ def get_or_extract(
     return extracted
 
 
+def read_entry(path: Path) -> ExtractedText | None:
+    """One cache entry by path, or `None` if it cannot be read — the public spelling of `_read`,
+    for `pnk doctor`, which reports on entries it finds rather than looking one up by key."""
+    return _read(path)
+
+
 def _read(path: Path) -> ExtractedText | None:
     try:
         raw: object = json.loads(path.read_text(encoding="utf-8"))
@@ -284,3 +290,111 @@ def clear_all(cache_dir: Path) -> tuple[int, int]:
     for path in paths:
         path.unlink()
     return len(paths), total_bytes
+
+
+# --- staging: what an interrupted paid run leaves behind so it need not re-pay ------------------
+
+STAGING_DIRNAME = "partial"
+
+
+def staging_dir(cache_dir: Path, *, content_hash: str, fingerprint: str) -> Path:
+    """Where one document's in-progress pages live, keyed exactly as its finished entry is.
+
+    Under `cache/extract/partial/` rather than beside the entries, so `survey`, `total_stats` and
+    `clear_all` — all of which glob `*.json` in `cache_dir` itself — cannot mistake a half-done
+    document for a complete one.
+    """
+    return cache_dir / STAGING_DIRNAME / f"{_safe(content_hash)}-{fingerprint}"
+
+
+def _safe(content_hash: str) -> str:
+    return content_hash.removeprefix(_CONTENT_HASH_PREFIX)
+
+
+def stage_page(directory: Path, *, page: int, text: str) -> None:
+    """Record one validated page. Temp file plus `os.replace`, so a kill mid-write leaves either
+    the previous state or the new one — never a truncated page that a resume would trust."""
+    directory.mkdir(parents=True, exist_ok=True)
+    descriptor, tmp_name = tempfile.mkstemp(dir=directory, prefix=".tmp-", suffix=".tmp")
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump({"page": page, "text": text}, handle)
+        os.replace(tmp_name, directory / f"{page}.json")
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+
+
+def staged_pages(directory: Path) -> dict[int, str]:
+    """Every page staged so far, by 0-based index.
+
+    Any file that cannot be read is simply absent from the result — the page is re-asked, which
+    costs money but is always *correct*. A resume that trusted a damaged staged page would put
+    corrupt text into a document permanently, and paying twice is the cheaper mistake.
+    """
+    if not directory.is_dir():
+        return {}
+    pages: dict[int, str] = {}
+    for candidate in directory.glob("*.json"):
+        try:
+            raw: object = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(raw, dict):
+            continue
+        entry = cast(dict[str, Any], raw)
+        page, text = entry.get("page"), entry.get("text")
+        if isinstance(page, int) and not isinstance(page, bool) and isinstance(text, str):
+            pages[page] = text
+    return pages
+
+
+def clear_staging(directory: Path) -> None:
+    """Remove a document's staging area — called only once its complete entry is written.
+
+    Order matters and is the caller's job: write the entry, *then* clear. The reverse loses every
+    staged page to a crash in between, which is exactly the re-payment staging exists to prevent.
+    """
+    if not directory.is_dir():
+        return
+    for candidate in directory.iterdir():
+        candidate.unlink(missing_ok=True)
+    directory.rmdir()
+
+
+@dataclass(frozen=True, slots=True)
+class PaidEntry:
+    """One cache entry a paid backend wrote, with the ledger calls that paid for it."""
+
+    path: Path
+    bytes_used: int
+    call_ids: tuple[str, ...]
+
+
+def paid_entries(cache_dir: Path) -> tuple[PaidEntry, ...]:
+    """Every entry a paid backend wrote, with its `call_ids`.
+
+    The join key is `call_ids`, not `operation_id`: one operation extracts many documents, so an
+    operation id can price a *run* but never a single entry — pricing one entry by its operation
+    would attribute the whole run's spend to each of its documents.
+    """
+    if not cache_dir.is_dir():
+        return ()
+    found: list[PaidEntry] = []
+    for candidate in sorted(cache_dir.glob("*.json")):
+        try:
+            raw: object = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(raw, dict):
+            continue
+        data = cast(dict[str, Any], raw)
+        if data.get("operation_id") is None:
+            continue
+        ids: object = data.get("call_ids")
+        listed = cast(list[object], ids) if isinstance(ids, list) else []
+        call_ids = tuple(one for one in listed if isinstance(one, str))
+        found.append(
+            PaidEntry(path=candidate, bytes_used=candidate.stat().st_size, call_ids=call_ids)
+        )
+    return tuple(found)

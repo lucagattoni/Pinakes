@@ -25,6 +25,8 @@ from pinakes.budget.ledger import CallState, ledger_path, quantise, read, resolv
 from pinakes.budget.prices import Prices, load_prices
 from pinakes.errors import ExtractionError
 from pinakes.extract import CLAUDE_VISION, fingerprint_inputs
+from pinakes.extract import fingerprint as extraction_fingerprint
+from pinakes.extract.cache import stage_page, staged_pages
 from pinakes.extract.claude import (
     LEAKED_TAG_PATTERN,
     MAX_REQUEST_BYTES,
@@ -44,6 +46,7 @@ from pinakes.extract.claude import (
     parse_pages,
 )
 from pinakes.manifest import load
+from pinakes.sync import hash_file
 
 FIXTURES = Path(__file__).parent / "fixtures" / "claude"
 CORPUS = Path(__file__).parent / "pdf-corpus"
@@ -998,3 +1001,475 @@ def test_a_real_sync_extracts_indexes_records_and_caches(
     cached: Any = json_module.loads(entries[0].read_text(encoding="utf-8"))
     assert cached["operation_id"]
     assert cached["call_ids"] == [ledger[0].call_id]
+
+
+# --- staging: what an interrupted run must not pay for twice ------------------------------------
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_resumed_run_re_asks_nothing_that_was_staged(
+    accountant: Accountant, tmp_path: Path
+) -> None:
+    """The whole reason staging exists. A 12-page document is three slices; if the first two
+    survived an earlier run, a resume must pay for the third and only the third — counted from
+    the transport, not inferred from the absence of an error."""
+    from pinakes.extract.claude import extract_document
+
+    staging = tmp_path / "partial"
+    # Two slices land, the third times out — a real interruption rather than a contrived one, and
+    # one the caller isolates as a document failure.
+    first_run = RecordedTransport("happy-five-page-slice", "happy-five-page-slice", "timeout")
+    with pytest.raises(TransportError):
+        extract_document(
+            CORPUS / "baseline-12p.pdf",
+            transport=first_run,
+            accountant=accountant,
+            model=MODEL,
+            pages_total=12,
+            force=True,
+            staging=staging,
+            sleep=never_sleeps,
+        )
+    assert first_run.calls == 3
+    assert sorted(staged_pages(staging)) == list(range(10)), "two slices staged, ten pages"
+
+    resumed = RecordedTransport("short-final-slice")
+    extracted, tally = extract_document(
+        CORPUS / "baseline-12p.pdf",
+        transport=resumed,
+        accountant=accountant,
+        model=MODEL,
+        pages_total=12,
+        force=True,
+        staging=staging,
+        sleep=never_sleeps,
+    )
+    assert resumed.calls == 1, "the ten staged pages must cost nothing at all"
+    assert tally.calls == 1
+    assert len(extracted.page_spans) == 12
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_slice_interrupted_mid_flight_is_re_asked_whole(
+    accountant: Accountant, tmp_path: Path
+) -> None:
+    """Resume granularity is the slice, never the page: its pages were transcribed together, and
+    a page transcribed with different neighbours is a different extraction."""
+    from pinakes.extract.claude import extract_document
+
+    staging = tmp_path / "partial"
+    # Three of slice 1's five pages staged — as if it had been killed part-way through writing.
+    for page in range(3):
+        stage_page(staging, page=page, text=f"partial page {page}")
+
+    transport = RecordedTransport(
+        "happy-five-page-slice", "happy-five-page-slice", "short-final-slice"
+    )
+    extract_document(
+        CORPUS / "baseline-12p.pdf",
+        transport=transport,
+        accountant=accountant,
+        model=MODEL,
+        pages_total=12,
+        force=True,
+        staging=staging,
+        sleep=never_sleeps,
+    )
+    assert transport.calls == 3, "the partially staged slice is re-asked whole, not topped up"
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_partially_extracted_document_writes_no_complete_entry(
+    make_fake_kb: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A half-extracted document in the index is the silent truncation the design exists to
+    prevent, so it writes nothing and goes to `failures` — while its staged pages survive, which
+    is what makes the next run cheap rather than merely correct."""
+    import shutil
+
+    from pinakes.extract import (
+        CLAUDE_VISION,
+        ExtractorEntry,
+        register_extractor,
+        registered_entry,
+    )
+    from pinakes.extract import claude as claude_module
+    from pinakes.extract.cache import staging_dir
+    from pinakes.extract.claude import ClaudeVisionExtractor
+    from pinakes.manifest import load as load_manifest
+    from pinakes.sync import SyncOptions, sync
+
+    root = make_fake_kb(
+        extraction_backend=CLAUDE_VISION,
+        budget={"per_operation_eur": "50.00", "daily_eur": "50.00", "monthly_eur": "50.00"},
+    )
+    path = root / "pinakes.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md", "**/*.txt"]', 'include = ["**/*.pdf"]'
+        ),
+        encoding="utf-8",
+    )
+    shutil.copyfile(CORPUS / "baseline-12p.pdf", root / "docs" / "scan.pdf")
+
+    # Two slices succeed, the third times out: the run dies part-way through the document.
+    transport = RecordedTransport("happy-five-page-slice", "happy-five-page-slice", "timeout")
+    original_entry = registered_entry(CLAUDE_VISION)
+    register_extractor(
+        CLAUDE_VISION,
+        ExtractorEntry(
+            lambda: ClaudeVisionExtractor(transport),
+            claude_module.fingerprint_inputs,
+            paid=True,
+            requires=("anthropic", "claude"),
+        ),
+    )
+    try:
+        report = sync(load_manifest(root), options=SyncOptions(force=True, yes=True))
+    finally:
+        register_extractor(CLAUDE_VISION, original_entry)
+
+    assert not report.ok
+    assert [failure[0] for failure in report.failures] == ["docs/scan.pdf"]
+
+    cache_dir = root / ".pinakes" / "cache" / "extract"
+    assert list(cache_dir.glob("*.json")) == [], "no complete entry for a partial document"
+
+    manifest = load_manifest(root)
+    surviving = staging_dir(
+        cache_dir,
+        content_hash=hash_file(root / "docs" / "scan.pdf"),
+        fingerprint=extraction_fingerprint(CLAUDE_VISION, manifest.extraction.model),
+    )
+    assert len(staged_pages(surviving)) == 10, "the staged pages survive for the next run"
+
+
+# --- `--clear-cache` learns what it is destroying ------------------------------------------------
+
+
+def paid_cache_entry_with_calls(root: Path, name: str, call_ids: list[str]) -> Path:
+    cache = root / ".pinakes" / "cache" / "extract"
+    cache.mkdir(parents=True, exist_ok=True)
+    path = cache / f"{name}.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "content_hash": f"sha256:{name}",
+                "backend": CLAUDE_VISION,
+                "fingerprint": "fp",
+                "page_count": 1,
+                "page_spans": [[0, 0]],
+                "text": "",
+                "per_page_provenance": [],
+                "operation_id": "OP1",
+                "call_ids": call_ids,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def record_paid_call(root: Path, *, call_id: str, cost_usd: str) -> None:
+    from pinakes.budget.ledger import Record, RecordKind, append, ledger_path
+
+    path = ledger_path(root / ".pinakes")
+    for kind, cost in ((RecordKind.RESERVATION, "0.5000"), (RecordKind.RECONCILIATION, cost_usd)):
+        append(
+            path,
+            Record(
+                kind=kind,
+                at=datetime.now(UTC),
+                operation_id="OP1",
+                call_id=call_id,
+                operation="sync",
+                kb_id="01K1B0GJ0000000000000000AA",
+                model=MODEL,
+                cost_usd=Decimal(cost),
+                usd_per_eur=Decimal("1.00"),  # so euros and dollars are the same number to read
+                prices_as_of="20260728 12:00",
+            ),
+        )
+
+
+def test_clear_cache_reports_spend_and_confirms(
+    make_fake_kb: Callable[..., Path],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The euro figure is asserted against a total computed by hand from the records below, not
+    against zero — a join that silently matches nothing also reports €0.0000, and the two are
+    indistinguishable from the assertion alone."""
+    import sys
+
+    from pinakes.cli import EXIT_FAILURE, main
+
+    root = make_fake_kb(extraction_backend=CLAUDE_VISION)
+    paid_cache_entry_with_calls(root, "one", ["CALL-A", "CALL-B"])
+    paid_cache_entry_with_calls(root, "two", ["CALL-C"])
+    record_paid_call(root, call_id="CALL-A", cost_usd="0.0400")
+    record_paid_call(root, call_id="CALL-B", cost_usd="0.0300")
+    record_paid_call(root, call_id="CALL-C", cost_usd="0.1100")
+    # A call that paid for nothing still in the cache: it must not be counted.
+    record_paid_call(root, call_id="CALL-D", cost_usd="9.9900")
+
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    assert main(["sync", "--kb", str(root), "--clear-cache", "--yes"]) == EXIT_FAILURE
+
+    out = capsys.readouterr().out
+    assert "2 of them were written by a paid backend" in out
+    assert "€0.1800" in out, "0.04 + 0.03 + 0.11, and not the 9.99 of an unrelated call"
+
+
+def test_the_join_is_by_call_id_not_operation_id(make_fake_kb: Callable[..., Path]) -> None:
+    """One operation extracts many documents, so an operation id prices a *run*. Joining on it
+    would attribute the whole run's spend to every document in it — the draft specified exactly
+    that, and no cache entry recorded anything it could be matched on."""
+    from pinakes.sync import paid_cache_spend
+
+    root = make_fake_kb(extraction_backend=CLAUDE_VISION)
+    paid_cache_entry_with_calls(root, "one", ["CALL-A"])
+    record_paid_call(root, call_id="CALL-A", cost_usd="0.0400")
+    record_paid_call(root, call_id="CALL-Z", cost_usd="5.0000")  # same operation, other document
+
+    total = paid_cache_spend(load(root), root / ".pinakes" / "cache" / "extract")
+    assert total == "0.0400", "an operation-id join would have reported 5.04"
+
+
+def test_an_entry_with_no_call_ids_prices_at_zero_without_crashing(
+    make_fake_kb: Callable[..., Path],
+) -> None:
+    """Entries written before I7b recorded call ids — `call_ids: null` — must not take the whole
+    summary down; they simply cannot be priced."""
+    from pinakes.sync import paid_cache_spend
+
+    root = make_fake_kb(extraction_backend=CLAUDE_VISION)
+    cache = root / ".pinakes" / "cache" / "extract"
+    cache.mkdir(parents=True, exist_ok=True)
+    (cache / "legacy.json").write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "content_hash": "sha256:x",
+                "operation_id": "OP1",
+                "call_ids": None,
+                "text": "",
+                "page_spans": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert paid_cache_spend(load(root), cache) == "0.0000"
+
+
+# --- flag scope: what `--force` may and may not overrule ------------------------------------------
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_force_does_not_widen_a_budget_cap(make_fake_kb: Callable[..., Path]) -> None:
+    """`--force` overrules two refusals to spend or discard that a user may legitimately overrule.
+    A cap is neither: a flag that can widen a hard cap is not a hard cap."""
+    from pinakes.extract.claude import extract_document
+
+    root = make_fake_kb(
+        extraction_backend=CLAUDE_VISION,
+        budget={"per_operation_eur": "0.01", "daily_eur": "0.01", "monthly_eur": "0.01"},
+    )
+    accountant = Accountant(load(root), prices=prices(), now=datetime.now(UTC), yes=True)
+    transport = RecordedTransport("happy-five-page-slice")
+
+    with pytest.raises(BudgetRefusedError):
+        extract_document(
+            CORPUS / "baseline-1p.pdf",
+            transport=transport,
+            accountant=accountant,
+            model=MODEL,
+            pages_total=1,
+            force=True,  # bypasses the healthy-PDF refusal, and nothing else
+            sleep=never_sleeps,
+        )
+    assert transport.calls == 0, "the call is refused before it is made, `--force` or not"
+
+
+def test_a_budget_stop_ends_the_run_rather_than_repeating_itself() -> None:
+    """A cap does not un-breach itself, so continuing produces N copies of one fact."""
+    from pinakes.sync import SyncReport
+
+    report = SyncReport(on_exceed="abort")
+    report.failures.append(("docs/a.pdf", "BudgetRefusedError: refused", ""))
+    report.budget_exhausted = "docs/a.pdf"
+    assert not report.ok
+    assert "did not finish" in (report.budget_line() or "")
+
+
+def test_on_exceed_partial_treats_a_budget_stop_as_success() -> None:
+    """The user asked for whatever fit inside the cap, and got it."""
+    from pinakes.sync import SyncReport
+
+    report = SyncReport(on_exceed="partial")
+    report.failures.append(("docs/a.pdf", "BudgetRefusedError: refused", ""))
+    report.budget_exhausted = "docs/a.pdf"
+    assert report.ok
+    assert "already indexed are kept" in (report.budget_line() or "")
+
+
+def test_on_exceed_partial_is_corpus_level_never_page_level() -> None:
+    """ "Partial" is permission to index fewer documents, never permission to index part of one —
+    a half-extracted document is the silent truncation the design exists to prevent, so it stays a
+    failure whatever `on_exceed` says."""
+    from pinakes.sync import SyncReport
+
+    report = SyncReport(on_exceed="partial")
+    report.failures.append(("docs/a.pdf", "BudgetRefusedError: refused", ""))
+    report.failures.append(("docs/b.pdf", "ExtractionError: slice 3 of 4 failed", ""))
+    report.budget_exhausted = "docs/a.pdf"
+    assert not report.ok, "the truncated document still fails the run"
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_successful_document_leaves_no_staging_behind(
+    make_fake_kb: Callable[..., Path], tmp_path: Path
+) -> None:
+    """Staging that outlives its document is not merely litter. Its key is
+    `<content_hash>-<fingerprint>`, so a later run of the *same* document would find it and skip
+    slices — serving text from an extraction that was already superseded, for free, silently."""
+    import shutil
+
+    from pinakes.extract import (
+        CLAUDE_VISION,
+        ExtractorEntry,
+        register_extractor,
+        registered_entry,
+    )
+    from pinakes.extract import claude as claude_module
+    from pinakes.extract.cache import staging_dir
+    from pinakes.extract.claude import ClaudeVisionExtractor
+    from pinakes.manifest import load as load_manifest
+    from pinakes.sync import SyncOptions, sync
+
+    root = make_fake_kb(
+        extraction_backend=CLAUDE_VISION,
+        budget={"per_operation_eur": "50.00", "daily_eur": "50.00", "monthly_eur": "50.00"},
+    )
+    path = root / "pinakes.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md", "**/*.txt"]', 'include = ["**/*.pdf"]'
+        ),
+        encoding="utf-8",
+    )
+    shutil.copyfile(CORPUS / "baseline-1p.pdf", root / "docs" / "scan.pdf")
+
+    transport = RecordedTransport("short-final-slice")
+    transport.entries[0]["content"] = [
+        {"type": "text", "text": json.dumps({"pages": [{"page": 1, "text": "paid text"}]})}
+    ]
+    original_entry = registered_entry(CLAUDE_VISION)
+    register_extractor(
+        CLAUDE_VISION,
+        ExtractorEntry(
+            lambda: ClaudeVisionExtractor(transport),
+            claude_module.fingerprint_inputs,
+            paid=True,
+            requires=("anthropic", "claude"),
+        ),
+    )
+    try:
+        report = sync(load_manifest(root), options=SyncOptions(force=True, yes=True))
+    finally:
+        register_extractor(CLAUDE_VISION, original_entry)
+
+    assert report.ok, report.failures
+    cache_dir = root / ".pinakes" / "cache" / "extract"
+    assert len(list(cache_dir.glob("*.json"))) == 1, "the complete entry was written"
+
+    manifest = load_manifest(root)
+    leftover = staging_dir(
+        cache_dir,
+        content_hash=hash_file(root / "docs" / "scan.pdf"),
+        fingerprint=extraction_fingerprint(CLAUDE_VISION, manifest.extraction.model),
+    )
+    assert not leftover.exists(), "staging is cleared once the entry it was protecting exists"
+
+
+def test_staged_pages_are_invisible_to_every_cache_sweep(tmp_path: Path) -> None:
+    """`survey`, `total_stats` and `clear_all` all glob the cache root. A half-done document
+    counted among the finished ones would be reported as an entry, priced as one, and — worst —
+    swept as one."""
+    from pinakes.extract import cache as cache_module
+
+    cache_dir = tmp_path / "extract"
+    cache_dir.mkdir()
+    staging = cache_module.staging_dir(cache_dir, content_hash="sha256:abc", fingerprint="fp")
+    for page in range(3):
+        cache_module.stage_page(staging, page=page, text=f"page {page}")
+
+    assert cache_module.total_stats(cache_dir) == (0, 0), "no entries, only a partial document"
+    assert cache_module.survey(cache_dir, active_content_hashes=set()).entries == 0
+    assert cache_module.paid_entries(cache_dir) == ()
+
+    cache_module.clear_all(cache_dir)
+    assert len(cache_module.staged_pages(staging)) == 3, "a cache clear is not a resume-discarder"
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_corpus_stops_at_the_first_cap_breach_rather_than_failing_every_document(
+    make_fake_kb: Callable[..., Path],
+) -> None:
+    """Driven through `sync` over two documents, because the `on_exceed` tests above construct a
+    report by hand and so cannot see whether the *loop* stops. Without the break, document two is
+    attempted, refused for the identical reason, and the report carries the same fact twice."""
+    import shutil
+
+    from pinakes.extract import (
+        CLAUDE_VISION,
+        ExtractorEntry,
+        register_extractor,
+        registered_entry,
+    )
+    from pinakes.extract import claude as claude_module
+    from pinakes.extract.claude import ClaudeVisionExtractor
+    from pinakes.manifest import load as load_manifest
+    from pinakes.sync import SyncOptions, sync
+
+    root = make_fake_kb(
+        extraction_backend=CLAUDE_VISION,
+        budget={"per_operation_eur": "0.01", "daily_eur": "0.01", "monthly_eur": "0.01"},
+    )
+    path = root / "pinakes.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md", "**/*.txt"]', 'include = ["**/*.pdf"]'
+        ),
+        encoding="utf-8",
+    )
+    for name in ("one.pdf", "two.pdf"):
+        shutil.copyfile(CORPUS / "baseline-1p.pdf", root / "docs" / name)
+
+    transport = RecordedTransport("short-final-slice")
+    original_entry = registered_entry(CLAUDE_VISION)
+    register_extractor(
+        CLAUDE_VISION,
+        ExtractorEntry(
+            lambda: ClaudeVisionExtractor(transport),
+            claude_module.fingerprint_inputs,
+            paid=True,
+            requires=("anthropic", "claude"),
+        ),
+    )
+    try:
+        report = sync(load_manifest(root), options=SyncOptions(force=True, yes=True))
+    finally:
+        register_extractor(CLAUDE_VISION, original_entry)
+
+    assert transport.calls == 0, "the cap refuses before any call is made"
+    assert len(report.failures) == 1, "one fact, reported once — not once per remaining document"
+    assert report.budget_exhausted is not None
+    assert "budget cap" in (report.budget_line() or "")

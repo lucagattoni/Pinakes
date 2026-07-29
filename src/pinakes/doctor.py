@@ -104,6 +104,7 @@ def diagnose(manifest: Manifest) -> Report:
     checks.append(_lock(manifest))
     checks.append(_hooks(manifest))
     checks.append(_machine_driven_split(manifest))
+    checks.append(_completeness(manifest))
     checks.append(_prices(manifest))
     checks.append(_unknown_outcomes(manifest))
     return Report(tuple(checks), tuple(orphans))
@@ -606,6 +607,52 @@ def _machine_driven_split(manifest: Manifest) -> Check:
         "is non-interactive and can never spend",
         "Paid extraction is a `pnk sync` you run. See `awaiting paid extraction` above for how "
         "many documents that leaves.",
+    )
+
+
+def _completeness(manifest: Manifest) -> Check:
+    """Report pages a paid extraction scored below their own document's median (I7c).
+
+    Read from the cache entries the extraction already wrote, so this costs a few file reads and
+    **never** a re-extraction — the audit is report-only, and a health check that could spend money
+    would be the last place anyone would look for one.
+
+    An entry with no audit is "not audited", which is not "audited and fine": it is left out of
+    both numbers rather than counted as a pass, which is the vacuous-metric failure §7 exists to
+    avoid.
+    """
+    from pinakes.extract.audit import from_provenance
+
+    cache_dir = manifest.extract_cache_dir
+    if not cache_dir.is_dir():
+        return Check("completeness", Status.OK, "no paid extractions to audit")
+
+    audited = 0
+    flagged: list[str] = []
+    for entry in sorted(cache_dir.glob("*.json")):
+        cached = extract_cache.read_entry(entry)
+        if cached is None:
+            continue
+        report = from_provenance(cached.per_page_provenance)
+        if report is None:
+            continue
+        audited += 1
+        flagged.extend(report.low_coverage_paths(entry.stem))
+    if audited == 0:
+        return Check("completeness", Status.OK, "no paid extractions to audit")
+    if not flagged:
+        return Check(
+            "completeness", Status.OK, f"{audited} paid extraction(s), no page below median"
+        )
+    sample = ", ".join(flagged[:3])
+    more = len(flagged) - 3
+    return Check(
+        "completeness",
+        Status.WARN,
+        f"{len(flagged)} page(s) across {audited} paid extraction(s) scored below their own "
+        f"document's median: {sample}" + (f" and {more} more" if more > 0 else ""),
+        "Report-only — nothing was re-extracted and nothing spent. Open the pages and decide; "
+        "a low score can equally mean the native layer was junk the paid pass correctly dropped.",
     )
 
 

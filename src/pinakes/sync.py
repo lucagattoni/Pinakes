@@ -22,6 +22,7 @@ import subprocess
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -171,10 +172,60 @@ class SyncReport:
     """How many of `cache_pending_entries` a paid backend wrote (I6b). Its own number because
     `--yes` alone must never authorise destroying paid extractions unattended — that needs the
     explicit `--clear-cache=paid`, which no hook and no CI workflow writes."""
+    audits: tuple[tuple[str, str], ...] = ()
+    """`(path, summary)` per paid document extracted this run — the completeness audit's report
+    (I7c). Surfaced here because this is the moment a user has just paid: telling them a page
+    looks unlike the rest of its document is worth most before they close the terminal."""
+    low_coverage: tuple[str, ...] = ()
+    """`path:page` for every below-median page, so a human can open the actual page rather than
+    read a percentage about it."""
+    budget_exhausted: str | None = None
+    """The **path** whose refusal stopped the run, if a `[budget]` cap was reached (I7c).
+
+    A path, not the error message: `_is_budget_refusal` identifies the refusal by *type* precisely
+    because an error string is prose, and prose is what the next person improving it rewords. `ok`
+    then matching on that same prose would have reintroduced the coupling one line later.
+
+    The run stops at the first breach rather than trying every remaining document: a cap does not
+    un-breach itself, so continuing produces N copies of one fact. What differs between
+    `on_exceed = "abort"` and `"partial"` is not what was *done* — each document is its own
+    transaction, so whatever completed is committed either way — but whether stopping counts as a
+    failure. `partial` says the run was allowed to do what it could; `abort` says it was not."""
+    on_exceed: str = "abort"
+    """Copied from the manifest so `ok` can read it without the manifest in hand."""
+    cache_pending_paid_eur: str = "0.0000"
+    """What those entries cost, joined from the ledger on each entry's `call_ids` (I7c).
+
+    A count answers "how many"; only the euros answer "is this worth re-paying for", which is the
+    question someone about to type `y` actually has."""
 
     @property
     def ok(self) -> bool:
+        """Whether the run succeeded.
+
+        A budget stop under `on_exceed = "partial"` is **not** a failure: the user asked for
+        whatever fit inside the cap, and got it. Under `"abort"` — the default — it is, because
+        the user asked for the corpus and the corpus is not indexed.
+
+        Honoured at the **corpus** level and never at the page level. A half-extracted document
+        keeps no entry and lands in `failures` whatever `on_exceed` says: "partial" is permission
+        to index fewer documents, never permission to index part of one, which would be the silent
+        truncation §4.6 exists to prevent.
+        """
+        if self.budget_exhausted is not None and self.on_exceed == "partial":
+            return not [failure for failure in self.failures if failure[0] != self.budget_exhausted]
         return not self.failures
+
+    def budget_line(self) -> str | None:
+        """The one line a run stopped by a cap owes the user."""
+        if self.budget_exhausted is None:
+            return None
+        consequence = (
+            'documents already indexed are kept (`on_exceed = "partial"`)'
+            if self.on_exceed == "partial"
+            else 'the run did not finish (`on_exceed = "abort"`)'
+        )
+        return f"stopped at a budget cap: {consequence}. `pnk budget` shows the window."
 
     def lines(self) -> list[str]:
         """What `pnk sync` prints. Counts first, then anything needing a human."""
@@ -259,6 +310,16 @@ class SyncReport:
         remedy that only needs saying once should not scroll past N times.
         """
         lines = [f"failed: {path}: {error}" for path, error, _ in self.failures]
+        for path, summary in self.audits:
+            lines.append(f"completeness: {path}: {summary}")
+        if self.low_coverage:
+            lines.append(
+                "pages scoring below their own document's median — worth a look, nothing was "
+                "re-extracted and nothing spent: " + ", ".join(self.low_coverage)
+            )
+        stopped = self.budget_line()
+        if stopped is not None:
+            lines.append(stopped)
         seen: list[str] = []
         for _, _, remedy in self.failures:
             if remedy and remedy not in seen:
@@ -522,7 +583,10 @@ def sync(
     with SyncLock(manifest.state_dir, force=options.force_unlock) as lock:
         if not lock.acquired:
             return SyncReport(busy=True)
-        report = SyncReport(reclaimed_lock=lock.outcome is LockOutcome.RECLAIMED)
+        report = SyncReport(
+            reclaimed_lock=lock.outcome is LockOutcome.RECLAIMED,
+            on_exceed=manifest.budget.on_exceed,
+        )
         _run(manifest, options, backend_factory, stamp, report, extraction_backend)
         return report
 
@@ -595,6 +659,36 @@ def _estimate_only(manifest: Manifest, options: SyncOptions) -> SyncReport:
     return SyncReport(estimates=tuple(lines))
 
 
+def paid_cache_spend(manifest: Manifest, cache_dir: Path) -> str:
+    """What the paid entries in `cache_dir` cost, in euros, from the ledger.
+
+    Joined on each entry's own `call_ids`. **Not** on `operation_id`, which the draft specified and
+    which cannot work: one operation extracts many documents, so an operation id prices a *run* and
+    would attribute the whole run's spend to every document in it.
+
+    Call ids are deduplicated across entries before summing — an id counted twice would overstate
+    what is about to be lost, and overstating it is not the safe direction either: a number a user
+    can see is wrong is a number they stop reading.
+    """
+    from pinakes.budget import ledger
+
+    entries = extract_cache.paid_entries(cache_dir)
+    if not entries:
+        return "0.0000"
+    wanted = {call_id for entry in entries for call_id in entry.call_ids}
+    if not wanted:
+        return "0.0000"
+
+    from pinakes.budget.summary import euros
+
+    resolved = ledger.resolve(ledger.read(ledger.ledger_path(manifest.state_dir)).records)
+    total = sum(
+        (call.effective_eur for call in resolved.calls if call.call_id in wanted),
+        start=Decimal("0"),
+    )
+    return euros(total)
+
+
 def _clear_cache(manifest: Manifest, options: SyncOptions) -> SyncReport:
     """`--clear-cache`'s whole effect. No prompt lives here (§ module docstring's own I/O rule):
     the caller (`cli.py`) checks a TTY and asks the user, then re-calls with `yes=True` — this
@@ -603,17 +697,18 @@ def _clear_cache(manifest: Manifest, options: SyncOptions) -> SyncReport:
     pending_entries, pending_bytes = extract_cache.total_stats(cache_dir)
     if pending_entries == 0:
         return SyncReport(cache_cleared=0, cache_cleared_bytes=0)
-    paid_entries, _paid_bytes = extract_cache.paid_stats(cache_dir)
+    paid_count, _paid_bytes = extract_cache.paid_stats(cache_dir)
     # Two authorisations, not one (I6b). `--yes` answers the "this many entries will go" prompt;
     # destroying paid work needs `--clear-cache=paid` on top of it, so a cron line carrying `--yes`
     # for freshness cannot also throw away extractions somebody paid for.
-    authorised = options.yes and (paid_entries == 0 or options.clear_cache_paid)
+    authorised = options.yes and (paid_count == 0 or options.clear_cache_paid)
     if not authorised:
         return SyncReport(
             cache_clear_aborted=True,
             cache_pending_entries=pending_entries,
             cache_pending_bytes=pending_bytes,
-            cache_pending_paid_entries=paid_entries,
+            cache_pending_paid_entries=paid_count,
+            cache_pending_paid_eur=paid_cache_spend(manifest, cache_dir),
         )
     removed, removed_bytes = extract_cache.clear_all(cache_dir)
     return SyncReport(cache_cleared=removed, cache_cleared_bytes=removed_bytes)
@@ -689,6 +784,11 @@ def _run(
                 extraction_backend=extraction_backend,
                 protected_by_hash=protected_by_hash,
             )
+            if report.budget_exhausted:
+                # A cap does not un-breach itself, so every remaining document would fail for the
+                # same reason and the report would carry N identical failures instead of one fact.
+                # `on_exceed` decides only what that *means* — see `SyncReport.ok`.
+                break
 
         store.set_meta(
             connection,
@@ -868,6 +968,7 @@ def _apply(
                 extraction_backend=extraction_backend,
                 options=options,
                 stamp=stamp,
+                report=report,
             )
         connection.commit()
     except (PinakesError, OSError, ValueError) as exc:
@@ -884,6 +985,8 @@ def _apply(
         store.record_failure(connection, path=path, stage=stage, error=error, happened=stamp)
         connection.commit()
         report.failures.append((path, error, remedy))
+        if isinstance(exc, PinakesError) and _is_budget_refusal(exc):
+            report.budget_exhausted = path
         return
 
     if survivor is not None or in_place_backend is not None:
@@ -892,6 +995,17 @@ def _apply(
         report.renamed += 1
     else:
         report.embedded += 1
+
+
+def _is_budget_refusal(exc: PinakesError) -> bool:
+    """Whether this failure is a `[budget]` cap refusing, rather than a document being broken.
+
+    Identified by type, never by matching the message: an error string is prose, and prose is
+    exactly what gets reworded by the next person improving it.
+    """
+    from pinakes.extract.claude import BudgetRefusedError
+
+    return isinstance(exc, BudgetRefusedError)
 
 
 def _target(
@@ -1216,6 +1330,7 @@ def _extract_for_index(
     extraction_backend: str,
     sidecar: Sidecar | None,
     options: SyncOptions,
+    report: SyncReport,
 ) -> tuple[ExtractedText, str, str]:
     """Extract a PDF, honouring decision 9's paid-protection rule: a document whose sidecar
     records a *paid* extraction is never silently re-extracted with a *free* effective backend,
@@ -1269,11 +1384,23 @@ def _extract_for_index(
         # Loading the extractor (importing pypdfium2, say) is deferred inside this closure, so a
         # cache hit never pays for it — only a miss does (I4).
         ctx = ExtractionContext(
-            model=manifest.extraction.model, force=options.force, accountant=accountant
+            model=manifest.extraction.model,
+            force=options.force,
+            accountant=accountant,
+            staging_dir=staging,
         )
         return load_extractor(extraction_backend).extract(source, ctx)
 
     used_fingerprint = fingerprint(extraction_backend, manifest.extraction.model)
+    staging = (
+        extract_cache.staging_dir(
+            manifest.extract_cache_dir,
+            content_hash=content_hash,
+            fingerprint=used_fingerprint,
+        )
+        if effective_is_paid
+        else None
+    )
     extracted = extract_cache.get_or_extract(
         manifest.extract_cache_dir,
         content_hash=content_hash,
@@ -1283,7 +1410,29 @@ def _extract_for_index(
         operation_id=None if accountant is None else accountant.operation_id,
         call_ids=None if accountant is None else accountant.call_ids_this_operation,
     )
+    _record_audit(report, path, extracted)
+    if staging is not None:
+        # **After** the complete entry is written, never before: the reverse loses every staged
+        # page to a crash in between, which is exactly the re-payment staging exists to prevent.
+        # A document that failed never reaches here, so its staging survives for the next run —
+        # and it wrote no complete entry, which is the all-or-nothing half of the same rule.
+        extract_cache.clear_staging(staging)
     return extracted, extraction_backend, used_fingerprint
+
+
+def _record_audit(report: SyncReport, path: str, extracted: ExtractedText) -> None:
+    """Surface the completeness audit a paid extraction recorded, if there is one.
+
+    Silent when there is none — a free extraction, or a cache entry written before the audit
+    existed. "Not audited" must never render as "audited and fine".
+    """
+    from pinakes.extract.audit import from_provenance
+
+    report_for_document = from_provenance(extracted.per_page_provenance)
+    if report_for_document is None:
+        return
+    report.audits = (*report.audits, (path, report_for_document.line()))
+    report.low_coverage = (*report.low_coverage, *report_for_document.low_coverage_paths(path))
 
 
 def _accountant_for(manifest: Manifest, options: SyncOptions) -> "Accountant":
@@ -1318,6 +1467,7 @@ def _index_document(
     extraction_backend: str,
     options: SyncOptions,
     stamp: str,
+    report: SyncReport,
 ) -> None:
     if backend is None:  # pragma: no cover — only when nothing needed embedding
         raise SyncError("no embedding backend was loaded.", remedy="This is a bug; report it.")
@@ -1338,6 +1488,7 @@ def _index_document(
             extraction_backend=extraction_backend,
             sidecar=parsed,
             options=options,
+            report=report,
         )
         text = extracted.text
         page_spans = extracted.page_spans
