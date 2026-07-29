@@ -1,27 +1,31 @@
 {
-  "name": "rate-limited-then-success",
-  "branch": "429",
-  "why": "A 429 \u2014 never billed, so the reservation is voided and a fresh one is taken for the retry.",
-  "responses": [
+ "name": "rate-limited-then-success",
+ "branch": "429",
+ "why": "A 429 — never billed, so the reservation is voided and a fresh one is taken for the retry.",
+ "provenance": {
+  "kind": "authored",
+  "why_not_recorded": "Forcing a 429 means deliberately hammering a live service until it sheds load. That is abuse of the API, not measurement, and the repo will not do it to obtain a fixture."
+ },
+ "responses": [
+  {
+   "kind": "error",
+   "class": "status",
+   "status": 429
+  },
+  {
+   "kind": "response",
+   "stop_reason": "end_turn",
+   "model": "claude-opus-5-20260401",
+   "content": [
     {
-      "kind": "error",
-      "class": "status",
-      "status": 429
-    },
-    {
-      "kind": "response",
-      "stop_reason": "end_turn",
-      "model": "claude-opus-5-20260401",
-      "content": [
-        {
-          "type": "text",
-          "text": "{\"pages\": [{\"page\": 1, \"text\": \"Page 1 of the slice.\\nSome transcribed prose.\"}, {\"page\": 2, \"text\": \"Page 2 of the slice.\\nSome transcribed prose.\"}, {\"page\": 3, \"text\": \"Page 3 of the slice.\\nSome transcribed prose.\"}, {\"page\": 4, \"text\": \"Page 4 of the slice.\\nSome transcribed prose.\"}, {\"page\": 5, \"text\": \"Page 5 of the slice.\\nSome transcribed prose.\"}]}"
-        }
-      ],
-      "usage": {
-        "input_tokens": 30300,
-        "output_tokens": 90
-      }
+     "type": "text",
+     "text": "{\"pages\": [{\"page\": 1, \"text\": \"Page 1 of the slice.\\nSome transcribed prose.\"}, {\"page\": 2, \"text\": \"Page 2 of the slice.\\nSome transcribed prose.\"}, {\"page\": 3, \"text\": \"Page 3 of the slice.\\nSome transcribed prose.\"}, {\"page\": 4, \"text\": \"Page 4 of the slice.\\nSome transcribed prose.\"}, {\"page\": 5, \"text\": \"Page 5 of the slice.\\nSome transcribed prose.\"}]}"
     }
-  ]
+   ],
+   "usage": {
+    "input_tokens": 30300,
+    "output_tokens": 90
+   }
+  }
+ ]
 }

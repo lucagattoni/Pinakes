@@ -11,6 +11,7 @@ carry the `pdf` marker for it.
 """
 
 import json
+import re
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -203,13 +204,106 @@ def test_every_fixture_says_why_it_exists() -> None:
         assert fixture["name"] == path.stem
 
 
-def test_the_fixtures_do_not_claim_to_be_real_recordings() -> None:
-    """They are authored from the documented shape, and the README says so. A fixture set that
-    reads as captured-from-production is a claim about evidence nobody has."""
-    readme = (FIXTURES / "README.md").read_text(encoding="utf-8")
-    assert (
-        "hand-authored to the documented response shape, not captured from the live API" in readme
-    )
+def test_every_fixture_declares_where_its_bodies_came_from() -> None:
+    """The set is now half evidence and half construction, and which half a body is in decides what
+    it can prove. A blanket README disclaimer used to carry that — it was replaced by a per-fixture
+    `provenance` when four branches were recorded live, because a blanket claim over a mixed set is
+    wrong about every fixture it does not describe.
+
+    `recorded` must carry its evidence — when, which model, and what was sent. `authored` must say
+    why a recording is not obtainable, so "nobody got round to it" cannot hide behind the same word
+    as "the API cannot be asked to violate its own schema".
+    """
+    for path in sorted(FIXTURES.glob("*.json")):
+        raw: object = load_fixture(path.stem)["provenance"]
+        assert isinstance(raw, dict), f"{path.name}: no provenance"
+        provenance = cast(dict[str, object], raw)
+        kind = provenance.get("kind")
+        assert kind in {"recorded", "authored"}, f"{path.name}: unknown provenance {kind!r}"
+        if kind == "recorded":
+            assert provenance.get("model"), f"{path.name}: recorded but names no model"
+            assert provenance.get("source"), f"{path.name}: recorded but names no source"
+            at: object = provenance.get("at", "")
+            assert isinstance(at, str) and re.fullmatch(r"\d{8} \d{2}:\d{2}", at), (
+                f"{path.name}: `at` must be local 'YYYYMMDD HH:MM' (CLAUDE.md), got {at!r}"
+            )
+        else:
+            why: object = provenance.get("why_not_recorded", "")
+            assert isinstance(why, str) and len(why) > 40, (
+                f"{path.name}: authored fixtures must say why a recording is not obtainable"
+            )
+
+
+def test_a_recorded_fixture_agrees_with_the_model_it_claims() -> None:
+    """A recording edited by hand is indistinguishable from a recording, unless something checks.
+
+    The cheapest cross-check the bodies themselves permit: every response in a `recorded` fixture
+    must report the model the provenance names. It caught nothing when written — that is the
+    point of writing it before it is needed rather than after a hand-edit has already landed.
+    """
+    checked = 0
+    for path in sorted(FIXTURES.glob("*.json")):
+        fixture = load_fixture(path.stem)
+        provenance = cast(dict[str, Any], fixture["provenance"])
+        if provenance.get("kind") != "recorded":
+            continue
+        for entry in cast(list[dict[str, Any]], fixture["responses"]):
+            if entry.get("kind") == "error":
+                continue
+            assert entry.get("model") == provenance["model"], (
+                f"{path.name}: body reports {entry.get('model')!r}, "
+                f"provenance claims {provenance['model']!r}"
+            )
+            checked += 1
+    assert checked, "no recorded response bodies were checked — the recorded set has vanished"
+
+
+def test_the_branches_a_recording_reached_are_backed_by_one() -> None:
+    """Recording is what turns a reading of the docs into evidence, so the branches that *can* be
+    recorded must actually be. Named explicitly rather than derived from the directory: a test that
+    reads the same thing it checks would pass on an empty set.
+    """
+    recorded: set[str] = set()
+    for path in FIXTURES.glob("*.json"):
+        fixture = load_fixture(path.stem)
+        provenance = cast(dict[str, Any], fixture["provenance"])
+        if provenance.get("kind") == "recorded":
+            recorded.add(cast(str, fixture["branch"]))
+    assert recorded >= {"happy", "short-slice", "refusal", "truncated"}, recorded
+
+
+def test_a_refusal_reports_the_category_and_explanation_the_api_sent() -> None:
+    """The live recording is what revealed `stop_details`; the authored fixture had none, so the
+    old message discarded a category and an explanation nobody knew arrived."""
+    from pinakes.extract.claude import refusal_reason
+
+    body = load_fixture("refusal-twice")["responses"][0]
+    details = cast(dict[str, Any], body["stop_details"])
+    reason = refusal_reason(body)
+
+    assert details["category"] in reason
+    assert details["explanation"][:40] in reason
+    assert reason != "the model refused the request", "the details were dropped again"
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {},
+        {"stop_details": None},
+        {"stop_details": "a string, not a mapping"},
+        {"stop_details": {}},
+        {"stop_details": {"category": None, "explanation": 17}},
+    ],
+)
+def test_a_refusal_without_usable_details_still_reads_as_a_refusal(
+    response: dict[str, Any],
+) -> None:
+    """This runs on the failure path: details missing or the wrong shape must degrade to the plain
+    sentence, never raise. A crash here would turn one refused document into a crashed run."""
+    from pinakes.extract.claude import refusal_reason
+
+    assert refusal_reason(response) == "the model refused the request"
 
 
 # --- the request ------------------------------------------------------------------------------
@@ -766,10 +860,16 @@ def test_the_reconciliation_supersedes_with_the_real_cost_not_the_reservation(
     assert call.outcome.cost_usd != call.reservation.cost_usd, (
         "an outcome identical to its reservation means nothing was reconciled"
     )
-    # Derived from the response's own usage, not from anything the caller reserved. (The
-    # reservation here is an arbitrary test constant, so comparing the two magnitudes would assert
-    # a property of the fixture rather than of the code.)
-    assert call.outcome.input_tokens == 30_300
+    # Derived from the response's own usage, not from anything the caller reserved. Read from the
+    # fixture rather than written as a literal: the literal was the *authored* body's token count,
+    # so recording a real response broke this assertion while the code under test was correct —
+    # the "property of the fixture rather than of the code" its own comment warns against.
+    # `count_tokens` is the estimate seam and returns something else entirely, so requiring the two
+    # to differ is what proves the reconciliation read the response.
+    assert call.outcome.input_tokens == transport.entries[0]["usage"]["input_tokens"]
+    assert call.outcome.input_tokens != transport.count_tokens({}), (
+        "the reconciliation must read the response's usage, never the pre-call estimate"
+    )
     assert call.effective_eur == call.outcome.cost_eur
 
 

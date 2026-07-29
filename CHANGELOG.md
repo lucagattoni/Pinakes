@@ -54,7 +54,43 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.paid-path-allowlist` is unchanged, though the free-path gate's *coverage* is extended per
   increment, since it enumerates surfaces by name.
 
+- **Four Claude-vision fixtures are now recorded from the live API**, and every fixture declares its
+  own `provenance` — `recorded` naming when, which model and what was sent, or `authored` naming
+  why a recording is not obtainable. The blanket "hand-authored, not captured" disclaimer is gone,
+  because a single claim over a mixed set is wrong about every fixture it does not describe
+  ([the fixture README](tests/fixtures/claude/README.md), 20260729 03:36, €0.26).
+
+  `tools/record_claude_fixtures.py` is what captured them. It spends real money and needs a real
+  key, so it is a developer tool and never a product entry point: no `pnk` subcommand reaches it,
+  no test imports it, CI never runs it, and it lives outside `src/` where the paid-path gate scans.
+  Its `--at` flag is required and has no default — the timestamp is read off the clock, never
+  composed.
+
+  Ten fixtures stay authored **permanently**, not pending: they encode the API misbehaving (a body
+  violating the schema it was constrained to, a short page array, a leaked internal tag) or a
+  failure that cannot be induced without abusing a live service (429, 500, timeout).
+
 ### Fixed
+
+- **A refusal discarded the reason the API gave for it.** A refusal arrives with a structured
+  `stop_details` naming a `category` and an `explanation`; the extractor recorded the bare sentence
+  "the model refused the request", leaving an operator unable to tell a policy category from a
+  malformed PDF. `refusal_reason` now surfaces both, defensively — details missing or the wrong
+  shape still degrade to the plain sentence, because this runs on the failure path where a raise
+  would turn one refused document into a crashed run.
+
+  Found only by recording: the authored fixture had no `stop_details` at all, so nothing in the
+  test suite could have pointed at it. Recording also settled that the authored bodies were right
+  about every branch's control flow and wrong about the response shape in five ways — the API
+  returns the model **alias** rather than a dated snapshot, a text block carries `citations`, a
+  response carries five more top-level fields, `usage` carries seven more, and a refusal bills
+  **1** output token rather than 0.
+
+- **A reconciliation test asserted a property of its fixture rather than of the code.** It compared
+  the reconciled input-token count against the literal `30_300` — the authored body's number — so
+  recording a real response broke it while the code under test was correct. It now reads the count
+  from the fixture and requires it to differ from the pre-call estimate, which is what actually
+  proves the reconciliation read the response.
 
 - **The multi-hop class measured nothing about hopping, and two of its five questions asked about
   one document while demanding another.** `Outcome.hops_followed` was computed for every scripted

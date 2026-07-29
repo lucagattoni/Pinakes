@@ -1,22 +1,26 @@
 {
-  "name": "server-error-exhausted",
-  "branch": "500",
-  "why": "Three 500s: the initial attempt plus both transport backoffs, all voided.",
-  "responses": [
-    {
-      "kind": "error",
-      "class": "status",
-      "status": 500
-    },
-    {
-      "kind": "error",
-      "class": "status",
-      "status": 500
-    },
-    {
-      "kind": "error",
-      "class": "status",
-      "status": 500
-    }
-  ]
+ "name": "server-error-exhausted",
+ "branch": "500",
+ "why": "Three 500s: the initial attempt plus both transport backoffs, all voided.",
+ "provenance": {
+  "kind": "authored",
+  "why_not_recorded": "A 500 is a fault in someone else's service. It cannot be induced, and waiting for one to happen is not a recording strategy."
+ },
+ "responses": [
+  {
+   "kind": "error",
+   "class": "status",
+   "status": 500
+  },
+  {
+   "kind": "error",
+   "class": "status",
+   "status": 500
+  },
+  {
+   "kind": "error",
+   "class": "status",
+   "status": 500
+  }
+ ]
 }
