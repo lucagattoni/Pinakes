@@ -68,7 +68,7 @@ from pinakes.budget.prices import ModelPrice
 from pinakes.errors import ExtractionError, ExtractorMissingError
 from pinakes.extract import CLAUDE_VISION, ExtractedText, ExtractionContext
 from pinakes.extract import cache as extract_cache
-from pinakes.extract.audit import audit_completeness
+from pinakes.extract.audit import AUDIT_KEY, as_provenance, audit_completeness
 from pinakes.extract.floors import load_floors
 from pinakes.extract.quality import text_yield
 from pinakes.extract.textpolicy import TEXT_POLICY_VERSION, normalise
@@ -830,19 +830,15 @@ def _audited(
         report = audit_completeness(extracted, survey.native, text_yield_floor=survey.floor)
     except ValueError as exc:
         annotated = tuple(
-            {**page, "audit": f"not run ({exc})"} for page in extracted.per_page_provenance
+            {**page, AUDIT_KEY: f"not run ({exc})"} for page in extracted.per_page_provenance
         )
         return replace(extracted, per_page_provenance=annotated), tally
 
-    below = {page.page for page in report.below_median}
     annotated = tuple(
-        {
-            **provenance,
-            "audit": "exempt"
-            if page.exempt
-            else f"{page.coverage:.3f}" + (" below-median" if page.page in below else ""),
-        }
-        for provenance, page in zip(extracted.per_page_provenance, report.pages, strict=True)
+        {**provenance, AUDIT_KEY: value}
+        for provenance, value in zip(
+            extracted.per_page_provenance, as_provenance(report), strict=True
+        )
     )
     return replace(extracted, per_page_provenance=annotated), tally
 

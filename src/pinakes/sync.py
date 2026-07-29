@@ -172,6 +172,13 @@ class SyncReport:
     """How many of `cache_pending_entries` a paid backend wrote (I6b). Its own number because
     `--yes` alone must never authorise destroying paid extractions unattended — that needs the
     explicit `--clear-cache=paid`, which no hook and no CI workflow writes."""
+    audits: tuple[tuple[str, str], ...] = ()
+    """`(path, summary)` per paid document extracted this run — the completeness audit's report
+    (I7c). Surfaced here because this is the moment a user has just paid: telling them a page
+    looks unlike the rest of its document is worth most before they close the terminal."""
+    low_coverage: tuple[str, ...] = ()
+    """`path:page` for every below-median page, so a human can open the actual page rather than
+    read a percentage about it."""
     budget_exhausted: str | None = None
     """The **path** whose refusal stopped the run, if a `[budget]` cap was reached (I7c).
 
@@ -303,6 +310,13 @@ class SyncReport:
         remedy that only needs saying once should not scroll past N times.
         """
         lines = [f"failed: {path}: {error}" for path, error, _ in self.failures]
+        for path, summary in self.audits:
+            lines.append(f"completeness: {path}: {summary}")
+        if self.low_coverage:
+            lines.append(
+                "pages scoring below their own document's median — worth a look, nothing was "
+                "re-extracted and nothing spent: " + ", ".join(self.low_coverage)
+            )
         stopped = self.budget_line()
         if stopped is not None:
             lines.append(stopped)
@@ -954,6 +968,7 @@ def _apply(
                 extraction_backend=extraction_backend,
                 options=options,
                 stamp=stamp,
+                report=report,
             )
         connection.commit()
     except (PinakesError, OSError, ValueError) as exc:
@@ -1315,6 +1330,7 @@ def _extract_for_index(
     extraction_backend: str,
     sidecar: Sidecar | None,
     options: SyncOptions,
+    report: SyncReport,
 ) -> tuple[ExtractedText, str, str]:
     """Extract a PDF, honouring decision 9's paid-protection rule: a document whose sidecar
     records a *paid* extraction is never silently re-extracted with a *free* effective backend,
@@ -1394,6 +1410,7 @@ def _extract_for_index(
         operation_id=None if accountant is None else accountant.operation_id,
         call_ids=None if accountant is None else accountant.call_ids_this_operation,
     )
+    _record_audit(report, path, extracted)
     if staging is not None:
         # **After** the complete entry is written, never before: the reverse loses every staged
         # page to a crash in between, which is exactly the re-payment staging exists to prevent.
@@ -1401,6 +1418,21 @@ def _extract_for_index(
         # and it wrote no complete entry, which is the all-or-nothing half of the same rule.
         extract_cache.clear_staging(staging)
     return extracted, extraction_backend, used_fingerprint
+
+
+def _record_audit(report: SyncReport, path: str, extracted: ExtractedText) -> None:
+    """Surface the completeness audit a paid extraction recorded, if there is one.
+
+    Silent when there is none — a free extraction, or a cache entry written before the audit
+    existed. "Not audited" must never render as "audited and fine".
+    """
+    from pinakes.extract.audit import from_provenance
+
+    report_for_document = from_provenance(extracted.per_page_provenance)
+    if report_for_document is None:
+        return
+    report.audits = (*report.audits, (path, report_for_document.line()))
+    report.low_coverage = (*report.low_coverage, *report_for_document.low_coverage_paths(path))
 
 
 def _accountant_for(manifest: Manifest, options: SyncOptions) -> "Accountant":
@@ -1435,6 +1467,7 @@ def _index_document(
     extraction_backend: str,
     options: SyncOptions,
     stamp: str,
+    report: SyncReport,
 ) -> None:
     if backend is None:  # pragma: no cover — only when nothing needed embedding
         raise SyncError("no embedding backend was loaded.", remedy="This is a bug; report it.")
@@ -1455,6 +1488,7 @@ def _index_document(
             extraction_backend=extraction_backend,
             sidecar=parsed,
             options=options,
+            report=report,
         )
         text = extracted.text
         page_spans = extracted.page_spans

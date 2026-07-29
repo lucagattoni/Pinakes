@@ -135,3 +135,46 @@ def test_a_page_with_no_significant_words_is_exempt_not_perfect() -> None:
     assert [page.page for page in report.exempt] == [1]
     assert report.exempt[0].coverage is None
     assert len(report.audited) == 2
+
+
+# --- the two surfaces the report has to reach ----------------------------------------------------
+
+
+def test_the_audit_round_trips_through_provenance() -> None:
+    """`pnk doctor` rebuilds the audit from what the cache entry stored, so the serialisation is
+    load-bearing: a lossy round trip would make a flagged page silently unflagged later."""
+    from pinakes.extract.audit import as_provenance, from_provenance
+
+    native = document(prose("alpha"), prose("bravo"), "", prose("delta"))
+    paid = document(prose("alpha"), "bravoaa bravoab", prose("recovered"), prose("delta"))
+    original = audit_completeness(paid, native, text_yield_floor=FLOOR)
+
+    stored = as_provenance(original)
+    rebuilt = from_provenance([{"audit": value} for value in stored])
+
+    assert rebuilt is not None
+    assert [page.exempt for page in rebuilt.pages] == [page.exempt for page in original.pages]
+    assert [page.page for page in rebuilt.below_median] == [
+        page.page for page in original.below_median
+    ]
+    assert rebuilt.line() == original.line()
+
+
+def test_provenance_with_no_audit_is_not_audited_rather_than_fine() -> None:
+    """A free extraction, or an entry written before the audit existed. Rendering that as
+    "audited, nothing below median" is the vacuous metric this project keeps refusing."""
+    from pinakes.extract.audit import from_provenance
+
+    assert from_provenance([]) is None
+    assert from_provenance([{"backend": "pypdfium2"}, {"backend": "pypdfium2"}]) is None
+
+
+def test_an_unparsable_audit_value_degrades_to_exempt() -> None:
+    """`not run (…)` is written when the audit itself could not run. It must not parse as a
+    coverage score, and it must not take the reader down with it."""
+    from pinakes.extract.audit import from_provenance
+
+    rebuilt = from_provenance([{"audit": "not run (page count mismatch)"}, {"audit": "0.900"}])
+    assert rebuilt is not None
+    assert rebuilt.pages[0].exempt
+    assert rebuilt.pages[1].coverage == 0.9

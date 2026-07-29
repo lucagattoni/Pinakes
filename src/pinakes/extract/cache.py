@@ -99,6 +99,12 @@ def get_or_extract(
     return extracted
 
 
+def read_entry(path: Path) -> ExtractedText | None:
+    """One cache entry by path, or `None` if it cannot be read — the public spelling of `_read`,
+    for `pnk doctor`, which reports on entries it finds rather than looking one up by key."""
+    return _read(path)
+
+
 def _read(path: Path) -> ExtractedText | None:
     try:
         raw: object = json.loads(path.read_text(encoding="utf-8"))

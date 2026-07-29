@@ -24,6 +24,7 @@ relative measure needs no fitted constant, and it answers the question a human a
 measured.
 """
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from statistics import median
 
@@ -143,3 +144,50 @@ def audit_completeness(
             )
         )
     return DocumentAudit(tuple(audits))
+
+
+AUDIT_KEY = "audit"
+EXEMPT = "exempt"
+BELOW_MEDIAN = "below-median"
+
+
+def as_provenance(report: DocumentAudit) -> tuple[str, ...]:
+    """One provenance value per page — what the cache entry persists.
+
+    A string rather than a nested object because `per_page_provenance` is `Mapping[str, str]` at
+    the seam both backends share, and widening that type for one backend's diagnostics would be
+    the tail wagging the dog.
+    """
+    below = {page.page for page in report.below_median}
+    values: list[str] = []
+    for page in report.pages:
+        if page.exempt or page.coverage is None:
+            values.append(EXEMPT)
+            continue
+        marker = f" {BELOW_MEDIAN}" if page.page in below else ""
+        values.append(f"{page.coverage:.3f}{marker}")
+    return tuple(values)
+
+
+def from_provenance(provenance: Sequence[Mapping[str, str]]) -> DocumentAudit | None:
+    """Rebuild the audit a cache entry recorded, so `pnk doctor` can report a low-coverage page
+    without re-extracting anything — let alone re-paying for it.
+
+    Returns `None` when no page carries an audit at all: an entry written by the free backend, or
+    by a version before this one. That is "not audited", which the caller must not render as
+    "audited and fine".
+    """
+    if not provenance or not any(AUDIT_KEY in page for page in provenance):
+        return None
+    pages: list[PageAudit] = []
+    for index, page in enumerate(provenance):
+        raw = page.get(AUDIT_KEY, EXEMPT)
+        if raw.startswith(EXEMPT):
+            pages.append(PageAudit(page=index + 1, exempt=True))
+            continue
+        score, _, _ = raw.partition(" ")
+        try:
+            pages.append(PageAudit(page=index + 1, exempt=False, coverage=float(score)))
+        except ValueError:
+            pages.append(PageAudit(page=index + 1, exempt=True))
+    return DocumentAudit(tuple(pages))

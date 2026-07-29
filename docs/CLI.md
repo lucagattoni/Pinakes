@@ -148,7 +148,8 @@ pnk doctor [--kb PATH] [--prune]
 Health check. Reports environment (SQLite version, FTS5, loadable extensions), backend and cached
 weights, template drift, index/model coherence, extraction coherence, calibration validity,
 orphaned sidecars, duplicate IDs, dangling links and link coverage, recorded failures, extraction
-cache stats, the 50k-chunk NumPy threshold, held sync locks, hook status, the price table's age,
+cache stats, the completeness audit's below-median pages, the 50k-chunk NumPy threshold, held sync
+locks, hook status, the price table's age,
 unknown-outcome ledger records, and whether a paid backend is configured on a KB whose hooks force
 the free one.
 

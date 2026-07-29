@@ -569,3 +569,74 @@ def test_the_unknown_outcome_total_is_formatted_not_a_raw_decimal(kb: Path) -> N
     _status, detail = checks(kb)["unknown outcomes"]
     assert "€0.0926" in detail
     assert "0.09259259" not in detail
+
+
+def test_completeness_is_quiet_when_nothing_paid_has_been_extracted(kb: Path) -> None:
+    status, detail = checks(kb)["completeness"]
+    assert status is Status.OK
+    assert "no paid extractions to audit" in detail
+
+
+def test_completeness_warns_about_a_page_below_its_documents_median(kb: Path) -> None:
+    """Read from the cache entry the extraction already wrote — a health check must never be able
+    to spend money, and re-running the audit would mean re-extracting."""
+    import json as json_module
+
+    cache = kb / ".pinakes" / "cache" / "extract"
+    cache.mkdir(parents=True, exist_ok=True)
+    (cache / "abc-fp.json").write_text(
+        json_module.dumps(
+            {
+                "schema": 1,
+                "content_hash": "sha256:abc",
+                "backend": "claude-vision",
+                "fingerprint": "fp",
+                "page_count": 3,
+                "page_spans": [[0, 1], [1, 2], [2, 3]],
+                "text": "abc",
+                "per_page_provenance": [
+                    {"audit": "0.980"},
+                    {"audit": "0.310 below-median"},
+                    {"audit": "0.990"},
+                ],
+                "operation_id": "OP1",
+                "call_ids": ["CALL-A"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    status, detail = checks(kb)["completeness"]
+    assert status is Status.WARN
+    assert "abc-fp:2" in detail
+
+    remedy = {c.name: c.remedy for c in diagnose(load(kb)).checks}["completeness"]
+    assert remedy is not None and "nothing spent" in remedy
+
+
+def test_an_unaudited_entry_is_left_out_rather_than_counted_as_a_pass(kb: Path) -> None:
+    """A free extraction carries no audit. Counting it as "no page below median" would be a pass
+    rate inflated by everything that was never measured."""
+    import json as json_module
+
+    cache = kb / ".pinakes" / "cache" / "extract"
+    cache.mkdir(parents=True, exist_ok=True)
+    (cache / "free-fp.json").write_text(
+        json_module.dumps(
+            {
+                "schema": 1,
+                "content_hash": "sha256:free",
+                "backend": "pypdfium2",
+                "fingerprint": "fp",
+                "page_count": 1,
+                "page_spans": [[0, 1]],
+                "text": "x",
+                "per_page_provenance": [],
+                "operation_id": None,
+                "call_ids": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+    status, detail = checks(kb)["completeness"]
+    assert status is Status.OK
+    assert "no paid extractions to audit" in detail, "not '1 paid extraction, nothing below median'"

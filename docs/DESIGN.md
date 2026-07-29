@@ -460,6 +460,14 @@ of vanishing; and a *void* record closes a reservation at zero, the one escape h
 never billed. Without that last one, a handful of transient failures would permanently consume
 budget with no way to release it.
 
+**The completeness audit reports; it never re-extracts.** After a paid extraction, each page's
+`word_coverage` against the native text layer is computed and recorded, and pages scoring below
+their own document's median are named by `path:page` — in the sync report, where the user has just
+paid, and in `pnk doctor`, which reads them back from the cache entry rather than re-running
+anything. Pages with no usable native layer, and pages whose text holds no significant words at
+all, are **exempt and reported as exempt with their denominator**: there is nothing to measure, and
+that is not the same as measuring zero — nor, in the other direction, the same as a pass.
+
 **`on_exceed` is a corpus-level rule, never a page-level one.** `abort` (the default) makes a run
 stopped by a cap a failure: the user asked for the corpus and the corpus is not indexed. `partial`
 makes it a success: they asked for whatever fit inside the cap, and got it — every document that
