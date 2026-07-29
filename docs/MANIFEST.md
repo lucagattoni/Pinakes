@@ -70,7 +70,7 @@ Optional. Governs PDFs only.
 
 | Key | Default | Notes |
 |---|---|---|
-| `backend` | `pypdfium2` | `pypdfium2` (free) or `claude-vision` (paid, [not built](STATUS.md)). Validated against the registry **without importing either**, so an unknown name is rejected before an extra could matter |
+| `backend` | `pypdfium2` | `pypdfium2` (free) or `claude-vision` (paid; built, but [in no release yet](STATUS.md)). Validated against the registry **without importing either**, so an unknown name is rejected before an extra could matter |
 | `model` | | Consulted only when `backend = "claude-vision"` |
 
 Override for one run with `pnk sync --extract=BACKEND`.
