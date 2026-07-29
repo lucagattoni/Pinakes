@@ -49,9 +49,11 @@ written with and carry a header note.
   `--force` discarding one) additively rewrites that document's own sidecar with
   `provenance.extraction` (docs/DESIGN.md §2.2) — never any other key, and never for a free
   extraction.
-- **`.pinakes/` is disposable except `ledger.jsonl`** — a rebuild must preserve spend history, and
-  the ledger is append-only: correct a record by appending another (`pnk budget --resolve`), never
-  by editing or rewriting the file.
+- **`.pinakes/` is disposable except `ledger.jsonl` and any cache entry a paid backend wrote** —
+  a rebuild must preserve spend history, and the ledger is append-only: correct a record by
+  appending another (`pnk budget --resolve`), never by editing or rewriting it. A paid cache entry
+  is derived state that cost real money to derive, which is not the same as disposable: the
+  automatic sweep already spares it, and destroying one takes an explicit `--clear-cache=paid`.
 - **A `void` ledger record needs proof the call never billed** — written only when a
   `response_received` flag is false, never from a bare `finally`, which would record €0 for money
   that already left the account. Under-counting is the one direction a budget may never be wrong in.
