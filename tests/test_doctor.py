@@ -19,7 +19,7 @@ from pinakes.embed import (
     register_embedding_backend,
     register_reranker,
 )
-from pinakes.ids import mint_doc_id
+from pinakes.ids import mint_doc_id, mint_kb_id
 from pinakes.init import init
 from pinakes.manifest import load
 from pinakes.sidecar import SIDECAR_SUFFIX
@@ -832,3 +832,156 @@ def test_an_unknown_extraction_backend_does_not_crash_the_health_check(pdf_kb: P
     status, detail = checks(pdf_kb)["text yield"]  # must not raise
     assert status is Status.OK, "the one document still measurable is healthy"
     assert "1 extracted by an unknown backend" in detail
+
+
+def test_every_doctor_check_is_exercised_by_a_test(kb: Path) -> None:
+    """A check that ships with no test at all is the failure this catches.
+
+    `pnk doctor` is a bag of independent checks, each appended to one list. Adding a check is one
+    line, and nothing about that line requires a test to exist — so the coverage gap is invisible
+    to review and invisible to a green suite. This asserts every check name `diagnose` can produce
+    is named somewhere in this file.
+
+    Named in `plans/v0.2.md`'s verification table as `test_every_v02_check_appears`, assigned to
+    I8, and not written there — found by I9's audit of that table, which is exactly what the audit
+    is for.
+    """
+    sync(load(kb), options=SyncOptions(), now="20260729 05:30")
+    produced = {check.name for check in diagnose(load(kb)).checks}
+
+    # Checks that only appear on a KB this fixture is not: they have their own tests, which is what
+    # this assertion is about, so each is listed with the test that covers it rather than skipped.
+    conditional = {
+        "text yield": "test_text_yield_flags_pages_not_documents",
+        "awaiting paid extraction": (
+            "test_awaiting_paid_extraction_lists_a_free_indexed_pdf_when_manifest_wants_paid"
+        ),
+        "paid extraction not requested": (
+            "test_paid_extraction_not_requested_lists_a_paid_indexed_pdf_when_manifest_wants_free"
+        ),
+        "paid extraction stale": "test_paid_extraction_stale_lists_a_changed_file",
+        "pdf extractor": (
+            "test_pdf_extractor_check_warns_when_include_can_match_pdf_and_backend_is_missing"
+        ),
+    }
+    source = Path(__file__).read_text(encoding="utf-8")
+    for name, covering in conditional.items():
+        assert f"def {covering}(" in source, f"{name}'s named test is gone: {covering}"
+
+    unexercised = sorted(name for name in produced | set(conditional) if f'"{name}"' not in source)
+    assert not unexercised, (
+        f"these `pnk doctor` checks are not named by any test in this file: {unexercised}"
+    )
+
+
+# --- the checks the coverage test above found untested (I9's audit) -----------------------------
+
+
+def test_the_template_check_reports_the_recorded_reference(kb: Path) -> None:
+    status, detail = checks(kb)["template"]
+    assert status is Status.OK
+    assert detail.startswith("notes@"), "the KB records the template it was stamped from"
+
+
+def test_a_template_the_install_does_not_have_is_a_warning_not_a_failure(kb: Path) -> None:
+    """A KB stamped from someone else's template still works — nothing is applied automatically,
+    so this may not be a failure."""
+    path = kb / "pinakes.toml"
+    body = path.read_text(encoding="utf-8")
+    recorded = re.search(r'^template = "(.+)"$', body, re.MULTILINE)
+    assert recorded is not None
+    path.write_text(body.replace(recorded.group(1), "someone-elses@1.0.0"), encoding="utf-8")
+
+    status, detail = checks(kb)["template"]
+    assert status is Status.WARN
+    assert "not installed here" in detail
+
+
+def test_a_template_version_drift_is_reported_with_both_versions(kb: Path) -> None:
+    path = kb / "pinakes.toml"
+    body = path.read_text(encoding="utf-8")
+    recorded = re.search(r'^template = "notes@(.+)"$', body, re.MULTILINE)
+    assert recorded is not None
+    path.write_text(body.replace(f"notes@{recorded.group(1)}", "notes@0.0.1"), encoding="utf-8")
+
+    status, detail = checks(kb)["template"]
+    assert status is Status.WARN
+    assert "notes@0.0.1" in detail and recorded.group(1) in detail
+
+
+def test_the_reranker_check_says_when_reranking_is_off_rather_than_loading_one(kb: Path) -> None:
+    """`rerank = "none"` is a supported configuration, not a missing model — loading a reranker to
+    report on one nobody asked for would download weights during a health check."""
+    path = kb / "pinakes.toml"
+    body = path.read_text(encoding="utf-8")
+    assert 'rerank                = "local"' in body
+    path.write_text(
+        body.replace('rerank                = "local"', 'rerank                = "none"'),
+        encoding="utf-8",
+    )
+
+    status, detail = checks(kb)["reranker"]
+    assert status is Status.OK
+    assert detail == "disabled in the manifest"
+
+
+def test_the_model_cache_check_names_the_directory_weights_resolve_under(kb: Path) -> None:
+    """Where weights land is the question behind most "why is it downloading again" reports, so
+    the check answers it rather than reporting a boolean."""
+    from pinakes.embed import hf_cache_dir
+
+    status, detail = checks(kb)["model cache"]
+    assert status is Status.OK
+    assert str(hf_cache_dir()) in detail
+
+
+def test_the_extensions_check_explains_that_it_only_gates_an_unshipped_tier(kb: Path) -> None:
+    """Loadable extensions are unavailable on some Python builds, and that is not a problem for
+    anything shipped — so a WARN here must say what it does *not* affect, or it reads as a fault."""
+    status, detail = checks(kb)["extensions"]
+    assert status in (Status.OK, Status.WARN)
+    if status is Status.WARN:
+        remedy = next(c.remedy for c in diagnose(load(kb)).checks if c.name == "extensions")
+        assert remedy is not None
+        assert "NumPy tier is unaffected" in remedy
+    else:
+        assert "available" in detail
+
+
+def test_link_coverage_is_reported_even_when_nothing_is_linked(kb: Path) -> None:
+    """Link coverage is the ceiling on cross-KB answers (§6.2), so zero is a number worth printing
+    rather than a check that stays quiet."""
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    status, detail = checks(kb)["links"]
+    assert status is Status.OK
+    assert "none authored" in detail
+    assert "of 1 documents linked" in detail
+
+
+def test_a_dangling_link_inside_this_kb_is_a_warning_naming_how_many(kb: Path) -> None:
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    kb_id = load(kb).kb.id
+    sidecar = kb / "docs" / f"a.md{SIDECAR_SUFFIX}"
+    body = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+    body["links"] = [{"to": f"pnk://{kb_id}/{mint_doc_id()}", "rel": "cites"}]
+    sidecar.write_text(yaml.safe_dump(body), encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:32")
+
+    status, detail = checks(kb)["links"]
+    assert status is Status.WARN
+    assert "1 dangling inside this KB" in detail
+
+
+def test_a_cross_kb_link_is_counted_and_declared_unchecked(kb: Path) -> None:
+    """Nothing resolves a link into another KB until the links release, and the check says so
+    rather than counting it as healthy."""
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    sidecar = kb / "docs" / f"a.md{SIDECAR_SUFFIX}"
+    body = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+    body["links"] = [{"to": f"pnk://{mint_kb_id()}/{mint_doc_id()}", "rel": "cites"}]
+    sidecar.write_text(yaml.safe_dump(body), encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:32")
+
+    status, detail = checks(kb)["links"]
+    assert status is Status.OK
+    assert "1 cross-KB (unchecked until the links release)" in detail

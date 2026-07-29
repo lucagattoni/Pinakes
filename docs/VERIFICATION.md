@@ -1,0 +1,230 @@
+# Verification — every promise, and the test that holds it
+
+`plans/v0.2.md` ends with a table headed *"Every row carries an increment number and a test path — a
+promise in a section with no owner is a wish"*. **Sixty-one of its ninety-eight test paths did not
+resolve.** Not because the properties went untested — almost all of them are tested, usually under a
+better name than the plan guessed — but because the plan wrote its test names *before* the tests
+existed, and implementation renamed them. A verification table whose paths cannot be resolved
+verifies nothing; it is the wish it warned about, wearing the table's clothes.
+
+So the plan keeps its predictions, as the historical record of what was intended, and **this file is
+the resolved mapping**: what must be true, and the test that actually holds it, in the tree as it
+stands. [`tests/test_verification.py`](../tests/test_verification.py) asserts every test named below
+exists — so this table can go stale exactly once, in the commit that breaks it, and not silently.
+
+A row saying **none** is a promise with no test. There are none today; if you add a row, add its
+test, or write **none** and say why in the same commit.
+
+## Packaging and the extractor registry
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| no extractor library enters `[project.dependencies]` | I1 | `check.sh` gate + `tests/test_packaging.py::test_extractors_stay_extras` |
+| `pinakes[claude]` cannot be installed without `[pdf]` | I1 | `tests/test_packaging.py::test_claude_extra_requires_pdf_extra` |
+| Pillow stays dev-only — never core, never an extra | I2 | `tests/test_packaging.py::test_pillow_is_dev_only_never_core_and_never_an_extra` |
+| a core-only install fails naming the extra | I1 | `tests/test_extract.py::test_a_missing_extra_names_the_install_command` |
+| every backend's missing-extra error names its own extra | I1 | `tests/test_extract.py::test_backend_requirement_names_the_extra_a_user_is_told_to_install` |
+| an unknown backend is rejected from the manifest | I1 | `tests/test_manifest.py::test_extraction_backend_must_be_registered` |
+| …and from `--extract`, without importing anything | I1 | `tests/test_cli.py::test_unknown_extract_flag_is_rejected` |
+| availability is answered without executing the backend | I1 | `tests/test_extract.py::test_is_backend_installed_locates_without_executing` |
+| one unreadable PDF does not block the corpus | I1 | `tests/test_sync.py::test_a_pdf_fails_at_extraction_but_does_not_block_the_rest` |
+
+## The PDF corpus
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| the text-layer corpus regenerates byte-identically | I2 | `tests/test_pdf_corpus.py::test_regeneration_is_reproducible` |
+| the scanned corpus regenerates within tolerance | I2 | `tests/test_pdf_corpus.py::test_scanned_regeneration_within_tolerance` |
+| the corpus cannot silently shrink or balloon | I2 | `tests/test_pdf_corpus.py::test_stratum_counts_and_page_counts_match_the_plan`, `tests/test_pdf_corpus.py::test_byte_budget` |
+| the named paid twins exist and are five | I2 | `tests/test_pdf_corpus.py::test_named_paid_twins_exist` |
+| every fixture has ground truth, and every ground truth a fixture | I2 | `tests/test_pdf_corpus.py::test_every_fixture_has_ground_truth_and_every_ground_truth_a_fixture` |
+
+## Extraction: layout, the reader, quality
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| character-to-block assembly is unit-tested, not only scored | I3a | `tests/test_extract_layout.py::test_blocks_from_chars_empty_page` and the six `test_blocks_from_chars_*` cases beside it |
+| page offsets tile the extracted text exactly **and** anchor to their page's content | I3a | `tests/test_extract_layout.py::assert_extraction_properties` — the shared helper every `test_assemble_*` case asserts through |
+| offsets are computed after the length-changing string policy | I3a | `tests/test_extract_layout.py::test_assemble_offsets_are_computed_after_normalise_not_before` |
+| the string policy is versioned apart from layout | I3a | `tests/test_extract_layout.py::test_textpolicy_is_pure_and_does_not_import_layout` |
+| the pure core imports no PDF library | I3a | `tests/test_extract_layout.py::test_layout_is_pure` |
+| …and that import check can actually fail | I3a | `tests/test_extract_layout.py::test_imported_names_catches_a_name_import_of_layout` |
+| the pdfium reader refuses corrupt, encrypted, zero-page and oversize files | I3b | `tests/test_extract_pdfium.py::test_corrupt_header_fixture_raises_a_named_error_not_a_crash`, `tests/test_extract_pdfium.py::test_encrypted_file_is_refused_before_any_parse`, `tests/test_extract_pdfium.py::test_zero_page_file_is_an_error_not_an_empty_success`, `tests/test_extract_pdfium.py::test_size_guard_fires_at_256mb` |
+| a quality regression fails the build | I3b | `tests/test_extract_quality.py::test_compare_to_baseline_flags_a_regression_beyond_tolerance` |
+| a changed exemption is a structural regression, not a quiet pass | I3b | `tests/test_extract_quality.py::test_compare_to_baseline_flags_a_changed_exemption_as_a_structural_regression` |
+| a zero denominator reports `None`, never `0.0` | I3b | `tests/test_extract_quality.py::test_rate_value_is_none_not_zero_when_denominator_is_zero` |
+| the one spending threshold is fitted from two real bounds, not guessed | I3b | `tests/test_extract_quality.py::test_threshold_from_fractions_is_the_midpoint_of_the_two_bounds`, `tests/test_extract_quality.py::test_threshold_from_fractions_raises_without_a_true_positive` |
+| the floor reaches an installed copy, not just the repo | I3b | `tests/test_extract_quality.py::test_floors_toml_is_installed_package_data` |
+| a committed floor cannot silently drift from its corpus | I3b | `check.sh`'s `pdf-eval` gate (`quality.check_floor_drift`) + `tests/test_check_script.py::test_check_sh_declares_the_pdf_quality_guard` |
+| a gate that cannot run says so and still exits 0 | I3b | `tests/test_check_script.py::test_the_skip_and_continue_shape_exits_zero` |
+| the floor's absence stops the paid path from spending | I7b | `tests/test_extract_pageyield.py::test_with_no_fitted_floor_the_paid_path_refuses_to_spend_at_all` |
+| a healthy PDF is not paid for by accident | I7b | `tests/test_extract_pageyield.py::test_the_free_path_refuses_to_pay_for_a_healthy_pdf` |
+| …and a genuinely scanned one still gets through | I7b | `tests/test_extract_pageyield.py::test_a_scanned_pdf_is_what_the_pre_check_lets_through` |
+
+## The extraction cache
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| a cached extraction is never re-parsed | I4 | `tests/test_extract_cache.py::test_a_second_lookup_with_the_same_key_never_calls_extract` |
+| a hit never loads the backend at all, not even lazily | I4 | `tests/test_extract_cache.py::test_a_hit_never_calls_extract_at_all_not_even_lazily` |
+| a corrupt or wrong-version entry misses rather than crashes | I4 | `tests/test_extract_cache.py::test_a_truncated_cache_file_misses_rather_than_crashes`, `tests/test_extract_cache.py::test_a_wrong_schema_version_misses` |
+| the automatic sweep never destroys a paid entry | I4 | `tests/test_extract_cache.py::test_the_sweep_spares_paid_entries_and_reports_them` |
+| a cache write failure never fails a successful extraction | I4 | `tests/test_extract_cache.py::test_a_cache_write_failure_never_fails_an_already_successful_extraction` |
+| `--clear-cache` never touches `ledger.jsonl` | I4 | `tests/test_sync.py::test_clear_cache_preserves_the_ledger` |
+| `--clear-cache` aborts unattended without `--yes` | I4 | `tests/test_sync.py::test_clear_cache_without_yes_and_without_a_tty_aborts` |
+| `--yes` does not authorise destroying paid entries | I7c | `tests/test_cli_budget.py::test_yes_alone_cannot_destroy_paid_cache_entries_unattended` |
+| `--clear-cache`'s euro figure joins real ledger lines | I7c | `tests/test_extract_claude.py::test_clear_cache_reports_spend_and_confirms` |
+| staged pages are invisible to every cache sweep | I7c | `tests/test_extract_claude.py::test_staged_pages_are_invisible_to_every_cache_sweep` |
+
+## Chunking, the index, and coherence
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| `chunk.text == indexed_text[start:end]` for every PDF chunk | I5 | `tests/test_chunk_pdf.py::test_the_span_invariant_holds_for_every_chunk` |
+| no character of an extraction is dropped | I5 | `tests/test_chunk_pdf.py::test_every_character_lands_in_at_least_one_chunk` |
+| a chunk straddling a page break records both pages | I5 | `tests/test_chunk_pdf.py::test_a_hyphenation_join_across_a_page_break_produces_a_genuine_two_page_chunk` |
+| a non-paged source never carries page numbers | I5 | `tests/test_chunk_pdf.py::test_markdown_and_text_chunks_never_carry_page_numbers` |
+| a v0.1 index refuses to open, with a remedy | I5 | `tests/test_store.py::test_a_v1_index_refuses_to_open_and_says_rebuild` |
+| a stale **free** extraction refuses the query | I5 | `tests/test_search.py::test_a_changed_free_fingerprint_refuses_the_query` |
+| a stale **paid** extraction warns and marks, never refuses | I5 | `tests/test_search.py::test_a_changed_paid_fingerprint_warns_and_marks` |
+| an unrecognised backend name warns rather than refusing every query | I5 | `tests/test_search.py::test_an_unrecognised_backend_name_warns_and_does_not_refuse` |
+| the coherence check never imports a paid client | I5 | `tests/test_search.py::test_coherence_never_imports_a_paid_client` |
+| a free run never overwrites a paid extraction, and a paid run picks up what a free one indexed | I5 | `tests/test_sync.py::test_backend_drift` (six cases) |
+| a rebuild cannot destroy paid provenance | I5 | `tests/test_sync.py::test_a_rebuild_preserves_paid_provenance`, `tests/test_sync.py::test_a_rebuild_after_clear_cache_still_preserves_it` |
+| a fresh clone with no local cache fails honestly, not falsely | I5 | `tests/test_sync.py::test_a_fresh_clone_with_no_local_cache_or_index_fails_honestly_not_falsely` |
+| a v0.2 sidecar merge preserves every key it did not write | I5 | `tests/test_sidecar.py::test_with_extraction_provenance_merges_additively` |
+
+## Money: the core
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| a call that would breach any window is never made | I6a | `tests/test_budget_core.py::test_exactly_at_the_cap_proceeds_one_cent_more_does_not` |
+| the reservation is never below the reconciled actual | I6a | `tests/test_budget_core.py::test_reservation_bounds_every_usage_table` |
+| a pair straddling a window edge is attributed once, to its start | I6a | `tests/test_budget_core.py::test_a_pair_straddling_midnight_is_attributed_to_the_start`, `tests/test_budget_core.py::test_a_pair_straddling_a_month_end_is_attributed_to_the_start`, `tests/test_budget_core.py::test_a_pair_straddling_a_dst_transition_is_attributed_correctly` |
+| a refusal names every window, not just the first to bind | I6a | `tests/test_budget_core.py::test_the_refusal_names_all_three_windows` |
+| a request that cannot fit the context window is caught before the call | I6a | `tests/test_budget_core.py::test_the_context_window_precheck_names_its_limit` |
+| an estimate against stale prices is refused | I6a | `tests/test_budget_core.py::test_a_stale_as_of_refuses_to_estimate_and_names_the_remedy` |
+| an unaffordable document is refused before the first call | I6a | `tests/test_budget_core.py::test_an_unaffordable_document_is_refused_before_the_first_call` |
+| confirmation is once per document, not once per slice | I6a | `tests/test_budget_core.py::test_confirmation_is_once_per_document_not_per_slice` |
+| the budget core imports no paid client | I6a | `tests/test_budget_core.py::test_budget_module_is_pure` |
+| money is `Decimal` from the manifest, never through `float` | I6a | `tests/test_manifest.py::test_budget_values_parse_as_exact_decimal_not_float` |
+| the price table ships in the wheel | I6a | `tests/test_budget_core.py::test_prices_are_installed_package_data` |
+| a malformed price table is a startup error, never a silent zero | I6a | `tests/test_budget_core.py::test_a_malformed_prices_toml_is_a_startup_error_not_a_silent_zero`, `tests/test_check_script.py::test_check_sh_declares_the_prices_toml_gate` |
+
+## Money: the ledger
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| the ledger records no query text or content | I6b | `tests/test_ledger.py::test_the_ledger_stores_no_query_text_and_no_document_content` |
+| every ledger line carries its currency and FX provenance | I6b | `tests/test_ledger.py::test_every_line_carries_its_cost_and_the_conversion_that_produced_it` |
+| money is quantised once, at write time | I6b | `tests/test_ledger.py::test_money_is_quantised_once_and_below_the_cent` |
+| a JSON float for money is rejected rather than silently accepted | I6b | `tests/test_ledger.py::test_a_json_number_for_money_is_rejected_rather_than_silently_floated` |
+| an interrupted call leaves a visible unknown outcome | I6b | `tests/test_ledger.py::test_a_process_killed_after_reserving_leaves_a_readable_unknown_outcome` |
+| a call that never billed does not permanently consume budget | I6b | `tests/test_ledger.py::test_a_call_that_raises_before_a_response_is_voided_and_consumes_no_headroom` |
+| a call that **did** bill is never voided to zero | I6b | `tests/test_ledger.py::test_a_call_that_raises_after_a_response_is_never_voided` |
+| a void can never supersede a reconciliation | I6b | `tests/test_ledger.py::test_a_void_can_never_supersede_a_reconciliation` |
+| two processes appending at once interleave no record | I6b | `tests/test_ledger.py::test_two_processes_appending_at_once_interleave_no_record` |
+| the ledger survives a rebuild and a `--clear-cache` byte for byte | I6b | `tests/test_ledger.py::test_the_ledger_survives_rebuild_and_clear_cache_byte_for_byte` |
+| an unresolvable unknown outcome has a documented way out | I6b | `tests/test_ledger.py::test_resolving_an_unknown_outcome_appends_and_never_edits` |
+| `pnk budget --resolve` appends rather than edits | I6b | `tests/test_cli_budget.py::test_resolve_closes_an_unknown_outcome_from_the_command_line` |
+| a non-interactive run never spends silently, and never aborts with nothing to confirm | I6b | `tests/test_cli_budget.py::test_a_confirmation_owed_with_no_tty_and_no_yes_aborts_with_a_remedy`, `tests/test_cli_budget.py::test_a_non_interactive_run_with_nothing_to_confirm_proceeds` |
+| the month's cap stops a run the operation's cap would allow | I6b | `tests/test_cli_budget.py::test_a_kb_at_499_of_a_500_month_refuses_the_next_call` |
+| spend is read back from the ledger, never tallied in memory | I6b | `tests/test_cli_budget.py::test_the_operation_window_is_read_back_from_the_ledger_not_tallied_in_memory` |
+| hook-driven and CI syncs cannot reach the paid path — proved by running them | I6b | `tests/test_hooks.py::test_hooks_force_the_free_backend`, `tests/test_hooks.py::test_every_hook_and_the_ci_workflow_carry_the_free_backend_flag` |
+
+## The paid-path allowlist
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| the allowlist cannot rot (a listed path must exist) | I7a | `check.sh` gate + `tests/test_paid_path.py::test_the_allowlist_matches_the_source_tree` |
+| no paid client is imported outside the allowlist | I7a | `tests/test_paid_path.py::test_no_paid_client_outside_the_allowlist` |
+| the allowlist cannot widen (an exclusion cannot exempt a directory) | I7a | `tests/test_paid_path.py::test_a_directory_entry_fails_gate_1`, `tests/test_paid_path.py::test_the_allowlist_exempts_only_the_exact_path` |
+| the free path never imports the paid client | I7a | `tests/test_paid_path.py::test_the_free_path_never_imports_the_paid_client` |
+| that gate can actually fail | I7a | `tests/test_paid_path.py::test_the_free_path_gate_fails_when_an_import_is_planted` |
+| …and says so rather than passing when it cannot run | I7a | `tests/test_paid_path.py::test_the_free_path_gate_says_so_when_it_cannot_run` |
+| the two paid-client lists agree | I7a | `tests/test_paid_path.py::test_the_two_paid_client_lists_agree` |
+
+## The paid extractor
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| a refusal is handled before `content` is read | I7b | `tests/test_extract_claude.py::test_a_refusal_is_handled_before_content_is_read` |
+| a refusal reports what the API actually said | I7b | `tests/test_extract_claude.py::test_a_refusal_reports_the_category_and_explanation_the_api_sent` |
+| a truncated response is not retried identically | I7b | `tests/test_extract_claude.py::test_a_truncated_response_is_reasked_once_at_the_raised_bound`, `tests/test_extract_claude.py::test_a_second_truncation_is_a_failure` |
+| an oversize request fails hard instead of being re-paid | I7b | `tests/test_extract_claude.py::test_a_context_window_failure_is_hard_with_no_retry` |
+| a transient failure is retried under a fresh reservation, and the old one is voided | I7b | `tests/test_extract_claude.py::test_a_rate_limit_is_voided_and_retried_under_a_fresh_reservation` |
+| a timeout leaves an unknown outcome rather than a void | I7b | `tests/test_extract_claude.py::test_a_timeout_leaves_an_unknown_outcome_rather_than_a_void` |
+| a leaked internal tag never reaches the indexed text | I7b | `tests/test_extract_claude.py::test_a_leaked_internal_tag_is_retried_never_stripped` |
+| every call, including every retry, is reserved and ledgered | I7b | `tests/test_extract_claude.py::test_every_call_takes_its_own_reservation_and_ledger_pair` |
+| the semantic and transport ceilings are separate counters | I7b | `tests/test_extract_claude.py::test_the_semantic_budget_refuses_a_seventh_call`, `tests/test_extract_claude.py::test_transport_attempts_are_bounded_without_consuming_a_schema_retry` |
+| a short page array is caught before positional mapping | I7b | `tests/test_extract_claude.py::test_a_short_page_array_is_a_schema_failure`, `tests/test_extract_claude.py::test_parse_refuses_to_map_a_short_array_positionally` |
+| the paid backend's page spans are content-anchored, not merely tiling | I7b | `tests/test_extract_claude.py::test_every_pages_own_text_lands_inside_its_own_span`, `tests/test_extract_claude.py::test_page_spans_tile_the_whole_text` |
+| offsets are computed after the length-changing string policy | I7b | `tests/test_extract_claude.py::test_normalise_runs_before_offsets` |
+| `--estimate-only` generates nothing | I7b | `tests/test_extract_claude.py::test_estimate_only_makes_no_generation_call` |
+| the SDK's own retries are disabled — asserted without a stand-in | I7b | `tests/test_extract_claude.py::test_the_client_disables_sdk_retries` (unmarked), `tests/test_extract_claude.py::test_the_real_client_disables_sdk_retries` (`paid`) |
+| the reservation is never below the actual | I7b | `tests/test_extract_claude.py::test_reservation_bounds_every_recorded_usage` |
+| the reconciliation reads the response, not the reservation | I7b | `tests/test_extract_claude.py::test_the_reconciliation_supersedes_with_the_real_cost_not_the_reservation` |
+| changing the model **or K** misses the cache | I7b | `tests/test_extract_claude.py::test_changing_the_model_misses_the_cache`, `tests/test_extract_claude.py::test_changing_k_misses_the_cache` |
+| a short final slice is handled | I7b | `tests/test_extract_claude.py::test_a_document_whose_page_count_is_not_a_multiple_of_k` |
+| the request shape is pinned, not just the responses | I7b | `tests/test_extract_claude.py::test_the_request_puts_the_document_before_the_text_and_sends_no_sampling_knobs`, `tests/test_extract_claude.py::test_thinking_is_disabled_explicitly_and_pinned_to_its_effort` |
+| the recorded-fixture set covers every branch it is cited for | I7b | `tests/test_extract_claude.py::test_the_recorded_fixture_set_covers_every_branch`, `tests/test_extract_claude.py::test_the_branches_a_recording_reached_are_backed_by_one` |
+| every fixture says where its bodies came from | I7d | `tests/test_extract_claude.py::test_every_fixture_declares_where_its_bodies_came_from`, `tests/test_extract_claude.py::test_a_recorded_fixture_agrees_with_the_model_it_claims` |
+| a populated `per_page_provenance` survives a cache round trip | I7b | `tests/test_extract_cache.py::test_a_non_string_provenance_value_misses_rather_than_silently_degrading` |
+| the whole wiring works, not only the pieces | I7b | `tests/test_extract_claude.py::test_a_real_sync_extracts_indexes_records_and_caches` |
+
+## The audit, staging, and all-or-nothing commit
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| the audit reports without spending | I7c | `tests/test_extract_claude.py::test_a_partially_extracted_document_writes_no_complete_entry` |
+| an interrupted paid run re-pays for nothing staged | I7c | `tests/test_extract_claude.py::test_a_resumed_run_re_asks_nothing_that_was_staged` |
+| a slice interrupted mid-flight is re-asked whole | I7c | `tests/test_extract_claude.py::test_a_slice_interrupted_mid_flight_is_re_asked_whole` |
+| a successful document leaves no staging behind | I7c | `tests/test_extract_claude.py::test_a_successful_document_leaves_no_staging_behind` |
+| `--force` alone cannot discard a paid extraction | I7c | `tests/test_sync.py::test_force_alone_without_an_explicit_extract_does_not_override` |
+| `--force` widens no cap | I7c | `tests/test_extract_claude.py::test_force_does_not_widen_a_budget_cap` |
+| `on_exceed = "partial"` keeps completed documents and stops cleanly | I7c | `tests/test_extract_claude.py::test_on_exceed_partial_is_corpus_level_never_page_level` |
+| a corpus stops at the first cap breach rather than failing every document | I7c | `tests/test_extract_claude.py::test_a_corpus_stops_at_the_first_cap_breach_rather_than_failing_every_document` |
+| every new `pnk sync` flag has a stated scope in `--help` | I7c | `tests/test_cli.py::test_every_sync_flag_documents_its_scope` |
+
+## Page citations and the health check (I8)
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| a table-cell word survives extraction → cache → chunk → FTS → CLI **and** MCP | I8 | `tests/test_pdf_trace.py::test_a_table_cell_word_survives_every_hop` |
+| every filter dimension actually selects PDF rows when filtered on | I8 | `tests/test_pdf_trace.py::test_every_filter_dimension_resolves_for_pdfs` |
+| one slice's cost survives estimate → reservation → usage → reconciliation → report | I8 | `tests/test_pdf_trace.py::test_a_paid_slice_traces_from_estimate_to_the_budget_report` |
+| page provenance reaches the MCP surface, not only the CLI | I8 | `tests/test_serve.py::test_mcp_search_carries_page_spans`, `tests/test_serve.py::test_mcp_get_is_page_aware` |
+| a chunk spanning two pages renders as a range | I8 | `tests/test_search.py::test_a_two_page_chunk_renders_a_range` |
+| a paged citation cannot be misread as character offsets | I8 | `tests/test_search.py::test_the_page_marker_is_what_stops_a_citation_being_ambiguous` |
+| a non-paged source keeps the citation it always had | I8 | `tests/test_search.py::test_a_non_paged_source_still_cites_character_offsets`, `tests/test_cli_search.py::test_a_non_paged_source_reports_null_pages_and_the_offset_citation` |
+| a PDF is served as extracted text, not as its bytes | I8 | `tests/test_serve.py::test_a_pdf_is_served_as_its_extracted_text_rather_than_its_bytes` |
+| a swept extraction cache is an error, never a silent re-extraction | I8 | `tests/test_serve.py::test_a_swept_extraction_cache_is_an_error_rather_than_a_silent_re_extraction` |
+| a low-yield **page** is flagged inside a healthy document | I8 | `tests/test_doctor.py::test_text_yield_flags_pages_not_documents` |
+| the yield floor separates empty from non-empty, and nothing finer | I8 | `tests/test_extract_pageyield.py::test_a_page_exactly_on_the_floor_is_not_below_it`, `tests/test_extract_pageyield.py::test_the_decision_is_per_document_even_though_the_floor_is_per_page` |
+| an unmeasurable document is never reported as one that passed | I8 | `tests/test_doctor.py::test_a_partly_swept_cache_still_names_what_it_could_not_measure` |
+| the health check does not crash on a KB it does not understand | I8 | `tests/test_doctor.py::test_an_unknown_extraction_backend_does_not_crash_the_health_check` |
+
+## `pnk doctor`, check by check
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| **every check `diagnose` can produce is named by a test** | I9 | `tests/test_doctor.py::test_every_doctor_check_is_exercised_by_a_test` |
+| every non-OK check carries a remedy | I11 | `tests/test_doctor.py::test_every_problem_carries_a_remedy` |
+| the template check reports drift without applying anything | I9 | `tests/test_doctor.py::test_a_template_version_drift_is_reported_with_both_versions`, `tests/test_doctor.py::test_a_template_the_install_does_not_have_is_a_warning_not_a_failure` |
+| a disabled reranker is reported as configured, not as missing | I9 | `tests/test_doctor.py::test_the_reranker_check_says_when_reranking_is_off_rather_than_loading_one` |
+| the model cache check names where weights resolve | I9 | `tests/test_doctor.py::test_the_model_cache_check_names_the_directory_weights_resolve_under` |
+| an unavailable extension loader says what it does *not* affect | I9 | `tests/test_doctor.py::test_the_extensions_check_explains_that_it_only_gates_an_unshipped_tier` |
+| link coverage is reported even when it is zero | I9 | `tests/test_doctor.py::test_link_coverage_is_reported_even_when_nothing_is_linked` |
+| a dangling link inside the KB is a warning | I9 | `tests/test_doctor.py::test_a_dangling_link_inside_this_kb_is_a_warning_naming_how_many` |
+| a cross-KB link is counted and declared unchecked | I9 | `tests/test_doctor.py::test_a_cross_kb_link_is_counted_and_declared_unchecked` |
+
+## Release machinery
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| the demo KB's eval numbers do not move | I3b | `make eval` against `tests/demo-kb/eval/baseline.json` (the committed file is the assertion) |
+| the free-vs-paid delta is present and dated in DESIGN §9 | I9 | `tests/test_verification.py::test_the_measured_paid_delta_is_present_and_dated` |
+| a fragment cannot be malformed or miscategorised | — | `tests/test_fragments.py::test_an_unknown_category_is_refused_by_name`, `check.sh` gate |
+| two agents editing shared documents are told before they merge | — | `tests/test_shared_file_overlap.py::test_uncommitted_work_counts`, `check.sh` gate |
+| a core-only wheel still installs and runs | I9 | CI `build` job smoke step |
+| the shipped wheel carries `prices.toml` and `floors.toml` | I9 | CI `build` job smoke step |

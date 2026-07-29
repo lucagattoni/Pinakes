@@ -68,6 +68,14 @@ uv add "pinakes[light,pdf]"           # + PDF ingest, free and local
 uv add "pinakes[light,pdf,claude]"    # + the opt-in paid extractor for scanned PDFs
 ```
 
+`[claude]` installs a path that can spend money, and nothing spends without you asking: the default
+extractor is free, and reaching the paid one takes `--extract=claude-vision` (or a manifest key)
+**and** a real API key in the environment. When you do ask, the run is priced before the first call
+and refused if it would breach any of the three `[budget]` caps — `per_operation_eur`, `daily_eur`
+or `monthly_eur`. Raising one and hitting the next is the discovery path those caps exist to
+prevent, so a refusal names every window that binds, not just the first. `pnk budget` reports what
+has been spent.
+
 ```bash
 pnk init my-kb                        # stamp a KB
 pnk sync                              # index what changed (git-hook friendly)
@@ -92,6 +100,7 @@ make demo       # index the synthetic demo KB
 make eval       # golden-set evaluation against the recorded baseline
 make corpus     # regenerate the synthetic PDF corpus in place
 make pdf-eval   # extraction-quality baseline + floor-drift check (needs [pdf])
+make budget     # the demo KB's spend ledger (free: it only reads)
 make help       # all targets
 ```
 
@@ -100,6 +109,8 @@ that `make check` formats Python **inside Markdown fences** too — a docs-only 
 
 Conventions and the increment workflow are in [`CLAUDE.md`](CLAUDE.md); how the docs are organised —
 and which file to edit when you land a feature — is in [`docs/README.md`](docs/README.md).
+[`docs/VERIFICATION.md`](docs/VERIFICATION.md) maps every promise this project makes to the test
+that holds it, and a test asserts every one of those tests exists.
 
 ## Your data stays yours
 
