@@ -30,12 +30,12 @@
 | Markdown / text / code ingest | shipped | |
 | **PDF ingest, free path** | shipped | `pypdfium2`, needs `pinakes[pdf]`. **Off by default — see the caveat below** |
 | Extraction cache | shipped | `.pinakes/cache/extract/` |
-| Page provenance (`page_start`/`page_end`) | shipped in the **index** | not yet surfaced in results — I8 |
+| Page provenance (`page_start`/`page_end`) | shipped | in the index since 0.2.0, and surfaced in results on both surfaces since I8 |
 | Extraction quality scoring | shipped | `make pdf-eval` against `tests/pdf-corpus/` |
 | **PDF ingest, paid path** (scanned PDFs) | shipped 0.3.0 | I7b. `claude-vision` is a real extractor, **measured against the live API 20260729** — 1.000 on every metric over the synthetic scanned stratum, where the free path scores 0.000 ([DESIGN §9](DESIGN.md#9-known-risks)) |
 | Budget estimator, caps, window aggregation | shipped 0.2.2, **inert** | I6a. The pure logic only — nothing calls it, so nothing can spend |
 | Budget ledger, `pnk budget`, the accountant | shipped 0.3.0 | I6b. `ledger.jsonl`, the reservation/outcome protocol, and I6a's decisions read from it — now driven by I7b's extractor |
-| `path:page` citations | **not built** | I8 |
+| `path:page` citations | shipped | I8. `docs/paper.pdf:p7` / `:p7-8`, on the CLI and MCP alike; `pnk doctor` names the pages with no text layer |
 | Cross-KB links (`pnk link`, `pinakes_links`) | **not built** | the links release |
 | `sqlite-vec` tier, template ecosystem | **not built** | the template release |
 
@@ -101,7 +101,7 @@ landing with its own tests.
 | I7a | The paid-path allowlist gate and the invariant amendments | shipped 0.3.0 |
 | I7b | The paid Claude-vision extractor — request shape, validation, retries | shipped 0.3.0 |
 | I7c | The completeness audit, staging, all-or-nothing commit | shipped 0.3.0 |
-| I8 | `pnk doctor` text yield, `path:page` citations on both surfaces | **planned** |
+| I8 | `pnk doctor` text yield, `path:page` citations on both surfaces, the three end-to-end traces | **landed 20260729 04:55**, unreleased |
 | I9 | Docs sweep, template, CI | **planned** |
 
 **Decided 20260728 17:52 — I6–I9 accumulate, and cut as one MINOR release.** `plans/v0.2.md`
@@ -156,10 +156,10 @@ paid-path allowlist and its four gates, the Claude-vision extractor, and the com
 with all-or-nothing commit — plus the live measurement behind every number in
 [DESIGN §9](DESIGN.md#9-known-risks).
 
-**What it deliberately does not include.** `path:page` citations are still index-only and not
-surfaced in results (I8); the shipped surface therefore reads scanned pages it cannot yet cite
-precisely. That is a gap, named here rather than discovered by a user, and it is I8's whole
-subject.
+**What it deliberately did not include.** `path:page` citations were still index-only and not
+surfaced in results; the release therefore read scanned pages it could not yet cite precisely. That
+gap was named here rather than discovered by a user, and **I8 has since closed it** (landed
+20260729 04:55, unreleased at the time of writing).
 
 ### The measurement run has been done — 20260729 03:17, €0.43
 

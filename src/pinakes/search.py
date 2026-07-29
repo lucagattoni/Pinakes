@@ -66,10 +66,28 @@ class Passage:
     """The recorded fingerprint, when this document's *paid* extraction backend has since moved
     on (§4.4, decision 13) — the text is still correct, merely older, so the result stands and is
     only marked, never withheld the way a free-backend mismatch (`ExtractionCoherenceError`) is."""
+    page_start: int | None = None
+    page_end: int | None = None
+    """1-indexed, `None` for a non-paged source. `page_end > page_start` when a chunk straddles a
+    page break, which I5 explicitly allows — so the citation has to be able to say so (I8)."""
 
     def citation(self) -> str:
-        where = f"{self.path}:{self.char_start}-{self.char_end}"
+        where = f"{self.path}:{self.locator()}"
         return f"{where} ({self.heading_path})" if self.heading_path else where
+
+    def locator(self) -> str:
+        """What follows the path in a citation: pages when the source has them, else characters.
+
+        **The `p` is not decoration.** `report.pdf:12-480` already means *character offsets*, so a
+        bare `report.pdf:12-13` would be a page range and a character range in the same syntax,
+        distinguishable only by knowing the file. Paged sources therefore render `p12-13`, and
+        every non-paged source keeps the offsets it rendered before (I8).
+        """
+        if self.page_start is None:
+            return f"{self.char_start}-{self.char_end}"
+        if self.page_end is None or self.page_end <= self.page_start:
+            return f"p{self.page_start}"
+        return f"p{self.page_start}-{self.page_end}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,6 +334,8 @@ def search(
             fused_score=fused[row.id],
             rerank_score=None,
             stale_extraction=stale_paid.get(row.doc_id),
+            page_start=row.page_start,
+            page_end=row.page_end,
         )
         for row in rows
     ]
@@ -350,6 +370,8 @@ class _ChunkRow:
     heading_path: str | None
     path: str
     title: str | None
+    page_start: int | None
+    page_end: int | None
 
 
 def _hydrate(connection: sqlite3.Connection, chunk_ids: Sequence[int]) -> list[_ChunkRow]:
@@ -358,7 +380,8 @@ def _hydrate(connection: sqlite3.Connection, chunk_ids: Sequence[int]) -> list[_
     placeholders = ", ".join("?" for _ in chunk_ids)
     rows = connection.execute(
         "SELECT c.id, c.doc_id, c.text, c.char_start, c.char_end, c.heading_path, "
-        "d.path, d.title FROM chunks c JOIN documents d ON d.id = c.doc_id "
+        "c.page_start, c.page_end, d.path, d.title "
+        "FROM chunks c JOIN documents d ON d.id = c.doc_id "
         f"WHERE c.id IN ({placeholders})",
         list(chunk_ids),
     )
@@ -372,6 +395,8 @@ def _hydrate(connection: sqlite3.Connection, chunk_ids: Sequence[int]) -> list[_
             heading_path=None if row["heading_path"] is None else str(row["heading_path"]),
             path=str(row["path"]),
             title=None if row["title"] is None else str(row["title"]),
+            page_start=None if row["page_start"] is None else int(row["page_start"]),
+            page_end=None if row["page_end"] is None else int(row["page_end"]),
         )
         for row in rows
     ]

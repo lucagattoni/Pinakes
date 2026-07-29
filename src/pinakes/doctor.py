@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path, PurePosixPath
+from statistics import median
 from zoneinfo import ZoneInfo
 
 from pinakes import store, template
@@ -33,6 +34,7 @@ from pinakes.errors import (
     ExtractionCoherenceError,
     ExtractionError,
     ExtractorMissingError,
+    FloorsMissingError,
     HookError,
     LedgerError,
     PinakesError,
@@ -43,9 +45,12 @@ from pinakes.extract import (
     is_backend_installed,
     is_paid_backend,
     load_extractor,
+    pageyield,
     paid_backend_names,
+    registered_extractors,
 )
 from pinakes.extract import cache as extract_cache
+from pinakes.extract.floors import load_floors
 from pinakes.hooks import FREE_BACKEND_FLAG, HOOKS, hooks_dir
 from pinakes.ids import DocId
 from pinakes.lock import LOCK_NAME, read_holder
@@ -446,6 +451,7 @@ def _index(manifest: Manifest) -> Iterator[Check]:
         except ExtractionCoherenceError as exc:
             yield Check("extraction coherence", Status.FAIL, exc.message, exc.remedy)
 
+        yield _text_yield(manifest, connection)
         yield _calibration(manifest)
         yield _links(connection, manifest, active)
 
@@ -475,6 +481,152 @@ def _index(manifest: Manifest) -> Iterator[Check]:
             yield Check("failures", Status.OK, "none recorded")
     finally:
         connection.close()
+
+
+def _text_yield(manifest: Manifest, connection: sqlite3.Connection) -> Check:
+    """How much text the free extractor got out of each PDF page (plans/v0.2.md, I8).
+
+    **Per page, never per document.** A document-level median against a per-page floor is a
+    different statistic from the one the paid path spends against, and it hides the case that
+    matters: a 200-page report with eight scanned inserts has a healthy median, so a document-level
+    check stays silent *and* the paid path's own pre-check refuses to pay for it. Both would be
+    quietly right and jointly useless.
+
+    **Measured from the extraction cache, never by re-extracting.** The cache entry is the same
+    text the index was built from; re-running the extractor over every PDF on every `pnk doctor`
+    would be slow, and on a stale cache would report a number no other command agrees with. A
+    document whose entry has been swept is counted as unmeasured and said to be.
+    """
+    rows = connection.execute(
+        "SELECT path, content_hash, extraction_backend, extraction_fingerprint FROM documents "
+        "WHERE state = 'active' AND source_type = 'pdf' ORDER BY path"
+    ).fetchall()
+    if not rows:
+        return Check("text yield", Status.OK, "no PDF documents")
+
+    try:
+        floor = load_floors().text_yield_floor
+    except FloorsMissingError:
+        floor = None
+
+    per_page: list[int] = []
+    below: list[tuple[str, tuple[int, ...]]] = []
+    pages_total = 0
+    measured = 0
+    uncached: list[str] = []
+    paid: list[str] = []
+    unknown: list[str] = []
+    known = set(registered_extractors())
+
+    for row in rows:
+        path = str(row["path"])
+        recorded = row["extraction_backend"]
+        backend = None if recorded is None else str(recorded)
+        if backend is None or backend not in known:
+            # A future version's KB, or an extra no longer installed. `is_paid_backend` raises on a
+            # name it does not know, and a health check that crashes on an unhealthy KB is the one
+            # failure `pnk doctor` may not have — the same guard §4.4's coherence check already
+            # carries for the same reason.
+            unknown.append(path)
+            continue
+        if is_paid_backend(backend):
+            # Its cached text is the *paid* extraction, so measuring it would answer "did the paid
+            # backend produce text" — a real question, and the completeness audit's, not this
+            # check's. This one asks whether the free path suffices, which for these is settled.
+            paid.append(path)
+            continue
+        cached = extract_cache.peek(
+            manifest.extract_cache_dir,
+            content_hash=str(row["content_hash"]),
+            fingerprint=str(row["extraction_fingerprint"]),
+        )
+        if cached is None:
+            uncached.append(path)
+            continue
+        survey = pageyield.measure(cached, floor=floor if floor is not None else 0.0)
+        measured += 1
+        pages_total += survey.pages_total
+        per_page.extend(survey.chars_per_page)
+        if floor is not None and survey.below:
+            below.append((path, survey.below))
+
+    if not per_page:
+        if not uncached and not unknown:
+            # Every PDF was skipped deliberately, not lost. Reporting "0 could be measured" with a
+            # `pnk sync` remedy would be a permanent warning nothing can clear — and on a KB whose
+            # PDFs are paid-extracted, a remedy that spends.
+            return Check(
+                "text yield",
+                Status.OK,
+                f"{len(paid)} PDF document(s), all paid-extracted — whether the free path "
+                f"suffices is settled for them",
+            )
+        return Check(
+            "text yield",
+            Status.WARN,
+            f"0 of {len(rows)} PDF document(s) could be measured"
+            + (f"; {len(paid)} paid-extracted" if paid else "")
+            + (
+                f"; {len(unknown)} extracted by a backend this install does not know"
+                if unknown
+                else ""
+            ),
+            "The extraction cache holds no entry for the rest. Run `pnk sync` to repopulate it; "
+            "`.pinakes/cache` is disposable, so this is expected after clearing it.",
+        )
+
+    detail = (
+        f"median {median(per_page):.0f} chars/page over {measured} of {len(rows)} "
+        f"PDF document(s), {pages_total} page(s)"
+    )
+    if paid:
+        detail += f"; {len(paid)} paid-extracted, not measured here"
+    if uncached:
+        detail += f"; {len(uncached)} not in the extraction cache"
+    if unknown:
+        detail += f"; {len(unknown)} extracted by an unknown backend"
+
+    if floor is None:
+        return Check(
+            "text yield",
+            Status.WARN,
+            f"{detail} — no fitted floor is installed, so nothing is judged",
+            "floors.toml is missing from this install, so there is no threshold to compare "
+            "against and this check will not invent one. Reinstall pinakes.",
+        )
+
+    if not below:
+        return Check("text yield", Status.OK, f"{detail}; every page clears the {floor:g} floor")
+
+    flagged = sum(len(pages) for _, pages in below)
+    listed = ", ".join(f"{path} p{_ranges(pages)}" for path, pages in below[:3])
+    more = len(below) - 3
+    return Check(
+        "text yield",
+        Status.WARN,
+        f"{detail}; pages below the {floor:g} floor: {flagged} of {pages_total} — {listed}"
+        + (f", and {more} more document(s)" if more > 0 else ""),
+        "Those pages have no text layer, so nothing on them is searchable. The paid Claude-vision "
+        "extractor reads them: `pnk sync --extract=claude-vision` (it spends — `pnk budget` "
+        "reports what, and it refuses documents the free path already handles). The floor "
+        "separates empty from non-empty and nothing finer, so a page of unusable-but-present text "
+        "clears it; `--force` is the escape when you know better.",
+    )
+
+
+def _ranges(pages: Sequence[int]) -> str:
+    """`1-3,7` rather than `1,2,3,7` — a scanned insert is a run, and printing every page of a
+    200-page scan would bury the check's own verdict in its evidence."""
+    out: list[str] = []
+    start = previous = pages[0]
+    for page in pages[1:]:
+        if page == previous + 1:
+            previous = page
+            continue
+        out.append(str(start) if start == previous else f"{start}-{previous}")
+        start = previous = page
+    out.append(str(start) if start == previous else f"{start}-{previous}")
+    return ",".join(out)
 
 
 def _calibration(manifest: Manifest) -> Check:

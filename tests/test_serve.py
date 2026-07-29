@@ -5,12 +5,13 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from conftest import pdf_extraction_runnable
 
 from pinakes.embed import ModelInfo, Vectors, register_embedding_backend, register_reranker
 from pinakes.errors import ServeError
 from pinakes.init import init
 from pinakes.manifest import load
-from pinakes.serve import EVIDENCE_HEADER, Server, build
+from pinakes.serve import EVIDENCE_HEADER, Server, as_payload, build
 from pinakes.sync import SyncOptions, sync
 
 DIM = 3
@@ -206,3 +207,152 @@ def test_list_kbs_reports_document_counts(server: Server) -> None:
     assert listing[0]["documents"] == 2
     assert listing[0]["name"] == "research"
     assert listing[0]["id"]
+
+
+# --- page provenance on the agent surface (I8) --------------------------------------------------
+
+
+PDF_CORPUS = Path(__file__).parent / "pdf-corpus"
+PDF = "tables-bordered.pdf"
+
+
+@pytest.fixture
+def pdf_kb(tmp_path: Path) -> Path:
+    root = make_kb(tmp_path / "pdfkb", name="scanned", documents={})
+    path = root / "pinakes.toml"
+    body = path.read_text(encoding="utf-8")
+    include = 'include = ["**/*.md", "**/*.txt"]'
+    assert include in body, "the template's include line has changed shape"
+    path.write_text(
+        body.replace(include, 'include = ["**/*.md", "**/*.txt", "**/*.pdf"]'), encoding="utf-8"
+    )
+    (root / "docs" / PDF).write_bytes((PDF_CORPUS / PDF).read_bytes())
+    sync(load(root), options=SyncOptions(), now="20260729 05:20")
+    return root
+
+
+@pytest.fixture
+def pdf_server(pdf_kb: Path) -> Iterator[Server]:
+    made = Server([pdf_kb])
+    yield made
+    made.close()
+
+
+def test_a_non_paged_source_carries_null_pages_on_the_mcp_surface(server: Server) -> None:
+    """Markdown has no pages, and `page_start` must say so rather than be absent — an agent that
+    has to distinguish "no pages" from "field missing" will get it wrong."""
+    served, result = server.search("retrieval", k=None)
+    passage = as_payload(served, result)["passages"][0]
+
+    assert passage["page_start"] is None
+    assert passage["page_end"] is None
+    assert ":p" not in passage["citation"]
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_mcp_search_carries_page_spans(pdf_server: Server) -> None:
+    served, result = pdf_server.search("Digitisation", k=None)
+    passages = as_payload(served, result)["passages"]
+
+    assert passages, "the PDF must be searchable for the rest to mean anything"
+    hit = next(p for p in passages if "Digitisation" in p["evidence"])
+
+    # `Digitisation` is on page 2, and the chunk carrying it begins on page 1: the fixture's table
+    # and the prose beneath it land in one chunk that straddles the break. That is I5's stated
+    # allowance, and it is why a citation has to be able to render a *range* — a single page number
+    # here would be a claim the passage does not support.
+    assert (hit["page_start"], hit["page_end"]) == (1, 2)
+    assert hit["citation"].startswith(f"{hit['path']}:p1-2")
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_mcp_get_is_page_aware(pdf_server: Server, pdf_kb: Path) -> None:
+    """A `get` must support the same citation vocabulary a `search` does, or an agent can cite a
+    passage it found and not one it read."""
+    result = pdf_server.search("Digitisation", k=None)[1]
+    doc_id = next(p.doc_id for p in result.passages if "Digitisation" in p.text)
+
+    whole = pdf_server.document(doc_id)
+    assert whole["page_count"] == 2
+    assert whole["citation"].endswith(":p1-2")
+    assert "[page 1]" in whole["text"] and "[page 2]" in whole["text"]
+    assert "Digitisation" in whole["text"]
+
+    one = pdf_server.document(doc_id, page_start=2, page_end=2)
+    assert one["citation"].endswith(":p2")
+    assert one["page_start"] == 2 and one["page_end"] == 2
+    assert one["page_count"] == 2, "the document still has two pages; this response has one"
+    assert "[page 2]" in one["text"]
+    assert "[page 1]" not in one["text"]
+    assert "Correspondence" not in one["text"], "page 1's table must not leak into page 2"
+    assert "Digitisation" in one["text"]
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_page_range_outside_the_document_is_refused_by_its_own_bounds(
+    pdf_server: Server,
+) -> None:
+    result = pdf_server.search("Digitisation", k=None)[1]
+    doc_id = next(p.doc_id for p in result.passages if "Digitisation" in p.text)
+
+    for start, end in ((0, 1), (1, 3)):
+        with pytest.raises(ServeError) as exc_info:
+            pdf_server.document(doc_id, page_start=start, page_end=end)
+        assert "has 2 page(s)" in exc_info.value.message
+        assert "1-indexed" in exc_info.value.remedy
+
+    # A backwards range is its own error: both bounds exist, they are just the wrong way round.
+    with pytest.raises(ServeError) as exc_info:
+        pdf_server.document(doc_id, page_start=2, page_end=1)
+    assert "runs backwards" in exc_info.value.message
+
+    # …and a single out-of-range bound must name *that bound*, not a range the caller never asked
+    # for. Validating the resolved pair reported this as "pages 5-2", which reads as pinakes'
+    # mistake rather than the caller's.
+    with pytest.raises(ServeError) as exc_info:
+        pdf_server.document(doc_id, page_start=5)
+    assert "page_start=5 is not a page in it" in exc_info.value.message
+    assert "5-2" not in exc_info.value.message
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_pdf_is_served_as_its_extracted_text_rather_than_its_bytes(pdf_server: Server) -> None:
+    """`read_text` on a PDF raises `UnicodeDecodeError`, which is a `ValueError` and not an
+    `OSError` — so before page-awareness this escaped `pinakes_get` as an unhandled traceback."""
+    result = pdf_server.search("Digitisation", k=None)[1]
+    doc_id = next(p.doc_id for p in result.passages if "Digitisation" in p.text)
+
+    document = pdf_server.document(doc_id)
+    assert not document["text"].startswith("%PDF")
+    assert "Restoration work" in document["text"]
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_swept_extraction_cache_is_an_error_rather_than_a_silent_re_extraction(
+    pdf_server: Server, pdf_kb: Path
+) -> None:
+    """Re-extracting would hand back text the index was not built from — and for a paid backend it
+    would spend money inside a read-only tool call. Saying so is the only honest answer."""
+    result = pdf_server.search("Digitisation", k=None)[1]
+    doc_id = next(p.doc_id for p in result.passages if "Digitisation" in p.text)
+    for entry in (pdf_kb / ".pinakes" / "cache" / "extract").glob("*.json"):
+        entry.unlink()
+
+    with pytest.raises(ServeError) as exc_info:
+        pdf_server.document(doc_id)
+    assert "no longer in the cache" in exc_info.value.message
+    assert "pnk sync" in exc_info.value.remedy
+
+
+def test_a_page_range_on_a_source_that_has_none_is_refused(server: Server) -> None:
+    result = server.search("retrieval", k=None)[1]
+    doc_id = result.passages[0].doc_id
+
+    with pytest.raises(ServeError) as exc_info:
+        server.document(doc_id, page_start=1)
+    assert "has no pages" in exc_info.value.message

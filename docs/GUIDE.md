@@ -168,9 +168,10 @@ What the free path does and does not do:
 |---|---|
 | ✅ | Text-layer PDFs: columns, running heads stripped, hyphenation joined across line and page breaks |
 | ✅ | Page spans recorded per chunk in the index |
+| ✅ | `path:page` citations in results, on the CLI and the MCP surface alike — `docs/paper.pdf:p7`, or `:p7-8` for a chunk straddling a page break |
+| ✅ | `pnk doctor` names the pages with no text layer, by path *and* page, before you decide whether to pay for any of them |
 | ⚠️ | **Tables are read column by column, not row by row.** Column detection is geometric, not structural — a disclosed limitation, measured by `pair_adjacency` in the quality harness |
-| ❌ | **Scanned / image-only PDFs.** The free path yields nothing. Needs the paid extractor, which is built but [in no release yet](STATUS.md) |
-| ❌ | `path:page` citations in results — page spans are in the index but not yet in output ([I8](STATUS.md#v02-increment-ledger)) |
+| ❌ | **Scanned / image-only PDFs.** The free path yields nothing on them. The paid extractor reads them — shipped, opt-in, and it spends: `pnk sync --extract=claude-vision` |
 
 Filter to PDFs with `--source-type pdf`.
 
@@ -324,9 +325,13 @@ Three tools, namespaced so they cannot collide with another KB server the agent 
 
 | Tool | Does |
 |---|---|
-| `pinakes_search` | Ranked, cited passages with a confidence signal |
-| `pinakes_get` | A document by ULID |
+| `pinakes_search` | Ranked, cited passages with a confidence signal. Each carries `page_start`/`page_end` (both `null` for a source with no pages) beside the rendered citation |
+| `pinakes_get` | A document by ULID. `page_start`/`page_end` read one range of a PDF; page boundaries come back marked by a line reading `[page N]` |
 | `pinakes_list_kbs` | The KBs this server was pointed at |
+
+**One citation vocabulary across both surfaces.** An agent can cite `docs/paper.pdf:p7` from a
+`get` exactly as it can from a `search` — the numbers are the same numbers, and the trace tests
+assert that by comparing them.
 
 **Multi-hop falls out of composition.** `pinakes_search → pinakes_get → pinakes_search` *is* a
 plan-retrieve-read-refine loop, and your agent already runs it in its own context — on reasoning you

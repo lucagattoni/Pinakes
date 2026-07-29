@@ -209,6 +209,12 @@ def run_search(args: argparse.Namespace) -> int:
                             "heading_path": passage.heading_path,
                             "char_start": passage.char_start,
                             "char_end": passage.char_end,
+                            # Separate fields, never the rendered `p12-13`: a consumer that has to
+                            # parse a citation back apart is a consumer that will get it wrong.
+                            "page_start": passage.page_start,
+                            "page_end": passage.page_end,
+                            "citation": passage.citation(),
+                            "stale_extraction": passage.stale_extraction,
                             "text": passage.text,
                             "rerank_score": passage.rerank_score,
                             "fused_score": passage.fused_score,
@@ -232,6 +238,13 @@ def run_search(args: argparse.Namespace) -> int:
         for line in passage.text.strip().splitlines():
             print(f"    {line}")
         print(f"    ({passage.citation()})")
+        if passage.stale_extraction is not None:
+            # Marked, never withheld (§4.4, decision 13): the text is correct, merely extracted by
+            # a paid backend the manifest has since moved off.
+            print(
+                f"    ! extracted by a paid backend since superseded "
+                f"({passage.stale_extraction}); re-extracting would spend."
+            )
         print()
 
     print(f"confidence: {result.confidence} — {result.confidence_reason}")

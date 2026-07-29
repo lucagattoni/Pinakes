@@ -20,6 +20,7 @@ from pinakes.search import (
     MEDIUM,
     UNKNOWN,
     Filters,
+    Passage,
     SearchResult,
     escape_fts,
     search,
@@ -438,3 +439,65 @@ def test_an_empty_index_answers_without_crashing(tmp_path: Path) -> None:
         assert result.confidence == UNKNOWN
     finally:
         connection.close()
+
+
+# --- how a citation names where a passage came from (I8) ----------------------------------------
+
+
+def _passage(
+    *,
+    char_start: int = 12,
+    char_end: int = 480,
+    page_start: int | None = None,
+    page_end: int | None = None,
+    heading_path: str | None = None,
+) -> Passage:
+    """A passage with only the fields a citation reads varied — spelled out rather than splatted
+    from a dict, so the type checker still sees a real constructor call."""
+    return Passage(
+        doc_id=DocId("01ABC"),
+        path="docs/report.pdf",
+        title=None,
+        heading_path=heading_path,
+        text="…",
+        char_start=char_start,
+        char_end=char_end,
+        lexical_rank=0,
+        vector_rank=None,
+        fused_score=1.0,
+        rerank_score=None,
+        page_start=page_start,
+        page_end=page_end,
+    )
+
+
+def test_a_non_paged_source_still_cites_character_offsets() -> None:
+    assert _passage().citation() == "docs/report.pdf:12-480"
+
+
+def test_a_single_page_chunk_cites_that_page() -> None:
+    assert _passage(page_start=12, page_end=12).citation() == "docs/report.pdf:p12"
+
+
+def test_a_two_page_chunk_renders_a_range() -> None:
+    """I5 allows a chunk to straddle a page break — a hyphenated word joined across it leaves no
+    separator — so a citation that could only name one page would be claiming more than it knows."""
+    assert _passage(page_start=12, page_end=13).citation() == "docs/report.pdf:p12-13"
+
+
+def test_the_page_marker_is_what_stops_a_citation_being_ambiguous() -> None:
+    """`docs/report.pdf:12-480` already means *character offsets*. Without the `p`, a page range
+    and a character range would be the same syntax with two meanings, told apart only by knowing
+    which file you are looking at — so the two forms must not collide.
+
+    This is the whole reason the format is `p12-13` and not `12-13`.
+    """
+    offsets = _passage(char_start=12, char_end=13).citation()
+    pages = _passage(page_start=12, page_end=13).citation()
+    assert offsets != pages
+    assert pages == offsets.replace(":12-13", ":p12-13")
+
+
+def test_a_heading_path_still_follows_the_locator() -> None:
+    cited = _passage(page_start=4, page_end=4, heading_path="Findings > Costs").citation()
+    assert cited == "docs/report.pdf:p4 (Findings > Costs)"
