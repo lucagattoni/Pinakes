@@ -10,6 +10,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **[`plans/graph-release.md`](plans/graph-release.md) — the build order for the graph release, in
+  twelve increments (G1–G12).** `docs/graph/PINAKES_APPROACH.md` had settled *what* to build and
+  *why* across six adversarial passes, but its build order (§10) was a single table row; nothing
+  sequenced it, tested it, or named what it breaks. **Draft — not yet reviewed; do not implement
+  from it.**
+
+  Seven decisions were taken with the user, four of them because reviewing the code first changed
+  the picture:
+
+  - **A second synthetic KB is committed, deliberately sparse.** `tests/demo-kb/` has thirty
+    documents and **zero authored links** — every sidecar lacks a `links:` key, so the
+    highest-trust edge class has no corpus behind it at all, single-KB as well as cross-KB. Both
+    corpora gain links on ≤ 35% of documents, enforced by a new gate, because §3's finding is that
+    real authored links are scarce and a tidy dense synthetic graph would validate the code while
+    hiding the failure mode the research predicts.
+  - **The golden set grows to ~25 multi-hop questions, most of them cross-KB.** It has five today,
+    so one question is worth twenty points against §9's five-point gate; at twenty-five it is worth
+    four. The baseline is re-cut once, with a safeguard: the original 41 questions must score
+    *identically* under the new harness, or the shift is a harness defect rather than a consequence
+    of growth.
+  - **One release with an internal cut point after the links surface.** Nothing before G9 bumps
+    `schema_version`, so that release requires no rebuild — and it ships on its own merit whether or
+    not the expansion channel passes its eval gate.
+  - **`pnk link` writes forward only**, into the source document's sidecar; the reverse side is
+    computed by reverse-scan, which DESIGN §6.2 has specified since v0.1 and nothing has ever
+    implemented (`store.py:103` carries the `reverse-scan` origin value, unused).
+
+  PPR and the `[ner]` extra stay out: §10 lists them as staged and eval-gated, not scheduled. The
+  release adds **no paid entry point** — `.paid-path-allowlist` must be byte-identical afterwards,
+  and the verification section checks it.
+
 ### Fixed
 
 - **The multi-hop class measured nothing about hopping, and two of its five questions asked about
