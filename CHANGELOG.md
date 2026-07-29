@@ -10,6 +10,267 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] — 20260729 05:32
+
+### Added
+
+- **A docs change now audits its neighbourhood, not its diff.** Before landing any documentation
+  edit, the surrounding claims are re-read against four questions: is this **consistent** with the
+  other docs, does its **logic** still hold, has it been **superseded** by a decision taken since,
+  and is it **outdated** against the code, the package index or the clock.
+
+  The rule exists because whatever made the line you came to fix go stale almost certainly reached
+  its neighbours too, and reading the diff cannot show that. Measured on 20260729: a one-line PyPI
+  correction was requested, and sweeping around it found five more stale claims — a shipped release
+  still listed as unbuilt in two separate tables, an install block missing the headline capability
+  of the last two releases, a README sentence implying a feature that is not built, a runbook still
+  described as producing numbers the project "admits it lacks" after the run had happened, and a
+  design note reading "no increment assigned" for work a plan had since assigned. Every one was a
+  single-line edit; none was visible from the change that prompted the sweep.
+
+  Full rule in [`docs/README.md` § Conventions](docs/README.md#conventions), with a one-line pointer
+  from `CLAUDE.md`'s Docs section.
+
+- **`path:page` citations, on the CLI and the MCP surface in the same increment** (I8). A PDF
+  passage cites `docs/paper.pdf:p7`, or `docs/paper.pdf:p7-8` when the chunk straddles a page break.
+  The `p` is deliberate: `:12-480` already meant character offsets, so a bare `:12-13` would have
+  been a page range and a character range in one syntax. Non-paged sources are unchanged.
+- **`pnk search --json` and `pinakes_search` carry `page_start`/`page_end`** as separate integers
+  beside the rendered `citation` (both `null` for a source with no pages), so nothing has to parse a
+  citation back apart.
+- **`pinakes_get` is page-aware**: `page_start`/`page_end` read one range, page boundaries come back
+  marked by a `[page N]` line, and the payload reports `page_count`. A PDF is served from the
+  extraction cache — the same text the index was built from — never by re-extracting.
+- **`pnk doctor` gains a `text yield` check**, reporting **per page, never per document**: the
+  median non-whitespace characters per page, then the pages below the fitted floor by path *and*
+  page (`docs/scan.pdf p4-9`). A document-level median stays silent on a 200-page report with eight
+  scanned inserts, which is exactly the document worth knowing about. Its remedy names the paid
+  extractor and says that it spends.
+- **Three end-to-end traces** (`tests/test_pdf_trace.py`): a table-cell word across six hops from
+  extraction to the agent surface, every filter dimension actually selecting PDF rows, and one paid
+  slice's cost from estimate through reservation, the response's own `usage`, reconciliation and
+  into what `pnk budget` prints.
+
+- **`docs/VERIFICATION.md`** — every promise this project makes, and the test that holds it, with
+  `tests/test_verification.py` asserting each named test exists. It replaces `plans/v0.2.md`'s
+  verification table as the *lookup*: that table wrote its test paths before the tests existed, and
+  implementation renamed most of them, so **61 of its 98 references did not resolve**. The
+  properties were almost all tested — under better names — but a table whose paths cannot be
+  resolved verifies nothing, which is the failure its own preamble warns about. The plan keeps its
+  predictions as the record of what was intended.
+- **`pnk doctor` now proves its own checks are tested** —
+  `tests/test_doctor.py::test_every_doctor_check_is_exercised_by_a_test`. Adding a check is one
+  line, and nothing about that line requires a test to exist.
+- **`pnk sync --help` is asserted to state each dangerous flag's *limit*, not only its capability**
+  — `--force` widens no cap, `--yes` raises none, `--clear-cache` never touches the ledger,
+  `--estimate-only` generates nothing.
+- **CI's wheel smoke asserts the two files the spending guards read** (`prices.toml`, `floors.toml`)
+  are present in the built wheel, and that a core-only install names the extra it needs rather than
+  producing a traceback.
+
+### Changed
+
+- **[`plans/links-and-graph.md`](plans/links-and-graph.md) restructured after a third adversarial
+  pass — the links release never needed the golden set.** Two reviewers returned 24 HIGH, and three
+  of them collapsed into one root cause: `eval.py` is single-KB in its bones (one connection, one
+  manifest, one backend, `retrieved` as local path strings), so a cross-KB question forced through
+  it scores **0.00 by construction** — the hop can never be followed — or **1.00 by construction**,
+  merely confirming a link the corpus author hand-wrote. Neither can decide anything, and pass 2 had
+  already established such questions cannot respond to `graph_channel`.
+
+  Since the links release changes no retrieval, it needs no golden-set work at all: traversal
+  correctness is directly testable. Cross-KB eval is cut entirely, all measurement work moves to the
+  graph release where it *is* the gate, and the plan becomes 8 + 6 increments instead of 10 + 4.
+
+  Also corrected:
+
+  - **The determinism increment was a provable no-op.** Its three proposed tiebreaks could never
+    change an outcome: cross-document ties are already totalised by `documents.path`, and within a
+    document rowid order *is* ordinal order in every write path that exists. The instability a
+    rebuild could introduce is upstream, in the candidate lists that set the RRF ranks, where no
+    final tiebreak reaches. It is now a *measurement* increment — establish reproducibility, fix
+    only what the measurement shows.
+  - **The gate's statistic had no artifact that could produce it.** An exact sign test needs
+    per-question before/after pairs; `run()` discards outcomes, `write_baseline` stores aggregates,
+    and `compare()` reads only those. Per-question outcomes are now a committed artifact with an
+    owner.
+  - **The headroom threshold was asserted, not derived, and its test could not fail.** It checked a
+    number the author had committed. It now runs the questions and counts, and the number follows
+    from the gate table: 7 currently-failing questions to tolerate one regression.
+  - **`requires_pinakes` cannot explain a key retroactively** — a pinakes built before it has no
+    pre-pass and fails on `requires_pinakes` itself. Deferring `adjacent_k`'s template stamp to that
+    increment bought nothing; new keys simply stay out of the template in both releases.
+  - **A neighbour's `kb` field was unspecified across three namespaces** — `[kb] name` (documented
+    as free to rename), `[[links.kb]] name` (machine-local), and the ULID. Only the ULID is
+    dereferenceable, which is the same reason a `pnk://` URI carries no alias. The field is now
+    `kb_id`, and a test asserts `pinakes_get` actually resolves what `pinakes_links` returns.
+  - **Twelve increments still told a future agent to write a `CHANGELOG.md` entry**, forbidden by
+    the fragment convention that landed while this plan was being written — and no gate catches a
+    direct edit. Both release procedures also omitted `tools/fragments.py --apply`, which would have
+    shipped every fragment unspliced.
+
+- **[`plans/links-and-graph.md`](plans/links-and-graph.md) revised after a fourth adversarial pass —
+  13 HIGH, down from 24, and the first pass with no self-refuting fix.** Five findings collapsed
+  into one decision: **the traversal surface serves documents only.** Tag, directory, heading and
+  chunk nodes have no `doc_id` and cannot be expressed in the neighbour shape the plan pins with a
+  test, so they stay internal to the expansion channel permanently. That makes the structural-edge
+  increment genuinely inert rather than aspirationally so, removes a released-payload change nobody
+  owned, and deletes a filter-flip whose conditionality was undecided in a way that broke either
+  reading.
+
+  **Cross-KB traversal is one hop, and the plan now says so.** KB *K*'s `links` table holds its own
+  outbound rows and its inbound ones, never a third KB's outbound rows — so a depth-2 hop *through*
+  a cross-KB neighbour has nothing to walk without opening that KB's index, which DESIGN §6.2
+  forbids. The Goal had been claiming more than the data model can deliver; a cross-KB neighbour is
+  now terminal at any depth, and `frontier` says so rather than leaving a caller to retry a hop that
+  can never succeed.
+
+  Also closed:
+
+  - **`frontier` was contract text with no owner and no definition** — half of the pair the research
+    says an agent's loop consumes. It belongs to the pure core, and an entry now carries *why* it
+    was not expanded: `depth`, `fanout`, `rows`/`tokens`, or `terminal`. A caller that cannot tell
+    `fanout` from `terminal` retries forever.
+  - **The channel's gate conflicted with `compare()`, which is a hard CI gate.** Five misses
+    becoming hits, two at low confidence, is 0.030 against a 0.02 tolerance — CI red on a channel
+    the gate had just blessed. Turning the channel on now re-baselines in the same commit, with the
+    rise decomposed so that only *lost* confidence counts as a regression.
+  - **The go/no-go for the graph release measured the wrong quantity.** It counted questions that
+    currently fail, but a question can only be lifted if its evidence is reachable in the edge set —
+    and with `mentions` cut, the authoring rule ("evidence split across two documents with no shared
+    vocabulary") actively selects for pairs the remaining edges cannot bridge. The research's own
+    channel-reachable ceiling comes back as an in-memory probe that needs no schema change, so the
+    decision happens **before** every KB in existence is forced to rebuild.
+  - **The node identity scheme spanned five incompatible id spaces** and was never written down —
+    including a chunk key that would have used the rowid the storage layer documents as having no
+    identity across rebuilds. Specified, with an orientation rule, because a `src`-only damping
+    query silently drops half of every symmetric relation.
+  - **The graph release now has a stated fallback**: if the precondition fails, the three increments
+    that do not depend on structural edges ship on their own rather than stranding finished work.
+
+- **[`plans/links-and-graph.md`](plans/links-and-graph.md) revised after a fifth adversarial pass —
+  3 HIGH, down from 13.** All three sat on the seams the fourth pass opened, and one of them was a
+  decision resting on a false premise.
+
+  **Terminality is a policy, not an emptiness.** The plan justified making cross-KB neighbours
+  terminal by claiming KB *K*'s index has nothing to walk past one. `store.py` says the opposite in
+  a comment on the table itself — *"a reverse link's source lives in another KB"* — so a
+  reverse-scanned row is keyed on the **foreign** document and a depth-2 query from one returns real
+  results. The conclusion survives on a better reason: K holds only the partner's links that point
+  *back at* K, never its internal ones, so expanding through a foreign document shows a
+  systematically incomplete slice that no caller can distinguish from the whole. The consequence for
+  the build is sharper than the wording — terminality now needs an **explicit suppression**, a test
+  fixture that actually contains the back-link rows (without them the test passes against an
+  implementation with no guard at all), and a mutation target, none of which the plan had.
+
+  **Whether authored `doc ↔ doc` edges are in the expansion channel was never stated**, while the
+  orientation rule, the reachability probe and the gate's pessimism argument each depended on the
+  answer. They are — the research's own argument for counting depth in logical hops is that physical
+  counting would strand them. Stating it exposed a circularity the plan had already refused once:
+  the gate could be satisfied by hand-authored links bridging hand-authored questions, the same
+  "1.00 by construction" shape that got cross-KB eval cut. Reachability and the gate are now both
+  reported **with and without** authored edges, and a gate that passes only *with* them is recorded
+  as such rather than counted as evidence that derived structure helps.
+
+  **The previous fix disarmed a guard it wasn't aiming at.** Re-baselining in the same commit as
+  turning the channel on silences every metric in `baseline.json`, including `false_confidence` —
+  which is sensitive to the channel by the same mechanism and is *not* covered by the per-class
+  clause, because a no-answer question can stay a clean non-hit while flipping to HIGH confidence.
+  One flip is 0.125 against a 0.02 tolerance. A fourth gate clause makes a rise in
+  `false_confidence` or `confidence_coverage` a stop rather than a re-baseline.
+
+  Also: `frontier` reasons went from four to five (the two response caps are independently
+  observable, so they cannot share one) with a stated precedence and an amendment row; the traversal
+  core is now generic over a provider-supplied node identity, so one implementation serves both the
+  document surface and the structural channel instead of the graph release needing a second
+  expander; and the conditional third release has a stated shape rather than being discovered at the
+  cut.
+
+### Fixed
+
+- **`docs/README.md` still told every increment to write its `[Unreleased]` entry into
+  `CHANGELOG.md`** — the edit the fragment convention had just forbidden. `CLAUDE.md` gained
+  `changelog.d/` and `retro.d/` in the same change that introduced them, and the routing table that
+  `CLAUDE.md`'s own build order defers to ("the docs are built so an increment touches few files")
+  was left pointing at the old procedure. Two documents disagreed about a rule that exists to stop
+  two agents disagreeing.
+
+  It matters more than a stale line usually would, because nothing catches it: `tools/fragments.py
+  --check` validates the fragments that exist and has no opinion about a commit that edited
+  `CHANGELOG.md` directly, so an agent following the checklist would have landed the violation
+  green.
+
+  The landing checklist now ends in a `changelog.d/` fragment and a `retro.d/` one, the fact-routing
+  table says where each of those two documents is *written* as distinct from where it is *read*, and
+  the index warns that anything unreleased is still sitting in its fragment directory rather than in
+  the document — which is also the answer to why "re-read `RETROSPECTIVES.md` before each increment"
+  can quietly miss the newest findings.
+
+- **`pnk doctor` crashed on a KB whose PDFs name an extraction backend this install does not know**
+  — a KB written by a newer pinakes, or one whose extra has since been uninstalled.
+  `is_paid_backend` raises on an unrecognised name, and a health check may not be the thing that
+  fails on an unhealthy KB. It now reports them, exactly as the §4.4 coherence check already did.
+- **A KB whose PDFs are all paid-extracted no longer gets a permanent `text yield` warning** whose
+  remedy would have spent money. They are skipped deliberately, and the check now says so.
+- **`pinakes_get` reports an out-of-range page bound as the bound the caller passed**, not as a
+  range it never asked for: `page_start=5` on a two-page document said "pages 5-2 is not a range
+  within it".
+
+- **Six claims that 0.3.0 falsified, including one plain factual error about PyPI.**
+  `docs/STATUS.md` said *"Published version: **0.2.2 only**"* while 0.3.0 had been on the index for
+  three hours — and that row is a fact about PyPI, not about this repo, so nothing in the release
+  procedure was ever going to notice. Verified against the index and by installing: 0.2.2 and 0.3.0
+  are both published, all four extras (`st`, `light`, `pdf`, `claude`) resolve, `requires-python` is
+  `>=3.13`, and `uv add "pinakes[light,pdf]"` into an empty venv gives `pinakes 0.3.0`.
+
+  The others were the release's own shadow:
+
+  - The **naming table** still listed *the paid-extraction release* among "bodies of work that do
+    not exist yet". It shipped as 0.3.0. The **roadmap** still had it italicised and unticked,
+    directly under three ticked rows.
+  - **`README.md`'s install block** offered only `[st]` and `[light]`, so a new reader could not
+    discover PDF ingest — the headline capability of the two most recent releases — from the
+    quickstart at all.
+  - **`README.md` claimed a capability that is not built.** *"Cross-KB answers are capped by how
+    well your KBs are linked"* implies cross-KB answers exist; the addressing ships, the traversal
+    is the links release. Now says so, and points at the roadmap.
+  - **`docs/README.md`** still described `MEASUREMENT-RUN.md` as *"how do I get the numbers this
+    project admits it lacks"* and routed to it *"while the numbers are still missing"*. The run
+    happened on 20260729 and `STATUS.md` carries its results.
+  - **`KB-UPDATES.md`** said *"no increment assigned"* in three places; its `requires_pinakes` half
+    is now assigned to G4 in `plans/links-and-graph.md`.
+
+  **`CLAUDE.md` gains the rule**, because the release procedure is where this is preventable: a
+  release makes three documents stale the instant it publishes — STATUS's PyPI table, STATUS's
+  roadmap, and README's install lines — and they are swept in the release commit, verified by
+  querying the index and installing what the docs show rather than by reading them.
+
+- **`pinakes_get` on a PDF crashed with an unhandled traceback.** It read the source file with
+  `read_text(encoding="utf-8")`, which raises `UnicodeDecodeError` — a `ValueError`, so the
+  surrounding `except OSError` never caught it. PDFs are now served as their extracted text, and the
+  decode failure has an explicit branch for the case a binary source is somehow recorded with no
+  extraction backend.
+- **The `stale_extraction` marker reached neither surface.** It was computed in `search.py` and
+  dropped by both the CLI and the MCP renderer. The plan's own amendment row said I8 would take it
+  "to the agent surface and not only the CLI", which understated the gap by half. Both surfaces now
+  carry it — marked, never withheld.
+- **The shipped `notes` template told every new KB that "no shipped code path spends money"**, which
+  stopped being true when 0.3.0 shipped the paid extractor. The `[budget]` comment now says what the
+  caps are for and that they bind only once you opt in.
+- **`docs/GUIDE.md` said the paid extractor was "built but in no release yet"** — also untrue since
+  0.3.0 — and still listed `path:page` citations as missing.
+
+- **Five `pnk doctor` checks had no test at all** — `template`, `reranker`, `model cache`,
+  `extensions` and `links`. Found by the coverage test above on the first run it did.
+- **Three `⏳ pending amendment` notes in `docs/DESIGN.md` §9 still said work was unbuilt** that
+  shipped in 0.3.0: the ledger fields and the price-staleness WARN (I6b), the cap arithmetic over a
+  running total (I6a/I6b), and the measured free-vs-paid delta, which had been sitting in the row
+  above them since the 20260729 measurement run.
+- **`README.md` named neither PDF extra.** `pinakes[pdf]` and `pinakes[claude]` now appear in the
+  quickstart, with the paid one's cost stated plainly and **all three** `[budget]` caps named —
+  raising one and hitting the next is the discovery path those caps exist to prevent. `make budget`
+  joined the Development target list.
+
 ## [0.3.0] — 20260729 04:17
 
 ### Added
@@ -1332,7 +1593,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.4.0
 [0.3.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.3.0
 [0.2.2]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.2.2
 [0.2.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.2.1
