@@ -1507,6 +1507,115 @@ over several days — two `### Added`, three `### Changed`, two `### Fixed`. Con
 `tests/test_paid_path.py` set for `tools/paid_path_gate.py`, and tests the same artifact `check.sh`
 runs, argument parsing included.
 
+## I8 — Page citations on both surfaces, and `pnk doctor`'s text yield (20260729 04:55)
+
+**HIGH — `pinakes_get` on a PDF crashed, and no test could have caught it.** `document()` read the
+source with `read_text(encoding="utf-8")` inside a `try` guarded by `except OSError`.
+`UnicodeDecodeError` is a `ValueError`, so the guard never applied and the traceback escaped through
+the MCP surface. It survived since v0.1 because no test ever called `pinakes_get` on a PDF — the
+serve suite's KB is two markdown files, and every PDF test lives in a module that never builds a
+server. A gap between two test modules is invisible to both.
+
+**HIGH — the plan's `page_start == p` assertion is wrong, and would have failed on correct code.**
+The I8 draft specifies that every chunk covering the traced offset "reports `page_start == p`". A
+chunk that straddles a page break starts on the *earlier* page, so a word on the later one
+legitimately sits inside a chunk whose `page_start` is smaller — which I5 explicitly allows and
+which the citation renders as `p1-2`. The trace asserts `page_start <= p <= page_end` instead. The
+draft had already corrected "exactly one chunk" to "at least one" for the same fixture; the page
+assertion needed the same correction and did not get it.
+
+**MEDIUM — the `stale_extraction` row understated its own gap by half.** DESIGN §4.7's pending
+amendment said the marker "today reaches the CLI's `Passage` but stops there", so I8 would carry it
+to the agent surface. It reached the CLI's `Passage` *object* and was then dropped by the CLI
+renderer too — computed in `search.py`, surfaced nowhere. A field that exists in a dataclass reads,
+at review time, like a field that is displayed.
+
+**MEDIUM — the free per-page yield lived inside the only module allowed to import `anthropic`.**
+`survey_free_yield` measures what *pypdfium2* got out of a page; nothing about it is paid. But it
+sat in `extract/claude.py`, so `pnk doctor` — a free command — could not consume it without
+importing the paid path to ask a free question, against CLAUDE.md's own "never probe a backend by
+loading it". Moved to `extract/pageyield.py`. The alternative, a second per-page loop in `doctor.py`,
+would have been a second definition of a measurement that decides whether to spend money.
+
+**A dead statistic in a shipped template.** The `notes` template's `[budget]` comment told every new
+KB that "no shipped code path spends money" — written when that was true, still shipping three
+releases later. `docs/GUIDE.md` said the paid extractor was "built but in no release yet". Both are
+the same failure as the four README claims found at 0.1.2: prose drifts toward the design, because
+the design is what you are thinking about while writing it. Neither was in the increment's scope;
+both were found by reading the files the increment touched for other reasons.
+
+**Mutation testing found the test whose name was stronger than its assertion.** Twelve of thirteen
+mutations were detected. The survivor deleted `pnk doctor`'s unmeasured-document tally, and
+`test_a_swept_cache_entry_is_counted_as_unmeasured_rather_than_as_a_pass` stayed green — because
+that test sweeps the *whole* cache and reads a branch that counts documents rather than the tally.
+The mixed case, where some documents measure and others do not, is the one the tally exists for, and
+it had no test. Its name claimed the general property; its body tested the degenerate one.
+
+### The review pass over I8's own diff
+
+Three defects, all in `pnk doctor`'s new check, all found by reading it adversarially rather than
+by any test:
+
+**HIGH — the health check crashed on an unhealthy KB.** `is_paid_backend` raises
+`BackendUnknownError` on a name it does not recognise, and the check passed it every PDF's recorded
+backend. A KB indexed by a newer pinakes, or with an extra since uninstalled, would make `pnk
+doctor` itself raise — the one command someone runs *because* their KB is in a state they do not
+understand. §4.4's coherence check has carried the identical guard, with the identical comment,
+since I5; the new code was written beside it and did not copy it.
+
+**MEDIUM — a KB whose PDFs are all paid-extracted got a permanent, unclearable warning**, with a
+remedy (`pnk sync`) that on those documents *spends money*. The check deliberately skips
+paid-extracted documents, then reported the resulting empty measurement through the branch meant
+for a swept cache. Skipped-on-purpose and lost look identical to a counter.
+
+**LOW — a single out-of-range page bound was reported as a backwards range.** `page_start=5` on a
+two-page document read "pages 5-2 is not a range within it", because the bounds were validated
+after the omitted one was defaulted. It describes a range the caller never asked for, and reads as
+pinakes' mistake rather than a bad argument. Found by running the tool, not by reading it.
+
+**What the tests could not have caught.** All three needed either a KB state no fixture builds
+(an unknown backend name, wholly paid extraction) or a human reading an error message. The
+increment's own tests were green throughout, and so was a sixteen-mutation pass — mutation only
+perturbs cases somebody already thought of, which is the same limit that let the fragment tooling
+ship a duplicate-heading bug at the 0.3.0 release.
+
+## I9 — Auditing the verification table (20260729 05:40)
+
+**HIGH — the table that verifies everything verified nothing.** `plans/v0.2.md` ends with 98 rows,
+each promising a property and naming the test that holds it, under a preamble reading *"a promise in
+a section with no owner is a wish"*. **61 of the 98 test paths did not resolve.** Not because the
+properties went untested — nearly all are tested, usually under a better name than the plan guessed
+— but because the paths were written *before* the tests existed and implementation renamed them.
+
+The failure is not the renaming. It is that **nothing ever read the table**, so it could drift a row
+at a time for nine increments with every gate green. A table of test paths is prose until something
+executes it, and prose about tests reads exactly like tests. The fix is not a better table: it is
+`tests/test_verification.py`, which resolves every reference in `docs/VERIFICATION.md` and fails on
+the first one that does not exist. The document can now go stale exactly once — in the commit that
+breaks it.
+
+**The audit found a real gap on its first run, which is the argument for doing it.**
+`test_every_v02_check_appears` was assigned to I8, named in the table, and never written. Writing it
+(as `test_every_doctor_check_is_exercised_by_a_test`) immediately found **five `pnk doctor` checks
+with no test at all**: `template`, `reranker`, `model cache`, `extensions`, `links`. Link coverage is
+a §6.2 promise; the reranker check exists so a health check does not download weights. Both had
+shipped untested since I11.
+
+**MEDIUM — I wrote the exact CI assertion the plan warned against, and only running it caught it.**
+The plan says the core-only wheel smoke must use "a **core-only KB that does not need embeddings**,
+because today's smoke KB fails on sentence-transformers long before it reaches an extractor, so the
+assertion would prove nothing". I built a PDF-only KB believing that satisfied it, and it does not:
+the embedding backend loads before any extractor, so `pnk sync` on a PDF-only core install still
+fails on `pinakes[st]`. My `grep -q 'pinakes\['` passed — against the wrong extra. `pnk doctor` is
+the only surface that reaches the extractor question on a core-only install, because it reports a
+failing backend as a check and carries on. **Reading the plan's warning was not enough to avoid the
+thing the plan warned about; running the command was.**
+
+**A plan is a historical record, and correcting it would have destroyed the evidence.** The
+temptation was to fix the 61 paths in place. That would have erased the only proof that predicted
+test names drift — and with it the reason `tests/test_verification.py` needs to exist. The plan
+keeps its predictions under a dated supersession note; the resolved mapping lives in `docs/`.
+
 ## Design review passes 1–7 (pre-implementation)
 
 Seven adversarial passes over [`DESIGN.md`](DESIGN.md) **before any code was written** — 58 findings
