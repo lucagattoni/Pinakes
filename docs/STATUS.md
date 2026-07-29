@@ -1,6 +1,6 @@
 # Status — what ships today
 
-**Latest release: 0.3.0** · last reviewed 20260729 04:17
+**Latest release: 0.4.0** · last reviewed 20260729 05:40
 
 > **This file is the only place in the repo that says what is built.** Every other doc describes
 > *how* something works or *why* it was designed that way, and links here for whether you can use it
@@ -245,7 +245,8 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.2.0** ✅ | Free PDF ingest, extraction cache, page provenance in the index, extraction-quality scoring |
 | **0.2.1** ✅ | Documentation restructure — one fact one home; three stale-claim fixes |
 | **0.2.2** ✅ | `pnk sync` names files skipped for want of an `include` glob; budget core (inert) |
-| **0.3.0** ✅ | Budget machinery, the opt-in paid Claude-vision extractor (I6–I7c). `path:page` citations landed with I8 and are unreleased |
+| **0.3.0** ✅ | Budget machinery, the opt-in paid Claude-vision extractor (I6–I7c) |
+| **0.4.0** ✅ | `path:page` citations on both surfaces, `pnk doctor` text yield (I8); the verification table and its gate (I9) |
 | *the links release* | `pnk link`, `pinakes_links`, reverse-scan, link-coverage reporting — no `schema_version` bump, so no rebuild |
 | *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
@@ -293,8 +294,8 @@ verified 20260729 01:01 by installing the published wheel into an empty venv and
 
 | | |
 |---|---|
-| Published versions | **0.2.2 and 0.3.0.** 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails |
-| First upload | 20260728 17:16 UTC · latest 20260729 02:22 UTC (0.3.0) |
+| Published versions | **0.2.2, 0.3.0 and 0.4.0.** 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails |
+| First upload | 20260728 17:16 UTC · latest 20260729 03:37 UTC (0.4.0) |
 | Extras available | `st`, `light`, `pdf`, `claude` — all four |
 | `requires-python` | `>=3.13` |
 
