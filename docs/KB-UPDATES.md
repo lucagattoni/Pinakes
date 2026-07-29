@@ -1,6 +1,6 @@
 # Updating an existing KB — design note
 
-**Status: proposal. Decided 20260728 18:39, not built, no increment assigned.** Nothing here
+**Status: proposal. Decided 20260728 18:39, not built.** Its minimum — the `requires_pinakes` pre-pass — is now assigned to **G4** in [`plans/links-and-graph.md`](../plans/links-and-graph.md), which also records that `pnk upgrade` stays template-release work. Nothing here
 describes shipped behaviour; [STATUS.md](STATUS.md) is the authority on what exists.
 
 This note answers one question the build plans had not asked: **when pinakes changes, what happens

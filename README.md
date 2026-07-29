@@ -50,10 +50,12 @@ and a pre-call reservation makes a hard cap a real ceiling rather than an after-
 See [what is actually built](docs/STATUS.md).
 
 **KBs link to each other.** Sidecars carry `pnk://<kb-ulid>/<doc-ulid>` references, so links survive
-renames, moves, and being shared with someone else.
+renames, moves, and being shared with someone else. The *addressing* ships today because IDs cannot
+be retrofitted; authoring and traversing those links is [the links
+release](docs/STATUS.md#release-roadmap).
 
-**Its limits are published, not hidden.** No vector tier is sublinear; cross-KB answers are capped by
-how well your KBs are linked; and the confidence heuristic's measured false-confidence rate is
+**Its limits are published, not hidden.** No vector tier is sublinear; cross-KB answers will be
+capped by how well your KBs are linked; and the confidence heuristic's measured false-confidence rate is
 **0.25** — one no-answer question in four still gets a confident answer. A heuristic whose cost is
 unmeasured is worse than one whose cost is known.
 
@@ -62,6 +64,8 @@ unmeasured is worse than one whose cost is known.
 ```bash
 uv add "pinakes[st]"                  # default backend
 uv add "pinakes[light]"               # fastembed, no torch
+uv add "pinakes[light,pdf]"           # + PDF ingest, free and local
+uv add "pinakes[light,pdf,claude]"    # + the opt-in paid extractor for scanned PDFs
 ```
 
 ```bash

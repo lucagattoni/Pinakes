@@ -148,6 +148,14 @@ Work left local is invisible to every other agent, machine and scheduled run.
   disagreeing with `__version__`, but the safety net that made a bad tag merely embarrassing is
   gone. Run `make release-check` **before** pushing the tag, never after.
 - Create the GitHub release with notes drawn from that CHANGELOG section.
+- **A release makes three documents stale the moment it publishes** — sweep them in the release
+  commit, not later: `docs/STATUS.md`'s *Published on PyPI* table (the published-version list, which
+  is a fact about the index, not about this repo), its *Release roadmap* (tick the row and drop the
+  name from the unbuilt-names table above it), and `README.md`'s install lines if the release added
+  an extra or a capability a new user would look for. Verify by querying the index
+  (`curl -s https://pypi.org/pypi/pinakes/json`) and installing what the docs show — not by reading
+  them. Caught 20260729: `STATUS.md` still said "Published version: 0.2.2 **only**" after 0.3.0 had
+  been on PyPI for three hours, and the roadmap still listed the paid-extraction release as unbuilt.
 - After anything lands on `main`, fast-forward the primary checkout (`git pull --ff-only`).
 
 ## Tooling
