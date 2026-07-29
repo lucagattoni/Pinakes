@@ -157,17 +157,27 @@ def test_a_prices_toml_with_a_wrong_shaped_models_table_is_a_startup_error(
 # --- estimate.py -------------------------------------------------------------------------------
 
 
-def test_the_200_page_worked_example_matches_the_plan_exactly() -> None:
-    """`plans/v0.2.md`'s own worked example: 40 requests, $14.06 reserved."""
+def test_the_200_page_worked_example_still_reserves_the_right_shape() -> None:
+    """`plans/v0.2.md` worked this at 40 requests and $14.06, with `PROMPT_TOKENS = 300`.
+
+    The plan is a historical record and keeps its number; the constant does not. `PROMPT_TOKENS`
+    was **measured** at 571 on 20260729 and raised to 700, so the reservation is now $14.14 — the
+    slice count, which is what the example is really about, is unchanged.
+    """
     est = estimate_document(pages=200, model=MODEL, prices=prices(), now=NOW, max_price_age_days=30)
     assert est.requests == 40
-    assert (est.total_eur * Decimal("1.08")).quantize(Decimal("0.01")) == Decimal("14.06")
+    assert (est.total_eur * Decimal("1.08")).quantize(Decimal("0.01")) == Decimal("14.14")
 
 
-def test_a_single_slice_matches_the_plans_own_figure() -> None:
+def test_a_single_slice_reserves_the_measured_worst_case() -> None:
+    """$0.3515 in the plan, $0.3535 since `PROMPT_TOKENS` was measured rather than estimated.
+
+    Worth pinning even though it moved: the first *live* extraction reconciled at $0.0306 against
+    this reservation, an 11.5x over-reservation — safe, and the reason reconciliation exists.
+    """
     est = estimate_document(pages=5, model=MODEL, prices=prices(), now=NOW, max_price_age_days=30)
     assert est.requests == 1
-    assert (est.total_eur * Decimal("1.08")).quantize(Decimal("0.0001")) == Decimal("0.3515")
+    assert (est.total_eur * Decimal("1.08")).quantize(Decimal("0.0001")) == Decimal("0.3535")
 
 
 def test_requests_round_up_for_a_partial_last_slice() -> None:

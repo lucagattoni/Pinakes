@@ -32,7 +32,7 @@
 | Extraction cache | shipped | `.pinakes/cache/extract/` |
 | Page provenance (`page_start`/`page_end`) | shipped in the **index** | not yet surfaced in results — I8 |
 | Extraction quality scoring | shipped | `make pdf-eval` against `tests/pdf-corpus/` |
-| **PDF ingest, paid path** (scanned PDFs) | on `main`, unreleased | I7b. `claude-vision` is a real extractor. **Its output quality is not yet measured** — that run needs a key and is human-gated |
+| **PDF ingest, paid path** (scanned PDFs) | on `main`, unreleased | I7b. `claude-vision` is a real extractor, **measured against the live API 20260729** — 1.000 on every metric over the synthetic scanned stratum, where the free path scores 0.000 ([DESIGN §9](DESIGN.md#9-known-risks)) |
 | Budget estimator, caps, window aggregation | shipped 0.2.2, **inert** | I6a. The pure logic only — nothing calls it, so nothing can spend |
 | Budget ledger, `pnk budget`, the accountant | on `main`, unreleased | I6b. `ledger.jsonl`, the reservation/outcome protocol, and I6a's decisions read from it — now driven by I7b's extractor |
 | `path:page` citations | **not built** | I8 |
@@ -146,12 +146,25 @@ withdrawn. That is a decision with a one-way door in it, so it takes a human say
 the same rule that governs every other irreversible outward-facing action here, not a special case
 for releases.
 
-**What a reader of those release notes must be told, because it is the one thing this release
-cannot demonstrate:** the extractor's *output quality* is unmeasured. Every fixture behind it is
-authored from the documented response shape rather than captured from a live API, and the run that
-would measure quality needs a key, costs money, and is human-gated by design (`plans/v0.2.md`,
-I7b). The machinery is tested; what it produces is not yet scored. The run is written down, with
-its steps and its euros, in [MEASUREMENT-RUN.md](MEASUREMENT-RUN.md).
+### The measurement run has been done — 20260729 03:17, €0.43
+
+Steps (a)–(d) of [MEASUREMENT-RUN.md](MEASUREMENT-RUN.md), against the live API with
+`claude-opus-5`, for **€0.43** — a tenth of the €4.23 worst case, which is itself a measurement of
+how conservative the reservation is.
+
+| What it settled | Result |
+|---|---|
+| Scanned quality — the reason the paid path exists | **1.000** char recall, order fidelity, word coverage; **0.000** junk. Free path: **0.000** on all four ([DESIGN §9](DESIGN.md#9-known-risks)) |
+| The free-vs-paid delta on text-layer twins | Identical on 3 of 4. On a bordered table the paid path reads order **better** (+0.119) and adds **29% junk** ([§7.2](DESIGN.md#72-what-bypassing-layoutpy-on-the-paid-path-actually-costs)) |
+| `PROMPT_TOKENS` | Measured 571 against an estimated 300 — **wrong in the unsafe direction**, now 700 |
+| `PAGE_TOKEN_CEILING` | Measured ~1,574/page against a 6,000 ceiling. **Deliberately not lowered**: the corpus rasters are synthetic, and a real 300-DPI scan is the case they cannot represent |
+| Reservation accuracy | Over-reserved **11.5×** on the first live call ($0.3515 → $0.0306). Safe, and exactly why reconciliation exists |
+| The refusal branch | Fired for real. `headers-repeating.pdf` was refused twice, recorded as a document failure, and the other four extracted normally |
+
+**What is still not established**, and belongs in any release notes: the fixtures behind
+`tests/fixtures/claude/` are **still authored from the documented response shape**, not replaced
+with these recordings. The live run agreed with them on every branch it exercised — including the
+refusal — but it did not exercise all of them, and swapping them in is its own piece of work.
 
 ✅ **The `0.3` collision is resolved — see [the naming rule](#release-roadmap)
 below.** Unbuilt work no longer carries a version number anywhere, so nothing competes for `0.3.0`

@@ -12,6 +12,18 @@
 as_of = "20260728 16:31"
 usd_per_eur = "1.08"
 
+# Measured against the live API on 20260729 03:17 with claude-opus-5, over the synthetic corpus
+# (docs/MEASUREMENT-RUN.md). Recorded here rather than only in a retrospective because the next
+# person to touch `estimate.py`'s constants needs the numbers, not the story:
+#
+#   input   ~1,574 tokens per page, intercept ~571      (7 count_tokens calls, 1/2/5-page slices)
+#   output  ~215 tokens per page                        (430 tokens for a 2-page slice)
+#   the reservation over-reserved 11.5x on the first live call
+#
+# `measured_on` is the corpus, not a date alone: these are synthetic documents, and a real scan
+# at full resolution is precisely what they do not represent.
+measured_on = "tests/pdf-corpus (synthetic), 20260729 03:17, claude-opus-5"
+
 [models.claude-opus-5]
 input_per_mtok_usd = "5.00"
 output_per_mtok_usd = "25.00"

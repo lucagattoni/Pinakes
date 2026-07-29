@@ -37,16 +37,30 @@ from pinakes.errors import ContextWindowExceededError, StalePricesError
 #: read from configuration, because changing it changes what every cached response actually means.
 K: Final = 5
 
-#: Conservative ceiling until I7b measures the real figure per backend, `measured_on` recorded
-#: beside it. Derived from the vendor's own documented high-resolution page budget (~4,784 visual
-#: tokens per rendered page) plus that page's text, applied to the document's actual page count,
-#: never the API's own maximum page count per request.
+#: Ceiling on one page's input tokens. Derived from the vendor's documented high-resolution page
+#: budget (~4,784 visual tokens per rendered page) plus that page's text.
+#:
+#: **Measured 20260729 03:17 at ~1,574 tokens/page — 3.8x below this ceiling — and deliberately
+#: NOT lowered.** The measurement is over the *synthetic* corpus, whose rasters are generated at
+#: modest resolution; a real 300-DPI scan of a dense page is exactly the case this ceiling exists
+#: to survive, and it is the one case the corpus cannot supply. Lowering a ceiling on
+#: unrepresentative data would trade a 3.8x over-reservation — which costs nothing but headroom —
+#: for the chance of a reservation that does not cover the call it precedes.
+#:
+#: The over-reservation is real and worth knowing: on the first live extraction the reservation
+#: was 11.5x the reconciled cost ($0.3515 against $0.0306). That is why reconciliation exists.
 PAGE_TOKEN_CEILING: Final = 6_000
 
-#: The instructions plus the JSON schema a real request sends, measured once as a module constant
-#: — omitting it from the worst-case formula would make "worst case" a claim the formula does not
-#: back.
-PROMPT_TOKENS: Final = 300
+#: The fixed cost of a request: the instructions, the JSON schema, and the document block's own
+#: envelope — everything that does not scale with the page count.
+#:
+#: **Measured, 20260729 03:17, claude-opus-5.** Fitted as the intercept of
+#: `tokens ~ intercept + pages * per_page` over seven `messages.count_tokens` calls across the
+#: synthetic corpus (1, 2 and 5-page slices): **571 tokens**. The previous value of 300 was an
+#: estimate and understated it by 1.9x — the *unsafe* direction, being the one term of a "worst
+#: case" that no page count compensates for. Rounded up to 700: a ceiling below a measurement is
+#: not a ceiling.
+PROMPT_TOKENS: Final = 700
 
 #: Output ceiling per request. Caps thinking and response text *together* on `claude-opus-5`, so it
 #: is the correct and only safe per-request output bound. ~4,000 tokens actually produced per

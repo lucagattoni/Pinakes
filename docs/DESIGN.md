@@ -808,7 +808,7 @@ absent — never silently, and never failing a `[light]`-only checkout.
   discovered one: the pathological stratum's invisible-render-mode fixture yields real characters
   while being useless text, and still needs the paid path. There is no `word_coverage` floor yet
   (decision 12, `plans/v0.2.md`): the correct pair to fit it against is (native layer → Claude's
-  output), and no *real* Claude output exists yet — the extractor ships, but its fixtures are
+  output), and the first real output of that pair now exists — the extractor ships, but its fixtures are
   authored from the documented response shape, and only the human-gated run produces output worth
   fitting a floor against.
 
@@ -818,6 +818,34 @@ a table column by column, not row by row. `pair_adjacency` measures this directl
 stratum, though this corpus's own tables are small enough that even the wrong reading order keeps a
 label and its value within the metric's 80-character window — a disclosed limitation of this
 specific corpus's diagnostic power, not of the metric's own design.
+
+---
+
+### 7.2 What bypassing `layout.py` on the paid path actually costs
+
+Decision 10 has the paid backend skip reading-order and running-head handling, on the grounds that
+a response of per-page strings has no geometry for them to operate on. **Measured 20260729 03:17**,
+claude-opus-5, over the text-layer twins — documents with a perfectly good native layer, extracted
+under `--force` precisely so the two paths can be compared on the same input:
+
+| Fixture | char recall | order fidelity | junk rate | word coverage |
+|---|---|---|---|---|
+| `two-column-a` | — | — | — | — |
+| `ligatures-a` | — | — | — | — |
+| `baseline-12p` | — | — | — | — |
+| **`tables-bordered`** | **+0.072** | **+0.119** | **+0.287 worse** | — |
+
+Three of the four are **identical to the free path on every metric**: the bypass costs nothing
+where `layout.py` had nothing to add. The fourth is the finding. On a bordered table the paid path
+reads the cells in *better* order than the geometric column detector — and pays for it with 29%
+junk, which is the table's own structure arriving as text. Neither path is simply better: the free
+one loses order, the paid one adds noise, and a caller who cares about tables should know that
+rather than infer it.
+
+`headers-repeating` supplies no row: **the model refused it**, twice, and the refusal was recorded
+as a document failure while the other four extracted normally. A refusal on an ordinary synthetic
+document is worth stating plainly — the branch exists, it fires in practice, and it is not rare
+enough to treat as theoretical.
 
 ---
 
@@ -865,7 +893,7 @@ once, and a tool called `kb_search` is a collision waiting to happen. Every tool
 
 | Risk | Assessment |
 |---|---|
-| **PDF extraction quality** | The most likely source of silent quality loss (tables, multi-column, scans). Mitigated by a scored corpus of known-hard documents with its own committed baseline and gate (§7.1), and two floors fitted from that corpus rather than guessed. **Two limits stand today:** the free path's column detection is geometric, so tables read column-by-column; and scanned/image-only PDFs yield nothing at all, since the free path has no OCR. `plans/v0.2.md` decision 3 puts scanned PDFs in scope **via the paid path only**; that extractor exists, and **the quality it actually achieves is not yet measured** — the run that would measure it needs a real key and is human-gated, so this row stays open until then ([STATUS.md](STATUS.md)) |
+| **PDF extraction quality** | The most likely source of silent quality loss (tables, multi-column, scans). Mitigated by a scored corpus of known-hard documents with its own committed baseline and gate (§7.1), and two floors fitted from that corpus rather than guessed. **Two limits stand today:** the free path's column detection is geometric, so tables read column-by-column; and scanned/image-only PDFs yield nothing at all, since the free path has no OCR. `plans/v0.2.md` decision 3 puts scanned PDFs in scope **via the paid path only**, and that path is now measured: on the synthetic scanned stratum (3 fixtures, 10 pages) the paid extractor scores **1.000 char recall, 1.000 order fidelity, 0.000 junk, 1.000 word coverage** where the free path scores **0.000 on all four** — measured 20260729 03:17, claude-opus-5, €0.11 spent (docs/MEASUREMENT-RUN.md). **Measured on synthetic rasters**, which is the caveat that matters: they are generated at modest resolution and are not a substitute for a real 300-DPI scan of a degraded page |
 | **Linear search at scale** | No tier is sublinear (§3.1). Mitigation: measured limits published, `pnk doctor` warns as the ceiling nears, splitting is the documented answer |
 | **Link coverage ceiling** | See §6.2. Measured and reported rather than hidden |
 | **Sidecar/document separation** | A user moving a file without its sidecar is the most likely real-world corruption. Mitigated by hash-based rename detection (§6.4) and `pnk doctor`; not eliminated |

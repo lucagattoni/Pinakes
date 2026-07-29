@@ -179,6 +179,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`PROMPT_TOKENS` was measured and was wrong in the unsafe direction** — 571 against an estimated
+  300, so the one term of the "worst case" that no page count compensates for was understating
+  itself by 1.9×. Now 700. `PAGE_TOKEN_CEILING` was measured too (~1,574/page against a 6,000
+  ceiling) and **deliberately left alone**: the corpus rasters are synthetic, and a real 300-DPI
+  scan is exactly the case they cannot represent.
+
+- **The paid extractor is measured against the live API** (20260729, `claude-opus-5`, €0.43). On
+  the scanned stratum it scores 1.000 char recall, order fidelity and word coverage with 0.000
+  junk, where the free path scores 0.000 on all four — the first evidence that the feature does
+  what it exists for. DESIGN gains a new §7.2 for the free-vs-paid delta: identical on three of
+  four text-layer twins, and on a bordered table the paid path reads order better (+0.119) while
+  adding 29% junk. Neither path is simply better, and a caller who cares about tables should be
+  told rather than left to infer it.
+
 - **`pnk sync --clear-cache` prices what it is about to destroy**, in euros, joined from the
   ledger on each entry's own `call_ids` — not its `operation_id`, which prices a whole *run* and
   would attribute every document's spend to each of them. A count answers "how many"; only the
