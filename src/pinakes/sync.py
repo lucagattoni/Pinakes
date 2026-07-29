@@ -22,6 +22,7 @@ import subprocess
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -171,6 +172,11 @@ class SyncReport:
     """How many of `cache_pending_entries` a paid backend wrote (I6b). Its own number because
     `--yes` alone must never authorise destroying paid extractions unattended — that needs the
     explicit `--clear-cache=paid`, which no hook and no CI workflow writes."""
+    cache_pending_paid_eur: str = "0.0000"
+    """What those entries cost, joined from the ledger on each entry's `call_ids` (I7c).
+
+    A count answers "how many"; only the euros answer "is this worth re-paying for", which is the
+    question someone about to type `y` actually has."""
 
     @property
     def ok(self) -> bool:
@@ -595,6 +601,36 @@ def _estimate_only(manifest: Manifest, options: SyncOptions) -> SyncReport:
     return SyncReport(estimates=tuple(lines))
 
 
+def paid_cache_spend(manifest: Manifest, cache_dir: Path) -> str:
+    """What the paid entries in `cache_dir` cost, in euros, from the ledger.
+
+    Joined on each entry's own `call_ids`. **Not** on `operation_id`, which the draft specified and
+    which cannot work: one operation extracts many documents, so an operation id prices a *run* and
+    would attribute the whole run's spend to every document in it.
+
+    Call ids are deduplicated across entries before summing — an id counted twice would overstate
+    what is about to be lost, and overstating it is not the safe direction either: a number a user
+    can see is wrong is a number they stop reading.
+    """
+    from pinakes.budget import ledger
+
+    entries = extract_cache.paid_entries(cache_dir)
+    if not entries:
+        return "0.0000"
+    wanted = {call_id for entry in entries for call_id in entry.call_ids}
+    if not wanted:
+        return "0.0000"
+
+    from pinakes.budget.summary import euros
+
+    resolved = ledger.resolve(ledger.read(ledger.ledger_path(manifest.state_dir)).records)
+    total = sum(
+        (call.effective_eur for call in resolved.calls if call.call_id in wanted),
+        start=Decimal("0"),
+    )
+    return euros(total)
+
+
 def _clear_cache(manifest: Manifest, options: SyncOptions) -> SyncReport:
     """`--clear-cache`'s whole effect. No prompt lives here (§ module docstring's own I/O rule):
     the caller (`cli.py`) checks a TTY and asks the user, then re-calls with `yes=True` — this
@@ -603,17 +639,18 @@ def _clear_cache(manifest: Manifest, options: SyncOptions) -> SyncReport:
     pending_entries, pending_bytes = extract_cache.total_stats(cache_dir)
     if pending_entries == 0:
         return SyncReport(cache_cleared=0, cache_cleared_bytes=0)
-    paid_entries, _paid_bytes = extract_cache.paid_stats(cache_dir)
+    paid_count, _paid_bytes = extract_cache.paid_stats(cache_dir)
     # Two authorisations, not one (I6b). `--yes` answers the "this many entries will go" prompt;
     # destroying paid work needs `--clear-cache=paid` on top of it, so a cron line carrying `--yes`
     # for freshness cannot also throw away extractions somebody paid for.
-    authorised = options.yes and (paid_entries == 0 or options.clear_cache_paid)
+    authorised = options.yes and (paid_count == 0 or options.clear_cache_paid)
     if not authorised:
         return SyncReport(
             cache_clear_aborted=True,
             cache_pending_entries=pending_entries,
             cache_pending_bytes=pending_bytes,
-            cache_pending_paid_entries=paid_entries,
+            cache_pending_paid_entries=paid_count,
+            cache_pending_paid_eur=paid_cache_spend(manifest, cache_dir),
         )
     removed, removed_bytes = extract_cache.clear_all(cache_dir)
     return SyncReport(cache_cleared=removed, cache_cleared_bytes=removed_bytes)

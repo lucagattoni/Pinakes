@@ -354,3 +354,41 @@ def clear_staging(directory: Path) -> None:
     for candidate in directory.iterdir():
         candidate.unlink(missing_ok=True)
     directory.rmdir()
+
+
+@dataclass(frozen=True, slots=True)
+class PaidEntry:
+    """One cache entry a paid backend wrote, with the ledger calls that paid for it."""
+
+    path: Path
+    bytes_used: int
+    call_ids: tuple[str, ...]
+
+
+def paid_entries(cache_dir: Path) -> tuple[PaidEntry, ...]:
+    """Every entry a paid backend wrote, with its `call_ids`.
+
+    The join key is `call_ids`, not `operation_id`: one operation extracts many documents, so an
+    operation id can price a *run* but never a single entry — pricing one entry by its operation
+    would attribute the whole run's spend to each of its documents.
+    """
+    if not cache_dir.is_dir():
+        return ()
+    found: list[PaidEntry] = []
+    for candidate in sorted(cache_dir.glob("*.json")):
+        try:
+            raw: object = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(raw, dict):
+            continue
+        data = cast(dict[str, Any], raw)
+        if data.get("operation_id") is None:
+            continue
+        ids: object = data.get("call_ids")
+        listed = cast(list[object], ids) if isinstance(ids, list) else []
+        call_ids = tuple(one for one in listed if isinstance(one, str))
+        found.append(
+            PaidEntry(path=candidate, bytes_used=candidate.stat().st_size, call_ids=call_ids)
+        )
+    return tuple(found)

@@ -575,7 +575,10 @@ def _run_clear_cache(loaded: Manifest, args: argparse.Namespace) -> int:
         )
         paid = report.cache_pending_paid_entries
         if paid:
-            print(f"{paid} of them were written by a paid backend and cannot be re-created free.")
+            print(
+                f"{paid} of them were written by a paid backend and cost "
+                f"€{report.cache_pending_paid_eur} — re-creating them means paying again."
+            )
         if not sys.stdin.isatty():
             flags = "--yes --clear-cache=paid" if paid else "--yes"
             print(f"no terminal to confirm from; re-run with {flags}.", file=sys.stderr)

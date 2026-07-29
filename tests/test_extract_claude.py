@@ -1145,3 +1145,122 @@ def test_a_partially_extracted_document_writes_no_complete_entry(
         fingerprint=extraction_fingerprint(CLAUDE_VISION, manifest.extraction.model),
     )
     assert len(staged_pages(surviving)) == 10, "the staged pages survive for the next run"
+
+
+# --- `--clear-cache` learns what it is destroying ------------------------------------------------
+
+
+def paid_cache_entry_with_calls(root: Path, name: str, call_ids: list[str]) -> Path:
+    cache = root / ".pinakes" / "cache" / "extract"
+    cache.mkdir(parents=True, exist_ok=True)
+    path = cache / f"{name}.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "content_hash": f"sha256:{name}",
+                "backend": CLAUDE_VISION,
+                "fingerprint": "fp",
+                "page_count": 1,
+                "page_spans": [[0, 0]],
+                "text": "",
+                "per_page_provenance": [],
+                "operation_id": "OP1",
+                "call_ids": call_ids,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def record_paid_call(root: Path, *, call_id: str, cost_usd: str) -> None:
+    from pinakes.budget.ledger import Record, RecordKind, append, ledger_path
+
+    path = ledger_path(root / ".pinakes")
+    for kind, cost in ((RecordKind.RESERVATION, "0.5000"), (RecordKind.RECONCILIATION, cost_usd)):
+        append(
+            path,
+            Record(
+                kind=kind,
+                at=datetime.now(UTC),
+                operation_id="OP1",
+                call_id=call_id,
+                operation="sync",
+                kb_id="01K1B0GJ0000000000000000AA",
+                model=MODEL,
+                cost_usd=Decimal(cost),
+                usd_per_eur=Decimal("1.00"),  # so euros and dollars are the same number to read
+                prices_as_of="20260728 12:00",
+            ),
+        )
+
+
+def test_clear_cache_reports_spend_and_confirms(
+    make_fake_kb: Callable[..., Path],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The euro figure is asserted against a total computed by hand from the records below, not
+    against zero — a join that silently matches nothing also reports €0.0000, and the two are
+    indistinguishable from the assertion alone."""
+    import sys
+
+    from pinakes.cli import EXIT_FAILURE, main
+
+    root = make_fake_kb(extraction_backend=CLAUDE_VISION)
+    paid_cache_entry_with_calls(root, "one", ["CALL-A", "CALL-B"])
+    paid_cache_entry_with_calls(root, "two", ["CALL-C"])
+    record_paid_call(root, call_id="CALL-A", cost_usd="0.0400")
+    record_paid_call(root, call_id="CALL-B", cost_usd="0.0300")
+    record_paid_call(root, call_id="CALL-C", cost_usd="0.1100")
+    # A call that paid for nothing still in the cache: it must not be counted.
+    record_paid_call(root, call_id="CALL-D", cost_usd="9.9900")
+
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    assert main(["sync", "--kb", str(root), "--clear-cache", "--yes"]) == EXIT_FAILURE
+
+    out = capsys.readouterr().out
+    assert "2 of them were written by a paid backend" in out
+    assert "€0.1800" in out, "0.04 + 0.03 + 0.11, and not the 9.99 of an unrelated call"
+
+
+def test_the_join_is_by_call_id_not_operation_id(make_fake_kb: Callable[..., Path]) -> None:
+    """One operation extracts many documents, so an operation id prices a *run*. Joining on it
+    would attribute the whole run's spend to every document in it — the draft specified exactly
+    that, and no cache entry recorded anything it could be matched on."""
+    from pinakes.sync import paid_cache_spend
+
+    root = make_fake_kb(extraction_backend=CLAUDE_VISION)
+    paid_cache_entry_with_calls(root, "one", ["CALL-A"])
+    record_paid_call(root, call_id="CALL-A", cost_usd="0.0400")
+    record_paid_call(root, call_id="CALL-Z", cost_usd="5.0000")  # same operation, other document
+
+    total = paid_cache_spend(load(root), root / ".pinakes" / "cache" / "extract")
+    assert total == "0.0400", "an operation-id join would have reported 5.04"
+
+
+def test_an_entry_with_no_call_ids_prices_at_zero_without_crashing(
+    make_fake_kb: Callable[..., Path],
+) -> None:
+    """Entries written before I7b recorded call ids — `call_ids: null` — must not take the whole
+    summary down; they simply cannot be priced."""
+    from pinakes.sync import paid_cache_spend
+
+    root = make_fake_kb(extraction_backend=CLAUDE_VISION)
+    cache = root / ".pinakes" / "cache" / "extract"
+    cache.mkdir(parents=True, exist_ok=True)
+    (cache / "legacy.json").write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "content_hash": "sha256:x",
+                "operation_id": "OP1",
+                "call_ids": None,
+                "text": "",
+                "page_spans": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert paid_cache_spend(load(root), cache) == "0.0000"
