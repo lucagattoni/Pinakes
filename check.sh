@@ -87,4 +87,16 @@ except ValueError as exc:
     sys.exit(1)
 "
 
+# changelog/retrospective fragments are well-formed. Cheap, offline, and it fails *here* rather
+# than at release time — `--apply` deletes the fragments it consumed, so a malformed one found then
+# would be found with the evidence already gone.
+python3 tools/fragments.py --check
+
+# shared-file overlap: which files this branch touches that the default branch has touched too.
+# Deliberately NOT --strict and NOT --fetch here: several agents work in this repo at once, so
+# overlap is common and normal mid-development, and a routine `./check.sh` must stay offline-capable
+# and fast. It reports; the landing checklist runs `--fetch --strict` before a merge, which is the
+# moment the answer can still change what you do.
+python3 tools/shared_file_overlap.py
+
 echo "all gates green"
