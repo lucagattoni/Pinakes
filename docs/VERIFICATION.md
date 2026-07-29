@@ -39,6 +39,18 @@ test, or write **none** and say why in the same commit.
 | …and from `--extract`, without importing anything | I1 | `tests/test_cli.py::test_unknown_extract_flag_is_rejected` |
 | availability is answered without executing the backend | I1 | `tests/test_extract.py::test_is_backend_installed_locates_without_executing` |
 | one unreadable PDF does not block the corpus | I1 | `tests/test_sync.py::test_a_pdf_fails_at_extraction_but_does_not_block_the_rest` |
+| a sidecar that will not parse is never overwritten | fix | `tests/test_sync.py::test_an_unreadable_sidecar_is_never_overwritten` |
+| ...and does not stop the other documents | fix | `tests/test_sync.py::test_an_unreadable_sidecar_does_not_stop_the_other_documents` |
+| ...on the pre-commit path either | fix | `tests/test_sync.py::test_sidecars_only_refuses_the_unreadable_one_and_mints_the_rest` |
+| ...and `--index-only` indexes no divergent id | fix | `tests/test_sync.py::test_index_only_neither_writes_nor_indexes_a_divergent_id` |
+| minting refuses where a file already exists | fix | `tests/test_sidecar.py::test_create_refuses_to_overwrite_an_existing_sidecar` |
+| ...while `write` still overwrites, for I5's merge | fix | `tests/test_sidecar.py::test_write_still_overwrites_because_a_merge_needs_it` |
+| a broken sidecar on an indexed document does not abort the sync | fix | `tests/test_sync.py::test_breaking_a_sidecar_after_indexing_does_not_abort_the_whole_sync` |
+| a rebuild does not overwrite one either | fix | `tests/test_sync.py::test_a_rebuild_does_not_overwrite_an_unreadable_sidecar` |
+| the refusal names the parse error, not just the existence | fix | `tests/test_sync.py::test_the_refusal_names_the_parse_error_not_merely_the_existence` |
+| a sidecar that arrives after the walk asks for a rerun | fix | `tests/test_sync.py::test_a_sidecar_that_appears_after_the_walk_asks_for_a_rerun` |
+| a write failure is recorded, never raised, on the pre-commit path | fix | `tests/test_sync.py::test_a_write_failure_on_the_pre_commit_path_is_recorded_not_raised` |
+| minting refuses a dangling symlink too | fix | `tests/test_sidecar.py::test_create_refuses_a_dangling_symlink_too` |
 
 ## The PDF corpus
 

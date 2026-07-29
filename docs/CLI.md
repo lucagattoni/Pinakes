@@ -70,7 +70,7 @@ corpus. Failures are recorded, the run continues, and sync exits non-zero listin
 | Flag | Notes |
 |---|---|
 | `--rebuild` | Rebuild the index from scratch. Builds into `index.db.new`, checkpoints, closes, then renames atomically. **`ledger.jsonl` always survives** |
-| `--sidecars-only` | Mint missing sidecars; never touch the index. The `pre-commit` half |
+| `--sidecars-only` | Mint missing sidecars; never touch the index. The `pre-commit` half. Refuses to mint over a sidecar that exists but will not parse — it still holds that document's permanent ULID — and records it as a failure, so **a `pre-commit` hook blocks the commit** until the file is repaired. Only a commit staging that *document* is affected; editing the sidecar alone is not |
 | `--index-only` | Update the index; never write into `docs/`. The `post-commit` half |
 | `--stage` | With `--sidecars-only`: limit to staged files and `git add` them, so a document and its ID land in one commit |
 | `--extract BACKEND` | Override `[extraction] backend` for this run only. Validated against the registry *without importing* it, so an unknown name is a usage error before any extra could matter |

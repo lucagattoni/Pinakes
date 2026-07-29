@@ -141,6 +141,41 @@ def write(path: Path, sidecar: Sidecar) -> None:
         raise
 
 
+def create(path: Path, sidecar: Sidecar) -> None:
+    """Write a sidecar for a document that has none — and refuse if a file is already there.
+
+    `write` overwrites by design: I5 merges `provenance.extraction` into an existing sidecar, which
+    is a read-modify-write of that same file keeping that same id. Minting is the opposite case.
+    The id it carries has just been minted, so writing it over an existing sidecar replaces a
+    **permanent** ULID with a different one — and every inbound `pnk://` link points at the old one,
+    with no migration machinery by design (§2.2). That is unrecoverable rather than merely wrong,
+    which is why the refusal lives here, at the write, rather than only in the one caller that
+    happens to reach it today.
+
+    Reachable whenever a sidecar exists but will not parse: `sync.walk_sources` drops an unreadable
+    sidecar from the walk, the document then looks like one that was never ingested, and the mint
+    path writes over the file still holding its id. Found 20260729 while hand-authoring a corpus
+    with one malformed link URI — `pnk sync` reported success with no failures, and `pnk doctor`
+    afterwards reported every sidecar readable and no duplicate ids, because the evidence had been
+    overwritten by the thing that destroyed it.
+    """
+    # `is_symlink` as well as `exists`, which follows symlinks and so reports False for a dangling
+    # one — leaving `os.replace` free to quietly turn the link into a regular file. Nothing holding
+    # a ULID is lost either way, but "refuse where something is already there" is the rule, and a
+    # predicate that means something narrower than the rule it enforces drifts apart from it later.
+    if path.exists() or path.is_symlink():
+        raise SidecarError(
+            path,
+            "already exists, so a freshly minted sidecar cannot be written over it",
+            remedy=(
+                "It may hold the document's permanent ULID, which nothing can recompute. Repair "
+                "the file rather than deleting it — `pnk doctor` names the parse error. Delete it "
+                "only if the id itself is unrecoverable and no other document links to it."
+            ),
+        )
+    write(path, sidecar)
+
+
 def skeleton(document: Path, *, title: str | None = None, created: str | None = None) -> Sidecar:
     """The sidecar minted for a newly ingested document: an id, and as little else as possible."""
     return Sidecar(
