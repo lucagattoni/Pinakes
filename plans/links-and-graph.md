@@ -1,11 +1,14 @@
 # The links release and the graph release — implementation plan
 
-**Status:** draft — revised after adversarial passes 1 (22 HIGH), 2 (26 HIGH), 3 (24 HIGH),
-4 (13 HIGH), 5 (3 HIGH) and 6 (2 HIGH). **Not yet implementable.** The count rose at pass 2 and has fallen since (22, 26, 24, 13, 3), and
-the findings are localising, but pass 5 still found a decision resting on a false premise — so assume this revision
-has defects too, and run pass 6 before building.
+**Status:** revised after adversarial passes 1 (22 HIGH), 2 (26 HIGH), 3 (24 HIGH), 4 (13 HIGH),
+5 (3 HIGH), 6 (2 HIGH) and 7 (6 HIGH). **L1–L8 are implementable; G1–G6 are not yet.** Pass 7 split
+along that line: its L2 findings are localised, fixed and now carry tests and mutation targets, while
+its G5 findings were two ways for the gate to license a default it never measured. **Assume this
+revision has defects too** — seven passes have each found something real, and pass 7 found two of
+pass 6's own justifications to be false about the code. **G5's clauses are re-reviewed before G5 is
+built**, not before L1.
 
-**Date:** written 20260729 02:52 · rewritten 03:31, 04:05, 04:27, 04:46, 05:06, 05:43
+**Date:** written 20260729 02:52 · rewritten 03:31, 04:05, 04:27, 04:46, 05:06, 05:43, 06:03
 
 **Source of truth:** [`docs/DESIGN.md`](../docs/DESIGN.md). Where this plan and DESIGN disagree on
 anything *not* in the amendments tables, DESIGN wins and this plan has a bug.
@@ -92,7 +95,8 @@ earlier.
 | 4 | Minimum of [KB-UPDATES](../docs/KB-UPDATES.md): the `requires_pinakes` pre-pass only | 02:30–03:10 | G4 |
 | 5 | `pnk link` writes forward only, into the source document's sidecar | 02:30–03:10 | L6 |
 | 6 | PPR and the `[ner]` extra are out | 02:30–03:10 | — |
-| 7 | Adversarial subagent passes until one comes back clean | 02:30–03:10 | Passes 1–5 done; **pass 6 required** |
+| 7 | Adversarial subagent passes until one comes back clean | 02:30–03:10 | Passes 1–7 done. **No pass has come back clean**, so the rule is honoured per-phase instead: L1–L8 build now, G5's clauses are re-reviewed before G5 |
+| 18 | **`pnk link` ships without a comment-preserving YAML writer** | 20260729 05:58 (the user) | L6. `ruamel.yaml` as a second YAML library — core or extra — is a poor trade for one authoring command against *"core dependencies stay light"*; a later paid-extraction sync rewrites the same sidecar through `pyyaml` and destroys the comments anyway, so the guarantee would be partial either way. `test_comments_in_the_sidecar_survive_a_rewrite` lands **xfail**, DESIGN §2.2 records the deferral, and `pnk link` **warns when the sidecar it is about to rewrite contains comments** — losing them silently at the moment of loss is the part that is not acceptable |
 | 8 | `pinakes_search`'s `entities`/`concepts` are cut | 03:20–03:35 | RRF here is unweighted by construction |
 | 9 | The eval harness is repaired before it is grown | 03:20–03:35 | Landed `b637be4`, released in 0.3.0 |
 | 10 | Retrieval reproducibility is established before a finer gate depends on it | 03:20–03:35 | G1 — **reframed by 15**: measured first, fixed only if measurement says so |
@@ -110,7 +114,7 @@ earlier.
 
 | Question | Default | Revisit when |
 |---|---|---|
-| Does `pnk link` gain a comment-preserving YAML dependency? | **Ask before L6.** If unavailable: ship without it, xfail the comment test, amend DESIGN §2.2 to record the deferral. Nothing else depends on L6 except L8's verification step 2 | L6 is scheduled |
+| ~~Does `pnk link` gain a comment-preserving YAML dependency?~~ | **Decided 20260729 05:58 — no.** See decision 18 | Settled |
 | Does that writer become *the* sidecar writer? | Only `pnk link`'s, and DESIGN §2.2 records that a later paid-extraction sync destroys the comments it preserved | The churn is observed |
 | PPR, the `[ner]` extra, `pnk adopt`, `--deep`, federated query, a graph query language, migrations | Out | — |
 | `pnk unlink` | Out; fix a mistyped link by editing the sidecar | A user hits it |
@@ -178,6 +182,7 @@ earlier.
 | §5 | `confidence` on a traversal response is always `unknown` (decision 17) | L5 |
 | §5 | Neighbours are documents only; a cross-KB neighbour is terminal (decision 16) | L4 |
 | §5 | `frontier` entries gain `kb_id` and a five-valued `reason`, and include fan-out-dropped candidates, not only next hops | L3 |
+| §9 | Its `expand` gate demands **false-abstain flat**; clause 3 permits the rise contributed by newly-found-at-low-confidence questions, and treats only the confidence-lost term as a regression | G5 |
 | §5, §10 | `pinakes_search`'s `entities`/`concepts` parameters are not built (decision 8) | — |
 
 ## CLAUDE.md amendments
@@ -202,6 +207,22 @@ are tested directly.
 
 **Both corpora gain authored links, and stay sparse.** The demo KB has zero today. ≤ 35% of
 documents in each KB, weakest useful relations, forward-only from each side.
+
+**Two of those links exist to be fixtures for L2** (pass 7), and are authored here rather than
+invented there: at least one **`pnk://self/<doc>` link inside a *partner* sidecar** — the form that
+resolves to the wrong KB if a partner scan reuses the local `owner=` (L2), so the corpus itself
+carries the trap — and at least one **partner link targeting a third KB ULID that no corpus
+provides**, which is what L2's third-KB filter and L7's dangling-target WARN both need. Neither
+requires a third corpus; a well-formed ULID that resolves to nothing is the whole fixture.
+
+**Each corpus's intra-KB authored links must be non-empty**, and the gate asserts it rather than
+leaving it to how the corpus happened to be written (pass 7). G3 resolves an authored edge by
+looking `(kb_id, doc_id)` up in the local `nodes` table, and a cross-KB row's `src_kb_id` is foreign
+(`store.py:101`) — so it resolves to nothing and contributes **no channel edge**. A corpus whose
+authored links are all cross-KB therefore makes G5's with- and without-authored edge sets identical,
+its two runs return the same p-value, and `test_the_gate_is_computed_with_and_without_authored_edges`
+passes while discriminating nothing — a guard that cannot fire, written into `docs/STATUS.md` as
+though it had.
 
 **The density gate reads the committed sidecars, not the index** — it must run in `check.sh`, which
 never builds one. It counts forward-authored links, caps **degree** at 4 per document as well as
@@ -234,43 +255,133 @@ grouping that makes degree distinguishable from count.
 writes inbound rows with `origin='reverse-scan'`, recording alias, resolved path and scan time in
 `kb_refs` (DESIGN §3 defines all four columns; nothing writes any of them today). No schema change.
 
-**A reverse row never overwrites an authored one.** `origin` is not in the `links` PK, so a plain
-`INSERT OR REPLACE` could downgrade a weight-2.0 authored edge whenever the tuples collide — which
-happens when a manifest lists itself as a `[[links.kb]]`, or two aliases resolve to one KB. Insert
-with `ON CONFLICT DO NOTHING`.
+**The scan reads the partner's `pinakes.toml`, and only its `pinakes.toml`** (pass 7). A sidecar
+carries `id`, `title`, `tags`, `created`, `links`, `provenance` — and *not* the KB it belongs to
+(`sidecar.py:37`), so "sidecars alone" cannot supply `links.src_kb_id`, cannot key `kb_refs.kb_id`,
+and cannot even locate the sidecars: they live under the partner's `[sources] roots`, which need not
+be `docs/`. Three rules follow, and each is load-bearing:
+
+1. `src_kb_id` and `kb_refs.kb_id` come from the partner's **`[kb] id`**, never from the local
+   manifest's declared `[[links.kb]] id`. When the two disagree, that *is* the "unresolvable KB id"
+   failure — recorded, not guessed at.
+2. Sidecars are enumerated from the partner's **`[sources] roots`**. DESIGN §6.2's `docs/**/*.pnk.yaml`
+   is an illustration, not a guarantee.
+3. **Partner sidecars are read with `owner=<the partner's kb id>`.** Both existing `read_sidecar`
+   call sites hard-code `owner=manifest.kb.id` (`sync.py:387`, `sync.py:1116`), and reusing either
+   would expand a partner's `pnk://self/<doc>` to the **local** KB — minting phantom rows claiming
+   the partner links to local documents it never named. This exact defect was found and fixed once
+   already (`docs/RETROSPECTIVES.md`: *"a sidecar copied into another KB would silently retarget its
+   link at the new KB"*), and L1 hand-authors `self`-form links into the partner corpus precisely so
+   the fixture exists.
+
+**Only the partner's links that target *this* KB are recorded.** A partner link to a third KB is
+read and discarded; without the filter the local index accumulates a foreign graph it can never
+complete. Stated in the Goal since the first draft and owned by no test until now.
+
+**A reverse row never overwrites an authored one.** `origin` is not in the `links` PK
+(`store.py:103-111`), so a plain `INSERT OR REPLACE` would flip an authored row's `origin` to
+`'reverse-scan'` whenever the tuples collide — dropping it out of `doctor`'s authored-only coverage
+count and out of L1's and L7's population, which is the consequence a test can actually assert.
+Insert with `ON CONFLICT DO NOTHING`. The collision is reachable **only** when a manifest lists
+itself as a `[[links.kb]]`: an authored row's `src_kb_id` is always the local KB (`sync.py:1135`),
+and `manifest._reject_duplicates` already refuses two aliases resolving to one KB
+(`manifest.py:500-518`), so the second case earlier revisions cited does not exist.
+
+**The scan runs after the document loop in `_run`, and both orders are safe — for different
+reasons.** Authored-then-reverse is safe because of `DO NOTHING`; reverse-then-authored is safe only
+because `_replace_links` uses `INSERT OR REPLACE` (`sync.py:1134`), which reclaims the tuple and
+rewrites `origin` to `'sidecar'`. Making that writer a `DO NOTHING` too — the symmetric-looking
+"fix" — would silently undercount coverage forever, so both orders get a test.
 
 **Stale reverse edges are deleted on re-scan**, scoped **per scanned `src_kb_id` *and*
 `origin = 'reverse-scan'`** — both, because under the self-listing fixture the scanned `src_kb_id`
 *is* the local KB, and an origin-blind delete would remove the authored rows the
 `ON CONFLICT DO NOTHING` insert exists to protect.
 
+**The delete is deferred until its KB's walk completed, and shares the walk's transaction** (pass 7).
+A delete scoped to a whole `src_kb_id` removes every reverse row for that partner up front, and they
+return only if every one of its sidecars is then re-read successfully — so a vanished file, an
+unparseable sidecar or a path that becomes unreachable mid-walk *is* a mass deletion, which
+contradicts this increment's own "never a deletion" rule. Two of the four failure modes produce it.
+So: accumulate the partner's rows in memory, and run delete-then-insert for that `src_kb_id` in one
+transaction **only when its walk finished without an aborting failure**. A partner whose walk did not
+finish keeps the rows it had, and records a reason. (`_replace_links`'s delete-then-insert is per
+*document* inside `_apply`'s transaction — that precedent does not carry to a per-KB delete.)
+
+**A delisted KB's rows are deleted too** (pass 7). The per-scanned-KB predicate never fires for a
+partner no longer in `[[links.kb]]`, and nothing else in `src/` deletes from `links` except
+`_replace_links`, which filters `origin = 'sidecar'` — so disconnecting a partner, or correcting a
+`[[links.kb]] id`, would strand its reverse rows until someone happened to `--rebuild`, with
+`pnk links --direction in` serving them the whole time. One extra statement per sync:
+`DELETE FROM links WHERE origin='reverse-scan' AND src_kb_id NOT IN (<manifest link ids>)`, and the
+same for `kb_refs`.
+
 **Cost, because this runs on a hook.** Bounded by `kb_refs.last_scan` with a TTL — **a code constant,
 not a manifest key**, stated here because "how stale may a cross-KB link be" is user-visible and the
-previous revision left it to the implementer — forced by `--scan-links`. `--sidecars-only` (the pre-commit hook) does **not** scan; reverse rows are index
-rows.
+previous revision left it to the implementer — forced by `--scan-links`. `--sidecars-only` (the
+pre-commit hook) does **not** scan; reverse rows are index rows, and `_run` returns before the index
+is opened (`sync.py:730`). `--sidecars-only --scan-links` together is **refused with a remedy**
+rather than silently resolved.
 
-**Concurrency.** Never take the other KB's lock; a file that vanishes or fails to parse mid-scan is
-a recorded reason, retried, never a deletion.
+**The TTL's clock is `sync()`'s injected `now`, not a fresh `datetime.now()`** — `stamp` is already
+injectable (`sync.py:562`), which is the only thing that makes `test_an_expired_ttl_forces_a_rescan`
+writable. `last_scan` is `TEXT` in `%Y%m%d %H:%M`: **minute resolution, local, no zone**, so the TTL
+is stated in whole minutes and a `last_scan` in the future counts as **expired**, never as fresh.
+(`--rebuild` is not in tension with any of this: it calls `store.create` on a fresh file, so
+`kb_refs` is empty and there is nothing to skip on.)
+
+**Concurrency.** Never take the other KB's lock. `sidecar.write` is rename-atomic, so a concurrent
+*pinakes* writer cannot hand the scanner a half-written file; the residual races are a vanished file
+and a human's non-atomic editor. Each sidecar is therefore **read once** — a failure is a recorded
+reason, not a retry loop on a hook path that already holds the local lock.
+
+**A partner's deleted document keeps contributing.** `documents.state='deleted'` is a soft delete and
+the orphaned sidecar is deliberately kept (`sync.py:259` — *"orphaned sidecar (kept; remove with
+`pnk doctor --prune`)"*), so a sidecars-not-index scan still reads it. That is an accepted
+consequence of the rule, not a defect: **L7 reports it**, L2 does not prevent it.
 
 **The failure taxonomy** — unresolvable KB id, unreachable path, target document absent, sidecar
-unparseable — lands as typed errors in `errors.py`, each with a remedy, and is consumed unchanged by
-L4, L5 and L7.
+unparseable — is constructed as typed errors in `errors.py` for their message and remedy, and
+**consumed unchanged by L4, L5 and L7**. They are never *raised*: the scan continues past each one.
+
+**They are also never recorded in `failures`** (pass 7). `SyncReport.ok` is `not self.failures`
+(`sync.py:217`), so a `store.record_failure` would make `pnk sync` exit non-zero on every
+post-commit and post-merge hook for an unreachable partner — contradicting L1's *"non-existence is
+not an error"* and L7's *absent linked-KB path → WARN*. Nothing in `src/` ever deletes from
+`failures` either, so one unreachable partner would add a row per sync forever and `pnk doctor` would
+report the running total. Instead the scan gets its own `SyncReport` field — printed, and **not**
+counted by `ok`. `kb_refs` gains no reason column; `pnk doctor` (L7) re-derives severity from the
+manifest.
 
 **Tests.** `tests/test_sync_links.py::test_inbound_rows_carry_the_other_kbs_id_as_source`;
+`::test_a_self_link_in_a_partner_sidecar_resolves_to_the_partner_not_the_local_kb`;
+`::test_a_partner_link_to_a_third_kb_is_not_recorded`;
 `::test_a_reverse_row_never_overwrites_an_authored_row` (fixture: a manifest listing itself);
+`::test_an_authored_row_reclaims_a_tuple_a_reverse_scan_already_wrote`;
 `::test_kb_refs_records_alias_path_and_scan_time`;
 `::test_each_failure_mode_is_recorded_with_its_reason` (four cases);
+`::test_an_unreachable_linked_kb_does_not_fail_the_sync`;
+`::test_a_failed_scan_leaves_the_previous_reverse_rows_in_place`;
 `::test_a_removed_link_removes_its_reverse_row`; `::test_the_delete_is_scoped_to_the_scanned_kb`;
+`::test_delisting_a_linked_kb_removes_its_reverse_rows_and_kb_ref`;
 `::test_a_fresh_kb_refs_entry_skips_the_walk`; `::test_an_expired_ttl_forces_a_rescan`;
+`::test_a_last_scan_in_the_future_counts_as_expired`;
 `::test_scan_links_forces_a_rescan`; `::test_sidecars_only_does_not_scan`;
+`::test_sidecars_only_with_scan_links_is_refused`;
 `::test_rebuild_reconstructs_reverse_rows_from_sidecars_alone`.
 
 **Exit criteria.** All green; `pnk doctor` clean. **Docs:** `docs/CLI.md` (`--scan-links`),
 `docs/DESIGN.md` §6.2 and §6.3, `docs/STATUS.md`, a `changelog.d/` fragment.
 
-**Mutation targets.** The `src_kb_id` assignment; `DO NOTHING` → `OR REPLACE`; the delete's scoping **and its `origin` filter** (drop the filter and the self-listing fixture must fail);
-the TTL check; the "sidecars, not index" selection — **whose fixture must hold an index that
-contradicts the sidecars**, since a rebuild has no index to read.
+**Mutation targets.** The `src_kb_id` assignment; **the `owner=` passed to a partner's
+`read_sidecar`** (point it at the local KB and the `self`-resolution test must fail); the third-KB
+filter; `DO NOTHING` → `OR REPLACE`; the delete's scoping **and its `origin` filter** (drop the
+filter and the self-listing fixture must fail); the `NOT IN` delisting clause; **the "walk completed"
+guard** (delete unconditionally and the partial-scan test must fail); the TTL check; the
+future-`last_scan` comparison; the "sidecars, not index" selection — **whose fixture must hold a
+partner index that contradicts the partner's sidecars**. Build that fixture with `store.create()`
+plus direct `INSERT`s: syncing the partner for real would drag an embedding backend into a test that
+needs none.
 
 ---
 
@@ -433,7 +544,9 @@ explicit `kb`), `docs/STATUS.md`, a `changelog.d/` fragment.
 
 ### L6 — `pnk link`
 
-**Blocked on a decision** with a stated default. Only L8's verification depends on it.
+**Unblocked** — decision 18 settled the YAML question: no `ruamel.yaml`, the comment test lands
+xfail, DESIGN §2.2 records the deferral, and `pnk link` **warns before rewriting a sidecar that
+contains comments**, so the loss is announced at the moment it happens rather than discovered later.
 
 **What lands.** `pnk link <src> <dst> --rel <rel>`, writing one entry into the **source document's
 sidecar only**, rename-atomically.
@@ -452,7 +565,8 @@ survive via `extra`, per-link keys do not.
 `::test_unknown_keys_inside_a_link_entry_survive_a_rewrite`;
 `::test_the_write_is_atomic_under_an_interrupted_rename`;
 `::test_the_source_document_is_byte_identical_afterwards`;
-`::test_comments_in_the_sidecar_survive_a_rewrite` (xfail if the dependency is declined).
+`::test_comments_in_the_sidecar_survive_a_rewrite` (**xfail** — decision 18);
+`::test_rewriting_a_commented_sidecar_warns_before_the_comments_are_lost`.
 
 **Exit criteria.** `DESIGN_COMMANDS`, `IMPLEMENTED`, DESIGN §8's command list and CLAUDE.md's
 `docs/`-ownership amendment all land here.
@@ -570,7 +684,21 @@ currently fail. So the corpus must supply at least **7** currently-failing singl
 questions to tolerate one regression, and 9 to tolerate two. The precondition is:
 
 > **At least 7 of the ~18 single-KB multi-hop questions currently fail, AND at least 7 of those are
-> channel-reachable** — both measured by running them.
+> channel-reachable *without authored edges*** — both measured by running them. The with-authored
+> reachability figure is recorded and licenses nothing.
+
+**The "without authored edges" qualifier is the whole precondition** (pass 7). The probe produces two
+numbers and an earlier revision stated one threshold, so an engineer would have cleared it on the
+larger. With-authored reachable = 9 and without-authored = 3 is exactly the shape L1's hand-authored
+links produce: G3 starts, `schema_version` bumps to 3, every KB in existence is forced to rebuild —
+the precise cost this precondition exists to avoid — and only then does the without-authored run turn
+out to be incapable of five improvements. G5's licensing rule and this threshold must name the same
+run, or the precondition guards nothing.
+
+**The multi-hop set is frozen before the probe runs.** If the precondition fails, G3 does not start
+and the questions are **not** re-authored until it passes — that is fitting the question set to the
+edge set, the same circularity decision 14 removed by cutting cross-KB questions, and it would be
+undetectable afterwards.
 
 **Failing is necessary and nowhere near sufficient**, which the previous revision missed. A question
 can only be *lifted* if its evidence documents are connected in the derived edge set within ≤ 2
@@ -767,14 +895,53 @@ counts, both p-values, and an explicit statement of which of the two licensed th
 commit message and `docs/STATUS.md`. **If the gate passes only with authored edges, `expand` still
 ships `off`** — the same "1.00 by construction" reasoning that cut cross-KB questions in decision 14.
 
+**And it must pass in both — the two runs answer different questions** (pass 7). The
+*without*-authored run is the anti-circularity guard; the *with*-authored run is **the configuration
+that actually ships**, since G3 unions `links` into the channel at read time. An earlier revision
+made only the without-authored run binding, which licensed a wrong default through three green
+clauses: without-authored p = 0.031 while with-authored improves 3 and regresses 3 is entirely
+consistent, leaves `by_kind["multi-hop"]` unchanged so clause 2 stays quiet, and ships `expand` on by
+default for every user while doing nothing in its shipped form. **Both runs must reach p < 0.05, and
+the more conservative of the two is reported as the licensing number.**
+
+**"Without authored edges" means every `links`-derived edge, regardless of `origin`.** A
+`reverse-scan` row is hand-authored too — by the partner KB's human. It is inert today (a foreign
+`src_kb_id` resolves to no local `doc` node), and saying so here is what keeps it inert.
+
+**Three legs, and the *before* leg is measured at G5's own HEAD** (pass 7): `graph_channel = "off"`,
+then `"expand"` without authored edges, then `"expand"` with them. G2's artifact owns the row
+*schema*, never the row *values* — G3 bumps `schema_version` and forces a rebuild between the two
+increments, and G1 exists precisely because a rebuild's effect on per-question outcomes is unmeasured.
+Comparing across it would attribute every rebuild-induced flip to the channel, and at ~18 questions
+against a 5-improvement threshold two spurious flips are a third of the required signal. The
+artifact's header therefore carries its `graph_channel` setting and edge-set variant, because
+otherwise a before file and an after file are indistinguishable on inspection.
+
+**The gate is an artifact, not a paragraph** (pass 7). `tools/graph_gate.py` reads two per-question
+artifacts and two baselines, and prints the counts, both p-values and a clause-by-clause verdict.
+Without it the three gate tests below have no subject and the Verification table's promises have no
+checker.
+
 **One configuration is gated.** In-degree salience and the link-distance rerank are measured in the
 same matrix and **reported**, not gated — three variables against one threshold is not a decision
 procedure. The matrix runner, what it varies and where its results are recorded land here.
 
-**The gate.** On the single-KB `multi-hop` class, at frozen weights, using G2's per-question
-outcomes, `expand` defaults **on** only if all three hold:
+**The matrix runner also records, per improved question, which edge kind carried the lifting path**
+(pass 7) — because the with/without-authored split neutralises only one of the author's two bridging
+mechanisms. Once `mentions` is cut (decision 6), the surviving cross-document edges are `co-located`
+(doc ↔ directory) and `shared-tag` (doc ↔ tag), and the directory layout and tag vocabulary of
+`tests/demo-kb` were written by the same author as L1's links and G2's questions. So a
+without-authored run can still pass for a circular reason: the author filed the two evidence
+documents in one folder. APPROACH §3 says as much — *"every structural edge above connects things
+that are already near each other"*. No redesign; the runner already walks the paths.
+`docs/STATUS.md` records that a result carried entirely by `shared-tag`/`co-located` over an
+author-chosen vocabulary is a **weaker claim** than one carried by `sibling`/`in-section`.
 
-1. The **exact one-sided sign test on discordant questions** gives p < 0.05:
+**The gate.** On the single-KB `multi-hop` class, at frozen weights, over the three legs above,
+`expand` defaults **on** only if all four hold:
+
+1. The **exact one-sided sign test on discordant questions** gives p < 0.05 **in both the with- and
+   without-authored runs**:
 
    | regressed | improvements needed | net |
    |---|---|---|
@@ -783,8 +950,14 @@ outcomes, `expand` defaults **on** only if all three hold:
    | 2 | 9 | 7 |
    | 3 | 10 | 7 |
 
+   **The criterion is p < 0.05 on the discordant pairs; the table is its first four rows**, not a
+   closed list. r=4 needs i=12 (p = 0.0384) and r=5 needs i=13 (p = 0.0481) — both significant, both
+   absent above, and "short of the table" would have shipped them off.
+
 2. No class regresses beyond `compare()`'s `tolerance=0.02` — which at these class sizes means "no
-   class loses a question".
+   class loses a question", **except `no-answer`, where `by_kind` is the *non-hit* rate
+   (`eval.py:233`) and the regression is a no-answer question *becoming* a hit**. The arithmetic is
+   unaffected; the gloss was inverted.
 3. `false_abstain` does not rise **among questions that were already hits**. Its numerator requires a
    hit, so converting misses into low-confidence hits raises it — an unqualified clause would veto
    the win clause 1 demands.
@@ -797,17 +970,28 @@ outcomes, `expand` defaults **on** only if all three hold:
    re-baseline is legitimate here precisely because a default was deliberately changed; G2's "once"
    applies to growing the set, not to shipping a new default.
 
-4. **The re-baseline absorbs the decomposed `false_abstain` term and nothing else.** Rewriting
-   `baseline.json` disarms *every* guard in it, so each of `compare()`'s six families is named here
-   with the direction `eval.py` actually checks:
+4. **The re-baseline absorbs no *regression* other than the decomposed `false_abstain` term.** It
+   necessarily absorbs the *improvements* too — `write_baseline` rewrites the whole dict
+   (`eval.py:325`) — and that is desirable, since it ratchets those guards up. What it may not do is
+   swallow a regression. Rewriting `baseline.json` disarms *every* guard in it, so all six of
+   `compare()`'s families are named here with the direction `eval.py` actually checks:
 
    | Metric | A regression is | Verdict |
    |---|---|---|
    | `false_abstain` | a rise | the only term the re-baseline may absorb, and only its newly-found-at-low-confidence part |
    | `false_confidence` | a **rise** | **stop** |
-   | `confidence_coverage` | a **drop** | **stop** |
+   | `by_kind` | a per-class drop, **or a class vanishing** (`eval.py:304-313`) | **stop** — discharged by clause 2 |
    | `recall_at_k`, `mrr`, `rerank_precision` | a drop | **stop** |
-   | question count | a drop | **stop** |
+   | `confidence_coverage` | a **drop** | bookkeeping — cannot move under a channel-only change |
+   | question count | a drop | bookkeeping — the set does not resize when a default flips |
+
+   **`by_kind` was the omitted one, and it is the only family a channel actually moves** (pass 7).
+   The two now marked bookkeeping cannot fire here: `_confidence()` returns `UNKNOWN` only for no
+   passages, an absent `[retrieval.confidence]`, `rerank != "local"`, or a fingerprint mismatch
+   (`search.py:409-427`) — all manifest properties, and a third RRF input cannot make a non-empty
+   `fused` empty — so coverage is pinned at the committed 1.0. Pass 6 corrected that row's
+   *direction* and left it inert for a different reason. They stay in the table as bookkeeping so a
+   later reader does not mistake them for live guards and reason from a check that can never fire.
 
    `false_confidence` matters most and is **not** covered by clause 2: `by_kind["no-answer"]` is
    hit-based, so a no-answer question can stay a clean non-hit while flipping to HIGH. One flip is
@@ -835,9 +1019,14 @@ broken into returning nothing produces the same blessed outcome as one that hone
 `::test_a_same_document_chunk_reachable_by_sibling_is_not_excluded`;
 `::test_membership_neighbours_do_not_consume_the_fanout_budget`;
 `::test_pnk_links_output_is_unchanged_with_the_channel_on`;
-`::test_the_gate_is_computed_with_and_without_authored_edges`;
+`::test_the_gate_is_computed_with_and_without_authored_edges` — **and asserts the two derived edge
+sets differ in cardinality**, without which it discriminates nothing;
 `::test_a_rise_in_false_confidence_stops_the_gate`;
-`::test_a_drop_in_confidence_coverage_stops_the_gate`.
+`::test_a_drop_in_confidence_coverage_stops_the_gate`;
+`::test_the_gate_requires_both_runs_to_pass`;
+`::test_a_class_vanishing_stops_the_gate`.
+The last four drive `tools/graph_gate.py` with **synthetic** artifacts — a gate whose only fixture is
+the real corpus can only be tested in whichever direction the corpus happens to point.
 
 **Exit criteria.** Per-class before/after numbers and the gate's counts and p-value in the commit
 message and `docs/STATUS.md`. Query-time latency reported with the channel on and off — the double
@@ -883,6 +1072,12 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | `kb_refs` records alias, path and scan time | DESIGN §3 | L2 | `test_kb_refs_records_alias_path_and_scan_time` |
 | Stale reverse edges are removed on re-scan | DESIGN §6.2, amended | L2 | `test_a_removed_link_removes_its_reverse_row`, `test_the_delete_is_scoped_to_the_scanned_kb` |
 | Each failure mode reported with a reason | DESIGN §6.2 | L2 | `test_each_failure_mode_is_recorded_with_its_reason` |
+| A partner's `self` link resolves to the partner, not to us | pass 7 | L1 corpus, L2 | `test_a_self_link_in_a_partner_sidecar_resolves_to_the_partner_not_the_local_kb` |
+| Only the partner's links targeting *this* KB are recorded | Goal | L2 | `test_a_partner_link_to_a_third_kb_is_not_recorded` |
+| A partial scan deletes nothing | pass 7 | L2 | `test_a_failed_scan_leaves_the_previous_reverse_rows_in_place` |
+| A delisted KB's reverse rows and `kb_refs` row go with it | pass 7 | L2 | `test_delisting_a_linked_kb_removes_its_reverse_rows_and_kb_ref` |
+| A link-scan failure never fails the sync on a hook | pass 7 | L2 | `test_an_unreachable_linked_kb_does_not_fail_the_sync` |
+| An authored row reclaims a tuple a reverse scan wrote | pass 7 | L2 | `test_an_authored_row_reclaims_a_tuple_a_reverse_scan_already_wrote` |
 | Dangling cross-KB targets surfaced | DESIGN §6.2 | L7 | `test_a_dangling_cross_kb_target_warns_with_a_reason` |
 | Link coverage reported as the ceiling | DESIGN §6.2 | L7 | `test_link_coverage_counts_authored_links_only` |
 | The zero-link nudge | APPROACH §3 | L7 | `test_a_kb_with_no_authored_links_nudges` |
@@ -958,4 +1153,5 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | 20260729 04:27 | **Pass 3** — 24 HIGH across two reviewers. Three collapsed into one root cause: **the links release never needed the golden set**, and forcing cross-KB questions through a structurally single-KB harness produced a class pinned at 0.00 or 1.00 by construction. Cross-KB eval cut entirely (decision 14); all eval work moved to the graph release; the determinism increment became a *measurement* after its proposed fix was shown to be a provable no-op (decision 15); the per-question artifact the sign test needs was found to exist nowhere and given an owner; twelve increments were still instructing a future agent to edit `CHANGELOG.md`, forbidden by a convention that landed while this plan was being written. **Pass 4 required** |
 | 20260729 04:46 | **Pass 4** — two reviewers, **13 HIGH, down from 24**, and no self-refuting fixes for the first time. Five findings collapsed into decision 16: the traversal surface serves **documents only**, so structural nodes (which have no `doc_id`) never reach the pinned neighbour shape, G3 becomes genuinely inert, and G5 flips no filter. Cross-KB neighbours are terminal, and the Goal was a one-hop claim all along (the *reason* this pass gave was wrong — see 05:06). Also: `frontier` was contract text with no owner and no definition, now L3's with stated reasons; G5's clause 3 conflicted with `compare()`, a hard CI gate, so turning the channel on re-baselines in the same commit; the headroom precondition measured failure without reachability, and APPROACH §9's channel-reachable ceiling comes back as an in-memory probe; the node identity scheme spanned five incompatible id spaces and is now specified; and G1/G2/G4 have a stated fallback if the precondition fails. **Pass 5 required**, scoped to these seams |
 | 20260729 05:06 | **Pass 5** — **3 HIGH, down from 13.** All three on the pass-4 seams. Decision 16's *conclusion* survived but its *premise* did not: the plan claimed K's index has nothing to walk past a cross-KB neighbour, and `store.py` says a reverse link's source lives in another KB — so the hop is walkable and terminality is a policy needing an explicit suppression, which no test or mutation target had. The real reason to stop is partiality, not emptiness, and the user reconfirmed on the corrected basis. Whether authored `doc ↔ doc` edges are in the channel was never stated while three things depended on it — they are, and stating it exposed a circularity (the gate satisfiable by hand-authored links bridging hand-authored questions) now guarded by reporting reachability and the gate with and without them. And the clause-3 remedy had disarmed `compare()`'s guard on `false_confidence`, which clause 4 restores. **Pass 6 required** |
+| 20260729 06:03 | **Pass 7** — two reviewers, **6 HIGH** (4 on L2, 2 on G5), and the verdict on each half was *not implementable as written*. Both halves failed the same way: a rule that was correct in its conclusion and unenforced in its mechanism. **L2** deleted every reverse row for a partner before re-walking it, so any mid-walk failure was the mass deletion the same section forbids; a delisted partner's rows were unreachable by the only delete that existed; the scan could not compute `src_kb_id` from sidecars at all (a sidecar does not carry its KB's ULID), and the natural workaround — reusing the local `owner=` — re-creates a defect already fixed once, silently retargeting a partner's `self` links at us; and the failure taxonomy's only recording channel makes `pnk sync` exit non-zero on a git hook. **G5** made the *without*-authored run binding while shipping the *with*-authored configuration, so a channel that helps only through hand-authored links and does nothing in its shipped form passes three green clauses and becomes the default; G2's headroom threshold never said which of its two reachability numbers counted, so the schema could be bumped irreversibly on the one that licenses nothing; and clause 4 promised six `compare()` families, named five, and the one it omitted (`by_kind`) is the only one a channel actually moves — while two it did name cannot fire at all. Also: the gate had no code home, its *before* leg was taken across a schema bump and a forced rebuild, and nothing forbade re-authoring the questions until the probe passed. Every claim was verified against the source before being accepted; two of pass 6's own justifications were false about the code (a "weight-2.0" column that does not exist, and an alias collision `manifest._reject_duplicates` already refuses). **Pass 8 not required for L1–L8**: L2's findings are localised and now testable, and the build proceeds. G5's clauses are re-reviewed before G5, not before L1 |
 | 20260729 05:43 | **Pass 6** — **2 HIGH**, both narrow, and the pass-5 fixes verified correct. Gate clause 4 stated one of its two guards backwards: it made a *rise* in `confidence_coverage` a stop, but a rise is an improvement and the metric is 1.0 in the baseline — so the clause could never fire while the guard the re-baseline actually removes (a drop) stayed unrestored. It now names all six `compare()` families with the direction `eval.py` checks. And the anti-circularity guard was asserted to live in G5 and appeared only in G2 and G3, so an engineer building G5 would have computed the sign test once over all edges including L1's hand-authored links, passed, and flipped the default. G5 now computes it twice and ships `off` if only the authored run passes. **Pass 7 required**, scoped to G5's clauses and L2's delete |
