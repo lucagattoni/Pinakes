@@ -99,10 +99,11 @@ bisectable landing:
 4. **Retrospective review** — a fresh adversarial pass over that increment's own diff, hunting for
    what is wrong, missed, or asserted without evidence. Fix findings, re-run the checks, repeat
    until a pass is clean. Findings and fixes are their own commit, separate from the implementation.
-   Findings worth keeping — a real defect, or a fact expensive to rediscover — get a line in
-   [`docs/RETROSPECTIVES.md`](docs/RETROSPECTIVES.md); a finding that becomes a durable rule is
-   promoted into this file too. Trivia stays in the commit message.
-5. **CHANGELOG `[Unreleased]` entry in the same commit as the code** — one line per increment.
+   Findings worth keeping — a real defect, or a fact expensive to rediscover — get a fragment in
+   [`retro.d/`](retro.d/README.md); a finding that becomes a durable rule is promoted into this
+   file too. Trivia stays in the commit message.
+5. **A `changelog.d/` fragment in the same commit as the code** — never an edit to `CHANGELOG.md`
+   itself ([`changelog.d/README.md`](changelog.d/README.md)).
 6. Merge to `main`, push, remove the worktree.
 
 ## Landing work: always push, always release
@@ -111,6 +112,15 @@ bisectable landing:
 Work left local is invisible to every other agent, machine and scheduled run.
 
 - **Push every landing** to `origin/main` — never leave merged work sitting locally.
+- **Before merging, run `python3 tools/shared_file_overlap.py --fetch --strict`.** Several agents
+  work in this repo at once. It names the files this branch touches that `origin/main` has touched
+  too since they diverged — then go and *read* those files' merged state. A clean auto-merge is not
+  a correct merge: git merges edits that do not overlap textually, never edits that agree, so two
+  agents can leave one document contradicting itself with every command reporting success. Caught
+  20260729, when three branches edited `CHANGELOG.md`, `docs/STATUS.md` and `docs/DESIGN.md` inside
+  one hour; `CHANGELOG.md` conflicted loudly and the other two merged silently. For the two
+  documents every change writes to, the cause is removed rather than reported — see
+  [`changelog.d/`](changelog.d/README.md) and [`retro.d/`](retro.d/README.md).
 - **Before assigning the next release number, check what has already landed on `main`.** `git fetch`
   and diff `origin/main` against this work's own base first — another agent, session, or worktree
   may have cut a release since this branch started, so the number you were about to assign, or a
@@ -119,7 +129,9 @@ Work left local is invisible to every other agent, machine and scheduled run.
   parallel docs pass had already shipped v0.2.1.
 - **Cut the release** as soon as the work passes the SemVer table in the global rules (feature =
   MINOR, fix/docs/deps = PATCH, breaking = MAJOR). Complete work never lingers in `[Unreleased]`.
-- Release procedure: bump `__version__`, move `[Unreleased]` into a dated `[x.y.z] — YYYYMMDD HH:MM`
+- Release procedure: `python3 tools/fragments.py --apply` (splices `changelog.d/` and `retro.d/`
+  into their documents and deletes the fragments), bump `__version__`, move `[Unreleased]` into a
+  dated `[x.y.z] — YYYYMMDD HH:MM`
   section (add its link definition at the foot and repoint `[Unreleased]`'s compare), commit,
   **merge to `main` from the primary checkout**, push, then `git tag -a vx.y.z` and push the tag.
   The tag must equal `__version__` or the workflow refuses it — `make release-check` prints both.
