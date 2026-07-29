@@ -624,7 +624,7 @@ hard cap is not a hard cap. Selective removal of paid orphans alone lands with t
   commit**, never one behind. Only sidecars of staged documents are touched, which keeps partial
   staging (`git add -p`) honest, and `git commit --no-verify` is the documented escape hatch. This is
   the one hook allowed to write into `docs/`; it writes nothing else.
-- **`post-commit` + `post-merge`** run `pnk sync --quiet`: index work only. Because sidecars were
+- **`post-commit` + `post-merge`** run `pnk sync --index-only --quiet`: index work only. Because sidecars were
   authored at pre-commit time, this stage never dirties the tree it just committed — a post-commit
   hook that created sidecars would leave every document commit trailing an untracked `.pnk.yaml`,
   demanding a second commit forever.
@@ -675,7 +675,8 @@ Phase-2 rules, applied in order:
 | Path gone, *several* new paths share that hash (duplicate content) | Ambiguous — do not guess. Prefer a candidate whose adjacent sidecar already carries the old ID; failing that, mint fresh IDs for all of them and report the ambiguity. Silently attaching an ID to the wrong duplicate would silently redirect every inbound link |
 | New path with an adjacent sidecar | Adopt its ID after a uniqueness check |
 | New path, no sidecar | Mint a ULID, write the sidecar |
-| New path, a sidecar that **will not parse** | **Never mint over it.** The walk drops an unreadable sidecar so one bad file cannot stop the others — which makes the document *look* like the row above, while the file still holds its permanent ULID. A `failures` row naming the path and the parse error; the file is left byte-identical and the document is not indexed. Distinguishing these two rows is the whole fix: writing a freshly minted id over a sidecar replaces a permanent ULID with a different one, and every inbound link points at the old one with no migration by design |
+| New path, a sidecar that **will not parse** | **Never mint over it.** The walk drops an unreadable sidecar so one bad file cannot stop the others — which makes the document *look* like the row above, while the file still holds its permanent ULID. A `failures` row; the file is left byte-identical and the document is not indexed. The walk had to swallow the parse error to keep walking, so the mint path **re-reads that one file to name it** — "already exists" alone reads like a pinakes bug and says nothing about the character the user mistyped. Distinguishing these two rows is the whole point: writing a freshly minted id over a sidecar replaces a permanent ULID with a different one, and every inbound link points at the old one with no migration by design |
+| An **indexed** document's sidecar stops parsing, content unchanged | The same `failures` row, and the run continues. Pairing yields `RefreshMetadata` here rather than `Mint`, and that branch re-reads the sidecar too — so the three ways one broken file can be met (`Mint`, `Reembed`, `RefreshMetadata`) report it identically instead of three different ways |
 | Path gone, no hash match | Mark `state = deleted` (soft). **Leave the sidecar on disk** and report it as orphaned |
 | Same ID in two sidecars | Hard error naming both paths. Never silently renumber — that would break every inbound link |
 | Recorded extraction is **free**, this run's effective backend is **paid** | Stale regardless of hash — re-extract and re-embed |

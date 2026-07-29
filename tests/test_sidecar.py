@@ -17,7 +17,6 @@ from pinakes.sidecar import (
     find_duplicate_ids,
     is_sidecar,
     read,
-    refuse_existing,
     sidecar_path,
     skeleton,
     with_extraction_provenance,
@@ -413,12 +412,14 @@ def test_write_still_overwrites_because_a_merge_needs_it(tmp_path: Path) -> None
     }
 
 
-def test_refuse_existing_is_the_check_without_the_write(tmp_path: Path) -> None:
-    """`--index-only` mints an id and writes nothing, so it needs the check on its own."""
+def test_create_refuses_a_dangling_symlink_too(tmp_path: Path) -> None:
+    """`Path.exists()` follows symlinks and reports False for a dangling one, so `os.replace` would
+    quietly turn the link into a regular file. Nothing holding a ULID is lost, but the guard means
+    "refuse where something is already there" and a narrower predicate drifts from its own rule."""
     target = tmp_path / f"note.md{SIDECAR_SUFFIX}"
+    target.symlink_to(tmp_path / "nowhere.yaml")
 
-    refuse_existing(target)  # absent: silent
-
-    target.write_text("id: 01KYCPXAJWWAK83Z0KBK6Y3NHR\n", encoding="utf-8")
     with pytest.raises(SidecarError):
-        refuse_existing(target)
+        create(target, skeleton(tmp_path / "note.md", created="20260729 07:00"))
+
+    assert target.is_symlink()

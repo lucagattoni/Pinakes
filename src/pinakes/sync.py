@@ -55,7 +55,7 @@ from pinakes.extract import (
     registered_extractors,
 )
 from pinakes.extract import cache as extract_cache
-from pinakes.ids import DocId
+from pinakes.ids import DocId, KbId
 from pinakes.lock import LockOutcome, SyncLock
 from pinakes.manifest import Manifest
 from pinakes.pairing import (
@@ -873,7 +873,31 @@ def _apply(
             report.deleted += 1
             return
         case RefreshMetadata(doc_id=doc_id, path=path, sidecar_hash=sidecar_hash):
-            _refresh_metadata(manifest, connection, doc_id, path, sidecar_hash)
+            # Its own try/except, because this branch sits *outside* the one below and
+            # `_refresh_metadata` re-reads the sidecar: an unparseable one raised straight through
+            # `_apply`, the action loop and `sync()`, so a single hand-broken sidecar aborted the
+            # whole corpus and every document after it went unprocessed — with no `failures` row,
+            # no `set_meta`, and no commit. Contradicted this module's own opening promise that one
+            # broken file cannot block a thousand good ones, and `docs/CLI.md`'s "failures are
+            # recorded, the run continues".
+            #
+            # It is also the *likeliest* way a user meets a broken sidecar: edit a link by hand and
+            # re-sync. The document's content is unchanged, so pairing yields `RefreshMetadata` —
+            # never `Reembed` (which is inside the try below and always behaved) and never `Mint`
+            # (which is what the overwrite fix guards). The three paths had three different
+            # behaviours for one cause.
+            try:
+                _refresh_metadata(manifest, connection, doc_id, path, sidecar_hash)
+            except (PinakesError, OSError, ValueError) as exc:
+                connection.rollback()
+                remedy = exc.remedy if isinstance(exc, PinakesError) else ""
+                error = f"{type(exc).__name__}: {exc}"
+                store.record_failure(
+                    connection, path=path, stage="index", error=error, happened=stamp
+                )
+                connection.commit()
+                report.failures.append((path, error, remedy))
+                return
             connection.commit()
             report.refreshed += 1
             return
@@ -1026,6 +1050,39 @@ def _target(
             return path, h, None, None, False
 
 
+def _refuse_naming_the_reason(target: Path, *, owner: KbId) -> None:
+    """Refuse an existing sidecar with the reason it could not be used, not just its existence.
+
+    `sidecar.create` refuses on existence alone — correct as the invariant, and the wrong message
+    for a person. "already exists, so a freshly minted sidecar cannot be written over it" reads
+    like a pinakes bug (*of course* it exists — why is it minting?) and says nothing about the
+    character they mistyped. The walk had the real reason and had to swallow it to keep walking
+    (`walk_sources`), so it is recovered here by re-reading the one file.
+
+    A read that unexpectedly *succeeds* is not silently accepted either: it means the file appeared
+    or was repaired between the walk and now, and re-running is the honest answer rather than
+    minting over something readable.
+    """
+    if not (target.exists() or target.is_symlink()):
+        return
+    try:
+        read_sidecar(target, owner=owner)
+    except PinakesError as exc:
+        raise SidecarError(
+            target,
+            f"will not parse, and must not be replaced by a freshly minted sidecar — {exc}",
+            remedy=(
+                f"{exc.remedy} Until it parses, this document is not indexed; nothing else is "
+                f"affected."
+            ),
+        ) from exc
+    raise SidecarError(
+        target,
+        "appeared after the walk had already read this directory",
+        remedy="Run `pnk sync` again — the second pass will pick it up.",
+    )
+
+
 def _mint(
     manifest: Manifest, path: str, options: SyncOptions, stamp: str, report: SyncReport
 ) -> tuple[DocId, str | None]:
@@ -1040,16 +1097,18 @@ def _mint(
     **`--index-only` deliberately has no guard of its own.** It writes nothing, so it can destroy
     nothing, and the concern there — indexing the document under an id its sidecar does not claim —
     cannot happen either: the indexing path reads the same sidecar again for its metadata
-    (`_sidecar_for`), and *that* read is what refuses. A guard added here was verified undetectable
-    by mutation (deleting it changed no observable behaviour, only which of two `SidecarError`s was
-    reported), so it is not kept. If `_sidecar_for` ever becomes tolerant of an unparseable
-    sidecar the way `extraction_provenance` already is, this becomes reachable and needs one.
+    (`_read_sidecar_for`), and *that* read is what refuses. A guard added here was verified
+    undetectable by mutation (deleting it changed no observable behaviour, only which of two
+    `SidecarError`s was reported), so it is not kept. If `_read_sidecar_for` ever becomes tolerant
+    of an unparseable sidecar the way `extraction_provenance` already is, this becomes reachable
+    and needs one.
     """
     document = manifest.root / path
     target = sidecar_path(document)
     made = skeleton(document, created=stamp)
     if options.index_only:
         return made.id, None
+    _refuse_naming_the_reason(target, owner=manifest.kb.id)
     create_sidecar(target, made)
     report.sidecars_written.append(target.relative_to(manifest.root).as_posix())
     return made.id, hash_file(target)
@@ -1081,9 +1140,16 @@ def _write_missing_sidecars(
     for path in candidates:
         target = sidecar_path(manifest.root / path)
         try:
+            _refuse_naming_the_reason(target, owner=manifest.kb.id)
             create_sidecar(target, skeleton(manifest.root / path, created=stamp))
-        except SidecarError as exc:
-            report.failures.append((path, f"{type(exc).__name__}: {exc}", exc.remedy))
+        except (PinakesError, OSError) as exc:
+            # OSError too, not just SidecarError: `create` re-raises the atomic rename's failure
+            # (a read-only `docs/`, a full disk, EACCES), and `cli.main` handles only PinakesError
+            # — so a narrower clause here surfaced a Python traceback *and* denied every remaining
+            # new document its id, the exact property this try exists to protect. `_apply`'s
+            # equivalent has always caught the wider set.
+            remedy = exc.remedy if isinstance(exc, PinakesError) else ""
+            report.failures.append((path, f"{type(exc).__name__}: {exc}", remedy))
             continue
         report.sidecars_written.append(target.relative_to(manifest.root).as_posix())
         report.minted += 1

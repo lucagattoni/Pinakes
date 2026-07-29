@@ -39,6 +39,29 @@ was removed rather than kept, and `_mint`'s docstring records why, so a later re
 "restore the missing check". A guard that cannot be mutated is not a guard; keeping it would have
 been the kind of decoration this project's mutation step exists to catch.
 
+**The adversarial pass found the bigger half.** The fix as first written covered only the case
+where the document is *absent from the index* — a fresh KB, a fresh clone, a `--rebuild`. For a
+document already indexed whose content is unchanged, pairing yields `RefreshMetadata`, and that
+branch sits **outside** `_apply`'s per-document `try`, so `_refresh_metadata`'s re-read of the
+sidecar raised straight through `_apply`, the action loop and `sync()`. One hand-broken file aborted
+the entire corpus: no `failures` row, no `set_meta`, no commit, and every document after it
+unprocessed — contradicting this module's own opening promise and `docs/CLI.md`'s "failures are
+recorded, the run continues". That is the *likeliest* route in: edit a link by hand, re-sync. Three
+paths existed for one cause (`Mint`, `Reembed`, `RefreshMetadata`) and each behaved differently;
+they now report identically. **The lesson is about where the first fix stopped**: it was written
+against the reproduction, and the reproduction was a fresh KB because that is what a corpus author
+happens to have. A fix aimed at a repro covers the repro's path.
+
+**Two smaller things the same pass caught, both about honesty rather than correctness.** The refusal
+said only "already exists, so a freshly minted sidecar cannot be written over it" — which reads like
+a pinakes bug (*of course* it exists) and says nothing about the character the user mistyped, while
+DESIGN, the changelog and the commit message all claimed it named the parse error. The walk has to
+swallow that error to keep walking, so the mint path now re-reads the one file to recover it. And
+the remedy said "repair the file rather than deleting it — it holds the permanent ULID", which is
+false for the second shape the tests deliberately parametrise over: `id: not-a-ulid` has no ULID to
+repair *to*, and a user in a blocked pre-commit was being told not to do the only thing that
+unblocks them.
+
 **What the tests are parametrised over, and why.** Two unrelated parse failures — a malformed link
 URI and a malformed `id`. The defect is *any* `PinakesError` from `read_sidecar` reaching the mint
 path, and a test written only against a bad link would have gone quiet the moment link parsing

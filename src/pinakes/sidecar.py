@@ -159,27 +159,21 @@ def create(path: Path, sidecar: Sidecar) -> None:
     afterwards reported every sidecar readable and no duplicate ids, because the evidence had been
     overwritten by the thing that destroyed it.
     """
-    refuse_existing(path)
-    write(path, sidecar)
-
-
-def refuse_existing(path: Path) -> None:
-    """The half of `create` that a caller which mints an id *without* writing still needs.
-
-    `pnk sync --index-only` (the post-commit and post-merge hooks) mints a document id and writes
-    no file. Skipping the check there would not destroy anything, but it would index the document
-    under a freshly minted id while the sidecar on disk still claims a different one — an index
-    disagreeing with the file it was built from, which the next full sync then has to resolve.
-    """
-    if path.exists():
+    # `is_symlink` as well as `exists`, which follows symlinks and so reports False for a dangling
+    # one — leaving `os.replace` free to quietly turn the link into a regular file. Nothing holding
+    # a ULID is lost either way, but "refuse where something is already there" is the rule, and a
+    # predicate that means something narrower than the rule it enforces drifts apart from it later.
+    if path.exists() or path.is_symlink():
         raise SidecarError(
             path,
             "already exists, so a freshly minted sidecar cannot be written over it",
             remedy=(
-                "It holds the document's permanent ULID, which nothing can recompute — repair the "
-                "file rather than deleting it. `pnk doctor` names the parse error."
+                "It may hold the document's permanent ULID, which nothing can recompute. Repair "
+                "the file rather than deleting it — `pnk doctor` names the parse error. Delete it "
+                "only if the id itself is unrecoverable and no other document links to it."
             ),
         )
+    write(path, sidecar)
 
 
 def skeleton(document: Path, *, title: str | None = None, created: str | None = None) -> Sidecar:

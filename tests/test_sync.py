@@ -22,7 +22,7 @@ from pinakes.extract import (
 )
 from pinakes.ids import mint_doc_id
 from pinakes.manifest import Manifest, load
-from pinakes.sidecar import SIDECAR_SUFFIX
+from pinakes.sidecar import SIDECAR_SUFFIX, Sidecar
 from pinakes.sync import MAX_PROBED_PER_ROOT, SyncOptions, SyncReport, sync
 
 DIM = 8
@@ -1184,8 +1184,11 @@ def test_an_unreadable_sidecar_is_never_overwritten(kb: Path, shape: str, conten
     assert not report.ok
     assert [path for path, _, _ in report.failures] == ["docs/keep.md"]
     _, error, remedy = report.failures[0]
-    assert "already exists" in error
-    assert "permanent ULID" in remedy
+    assert "will not parse" in error
+    assert "not indexed" in remedy
+    # Documents the outcome rather than guarding it: the index stays empty under a mutated guard
+    # too, because `_read_sidecar_for` on the indexing path refuses independently. Kept because it
+    # is the user-visible consequence, not because it can detect the defect.
     assert [document["path"] for document in index(kb)] == []
 
 
@@ -1246,3 +1249,120 @@ def test_index_only_neither_writes_nor_indexes_a_divergent_id(
     assert sidecar.read_text(encoding="utf-8") == content, shape
     assert [path for path, _, _ in report.failures] == ["docs/keep.md"]
     assert [document["path"] for document in index(kb)] == []
+
+
+@UNREADABLE
+def test_breaking_a_sidecar_after_indexing_does_not_abort_the_whole_sync(
+    kb: Path, shape: str, content: str
+) -> None:
+    """The likeliest way a user meets this: sync, hand-edit a link, sync again.
+
+    The document's *content* is unchanged, so pairing yields `RefreshMetadata` — not `Reembed`
+    (which was always inside `_apply`'s try) and not `Mint` (which the overwrite guard covers).
+    That branch sits outside the try and `_refresh_metadata` re-reads the sidecar, so the error
+    escaped `_apply`, the action loop and `sync()` itself: one hand-broken file aborted the whole
+    corpus with no failures row, no `set_meta` and no commit.
+    """
+    write(kb, "keep.md", "# Keep\n\nText.\n")
+    write(kb, "other.md", "# Other\n\nMore text.\n")
+    assert run(kb).embedded == 2
+
+    (kb / "docs" / f"keep.md{SIDECAR_SUFFIX}").write_text(content, encoding="utf-8")
+    report = run(kb)
+
+    assert [path for path, _, _ in report.failures] == ["docs/keep.md"], shape
+    assert not report.ok
+    assert [document["path"] for document in index(kb)] == ["docs/keep.md", "docs/other.md"]
+
+
+@UNREADABLE
+def test_a_rebuild_does_not_overwrite_an_unreadable_sidecar(
+    kb: Path, shape: str, content: str
+) -> None:
+    """`--rebuild` starts from an empty index, so every document goes through Mint/Adopt — the most
+    likely production route into the original overwrite."""
+    write(kb, "keep.md", "# Keep\n\nText.\n")
+    run(kb)
+    sidecar = kb / "docs" / f"keep.md{SIDECAR_SUFFIX}"
+    sidecar.write_text(content, encoding="utf-8")
+
+    report = run(kb, rebuild=True)
+
+    assert sidecar.read_text(encoding="utf-8") == content, shape
+    assert [path for path, _, _ in report.failures] == ["docs/keep.md"]
+
+
+def test_the_refusal_names_the_parse_error_not_merely_the_existence(kb: Path) -> None:
+    """ "already exists, so a freshly minted sidecar cannot be written over it" reads like a pinakes
+    bug and says nothing about the character the user mistyped. The walk had the real reason and
+    had to swallow it to keep walking, so it is recovered by re-reading the one file."""
+    write(kb, "keep.md", "# Keep\n\nText.\n")
+    (kb / "docs" / f"keep.md{SIDECAR_SUFFIX}").write_text(BAD_LINK, encoding="utf-8")
+
+    _, error, remedy = run(kb).failures[0]
+
+    assert "will not parse" in error
+    assert "01KYD000000000000ABSENTDOC" in error, "the offending value is not named"
+    assert "not indexed" in remedy
+
+
+def test_a_sidecar_that_appears_after_the_walk_asks_for_a_rerun(
+    kb: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A *readable* sidecar at mint time means the file arrived between the walk and now. Minting
+    over it would destroy a live id, so the honest answer is "run again", not a guess — and not the
+    "will not parse" message, which would be a lie about a file that parses.
+
+    Driven by hiding the sidecars from the walk while leaving them on disk, which is what a race
+    looks like from the mint path. `--rebuild` so the index starts empty and every document goes
+    through Mint.
+    """
+    import pinakes.sync as sync_module
+
+    write(kb, "keep.md", "# Keep\n\nText.\n")
+    run(kb)  # mints a perfectly good sidecar
+    real_walk = sync_module.walk_sources
+
+    def walk_as_if_the_sidecar_arrived_late(
+        manifest: Manifest,
+    ) -> tuple[list[Any], list[Any], Any]:
+        files, _sidecars, unmatched = real_walk(manifest)
+        return files, [], unmatched
+
+    monkeypatch.setattr(sync_module, "walk_sources", walk_as_if_the_sidecar_arrived_late)
+    report = run(kb, rebuild=True)
+
+    _, error, remedy = report.failures[0]
+    assert "appeared after the walk" in error
+    assert "will not parse" not in error, "a readable file must not be reported as unparseable"
+    assert "again" in remedy
+
+
+def test_a_write_failure_on_the_pre_commit_path_is_recorded_not_raised(
+    kb: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`create` re-raises the atomic rename's own `OSError` — a read-only `docs/`, a full disk,
+    EACCES — and `cli.main` handles only `PinakesError`, so a clause catching `SidecarError` alone
+    surfaced a Python traceback *and* denied every remaining new document its id. That is the
+    property this try exists to protect, failing in the one case it was too narrow to see."""
+    import pinakes.sync as sync_module
+
+    write(kb, "a.md", "# Alpha\n\nFirst.\n")
+    write(kb, "b.md", "# Beta\n\nSecond.\n")
+
+    real = sync_module.create_sidecar
+    seen: list[Path] = []
+
+    def flaky(path: Path, sidecar: Sidecar) -> None:
+        seen.append(path)
+        if len(seen) == 1:
+            raise PermissionError(13, "Permission denied", str(path))
+        real(path, sidecar)
+
+    monkeypatch.setattr(sync_module, "create_sidecar", flaky)
+    report = run(kb, sidecars_only=True)
+
+    assert report.minted == 1, "the second document was denied its id by the first one's failure"
+    assert [path for path, _, _ in report.failures] == ["docs/a.md"]
+    assert "PermissionError" in report.failures[0][1]
+    assert not report.ok

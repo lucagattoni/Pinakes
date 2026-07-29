@@ -235,7 +235,7 @@ Three hooks, split by what each is allowed to touch:
 
 | Hook | Runs | Why the split |
 |---|---|---|
-| `pre-commit` | `pnk sync --sidecars-only --stage --extract=pypdfium2` | Mints IDs for **staged** documents and `git add`s the sidecars, so a document and its permanent ID land in the *same commit*. The only hook that writes into `docs/` |
+| `pre-commit` | `pnk sync --sidecars-only --stage --extract=pypdfium2` | Mints IDs for **staged** documents and `git add`s the sidecars, so a document and its permanent ID land in the *same commit*. The only hook that writes into `docs/`. It refuses to overwrite a sidecar that will not parse, and that refusal fails the hook — repair the file, or `git commit --no-verify` |
 | `post-commit` | `pnk sync --index-only --extract=pypdfium2` | Index only |
 | `post-merge` | `pnk sync --index-only --extract=pypdfium2` | Index only |
 
