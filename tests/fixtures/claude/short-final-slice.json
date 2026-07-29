@@ -1,22 +1,47 @@
 {
-  "name": "short-final-slice",
-  "branch": "short-slice",
-  "why": "A two-page slice: the tail of a document whose page count is not a multiple of K.",
-  "responses": [
+ "name": "short-final-slice",
+ "branch": "short-slice",
+ "why": "A document whose page count is not a multiple of K: the trailing two-page slice.",
+ "provenance": {
+  "kind": "recorded",
+  "at": "20260729 03:36",
+  "model": "claude-opus-5",
+  "source": "tests/pdf-corpus/baseline-12p.pdf, pages 11-12"
+ },
+ "responses": [
+  {
+   "kind": "response",
+   "id": "msg_011CdVVGsmvCq5Es5rRn22yd",
+   "container": null,
+   "content": [
     {
-      "kind": "response",
-      "stop_reason": "end_turn",
-      "model": "claude-opus-5-20260401",
-      "content": [
-        {
-          "type": "text",
-          "text": "{\"pages\": [{\"page\": 1, \"text\": \"Page 1 of the slice.\\nSome transcribed prose.\"}, {\"page\": 2, \"text\": \"Page 2 of the slice.\\nSome transcribed prose.\"}]}"
-        }
-      ],
-      "usage": {
-        "input_tokens": 30300,
-        "output_tokens": 37
-      }
+     "citations": null,
+     "text": "{\"pages\":[{\"page\":1,\"text\":\"The archive catalogue records every acquisition by year, subject and provenance. A reading room clerk cross-references each request against the shelf index before release. Bound volumes are stored spine-out, sorted first by collection and then by accession number. Restoration work proceeds slowly, one folio at a time, under controlled humidity. The survey found that most requests concern maps rather than correspondence.\"},{\"page\":2,\"text\":\"Restoration work proceeds slowly, one folio at a time, under controlled humidity. The survey found that most requests concern maps rather than correspondence. Digitisation teams photograph each page twice, once in colour and once under raking light. A duplicate catalogue is kept off-site in case the reading room copy is ever damaged. Visiting scholars must register with the desk before any box leaves the stacks.\"}]}",
+     "type": "text"
     }
-  ]
+   ],
+   "model": "claude-opus-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "global",
+    "input_tokens": 3791,
+    "output_tokens": 280,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard"
+   }
+  }
+ ]
 }

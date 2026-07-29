@@ -1,15 +1,21 @@
 # The measurement run
 
-**The one thing the paid extractor cannot prove about itself.** Every fixture behind
-`extract/claude.py` is authored from the API's *documented* response shape, not captured from a
-live call ([`tests/fixtures/claude/README.md`](../tests/fixtures/claude/README.md)). The branch
-tests are therefore all conditional on one reading of the docs being right. This run is what
-replaces that reading with evidence.
+**The one thing the paid extractor cannot prove about itself** is how well it reads a page. No
+free-path test can: the whole point of the paid path is the pages the free path cannot read at all.
+This run is what replaces intuition about extraction *quality* with numbers.
+
+> **Fixture provenance is a different job, and it is done separately.** Four branches now carry
+> bodies captured from the live API by
+> [`tools/record_claude_fixtures.py`](../tools/record_claude_fixtures.py), and every fixture
+> declares its own provenance
+> ([`tests/fixtures/claude/README.md`](../tests/fixtures/claude/README.md)). To re-record a branch,
+> use that tool rather than this runbook — the two spend on different things and answer different
+> questions.
 
 It **spends real money and needs a real key**, so it can never be a repo gate — which is exactly
 why it is written down here with its steps and its euros rather than described as "measured
-somewhere". Until it has been run, [STATUS.md](STATUS.md) says the extractor's output quality is
-unmeasured, and the release notes must say the same.
+somewhere". It was last run 20260729 03:17 for €0.43; [STATUS.md](STATUS.md) carries what it
+settled.
 
 ## What it costs
 

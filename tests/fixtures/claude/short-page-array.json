@@ -1,37 +1,41 @@
 {
-  "name": "short-page-array",
-  "branch": "content-dropping",
-  "why": "Schema-valid, four pages for a five-page slice. The most dangerous response in the set: mapped positionally it would shift every page's text and every citation with it.",
-  "responses": [
+ "name": "short-page-array",
+ "branch": "content-dropping",
+ "why": "Schema-valid, four pages for a five-page slice. The most dangerous response in the set: mapped positionally it would shift every page's text and every citation with it.",
+ "provenance": {
+  "kind": "authored",
+  "why_not_recorded": "Requires the model to return fewer pages than the slice contained. The most dangerous body in the set precisely because nothing downstream can see it — and nothing can provoke it either."
+ },
+ "responses": [
+  {
+   "kind": "response",
+   "stop_reason": "end_turn",
+   "model": "claude-opus-5-20260401",
+   "content": [
     {
-      "kind": "response",
-      "stop_reason": "end_turn",
-      "model": "claude-opus-5-20260401",
-      "content": [
-        {
-          "type": "text",
-          "text": "{\"pages\": [{\"page\": 1, \"text\": \"Page 1 of the slice.\\nSome transcribed prose.\"}, {\"page\": 2, \"text\": \"Page 2 of the slice.\\nSome transcribed prose.\"}, {\"page\": 3, \"text\": \"Page 3 of the slice.\\nSome transcribed prose.\"}, {\"page\": 4, \"text\": \"Page 4 of the slice.\\nSome transcribed prose.\"}]}"
-        }
-      ],
-      "usage": {
-        "input_tokens": 30300,
-        "output_tokens": 72
-      }
-    },
-    {
-      "kind": "response",
-      "stop_reason": "end_turn",
-      "model": "claude-opus-5-20260401",
-      "content": [
-        {
-          "type": "text",
-          "text": "{\"pages\": [{\"page\": 1, \"text\": \"Page 1 of the slice.\\nSome transcribed prose.\"}, {\"page\": 2, \"text\": \"Page 2 of the slice.\\nSome transcribed prose.\"}, {\"page\": 3, \"text\": \"Page 3 of the slice.\\nSome transcribed prose.\"}, {\"page\": 4, \"text\": \"Page 4 of the slice.\\nSome transcribed prose.\"}, {\"page\": 5, \"text\": \"Page 5 of the slice.\\nSome transcribed prose.\"}]}"
-        }
-      ],
-      "usage": {
-        "input_tokens": 30300,
-        "output_tokens": 90
-      }
+     "type": "text",
+     "text": "{\"pages\": [{\"page\": 1, \"text\": \"Page 1 of the slice.\\nSome transcribed prose.\"}, {\"page\": 2, \"text\": \"Page 2 of the slice.\\nSome transcribed prose.\"}, {\"page\": 3, \"text\": \"Page 3 of the slice.\\nSome transcribed prose.\"}, {\"page\": 4, \"text\": \"Page 4 of the slice.\\nSome transcribed prose.\"}]}"
     }
-  ]
+   ],
+   "usage": {
+    "input_tokens": 30300,
+    "output_tokens": 72
+   }
+  },
+  {
+   "kind": "response",
+   "stop_reason": "end_turn",
+   "model": "claude-opus-5-20260401",
+   "content": [
+    {
+     "type": "text",
+     "text": "{\"pages\": [{\"page\": 1, \"text\": \"Page 1 of the slice.\\nSome transcribed prose.\"}, {\"page\": 2, \"text\": \"Page 2 of the slice.\\nSome transcribed prose.\"}, {\"page\": 3, \"text\": \"Page 3 of the slice.\\nSome transcribed prose.\"}, {\"page\": 4, \"text\": \"Page 4 of the slice.\\nSome transcribed prose.\"}, {\"page\": 5, \"text\": \"Page 5 of the slice.\\nSome transcribed prose.\"}]}"
+    }
+   ],
+   "usage": {
+    "input_tokens": 30300,
+    "output_tokens": 90
+   }
+  }
+ ]
 }

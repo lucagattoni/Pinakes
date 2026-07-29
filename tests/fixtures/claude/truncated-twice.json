@@ -1,37 +1,41 @@
 {
-  "name": "truncated-twice",
-  "branch": "truncated",
-  "why": "Truncated at both bounds: recorded as a failure naming the pages.",
-  "responses": [
+ "name": "truncated-twice",
+ "branch": "truncated",
+ "why": "Truncated at both bounds: recorded as a failure naming the pages.",
+ "provenance": {
+  "kind": "authored",
+  "why_not_recorded": "Truncation itself is recorded (`truncated-then-success`). Truncating *again* at the raised bound needs a slice whose output exceeds 16,000 tokens, which no corpus page produces — and manufacturing one would measure the fixture, not the API."
+ },
+ "responses": [
+  {
+   "kind": "response",
+   "stop_reason": "max_tokens",
+   "model": "claude-opus-5-20260401",
+   "content": [
     {
-      "kind": "response",
-      "stop_reason": "max_tokens",
-      "model": "claude-opus-5-20260401",
-      "content": [
-        {
-          "type": "text",
-          "text": "{\"pages\": [{\"page\": 1, \"text\": \"cut"
-        }
-      ],
-      "usage": {
-        "input_tokens": 30300,
-        "output_tokens": 8
-      }
-    },
-    {
-      "kind": "response",
-      "stop_reason": "max_tokens",
-      "model": "claude-opus-5-20260401",
-      "content": [
-        {
-          "type": "text",
-          "text": "{\"pages\": [{\"page\": 1, \"text\": \"cut again"
-        }
-      ],
-      "usage": {
-        "input_tokens": 30300,
-        "output_tokens": 10
-      }
+     "type": "text",
+     "text": "{\"pages\": [{\"page\": 1, \"text\": \"cut"
     }
-  ]
+   ],
+   "usage": {
+    "input_tokens": 30300,
+    "output_tokens": 8
+   }
+  },
+  {
+   "kind": "response",
+   "stop_reason": "max_tokens",
+   "model": "claude-opus-5-20260401",
+   "content": [
+    {
+     "type": "text",
+     "text": "{\"pages\": [{\"page\": 1, \"text\": \"cut again"
+    }
+   ],
+   "usage": {
+    "input_tokens": 30300,
+    "output_tokens": 10
+   }
+  }
+ ]
 }

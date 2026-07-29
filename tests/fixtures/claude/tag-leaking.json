@@ -1,37 +1,41 @@
 {
-  "name": "tag-leaking",
-  "branch": "tag-leaking",
-  "why": "Schema-valid, but a page's text carries a `<thinking>` fragment. `output_config.format` constrains structure, never string content.",
-  "responses": [
+ "name": "tag-leaking",
+ "branch": "tag-leaking",
+ "why": "Schema-valid, but a page's text carries a `<thinking>` fragment. `output_config.format` constrains structure, never string content.",
+ "provenance": {
+  "kind": "authored",
+  "why_not_recorded": "Requires an internal tag to leak into a schema-valid string. `output_config.format` constrains structure, never string content, so the branch must exist; the leak cannot be requested."
+ },
+ "responses": [
+  {
+   "kind": "response",
+   "stop_reason": "end_turn",
+   "model": "claude-opus-5-20260401",
+   "content": [
     {
-      "kind": "response",
-      "stop_reason": "end_turn",
-      "model": "claude-opus-5-20260401",
-      "content": [
-        {
-          "type": "text",
-          "text": "{\"pages\": [{\"page\": 1, \"text\": \"Page 1.\"}, {\"page\": 2, \"text\": \"<thinking>the table is tricky</thinking>Page 2.\"}, {\"page\": 3, \"text\": \"Page 3.\"}, {\"page\": 4, \"text\": \"Page 4.\"}, {\"page\": 5, \"text\": \"Page 5.\"}]}"
-        }
-      ],
-      "usage": {
-        "input_tokens": 30300,
-        "output_tokens": 52
-      }
-    },
-    {
-      "kind": "response",
-      "stop_reason": "end_turn",
-      "model": "claude-opus-5-20260401",
-      "content": [
-        {
-          "type": "text",
-          "text": "{\"pages\": [{\"page\": 1, \"text\": \"Page 1 of the slice.\\nSome transcribed prose.\"}, {\"page\": 2, \"text\": \"Page 2 of the slice.\\nSome transcribed prose.\"}, {\"page\": 3, \"text\": \"Page 3 of the slice.\\nSome transcribed prose.\"}, {\"page\": 4, \"text\": \"Page 4 of the slice.\\nSome transcribed prose.\"}, {\"page\": 5, \"text\": \"Page 5 of the slice.\\nSome transcribed prose.\"}]}"
-        }
-      ],
-      "usage": {
-        "input_tokens": 30300,
-        "output_tokens": 90
-      }
+     "type": "text",
+     "text": "{\"pages\": [{\"page\": 1, \"text\": \"Page 1.\"}, {\"page\": 2, \"text\": \"<thinking>the table is tricky</thinking>Page 2.\"}, {\"page\": 3, \"text\": \"Page 3.\"}, {\"page\": 4, \"text\": \"Page 4.\"}, {\"page\": 5, \"text\": \"Page 5.\"}]}"
     }
-  ]
+   ],
+   "usage": {
+    "input_tokens": 30300,
+    "output_tokens": 52
+   }
+  },
+  {
+   "kind": "response",
+   "stop_reason": "end_turn",
+   "model": "claude-opus-5-20260401",
+   "content": [
+    {
+     "type": "text",
+     "text": "{\"pages\": [{\"page\": 1, \"text\": \"Page 1 of the slice.\\nSome transcribed prose.\"}, {\"page\": 2, \"text\": \"Page 2 of the slice.\\nSome transcribed prose.\"}, {\"page\": 3, \"text\": \"Page 3 of the slice.\\nSome transcribed prose.\"}, {\"page\": 4, \"text\": \"Page 4 of the slice.\\nSome transcribed prose.\"}, {\"page\": 5, \"text\": \"Page 5 of the slice.\\nSome transcribed prose.\"}]}"
+    }
+   ],
+   "usage": {
+    "input_tokens": 30300,
+    "output_tokens": 90
+   }
+  }
+ ]
 }

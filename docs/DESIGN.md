@@ -817,9 +817,9 @@ absent — never silently, and never failing a `[light]`-only checkout.
   discovered one: the pathological stratum's invisible-render-mode fixture yields real characters
   while being useless text, and still needs the paid path. There is no `word_coverage` floor yet
   (decision 12, `plans/v0.2.md`): the correct pair to fit it against is (native layer → Claude's
-  output), and the first real output of that pair now exists — the extractor ships, but its fixtures are
-  authored from the documented response shape, and only the human-gated run produces output worth
-  fitting a floor against.
+  output), and that pair now exists for one corpus — the human-gated run of 20260729 03:17
+  (`docs/MEASUREMENT-RUN.md`). One synthetic corpus at one point in time is not yet enough to fit a
+  floor a real document would be judged against.
 
 **A known, accepted limitation:** `reading_order`'s column detection is geometric (x-gap
 clustering), not structural — it has no notion of a table's rows and columns, so the free path reads

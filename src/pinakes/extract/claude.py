@@ -456,6 +456,33 @@ def check_worth_paying_for(path: Path, *, force: bool) -> FreeYield:
 # --- one billed call, reserved before it is made --------------------------------------------
 
 
+def refusal_reason(response: Mapping[str, Any]) -> str:
+    """Why the model refused, from `stop_details` when the API supplies it.
+
+    A refusal arrives with a structured `stop_details` — `{"type": "refusal", "category": …,
+    "explanation": …}` — and the message used to discard all of it, leaving an operator staring at
+    "the model refused the request" with no way to tell a policy category from a malformed PDF.
+    Recording a live refusal is what surfaced the field; the authored fixture had no `stop_details`
+    at all, so nothing here could have been written from it (`tests/fixtures/claude/README.md`).
+
+    Every read is defensive: a refusal whose details are missing or the wrong shape still has to
+    produce the plain sentence rather than raise, because this runs on the failure path.
+    """
+    base = "the model refused the request"
+    raw: object = response.get("stop_details")
+    if not isinstance(raw, dict):
+        return base
+    details = cast(dict[str, object], raw)
+    category = details.get("category")
+    explanation = details.get("explanation")
+    parts = [base]
+    if isinstance(category, str) and category:
+        parts.append(f"category {category!r}")
+    if isinstance(explanation, str) and explanation:
+        parts.append(explanation)
+    return ": ".join(parts) if len(parts) > 1 else base
+
+
 def _usage(response: Mapping[str, Any]) -> tuple[int, int]:
     raw: object = response.get("usage")
     if not isinstance(raw, dict):
@@ -625,7 +652,7 @@ def extract_slice(
 
         if stop_reason == "refusal":
             refusals += 1
-            last_error = "the model refused the request"
+            last_error = refusal_reason(response)
             if refusals > 1:
                 break
             continue

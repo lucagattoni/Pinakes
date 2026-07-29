@@ -161,10 +161,32 @@ how conservative the reservation is.
 | Reservation accuracy | Over-reserved **11.5×** on the first live call ($0.3515 → $0.0306). Safe, and exactly why reconciliation exists |
 | The refusal branch | Fired for real. `headers-repeating.pdf` was refused twice, recorded as a document failure, and the other four extracted normally |
 
-**What is still not established**, and belongs in any release notes: the fixtures behind
-`tests/fixtures/claude/` are **still authored from the documented response shape**, not replaced
-with these recordings. The live run agreed with them on every branch it exercised — including the
-refusal — but it did not exercise all of them, and swapping them in is its own piece of work.
+## The fixtures are now half recorded — 20260729 03:36, €0.26
+
+The gap the measurement run left open is closed as far as it can be. Four branches — `happy`,
+`short-slice`, `refusal`, `truncated` — carry bodies captured from the live API by
+[`tools/record_claude_fixtures.py`](../tools/record_claude_fixtures.py). Every fixture now declares
+its own `provenance`, so the set no longer makes one claim about a mixed collection
+([the fixture README](../tests/fixtures/claude/README.md)).
+
+The authored bodies were right about every branch's control flow and wrong about the response shape
+in five ways no passing test could have revealed: the API returns the model **alias**
+(`claude-opus-5`, not a dated snapshot), a text block carries `citations`, a response carries five
+more top-level fields, `usage` carries seven more, and a refusal bills **1** output token rather
+than 0. A sixth finding was a defect — a refusal arrives with a structured `stop_details` naming a
+`category` and an `explanation`, and the extractor discarded both.
+
+**What remains authored, permanently.** Ten fixtures encode the API *misbehaving* — a body that
+violates the schema it was constrained to, a page array short of the slice, a leaked internal tag —
+or a failure that cannot be induced without abusing a live service (429, 500, timeout). Each names
+its own reason in `provenance.why_not_recorded`. This is not a backlog item: those bodies are
+unobtainable by construction, and calling them "not yet recorded" would misdescribe them.
+
+**One open question the recording raised.** `refusal-then-success` models a retry that has never
+been observed to succeed — the same bytes refused twice with identical `stop_details`, which is
+what a content-policy decision on fixed input should do. If that generalises, the refusal retry
+spends a full input billing (~€0.04/slice) for nothing. It is n=1 on one document: enough to
+record, not enough to change what the code spends.
 
 ✅ **The `0.3` collision is resolved — see [the naming rule](#release-roadmap)
 below.** Unbuilt work no longer carries a version number anywhere, so nothing competes for `0.3.0`
