@@ -15,6 +15,17 @@ exists — so this table can go stale exactly once, in the commit that breaks it
 A row saying **none** is a promise with no test. There are none today; if you add a row, add its
 test, or write **none** and say why in the same commit.
 
+**Two limits, stated so nobody reads this as more than it is.**
+
+* **The gate checks that each named test *exists*, not that it asserts the property beside it.** No
+  test can check that. The mapping below was resolved by reading the tests where the name did not
+  make it obvious — and the I9 review still found one row mapped from a name alone, which was
+  wrong (the completeness audit's). Treat a row as a strong pointer, not a proof.
+* **The scope is `plans/v0.2.md`'s promises**, which is what the table this replaces covered. v0.1's
+  own modules — `test_chunk.py`, `test_ids.py`, `test_init.py`, `test_lock.py`, `test_pairing.py`,
+  `test_uri.py`, `test_embed.py`, `test_eval.py` — are not represented here and are not unowned;
+  they simply predate the table. Adding them is worth doing and nobody has.
+
 ## Packaging and the extractor registry
 
 | What must be true | Increment | Where it is checked |
@@ -55,7 +66,7 @@ test, or write **none** and say why in the same commit.
 | a zero denominator reports `None`, never `0.0` | I3b | `tests/test_extract_quality.py::test_rate_value_is_none_not_zero_when_denominator_is_zero` |
 | the one spending threshold is fitted from two real bounds, not guessed | I3b | `tests/test_extract_quality.py::test_threshold_from_fractions_is_the_midpoint_of_the_two_bounds`, `tests/test_extract_quality.py::test_threshold_from_fractions_raises_without_a_true_positive` |
 | the floor reaches an installed copy, not just the repo | I3b | `tests/test_extract_quality.py::test_floors_toml_is_installed_package_data` |
-| a committed floor cannot silently drift from its corpus | I3b | `check.sh`'s `pdf-eval` gate (`quality.check_floor_drift`) + `tests/test_check_script.py::test_check_sh_declares_the_pdf_quality_guard` |
+| a committed floor cannot silently drift from its corpus | I3b | `check.sh`'s `pdf-eval` gate, which runs `quality.check_floor_drift` — `tests/test_check_script.py::test_check_sh_declares_the_pdf_quality_guard` asserts the gate is *invoked*, not that it fires; the firing is `tests/test_extract_quality.py::test_threshold_from_fractions_is_the_midpoint_of_the_two_bounds` on the fitting side |
 | a gate that cannot run says so and still exits 0 | I3b | `tests/test_check_script.py::test_the_skip_and_continue_shape_exits_zero` |
 | the floor's absence stops the paid path from spending | I7b | `tests/test_extract_pageyield.py::test_with_no_fitted_floor_the_paid_path_refuses_to_spend_at_all` |
 | a healthy PDF is not paid for by accident | I7b | `tests/test_extract_pageyield.py::test_the_free_path_refuses_to_pay_for_a_healthy_pdf` |
@@ -131,6 +142,9 @@ test, or write **none** and say why in the same commit.
 | the month's cap stops a run the operation's cap would allow | I6b | `tests/test_cli_budget.py::test_a_kb_at_499_of_a_500_month_refuses_the_next_call` |
 | spend is read back from the ledger, never tallied in memory | I6b | `tests/test_cli_budget.py::test_the_operation_window_is_read_back_from_the_ledger_not_tallied_in_memory` |
 | hook-driven and CI syncs cannot reach the paid path — proved by running them | I6b | `tests/test_hooks.py::test_hooks_force_the_free_backend`, `tests/test_hooks.py::test_every_hook_and_the_ci_workflow_carry_the_free_backend_flag` |
+| the generated CI workflow forces the free backend too | I6b | `tests/test_ci.py::test_the_workflow_forces_the_free_backend`, `tests/test_ci.py::test_the_workflow_and_the_hooks_cannot_disagree` |
+| that workflow caches the state directory holding the ledger | I6b | `tests/test_ci.py::test_the_workflow_caches_the_state_directory_that_holds_the_ledger` |
+| `pnk init --ci` never overwrites a workflow somebody wrote | I6b | `tests/test_ci.py::test_an_existing_workflow_is_never_overwritten` |
 
 ## The paid-path allowlist
 
@@ -169,14 +183,21 @@ test, or write **none** and say why in the same commit.
 | the request shape is pinned, not just the responses | I7b | `tests/test_extract_claude.py::test_the_request_puts_the_document_before_the_text_and_sends_no_sampling_knobs`, `tests/test_extract_claude.py::test_thinking_is_disabled_explicitly_and_pinned_to_its_effort` |
 | the recorded-fixture set covers every branch it is cited for | I7b | `tests/test_extract_claude.py::test_the_recorded_fixture_set_covers_every_branch`, `tests/test_extract_claude.py::test_the_branches_a_recording_reached_are_backed_by_one` |
 | every fixture says where its bodies came from | I7d | `tests/test_extract_claude.py::test_every_fixture_declares_where_its_bodies_came_from`, `tests/test_extract_claude.py::test_a_recorded_fixture_agrees_with_the_model_it_claims` |
-| a populated `per_page_provenance` survives a cache round trip | I7b | `tests/test_extract_cache.py::test_a_non_string_provenance_value_misses_rather_than_silently_degrading` |
+| a cache entry whose `per_page_provenance` is the wrong shape misses, rather than degrading the type | I7b | `tests/test_extract_cache.py::test_a_non_string_provenance_value_misses_rather_than_silently_degrading` |
 | the whole wiring works, not only the pieces | I7b | `tests/test_extract_claude.py::test_a_real_sync_extracts_indexes_records_and_caches` |
 
 ## The audit, staging, and all-or-nothing commit
 
 | What must be true | Increment | Where it is checked |
 |---|---|---|
-| the audit reports without spending | I7c | `tests/test_extract_claude.py::test_a_partially_extracted_document_writes_no_complete_entry` |
+| a half-extracted document writes nothing rather than a truncated entry | I7c | `tests/test_extract_claude.py::test_a_partially_extracted_document_writes_no_complete_entry` |
+| a page with no native layer is exempt, never scored zero | I7c | `tests/test_extract_audit.py::test_a_page_with_no_native_layer_is_exempt_not_zero` |
+| an all-exempt document reports no median rather than zero | I7c | `tests/test_extract_audit.py::test_an_all_exempt_document_reports_no_median_rather_than_zero` |
+| the audit's summary always carries its denominators | I7c | `tests/test_extract_audit.py::test_the_summary_always_carries_its_denominators` |
+| a page-count mismatch refuses rather than zipping to the shorter | I7c | `tests/test_extract_audit.py::test_a_page_count_mismatch_refuses_rather_than_zipping_to_the_shorter` |
+| a uniform document flags nothing — "below median" is strict | I7c | `tests/test_extract_audit.py::test_below_median_is_strict_so_a_uniform_document_flags_nothing` |
+| an unparsable audit value degrades to exempt, never to a pass | I7c | `tests/test_extract_audit.py::test_an_unparsable_audit_value_degrades_to_exempt` |
+| the audit survives the round trip through sidecar provenance | I7c | `tests/test_extract_audit.py::test_the_audit_round_trips_through_provenance` |
 | an interrupted paid run re-pays for nothing staged | I7c | `tests/test_extract_claude.py::test_a_resumed_run_re_asks_nothing_that_was_staged` |
 | a slice interrupted mid-flight is re-asked whole | I7c | `tests/test_extract_claude.py::test_a_slice_interrupted_mid_flight_is_re_asked_whole` |
 | a successful document leaves no staging behind | I7c | `tests/test_extract_claude.py::test_a_successful_document_leaves_no_staging_behind` |
