@@ -422,7 +422,16 @@ whose documents contain "ignore previous instructions" is a KB, not an exploit.
 Publishing a KB repo publishes `docs/` **and every sidecar** — including `provenance.source` URLs,
 tags and titles, which routinely carry more signal than people expect. `pnk init` ships a
 `.gitignore` covering `.pinakes/` (so the ledger and index never leave the machine), and the docs
-state the exposure plainly. The engine repo itself contains no real KB: only the synthetic demo (§7).
+state the exposure plainly. The engine repo itself contains no real KB: only the two synthetic
+corpora (§7).
+
+**Publishing a KB also publishes the ULIDs and relations of every KB it links to.** A sidecar's
+`links[]` carries the partner's KB ULID and the relation, and `[[links.kb]]` carries its ULID and
+alias — so a public KB names its private partners, in a form that is stable and correlatable across
+repositories. The ULID is the whole point (§2.2) and cannot be elided, so the exposure is stated
+rather than mitigated: link *out of* a public KB deliberately. `path` is the one part that is
+machine-local rather than published-by-design, which is why an absolute one is a `pnk doctor` warning
+(MANIFEST).
 
 **Page provenance and the stale-extraction marker reach both surfaces, or neither counts.**
 `pinakes_search` results carry `page_start`/`page_end` beside the rendered citation, `pinakes_get`
@@ -793,6 +802,22 @@ scoreboard is guessing, and guessing at the foundation is expensive later.
 questions deliberately spanning: lexical-only hits, paraphrase-only hits, filter interactions,
 multi-hop chains, and **questions with no answer in the corpus** (where the correct behaviour is to
 abstain). Zero licensing risk, and better test signal than found text.
+
+**A second synthetic corpus exists to be linked to**, not to be scored: a partner museum that
+transacts with the archive — loans both ways, courier and condition reporting, a shared emergency
+plan, a joint digitisation programme. It ships no golden set, because cross-KB behaviour is verified
+by traversing it directly rather than by scoring it: the eval harness is single-KB in its bones, and
+a cross-KB question scored through it is 0.00 by construction (the hop cannot be followed) or 1.00
+by construction (it confirms a link the corpus author wrote). Neither decides anything.
+
+**Authored links across both corpora are deliberately sparse, and a gate keeps them so.** One author
+writes the corpus, its links, and the questions that traverse them, so an over-linked fixture would
+make cross-KB traversal look easy and make any later graph evaluation look better than a real corpus
+will. The gate caps the *share* of documents carrying links and, separately, any one document's
+*degree* — density alone permits a single hub wired to everything, which is a different corpus with
+the same headline number. It also requires at least one same-KB link per corpus: a cross-KB link's
+source lives in another KB and resolves to no local node, so a corpus linked only outward would
+contribute no derived structure at all while appearing well connected.
 
 Stated cost: synthetic prose is unrealistically clean, and small-corpus results do not automatically
 hold at 50k documents. The harness is therefore built to be pointed at a user's own KB, and the docs

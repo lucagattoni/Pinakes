@@ -8,6 +8,13 @@ created  = "20260725 18:20"
 roots   = ["docs/"]
 include = ["**/*.md"]
 
+# The museum this archive transacts with. `path` is relative to this KB's root; its non-existence
+# on a given machine is not an error, because a KB is shared without its partners.
+[[links.kb]]
+name = "museum"
+id   = "01KYP11WY2ZGX9B2Q5V7PJ8DW1"
+path = "../partner-kb"
+
 [embedding]
 provider = "fastembed"
 model    = "BAAI/bge-small-en-v1.5"
