@@ -1402,6 +1402,111 @@ paragraph justifying it. Seven review passes over I7b did not catch it. 15 mutat
 
 ---
 
+## The eval harness: three defects under one green suite (20260729 03:23)
+
+Found while planning the links and graph releases, whose whole gate rests on this harness. All
+three were live on `main` and all three passed every test.
+
+**HIGH — the `multi-hop` class measured nothing about hopping.** `Outcome.hops_followed` was
+computed for every scripted question and read by no metric — not `recall_at_k`, not `by_kind`,
+nothing `compare()` looks at. **Deleting the hop loop outright left `by_kind["multi-hop"]`
+bit-identical.** A multi-hop question was a single-shot search of its last hop's query wearing a
+label. The one guard was `assert any(outcome.hops_followed > 0 …)` — an `any()` over five questions,
+on a field that fed nothing.
+
+**HIGH — and that hid a defect in the golden set itself.** Three of the five questions named their
+*last* hop's document in `expect`; two named their *first*. So the scorer ran a query about
+brittle-paper conservation and demanded the annual report. Nothing could catch the disagreement,
+because `hops` fed no metric that could notice it. The fix makes `expect` exactly the union of the
+hops' documents and asserts it for the committed set.
+
+**The numbers moved because the scorer was wrong, not because retrieval changed.** recall@5
+0.8788 → 0.9091, MRR 0.7737 → 0.8116, rerank precision 0.7273 → 0.7576, `by_kind["multi-hop"]`
+0.80 → 1.00. Stricter scoring, higher score — because the two inverted questions had been asked
+about the wrong document all along. **A metric that improves when you make it stricter is telling
+you it was measuring something else.**
+
+**MEDIUM — `compare()` wrote `by_kind` into every baseline and never read it back.** A change
+lifting one class and dropping another by the same amount moves the aggregates by almost nothing;
+CI was green through it. The question count had the same shape: written, never compared, so a
+golden set that silently lost its hard questions would have scored *better*.
+
+**MEDIUM — the "cheap deterministic embedder" was not deterministic.** `HashingBackend` hashed each
+word with `hash()`, which Python randomises per process for `str` unless `PYTHONHASHSEED` is set —
+and nothing sets it, nor can a `conftest.py`, since the value is read before the interpreter starts.
+Which words collided in the 64-dimensional space changed run to run: **one failure in 40 runs**
+before, **zero in 60** after switching to `zlib.crc32`. It surfaced only because a newly written
+test tripped over it once. A fake that cannot reproduce itself cannot tell a real regression from
+its own noise (v0.1 rule 5).
+
+**The transferable lesson.** All three survived because the tests asserted that the machinery *ran*,
+never that it could *detect*. The mutation pass is what caught them: four mutants — `hit` ignoring
+hops, the `by_kind` comparison, the question-count check, and the golden-set consistency assertion —
+were introduced deliberately and all four killed a named test. Green proves the tests ran; only
+breaking the code on purpose proves they can see.
+
+## Shared-file contention tooling (20260729 04:06)
+
+**HIGH — `git status --porcelain`'s leading space is significant, and a helper doing `.strip()` on
+the whole output silently ate it.** The overlap gate's `git()` wrapper returned
+`proc.stdout.strip()`, which is correct for `merge-base` and `symbolic-ref` and wrong for
+`status --porcelain`: a modified file is reported as `` M CHANGELOG.md`` with the status in columns
+0–1, so stripping the output removed the first line's leading space and the path parsed one
+character short — `HANGELOG.md`. It matched nothing, and the gate reported **"no overlap" with total
+confidence**. Exactly the one failure a contention gate cannot have.
+
+Two things about how it was caught, both worth keeping:
+
+- **The tests drive real `git` against real temp repositories, not a mocked `subprocess`.** The gate
+  is almost entirely a set of claims *about git's behaviour* — what `diff A...B` means, which commit
+  `merge-base` picks, how `status --porcelain` spells a rename — and a mock asserts the author's
+  belief about each of those rather than the behaviour. A mocked test would have returned
+  `" M CHANGELOG.md"` from a fake and passed with the bug present.
+- **The mutation pass re-introduced this exact bug deliberately** and confirmed the right test
+  fails. `git()` is now documented as trailing-newlines-only, with the reason, because the next
+  person to "tidy" it back to `.strip()` will find nothing obviously wrong.
+
+**MEDIUM — a clean auto-merge is not a correct merge, and only the loud half of that was being
+managed.** Three parallel branches edited `CHANGELOG.md`, `docs/STATUS.md` and `docs/DESIGN.md`
+inside one hour on 20260729. `CHANGELOG.md` conflicted and was resolved by hand; the other two
+merged **silently**, because the edits landed on different lines. Git merges edits that do not
+overlap textually, never edits that agree — so two agents can leave one document contradicting
+itself with every command reporting success, and no conflict resolution however careful would
+surface it.
+
+The response is deliberately in two layers, because one does not cover the other's cases:
+
+- `changelog.d/` and `retro.d/` **remove the cause** for the two documents every change must write
+  to — separate files cannot conflict, so for those the class stops existing.
+- `tools/shared_file_overlap.py` **reports what remains**, which is the living documents
+  (`docs/STATUS.md`, `docs/DESIGN.md`) that fragments do not suit, because they are edited in place
+  rather than appended to.
+
+**MEDIUM — splicing produced two `### Added` headings under one `## [Unreleased]`, and only
+cutting a release revealed it.** The tool inserted each rendered `### Category` block under the
+anchor without looking at what was already there, so a section that already carried an `### Added`
+from unmigrated prose ended up with two. Keep a Changelog expects one heading per category, and a
+reader scanning for "what was added" stops at the first. Fixed by merging into an existing heading
+when there is one, bounded to the anchor's own section so a *shipped* release's `### Added` is never
+written into.
+
+Worth keeping for the reason it was missed: `test_apply_leaves_existing_unreleased_prose_exactly_
+where_it_was` was written deliberately, and it passed — leaving existing prose alone is correct. The
+case it did not imagine is that the existing prose has *its own category headings*. A test written
+by the reasoning that wrote the code inherits its assumptions, which is the same increment-shaped
+blind spot `CLAUDE.md` already names; here the escape was dogfooding, not mutation testing, because
+the mutation pass only ever perturbs cases somebody already thought of.
+
+Separately, and pre-existing: `[Unreleased]` had accumulated **seven** category headings by hand
+over several days — two `### Added`, three `### Changed`, two `### Fixed`. Consolidated when cutting
+0.3.0, with a check that every non-heading line survived the regrouping.
+
+**LOW — the fragment tool takes `--repo` so its tests can drive the real artifact.** Importing a
+`tools/` script from a test needs `sys.path` surgery that `pyright` and `ty` then cannot resolve —
+`ty` failed the build on exactly that. Running it as a subprocess follows the precedent
+`tests/test_paid_path.py` set for `tools/paid_path_gate.py`, and tests the same artifact `check.sh`
+runs, argument parsing included.
+
 ## Design review passes 1–7 (pre-implementation)
 
 Seven adversarial passes over [`DESIGN.md`](DESIGN.md) **before any code was written** — 58 findings
