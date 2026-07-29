@@ -7,6 +7,11 @@ indexes the rest (which file owns which fact). This file only carries rules that
 
 - **Never commit real knowledge-base content.** The repo is the engine. The only KB here is the
   synthetic demo corpus under `tests/` — written for the purpose, never harvested.
+- **An API key lives in `.env`, which is gitignored by pattern (`.env`, `.env.*`).** The paid
+  extractor needs a real key, so one on this machine is normal; one that is merely *untracked* is
+  a `git add -A` away from a public repo. Pass it explicitly — `uv run --env-file .env pnk …` —
+  and never teach pinakes to load `.env` itself: a tool that can spend must not pick up
+  credentials from a file nobody pointed it at ([docs/MEASUREMENT-RUN.md](docs/MEASUREMENT-RUN.md)).
 - Vet every file for PII, credentials, private URLs, and anything copied from memory before staging.
 - Never commit model weights or `.pinakes/` state (both are gitignored — keep it that way).
 

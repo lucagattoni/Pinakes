@@ -17,6 +17,14 @@ venv/
 .coverage
 htmlcov/
 
+# Secrets. This repo is PUBLIC (CLAUDE.md's primary check) and `pnk sync --extract=claude-vision`
+# needs a real API key, so a key on this machine is a normal thing to have and must never be a
+# committable thing to have. Ignored by pattern, not by filename, so `.env.local` and friends
+# cannot creep in beside it.
+.env
+.env.*
+!.env.example
+
 # Models and data that must never enter a public repo
 *.safetensors
 *.onnx

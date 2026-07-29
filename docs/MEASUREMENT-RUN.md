@@ -44,10 +44,36 @@ print(f'one 5-page slice: EUR {est.total_eur:.4f} worst case')
 that is correct behaviour, and raising them deliberately is the first step of the measurement, not
 an obstacle to work around.
 
+**The key.** Put it in `.env` at the repo root — `.env` and `.env.*` are gitignored, and
+`.env.example` records the shape. This repo is public, so a key that is merely *untracked* is one
+`git add -A` from being published; ignoring it by pattern is what makes that impossible rather than
+merely unlikely.
+
+**Nothing loads `.env` automatically, and that is deliberate.** pinakes has no `.env` support and
+should not get any: a tool that can spend money must not pick up credentials from a file nobody
+pointed it at, or the same `pnk sync` means different things depending on which directory you ran
+it from. Pass it explicitly at the call site, exactly as every other spend control in this project
+is explicit:
+
 ```bash
-export ANTHROPIC_API_KEY=...          # this is the only place a key is needed
 uv sync --frozen --extra light --extra pdf --extra claude
 
+# every paid command below is run through --env-file; nothing else needs it
+uv run --env-file .env pnk --version      # sanity check: the key is only read when a call is made
+```
+
+Verify it actually arrives before spending anything on the assumption that it did:
+
+```bash
+uv run --frozen --env-file .env python -c "
+import os; key = os.environ.get('ANTHROPIC_API_KEY', '')
+print('key reaches the process:', bool(key), '| length:', len(key))
+"
+```
+
+Then create the measurement KB:
+
+```bash
 pnk init /tmp/measure-kb
 cd /tmp/measure-kb
 ```
@@ -81,7 +107,7 @@ Copy the corpus documents in as you go, one step at a time, and check `pnk budge
 
 ```bash
 cp <repo>/tests/pdf-corpus/baseline-1p.pdf docs/
-pnk sync --estimate-only
+uv run --env-file <repo>/.env pnk sync --estimate-only
 ```
 
 Record the measured input tokens. Compare against `budget/estimate.py`'s `PAGE_TOKEN_CEILING`
@@ -92,8 +118,8 @@ over-conservative and the constant can be tightened, which is this step's entire
 
 ```bash
 cp <repo>/tests/pdf-corpus/baseline-12p.pdf docs/     # priced per slice; K = 5
-pnk sync
-pnk budget
+uv run --env-file <repo>/.env pnk sync
+uv run --env-file <repo>/.env pnk budget
 ```
 
 Then check, in order:
@@ -109,7 +135,7 @@ Then check, in order:
 
 ```bash
 cp <repo>/tests/pdf-corpus/scanned*.pdf docs/
-pnk sync
+uv run --env-file <repo>/.env pnk sync
 ```
 
 Score it with `make pdf-eval`'s metrics against the corpus's hand-authored ground truth, and record
@@ -126,7 +152,7 @@ fixture's whole job is to raise.
 
 ```bash
 cp <repo>/tests/pdf-corpus/{two-column-a,tables-bordered,headers-repeating,ligatures-a,baseline-12p}.pdf docs/
-pnk sync --force
+uv run --env-file <repo>/.env pnk sync --force
 ```
 
 Record the per-metric delta beside the free numbers. This is the one measurement that says whether
