@@ -230,5 +230,5 @@ Listed so the shape is known in advance; each names the increment that lands it
 | `path:page` citations | I8 | `docs/paper.pdf:7` / `:7-8` on both the CLI and MCP surfaces; page spans are already in the index |
 | `stale_extraction` on MCP results | I8 | The marker a paid-fingerprint mismatch sets, reaching the agent surface and not only the CLI |
 | `pnk ask --deep` | the deep release | Bounded, budgeted synthesis for CLI and cron use, where no agent is present |
-| `pnk link`, `pinakes_links` | the graph release | Authoring and traversing cross-KB links |
+| `pnk link`, `pinakes_links`, `pnk links` | the links release | Authoring and traversing cross-KB links |
 | `pnk upgrade` | the template release | Diffs a KB's template version against the installed one and *prints* a migration — never applies one |

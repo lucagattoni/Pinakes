@@ -1,8 +1,10 @@
 # Graph retrieval — research
 
-Fourteen investigations of the GraphRAG-family projects, plus the synthesis that turns them into a
-gated build order for **the graph release**. Research, not specification: where these disagree with
-[`../DESIGN.md`](../DESIGN.md), DESIGN wins.
+Thirteen investigations — twelve external projects plus the in-house precedent — and the synthesis
+that turns them into a gated build order for **the links release** and **the graph release**.
+Research, not specification: where these disagree with [`../DESIGN.md`](../DESIGN.md), DESIGN wins;
+where they disagree with [`../../plans/links-and-graph.md`](../../plans/links-and-graph.md) about
+what is built when, the plan wins.
 
 Nothing here is built. See [`../STATUS.md`](../STATUS.md).
 
@@ -10,7 +12,7 @@ Nothing here is built. See [`../STATUS.md`](../STATUS.md).
 
 | Doc | What it is |
 |---|---|
-| [**PINAKES_APPROACH.md**](PINAKES_APPROACH.md) | **The synthesis.** The Pinakes graph: lazy, agent-driven, budget-tunable. §9 is the eval gate each channel must pass; §10 is the the graph release build order. Six adversarial passes (27→7→8→5→1→0 findings) |
+| [**PINAKES_APPROACH.md**](PINAKES_APPROACH.md) | **The synthesis.** The Pinakes graph: lazy, agent-driven, budget-tunable. §9 is the eval gate each channel must pass; §10 is its build order, sequenced into increments by [`plans/links-and-graph.md`](../../plans/links-and-graph.md). Five adversarial passes |
 | [**GRAPH_RAG.md**](GRAPH_RAG.md) | The research record — what the literature actually says about graphs, RAG and agents, and what pinakes should take from it |
 
 ## Investigations

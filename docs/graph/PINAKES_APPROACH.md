@@ -1,5 +1,12 @@
 # The Pinakes graph: lazy, agent-driven, budget-tunable
 
+> ℹ️ **Dated research, left as written.** §10 maps this work onto a single "the graph release"; it
+> has since been **split in two** — the **links release** (`pnk link`, `pinakes_links`,
+> reverse-scan, link coverage; no `schema_version` bump) and the **graph release** (structural
+> edges, the expansion channel). [`plans/links-and-graph.md`](../../plans/links-and-graph.md)
+> sequences both and wins wherever it and §10 disagree about what is built when. The reasoning here
+> is untouched and still governs *what* to build.
+
 **Status:** proposed approach · **Date:** 20260726 08:59 · review-revised 20260726 09:11, 09:17, 09:23, 09:28, 09:34 (five adversarial passes; commit times)
 **Builds on:** [`GRAPH_RAG.md`](GRAPH_RAG.md) (R1–R7) and the investigation docs in this
 directory — twelve external projects plus the in-house precedent (ClaudeKB). This doc is the
