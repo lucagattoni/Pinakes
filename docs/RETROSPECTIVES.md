@@ -1355,6 +1355,25 @@ Caught only because that test failed for a *different* reason first. *Lesson: a 
 metric has to survive that metric's own tokeniser — and "the test passes" would have hidden this
 completely if the assertion had been slightly weaker.*
 
+**MEDIUM, second pass — the audit made the very mistake it was written to avoid, one branch
+later.** A page above the yield floor whose text holds no *significant* words — a table of figures,
+which is an ordinary PDF page, not an exotic one — gives `word_coverage` a denominator of zero. I
+scored it **1.0**: full preservation claimed for something never checked, and it drags the median
+*up*, making the genuine outliers look less unusual. Six lines earlier the module argues at length
+that a scanned page must be exempt rather than zero, for exactly the same reason in the other
+direction. Now both are exempt. The fix then exposed a *second* worthless fixture:
+`_significant_words` keeps only words of four characters or more, so `prose("a")`'s three-letter
+words were never measurable either — that test had been passing purely on the 1.0 default it was
+supposed to be testing around. `prose` now asserts its own output is measurable. *Lesson: a default
+that makes "unmeasurable" indistinguishable from "perfect" hides broken fixtures as effectively as
+it hides broken code — and I wrote the argument against it into the docstring of the function that
+did it.*
+
+**LOW, second pass — one feature, two standards for the same question.** `_is_budget_refusal`
+identifies a refusal by exception *type*, with a comment saying an error string is prose and prose
+gets reworded. Twelve lines later `SyncReport.ok` decided which failure was the budget's by
+comparing that same prose. It now matches on the path, which is structural.
+
 **LOW — `on_exceed` had been parsed, validated and read by nothing since v0.1.** A manifest key with
 a `choice()` validator, a default, a template comment and a documented meaning, wired to no
 behaviour at all. It now decides whether a budget stop is a failure. *Recorded because validation is
@@ -1376,8 +1395,8 @@ both times only by diffing the two numbers on screen.
 Also: another agent, working independently, found that I7b's own docs contradicted themselves —
 `STATUS.md` said "claude-vision is a real extractor" in one row while the prose eight lines below
 still explained that nothing can spend *because it is a stub*. I had updated the table and left the
-paragraph justifying it. Seven review passes over I7b did not catch it. 13 mutations planted here,
-13 detected once the three survivors got tests.
+paragraph justifying it. Seven review passes over I7b did not catch it. 15 mutations planted here,
+15 detected once the survivors got tests.
 
 ---
 

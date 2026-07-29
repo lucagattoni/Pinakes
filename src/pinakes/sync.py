@@ -173,7 +173,11 @@ class SyncReport:
     `--yes` alone must never authorise destroying paid extractions unattended — that needs the
     explicit `--clear-cache=paid`, which no hook and no CI workflow writes."""
     budget_exhausted: str | None = None
-    """The refusal that stopped the run, if a `[budget]` cap was reached (I7c).
+    """The **path** whose refusal stopped the run, if a `[budget]` cap was reached (I7c).
+
+    A path, not the error message: `_is_budget_refusal` identifies the refusal by *type* precisely
+    because an error string is prose, and prose is what the next person improving it rewords. `ok`
+    then matching on that same prose would have reintroduced the coupling one line later.
 
     The run stops at the first breach rather than trying every remaining document: a cap does not
     un-breach itself, so continuing produces N copies of one fact. What differs between
@@ -202,7 +206,7 @@ class SyncReport:
         truncation §4.6 exists to prevent.
         """
         if self.budget_exhausted is not None and self.on_exceed == "partial":
-            return not [failure for failure in self.failures if failure[1] != self.budget_exhausted]
+            return not [failure for failure in self.failures if failure[0] != self.budget_exhausted]
         return not self.failures
 
     def budget_line(self) -> str | None:
@@ -967,7 +971,7 @@ def _apply(
         connection.commit()
         report.failures.append((path, error, remedy))
         if isinstance(exc, PinakesError) and _is_budget_refusal(exc):
-            report.budget_exhausted = error
+            report.budget_exhausted = path
         return
 
     if survivor is not None or in_place_backend is not None:

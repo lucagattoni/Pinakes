@@ -33,9 +33,13 @@ def prose(seed: str, words: int = 40) -> str:
     `f"{seed}{index}"` would collapse forty words into one and every page would score 1.00 —
     a fixture that cannot fail whatever the code does.
     """
-    return " ".join(
-        f"{seed}{chr(97 + index // 26)}{chr(97 + index % 26)}" for index in range(words)
-    )
+    built = [f"{seed}{chr(97 + index // 26)}{chr(97 + index % 26)}" for index in range(words)]
+    # `_significant_words` keeps only words of four characters or more, so a short seed produces
+    # a page with a coverage *denominator of zero* — unmeasurable, not perfect. Asserted here
+    # rather than left to the caller: a fixture that silently stops being measurable is the exact
+    # failure this file already hit twice.
+    assert all(len(word) >= 4 for word in built), f"seed {seed!r} is too short to be measurable"
+    return " ".join(built)
 
 
 def test_a_faithful_extraction_scores_full_coverage() -> None:
@@ -103,8 +107,8 @@ def test_a_page_count_mismatch_refuses_rather_than_zipping_to_the_shorter() -> N
     is worse than not auditing: it manufactures outliers that are really an off-by-one."""
     with pytest.raises(ValueError) as exc_info:
         audit_completeness(
-            document(prose("a"), prose("b")),
-            document(prose("a"), prose("b"), prose("c")),
+            document(prose("alpha"), prose("bravo")),
+            document(prose("alpha"), prose("bravo"), prose("delta")),
             text_yield_floor=FLOOR,
         )
     assert "against a different page" in str(exc_info.value)
@@ -113,7 +117,21 @@ def test_a_page_count_mismatch_refuses_rather_than_zipping_to_the_shorter() -> N
 def test_below_median_is_strict_so_a_uniform_document_flags_nothing() -> None:
     """Non-strict, half of every document is 'below median' by construction — including a
     perfect one."""
-    native = document(prose("a"), prose("b"), prose("c"), prose("d"))
+    native = document(prose("alpha"), prose("bravo"), prose("delta"), prose("gamma"))
     report = audit_completeness(native, native, text_yield_floor=FLOOR)
     assert report.median_coverage == 1.0
     assert report.below_median == ()
+
+
+def test_a_page_with_no_significant_words_is_exempt_not_perfect() -> None:
+    """A page of figures clears the yield floor and still gives `word_coverage` nothing to look
+    for. Scoring it 1.00 claims full preservation of something never checked — and drags the
+    median *up*, making the genuine outliers look less unusual than they are."""
+    figures = "1234 5678 90.12 3.14159 " * 12
+    native = document(figures, prose("beta"), prose("gamma"))
+    paid = document(figures, prose("beta"), prose("gamma"))
+
+    report = audit_completeness(paid, native, text_yield_floor=FLOOR)
+    assert [page.page for page in report.exempt] == [1]
+    assert report.exempt[0].coverage is None
+    assert len(report.audited) == 2

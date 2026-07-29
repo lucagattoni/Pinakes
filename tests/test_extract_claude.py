@@ -1302,7 +1302,7 @@ def test_a_budget_stop_ends_the_run_rather_than_repeating_itself() -> None:
 
     report = SyncReport(on_exceed="abort")
     report.failures.append(("docs/a.pdf", "BudgetRefusedError: refused", ""))
-    report.budget_exhausted = "BudgetRefusedError: refused"
+    report.budget_exhausted = "docs/a.pdf"
     assert not report.ok
     assert "did not finish" in (report.budget_line() or "")
 
@@ -1313,7 +1313,7 @@ def test_on_exceed_partial_treats_a_budget_stop_as_success() -> None:
 
     report = SyncReport(on_exceed="partial")
     report.failures.append(("docs/a.pdf", "BudgetRefusedError: refused", ""))
-    report.budget_exhausted = "BudgetRefusedError: refused"
+    report.budget_exhausted = "docs/a.pdf"
     assert report.ok
     assert "already indexed are kept" in (report.budget_line() or "")
 
@@ -1327,7 +1327,7 @@ def test_on_exceed_partial_is_corpus_level_never_page_level() -> None:
     report = SyncReport(on_exceed="partial")
     report.failures.append(("docs/a.pdf", "BudgetRefusedError: refused", ""))
     report.failures.append(("docs/b.pdf", "ExtractionError: slice 3 of 4 failed", ""))
-    report.budget_exhausted = "BudgetRefusedError: refused"
+    report.budget_exhausted = "docs/a.pdf"
     assert not report.ok, "the truncated document still fails the run"
 
 

@@ -126,11 +126,19 @@ def audit_completeness(
             audits.append(PageAudit(page=index + 1, exempt=True))
             continue
         rate = word_coverage(paid_text, native_text)
+        if rate.denominator == 0 or rate.value is None:
+            # Text above the yield floor, but no *significant* words in it — a page of figures, a
+            # table of numbers, a page of stopwords. There is nothing to look for, so there is
+            # nothing to measure, which is the same situation as a scanned page and gets the same
+            # answer. Scoring it 1.0 would claim full preservation of something never checked, and
+            # would drag the median *up*, making the real outliers look less unusual than they are.
+            audits.append(PageAudit(page=index + 1, exempt=True))
+            continue
         audits.append(
             PageAudit(
                 page=index + 1,
                 exempt=False,
-                coverage=rate.value if rate.value is not None else 1.0,
+                coverage=rate.value,
                 native_words=rate.denominator,
             )
         )
