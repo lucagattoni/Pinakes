@@ -1329,3 +1329,147 @@ def test_on_exceed_partial_is_corpus_level_never_page_level() -> None:
     report.failures.append(("docs/b.pdf", "ExtractionError: slice 3 of 4 failed", ""))
     report.budget_exhausted = "BudgetRefusedError: refused"
     assert not report.ok, "the truncated document still fails the run"
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_successful_document_leaves_no_staging_behind(
+    make_fake_kb: Callable[..., Path], tmp_path: Path
+) -> None:
+    """Staging that outlives its document is not merely litter. Its key is
+    `<content_hash>-<fingerprint>`, so a later run of the *same* document would find it and skip
+    slices — serving text from an extraction that was already superseded, for free, silently."""
+    import shutil
+
+    from pinakes.extract import (
+        CLAUDE_VISION,
+        ExtractorEntry,
+        register_extractor,
+        registered_entry,
+    )
+    from pinakes.extract import claude as claude_module
+    from pinakes.extract.cache import staging_dir
+    from pinakes.extract.claude import ClaudeVisionExtractor
+    from pinakes.manifest import load as load_manifest
+    from pinakes.sync import SyncOptions, sync
+
+    root = make_fake_kb(
+        extraction_backend=CLAUDE_VISION,
+        budget={"per_operation_eur": "50.00", "daily_eur": "50.00", "monthly_eur": "50.00"},
+    )
+    path = root / "pinakes.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md", "**/*.txt"]', 'include = ["**/*.pdf"]'
+        ),
+        encoding="utf-8",
+    )
+    shutil.copyfile(CORPUS / "baseline-1p.pdf", root / "docs" / "scan.pdf")
+
+    transport = RecordedTransport("short-final-slice")
+    transport.entries[0]["content"] = [
+        {"type": "text", "text": json.dumps({"pages": [{"page": 1, "text": "paid text"}]})}
+    ]
+    original_entry = registered_entry(CLAUDE_VISION)
+    register_extractor(
+        CLAUDE_VISION,
+        ExtractorEntry(
+            lambda: ClaudeVisionExtractor(transport),
+            claude_module.fingerprint_inputs,
+            paid=True,
+            requires=("anthropic", "claude"),
+        ),
+    )
+    try:
+        report = sync(load_manifest(root), options=SyncOptions(force=True, yes=True))
+    finally:
+        register_extractor(CLAUDE_VISION, original_entry)
+
+    assert report.ok, report.failures
+    cache_dir = root / ".pinakes" / "cache" / "extract"
+    assert len(list(cache_dir.glob("*.json"))) == 1, "the complete entry was written"
+
+    manifest = load_manifest(root)
+    leftover = staging_dir(
+        cache_dir,
+        content_hash=hash_file(root / "docs" / "scan.pdf"),
+        fingerprint=extraction_fingerprint(CLAUDE_VISION, manifest.extraction.model),
+    )
+    assert not leftover.exists(), "staging is cleared once the entry it was protecting exists"
+
+
+def test_staged_pages_are_invisible_to_every_cache_sweep(tmp_path: Path) -> None:
+    """`survey`, `total_stats` and `clear_all` all glob the cache root. A half-done document
+    counted among the finished ones would be reported as an entry, priced as one, and — worst —
+    swept as one."""
+    from pinakes.extract import cache as cache_module
+
+    cache_dir = tmp_path / "extract"
+    cache_dir.mkdir()
+    staging = cache_module.staging_dir(cache_dir, content_hash="sha256:abc", fingerprint="fp")
+    for page in range(3):
+        cache_module.stage_page(staging, page=page, text=f"page {page}")
+
+    assert cache_module.total_stats(cache_dir) == (0, 0), "no entries, only a partial document"
+    assert cache_module.survey(cache_dir, active_content_hashes=set()).entries == 0
+    assert cache_module.paid_entries(cache_dir) == ()
+
+    cache_module.clear_all(cache_dir)
+    assert len(cache_module.staged_pages(staging)) == 3, "a cache clear is not a resume-discarder"
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_a_corpus_stops_at_the_first_cap_breach_rather_than_failing_every_document(
+    make_fake_kb: Callable[..., Path],
+) -> None:
+    """Driven through `sync` over two documents, because the `on_exceed` tests above construct a
+    report by hand and so cannot see whether the *loop* stops. Without the break, document two is
+    attempted, refused for the identical reason, and the report carries the same fact twice."""
+    import shutil
+
+    from pinakes.extract import (
+        CLAUDE_VISION,
+        ExtractorEntry,
+        register_extractor,
+        registered_entry,
+    )
+    from pinakes.extract import claude as claude_module
+    from pinakes.extract.claude import ClaudeVisionExtractor
+    from pinakes.manifest import load as load_manifest
+    from pinakes.sync import SyncOptions, sync
+
+    root = make_fake_kb(
+        extraction_backend=CLAUDE_VISION,
+        budget={"per_operation_eur": "0.01", "daily_eur": "0.01", "monthly_eur": "0.01"},
+    )
+    path = root / "pinakes.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md", "**/*.txt"]', 'include = ["**/*.pdf"]'
+        ),
+        encoding="utf-8",
+    )
+    for name in ("one.pdf", "two.pdf"):
+        shutil.copyfile(CORPUS / "baseline-1p.pdf", root / "docs" / name)
+
+    transport = RecordedTransport("short-final-slice")
+    original_entry = registered_entry(CLAUDE_VISION)
+    register_extractor(
+        CLAUDE_VISION,
+        ExtractorEntry(
+            lambda: ClaudeVisionExtractor(transport),
+            claude_module.fingerprint_inputs,
+            paid=True,
+            requires=("anthropic", "claude"),
+        ),
+    )
+    try:
+        report = sync(load_manifest(root), options=SyncOptions(force=True, yes=True))
+    finally:
+        register_extractor(CLAUDE_VISION, original_entry)
+
+    assert transport.calls == 0, "the cap refuses before any call is made"
+    assert len(report.failures) == 1, "one fact, reported once — not once per remaining document"
+    assert report.budget_exhausted is not None
+    assert "budget cap" in (report.budget_line() or "")

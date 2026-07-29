@@ -1333,6 +1333,54 @@ connection failure, which is the difference between recording €0 and admitting
 
 ---
 
+## I7c — the completeness audit, staging, all-or-nothing (20260729 02:38)
+
+**MEDIUM — three of ten mutations survived, and all three were the same shape: a rule with no test
+that it *fires*, only that it exists.** Clearing staging after the complete entry is written had no
+test that staging is ever cleared at all — and stale staging is not litter, because its key is
+`<content_hash>-<fingerprint>`: a later run of the same document would find it, skip slices, and
+serve text from a superseded extraction silently and for free. Stopping the corpus at the first cap
+breach had no test that drove `sync`; the `on_exceed` tests build a `SyncReport` by hand, so they
+can check what a stop *means* but never whether the loop stops. And keeping staging out of the
+cache root had nothing asserting that `survey`, `total_stats` and `clear_all` cannot see it.
+*Lesson: the tests I wrote were about the rules I was thinking about while writing the code, which
+is exactly the increment-shaped blind spot this project keeps rediscovering. Mutation found all
+three in one pass because a mutation asks the question the test forgot: not "is the rule stated"
+but "would anything notice if it stopped being true".*
+
+**MEDIUM — the audit's own fixtures measured nothing.** `word_coverage` tokenises on `[a-zA-Z]+`,
+so forty words of `f"{seed}{index}"` collapse to **one** distinct word: every page scored 1.00, the
+dropped-content test found no outlier, and the fixture could not have failed whatever the code did.
+Caught only because that test failed for a *different* reason first. *Lesson: a fixture built for a
+metric has to survive that metric's own tokeniser — and "the test passes" would have hidden this
+completely if the assertion had been slightly weaker.*
+
+**LOW — `on_exceed` had been parsed, validated and read by nothing since v0.1.** A manifest key with
+a `choice()` validator, a default, a template comment and a documented meaning, wired to no
+behaviour at all. It now decides whether a budget stop is a failure. *Recorded because validation is
+what made it invisible: a key that round-trips through the parser looks implemented from every angle
+except the one that matters.*
+
+**LOW — the interruption I first scripted was not one the caller isolates.** The test double raised
+`AssertionError` when its script ran out, which `sync` does not catch, so it escaped the
+per-document handler and failed the *test* rather than the document. Replaced with a timeout — a
+real interruption, and one the caller actually handles. *A test double's failure mode is part of the
+test: if it fails in a way production cannot produce, the path under test never runs.*
+
+**LOW, and the second time in one session — I composed a timestamp instead of reading one.** This
+entry's heading was written `03:04` moments after `date` had printed `02:38`. CLAUDE.md's rule is
+already explicit ("read the clock; never compose a timestamp"), and knowing the rule is evidently
+not the same as running the command: the failure is that composing *feels* like recalling. Caught
+both times only by diffing the two numbers on screen.
+
+Also: another agent, working independently, found that I7b's own docs contradicted themselves —
+`STATUS.md` said "claude-vision is a real extractor" in one row while the prose eight lines below
+still explained that nothing can spend *because it is a stub*. I had updated the table and left the
+paragraph justifying it. Seven review passes over I7b did not catch it. 13 mutations planted here,
+13 detected once the three survivors got tests.
+
+---
+
 ---
 
 ## Design review passes 1–7 (pre-implementation)
