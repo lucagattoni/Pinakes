@@ -1137,3 +1137,112 @@ def test_quiet_still_prints_the_unmatched_line(
     captured = capsys.readouterr()
     assert "matched no `include` pattern" in captured.err
     assert "0 indexed" not in (captured.out + captured.err)  # the counts stay suppressed
+
+
+# --- A sidecar that will not parse is never replaced by a freshly minted one -------------------
+#
+# Found 20260729 by hand-authoring a corpus with one malformed link URI. `walk_sources` drops an
+# unreadable sidecar so the walk continues, which is right — but the document then looks like one
+# that was never ingested, and the mint path wrote a fresh sidecar *over* the file still holding
+# its permanent ULID. `pnk sync` reported success with no failures, and `pnk doctor` afterwards
+# reported every sidecar readable and no duplicate ids, because the evidence had been destroyed by
+# the thing that destroyed the id.
+#
+# Parametrised over two unrelated parse failures on purpose: the defect is "any PinakesError from
+# read_sidecar reaches the mint path", and a test written only against a bad link would pass again
+# the moment link parsing moved.
+
+BAD_LINK = """\
+id: 01KYCPXAJWWAK83Z0KBK6Y3NHR
+title: kept
+created: 20260725 15:19
+links:
+- to: pnk://01KYCPTN72ZXC1DDWS6054MGZV/01KYD000000000000ABSENTDOC
+  rel: related
+"""
+
+BAD_ID = """\
+id: not-a-ulid
+title: kept
+created: 20260725 15:19
+"""
+
+UNREADABLE = pytest.mark.parametrize(
+    ("shape", "content"), [("a malformed link URI", BAD_LINK), ("a malformed id", BAD_ID)]
+)
+
+
+@UNREADABLE
+def test_an_unreadable_sidecar_is_never_overwritten(kb: Path, shape: str, content: str) -> None:
+    write(kb, "keep.md", "# Keep\n\nThis document already has an id on disk.\n")
+    sidecar = kb / "docs" / f"keep.md{SIDECAR_SUFFIX}"
+    sidecar.write_text(content, encoding="utf-8")
+
+    report = run(kb)
+
+    assert sidecar.read_text(encoding="utf-8") == content, f"{shape}: the sidecar was rewritten"
+    assert not report.ok
+    assert [path for path, _, _ in report.failures] == ["docs/keep.md"]
+    _, error, remedy = report.failures[0]
+    assert "already exists" in error
+    assert "permanent ULID" in remedy
+    assert [document["path"] for document in index(kb)] == []
+
+
+@UNREADABLE
+def test_an_unreadable_sidecar_does_not_stop_the_other_documents(
+    kb: Path, shape: str, content: str
+) -> None:
+    """The walk-continues property the original `except PinakesError: continue` was protecting.
+    Preserving the file must not cost it."""
+    write(kb, "keep.md", "# Keep\n\nBroken sidecar.\n")
+    (kb / "docs" / f"keep.md{SIDECAR_SUFFIX}").write_text(content, encoding="utf-8")
+    write(kb, "fine.md", "# Fine\n\nNo sidecar yet.\n")
+
+    report = run(kb)
+
+    assert report.embedded == 1, shape
+    assert [document["path"] for document in index(kb)] == ["docs/fine.md"]
+    assert (kb / "docs" / f"fine.md{SIDECAR_SUFFIX}").is_file()
+
+
+@UNREADABLE
+def test_sidecars_only_refuses_the_unreadable_one_and_mints_the_rest(
+    kb: Path, shape: str, content: str
+) -> None:
+    """The pre-commit path has no per-document transaction to roll back, so it records the refusal
+    itself. One unparseable file must not deny every other new document an id."""
+    write(kb, "keep.md", "# Keep\n\nBroken sidecar.\n")
+    sidecar = kb / "docs" / f"keep.md{SIDECAR_SUFFIX}"
+    sidecar.write_text(content, encoding="utf-8")
+    write(kb, "fine.md", "# Fine\n\nNo sidecar yet.\n")
+
+    report = run(kb, sidecars_only=True)
+
+    assert sidecar.read_text(encoding="utf-8") == content, f"{shape}: the sidecar was rewritten"
+    assert report.minted == 1
+    assert report.sidecars_written == [f"docs/fine.md{SIDECAR_SUFFIX}"]
+    assert [path for path, _, _ in report.failures] == ["docs/keep.md"]
+    assert not report.ok
+
+
+@UNREADABLE
+def test_index_only_neither_writes_nor_indexes_a_divergent_id(
+    kb: Path, shape: str, content: str
+) -> None:
+    """`--index-only` (the post-commit and post-merge hooks) writes no sidecar, so it can destroy
+    nothing — and it does not index the document under a freshly minted id either, because the
+    indexing path re-reads the same sidecar for its metadata and that read refuses.
+
+    Deliberately asserts the *outcome* and not which guard produced it: a duplicate check inside
+    `_mint` was tried here and proved undetectable by mutation, so the assertion that would have
+    pinned it would have been an assertion about redundant code."""
+    write(kb, "keep.md", "# Keep\n\nBroken sidecar.\n")
+    sidecar = kb / "docs" / f"keep.md{SIDECAR_SUFFIX}"
+    sidecar.write_text(content, encoding="utf-8")
+
+    report = run(kb, index_only=True)
+
+    assert sidecar.read_text(encoding="utf-8") == content, shape
+    assert [path for path, _, _ in report.failures] == ["docs/keep.md"]
+    assert [document["path"] for document in index(kb)] == []

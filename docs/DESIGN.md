@@ -675,6 +675,7 @@ Phase-2 rules, applied in order:
 | Path gone, *several* new paths share that hash (duplicate content) | Ambiguous — do not guess. Prefer a candidate whose adjacent sidecar already carries the old ID; failing that, mint fresh IDs for all of them and report the ambiguity. Silently attaching an ID to the wrong duplicate would silently redirect every inbound link |
 | New path with an adjacent sidecar | Adopt its ID after a uniqueness check |
 | New path, no sidecar | Mint a ULID, write the sidecar |
+| New path, a sidecar that **will not parse** | **Never mint over it.** The walk drops an unreadable sidecar so one bad file cannot stop the others — which makes the document *look* like the row above, while the file still holds its permanent ULID. A `failures` row naming the path and the parse error; the file is left byte-identical and the document is not indexed. Distinguishing these two rows is the whole fix: writing a freshly minted id over a sidecar replaces a permanent ULID with a different one, and every inbound link points at the old one with no migration by design |
 | Path gone, no hash match | Mark `state = deleted` (soft). **Leave the sidecar on disk** and report it as orphaned |
 | Same ID in two sidecars | Hard error naming both paths. Never silently renumber — that would break every inbound link |
 | Recorded extraction is **free**, this run's effective backend is **paid** | Stale regardless of hash — re-extract and re-embed |

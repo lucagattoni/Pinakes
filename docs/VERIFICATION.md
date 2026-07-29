@@ -39,6 +39,12 @@ test, or write **none** and say why in the same commit.
 | …and from `--extract`, without importing anything | I1 | `tests/test_cli.py::test_unknown_extract_flag_is_rejected` |
 | availability is answered without executing the backend | I1 | `tests/test_extract.py::test_is_backend_installed_locates_without_executing` |
 | one unreadable PDF does not block the corpus | I1 | `tests/test_sync.py::test_a_pdf_fails_at_extraction_but_does_not_block_the_rest` |
+| a sidecar that will not parse is never overwritten | fix | `tests/test_sync.py::test_an_unreadable_sidecar_is_never_overwritten` |
+| ...and does not stop the other documents | fix | `tests/test_sync.py::test_an_unreadable_sidecar_does_not_stop_the_other_documents` |
+| ...on the pre-commit path either | fix | `tests/test_sync.py::test_sidecars_only_refuses_the_unreadable_one_and_mints_the_rest` |
+| ...and `--index-only` indexes no divergent id | fix | `tests/test_sync.py::test_index_only_neither_writes_nor_indexes_a_divergent_id` |
+| minting refuses where a file already exists | fix | `tests/test_sidecar.py::test_create_refuses_to_overwrite_an_existing_sidecar` |
+| ...while `write` still overwrites, for I5's merge | fix | `tests/test_sidecar.py::test_write_still_overwrites_because_a_merge_needs_it` |
 
 ## The PDF corpus
 

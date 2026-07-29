@@ -11,11 +11,13 @@ from pinakes.sidecar import (
     SIDECAR_SUFFIX,
     Link,
     Sidecar,
+    create,
     document_for,
     extraction_provenance,
     find_duplicate_ids,
     is_sidecar,
     read,
+    refuse_existing,
     sidecar_path,
     skeleton,
     with_extraction_provenance,
@@ -366,3 +368,57 @@ def test_without_extraction_provenance_drops_an_empty_block_entirely(
     path = tmp_path / f"a.pdf{SIDECAR_SUFFIX}"
     write(path, cleared)
     assert "provenance" not in yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+# --- Minting never writes over a file that is already there ------------------------------------
+
+
+def test_create_writes_a_sidecar_where_there_is_none(tmp_path: Path) -> None:
+    target = tmp_path / f"note.md{SIDECAR_SUFFIX}"
+    made = skeleton(tmp_path / "note.md", created="20260729 07:00")
+
+    create(target, made)
+
+    assert yaml.safe_load(target.read_text(encoding="utf-8"))["id"] == str(made.id)
+
+
+def test_create_refuses_to_overwrite_an_existing_sidecar(tmp_path: Path) -> None:
+    """The invariant lives at the write, not in the caller that happens to reach it today: a
+    freshly minted id written over an existing sidecar replaces a *permanent* ULID with a different
+    one, and every inbound pnk:// link points at the old one with no migration by design."""
+    target = tmp_path / f"note.md{SIDECAR_SUFFIX}"
+    original = "id: 01KYCPXAJWWAK83Z0KBK6Y3NHR\ntitle: mine\n"
+    target.write_text(original, encoding="utf-8")
+
+    with pytest.raises(SidecarError) as caught:
+        create(target, skeleton(tmp_path / "note.md", created="20260729 07:00"))
+
+    assert "already exists" in str(caught.value)
+    assert "permanent ULID" in (caught.value.remedy or "")
+    assert target.read_text(encoding="utf-8") == original
+
+
+def test_write_still_overwrites_because_a_merge_needs_it(tmp_path: Path) -> None:
+    """`create` is the new refusal; `write` must keep overwriting, or I5's read-merge-write of
+    `provenance.extraction` into an existing sidecar has nowhere to land."""
+    target = tmp_path / f"note.md{SIDECAR_SUFFIX}"
+    target.write_text("id: 01KYCPXAJWWAK83Z0KBK6Y3NHR\ntitle: before\n", encoding="utf-8")
+    kept = read(target, owner=mint_kb_id())
+
+    write(target, Sidecar(id=kept.id, title="after", present=kept.present))
+
+    assert yaml.safe_load(target.read_text(encoding="utf-8")) == {
+        "id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+        "title": "after",
+    }
+
+
+def test_refuse_existing_is_the_check_without_the_write(tmp_path: Path) -> None:
+    """`--index-only` mints an id and writes nothing, so it needs the check on its own."""
+    target = tmp_path / f"note.md{SIDECAR_SUFFIX}"
+
+    refuse_existing(target)  # absent: silent
+
+    target.write_text("id: 01KYCPXAJWWAK83Z0KBK6Y3NHR\n", encoding="utf-8")
+    with pytest.raises(SidecarError):
+        refuse_existing(target)

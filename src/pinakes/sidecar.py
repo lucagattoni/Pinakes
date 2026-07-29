@@ -141,6 +141,47 @@ def write(path: Path, sidecar: Sidecar) -> None:
         raise
 
 
+def create(path: Path, sidecar: Sidecar) -> None:
+    """Write a sidecar for a document that has none — and refuse if a file is already there.
+
+    `write` overwrites by design: I5 merges `provenance.extraction` into an existing sidecar, which
+    is a read-modify-write of that same file keeping that same id. Minting is the opposite case.
+    The id it carries has just been minted, so writing it over an existing sidecar replaces a
+    **permanent** ULID with a different one — and every inbound `pnk://` link points at the old one,
+    with no migration machinery by design (§2.2). That is unrecoverable rather than merely wrong,
+    which is why the refusal lives here, at the write, rather than only in the one caller that
+    happens to reach it today.
+
+    Reachable whenever a sidecar exists but will not parse: `sync.walk_sources` drops an unreadable
+    sidecar from the walk, the document then looks like one that was never ingested, and the mint
+    path writes over the file still holding its id. Found 20260729 while hand-authoring a corpus
+    with one malformed link URI — `pnk sync` reported success with no failures, and `pnk doctor`
+    afterwards reported every sidecar readable and no duplicate ids, because the evidence had been
+    overwritten by the thing that destroyed it.
+    """
+    refuse_existing(path)
+    write(path, sidecar)
+
+
+def refuse_existing(path: Path) -> None:
+    """The half of `create` that a caller which mints an id *without* writing still needs.
+
+    `pnk sync --index-only` (the post-commit and post-merge hooks) mints a document id and writes
+    no file. Skipping the check there would not destroy anything, but it would index the document
+    under a freshly minted id while the sidecar on disk still claims a different one — an index
+    disagreeing with the file it was built from, which the next full sync then has to resolve.
+    """
+    if path.exists():
+        raise SidecarError(
+            path,
+            "already exists, so a freshly minted sidecar cannot be written over it",
+            remedy=(
+                "It holds the document's permanent ULID, which nothing can recompute — repair the "
+                "file rather than deleting it. `pnk doctor` names the parse error."
+            ),
+        )
+
+
 def skeleton(document: Path, *, title: str | None = None, created: str | None = None) -> Sidecar:
     """The sidecar minted for a newly ingested document: an id, and as little else as possible."""
     return Sidecar(
