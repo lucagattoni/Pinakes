@@ -12,36 +12,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **[`plans/graph-release.md`](plans/graph-release.md) — the build order for the graph release, in
-  twelve increments (G1–G12).** `docs/graph/PINAKES_APPROACH.md` had settled *what* to build and
-  *why* across six adversarial passes, but its build order (§10) was a single table row; nothing
-  sequenced it, tested it, or named what it breaks. **Draft — not yet reviewed; do not implement
-  from it.**
+- **[`plans/links-and-graph.md`](plans/links-and-graph.md) — the build order for the links release
+  and the graph release, in fourteen increments (L1–L10, G1–G4).**
+  `docs/graph/PINAKES_APPROACH.md` had settled *what* to build and *why* across five adversarial
+  passes, but its build order (§10) was a single table row; nothing sequenced it, tested it, or
+  named what it breaks. **Draft — pass 1 done, pass 2 required; do not implement from it yet.**
 
-  Seven decisions were taken with the user, four of them because reviewing the code first changed
-  the picture:
+  Ten decisions were taken with the user. Four came from reading the code first, and three more
+  from an adversarial review that found the first draft citing a gate that does not apply to the
+  work it was gating:
 
   - **A second synthetic KB is committed, deliberately sparse.** `tests/demo-kb/` has thirty
     documents and **zero authored links** — every sidecar lacks a `links:` key, so the
-    highest-trust edge class has no corpus behind it at all, single-KB as well as cross-KB. Both
-    corpora gain links on ≤ 35% of documents, enforced by a new gate, because §3's finding is that
-    real authored links are scarce and a tidy dense synthetic graph would validate the code while
-    hiding the failure mode the research predicts.
-  - **The golden set grows to ~25 multi-hop questions, most of them cross-KB.** It has five today,
-    so one question is worth twenty points against §9's five-point gate; at twenty-five it is worth
-    four. The baseline is re-cut once, with a safeguard: the original 41 questions must score
-    *identically* under the new harness, or the shift is a harness defect rather than a consequence
-    of growth.
-  - **One release with an internal cut point after the links surface.** Nothing before G9 bumps
-    `schema_version`, so that release requires no rebuild — and it ships on its own merit whether or
-    not the expansion channel passes its eval gate.
+    highest-trust edge class has no corpus behind it at all, single-KB as well as cross-KB. The
+    density gate caps **degree as well as document count**, and counts forward-authored links only,
+    because reverse-scan materialises the inbound side and counting both would double every
+    corpus's apparent sparsity.
+  - **The golden set grows to ~25 multi-hop questions**, and the new ones must be *harder*, not
+    merely more numerous: repairing the scorer left `multi-hop` at **1.00 on five questions**, and a
+    class at ceiling can only ever show damage.
+  - **Two releases, not one.** A cut after the links surface would otherwise ship under a name that
+    `CLAUDE.md` and `docs/STATUS.md` both define as including structural edges. Nothing in L1–L10
+    bumps `schema_version`, so **the links release needs no rebuild**.
   - **`pnk link` writes forward only**, into the source document's sidecar; the reverse side is
     computed by reverse-scan, which DESIGN §6.2 has specified since v0.1 and nothing has ever
-    implemented (`store.py:103` carries the `reverse-scan` origin value, unused).
+    implemented — `store.py` carries the `reverse-scan` origin value, unused.
+  - **`pinakes_search`'s `entities`/`concepts` parameters are cut.** RRF here is unweighted by
+    construction, so the feature needs a weighting change that touches every query plus its own
+    eval, and it is orthogonal to links and edges.
+  - **Retrieval ordering is made deterministic first** (L1). Three sources of run-to-run variance
+    are live — an FTS `ORDER BY` with no secondary key, an unstable `argsort`, and a fusion
+    truncation with no tiebreak — and the `schema_version` bump reassigns rowids immediately before
+    the measurement the channel's gate depends on.
+  - **The expansion channel's gate is given a threshold for the first time.** APPROACH §9 states
+    none for `expand`; the "≥ 5 points" figure the first draft quoted belongs to the `ppr` row,
+    which this plan excludes. The gate is now stated in **questions, not percentages** — ≥ 5 net,
+    because under an exact sign test five discordant results in one direction is the smallest
+    outcome with p < 0.05.
 
-  PPR and the `[ner]` extra stay out: §10 lists them as staged and eval-gated, not scheduled. The
-  release adds **no paid entry point** — `.paid-path-allowlist` must be byte-identical afterwards,
-  and the verification section checks it.
+  PPR and the `[ner]` extra stay out. Neither release adds a paid entry point;
+  `.paid-path-allowlist` is unchanged, though the free-path gate's *coverage* is extended per
+  increment, since it enumerates surfaces by name.
 
 ### Fixed
 
@@ -119,9 +130,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `make release-check` runs *before* pushing a tag rather than after.
 - **🚫 Unbuilt work is named, never numbered — a project-wide convention, and a rule other agents
   will meet in `CLAUDE.md`.** A version number now belongs to a release only when it is cut. Unbuilt
-  bodies of work are **the paid-extraction release**, **the graph release**, **the deep release** and
-  **the template release**; increment IDs (`I7b`, `I8`) are unaffected, since they name work inside a
-  written plan rather than a release.
+  bodies of work are **the paid-extraction release**, **the links release**, **the graph release**,
+  **the deep release** and **the template release**; increment IDs (`I7b`, `I8`) are unaffected,
+  since they name work inside a written plan rather than a release.
+
+  **The links release was split out of the graph release on 20260729**, while sequencing
+  [`plans/links-and-graph.md`](plans/links-and-graph.md): `pnk link`, `pnk links`, `pinakes_links`
+  and reverse-scan need no `schema_version` bump and no rebuild, while structural edges and the
+  expansion channel need both. Shipping the first half under a name defined as including the second
+  would have reintroduced exactly the ambiguity this convention exists to end — one name meaning two
+  releases — three days after it was adopted. The naming tables in `CLAUDE.md` and `docs/STATUS.md`
+  carry both rows, and `docs/graph/PINAKES_APPROACH.md` keeps its single-release §10 with a header
+  note, since it is dated research rather than a live specification.
 
   **Why now.** `docs/` and `docs/graph/` had used `v0.3` for months to mean the cross-KB links
   release. Once 0.2.2 shipped, the *next* MINOR was numerically 0.3.0 — so one number meant two
