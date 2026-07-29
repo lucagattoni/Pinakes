@@ -150,7 +150,8 @@ for releases.
 cannot demonstrate:** the extractor's *output quality* is unmeasured. Every fixture behind it is
 authored from the documented response shape rather than captured from a live API, and the run that
 would measure quality needs a key, costs money, and is human-gated by design (`plans/v0.2.md`,
-I7b). The machinery is tested; what it produces is not yet scored.
+I7b). The machinery is tested; what it produces is not yet scored. The run is written down, with
+its steps and its euros, in [MEASUREMENT-RUN.md](MEASUREMENT-RUN.md).
 
 ✅ **The `0.3` collision is resolved — see [the naming rule](#release-roadmap)
 below.** Unbuilt work no longer carries a version number anywhere, so nothing competes for `0.3.0`

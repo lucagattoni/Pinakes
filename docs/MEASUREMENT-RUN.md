@@ -1,0 +1,147 @@
+# The measurement run
+
+**The one thing the paid extractor cannot prove about itself.** Every fixture behind
+`extract/claude.py` is authored from the API's *documented* response shape, not captured from a
+live call ([`tests/fixtures/claude/README.md`](../tests/fixtures/claude/README.md)). The branch
+tests are therefore all conditional on one reading of the docs being right. This run is what
+replaces that reading with evidence.
+
+It **spends real money and needs a real key**, so it can never be a repo gate — which is exactly
+why it is written down here with its steps and its euros rather than described as "measured
+somewhere". Until it has been run, [STATUS.md](STATUS.md) says the extractor's output quality is
+unmeasured, and the release notes must say the same.
+
+## What it costs
+
+About **€4.23 worst case** (priced 20260729 against the shipped `prices.toml`), and typically well
+under half that — worst case assumes every request hits `max_tokens`, and five pages of prose
+produce roughly half of it.
+
+| Step | Documents | Pages | Worst case |
+|---|---|---|---|
+| (a) `--estimate-only` over one page | 1 | 1 | €0 — counts tokens, generates nothing |
+| (b) one real 5-page extraction | 1 | 5 | €0.33 |
+| (c) the scanned stratum | 3 | 10 | €1.30 |
+| (d) the free-vs-paid delta | 4 twins + 1 control | 28 | €2.60 |
+
+Re-price it before running — `prices.toml` moves:
+
+```bash
+uv run --frozen python -c "
+from datetime import datetime
+from pinakes.budget.estimate import estimate_document
+from pinakes.budget.prices import load_prices
+prices = load_prices()
+est = estimate_document(pages=5, model='claude-opus-5', prices=prices,
+                        now=datetime.now().strftime('%Y%m%d %H:%M'), max_price_age_days=3650)
+print(f'one 5-page slice: EUR {est.total_eur:.4f} worst case')
+"
+```
+
+## Setting up
+
+**A measurement KB with the caps raised explicitly.** The shipped defaults refuse a single slice —
+that is correct behaviour, and raising them deliberately is the first step of the measurement, not
+an obstacle to work around.
+
+```bash
+export ANTHROPIC_API_KEY=...          # this is the only place a key is needed
+uv sync --frozen --extra light --extra pdf --extra claude
+
+pnk init /tmp/measure-kb
+cd /tmp/measure-kb
+```
+
+Then edit `/tmp/measure-kb/pinakes.toml`:
+
+```toml
+[sources]
+include = ["**/*.pdf"]                # init deliberately does not stamp this
+
+[extraction]
+backend = "claude-vision"
+model   = "claude-opus-5"
+
+[budget]
+confirm_above_eur = 5.00              # raised so the run is not a wall of prompts
+per_operation_eur = 5.00
+daily_eur         = 5.00
+monthly_eur       = 5.00
+```
+
+> `PINAKES_ALLOW_SPEND` is **not** part of this recipe. It is a pytest condition and never a product
+> guard; putting it in a CLI recipe is what would turn it into one. The product's own opt-in is
+> already explicit — `[extraction] backend`, `--extract=`, and the accountant.
+
+## The run
+
+Copy the corpus documents in as you go, one step at a time, and check `pnk budget` between steps.
+
+**(a) Fix the input half of the constant — a token count, not a generation.**
+
+```bash
+cp <repo>/tests/pdf-corpus/baseline-1p.pdf docs/
+pnk sync --estimate-only
+```
+
+Record the measured input tokens. Compare against `budget/estimate.py`'s `PAGE_TOKEN_CEILING`
+(6,000/page) and `PROMPT_TOKENS` (300) — if the real figure is far below, the reservation is
+over-conservative and the constant can be tightened, which is this step's entire purpose.
+
+**(b) Fix the output half — one real 5-page extraction.**
+
+```bash
+cp <repo>/tests/pdf-corpus/baseline-12p.pdf docs/     # priced per slice; K = 5
+pnk sync
+pnk budget
+```
+
+Then check, in order:
+
+- `response.model` against the requested alias, with `startswith` — the recorded value is in the
+  cache entry's `per_page_provenance`.
+- the **thinking/effort pair** in `extract/claude.py` — confirmed or replaced against what the run
+  actually shows. If a `<thinking>` fragment ever reaches a page's text, the leak guard turned it
+  into a schema retry, and `pnk budget` will show the extra calls.
+- `pnk doctor`'s `completeness` line, which is the audit's first real output.
+
+**(c) The scanned stratum — what the paid path exists for.**
+
+```bash
+cp <repo>/tests/pdf-corpus/scanned*.pdf docs/
+pnk sync
+```
+
+Score it with `make pdf-eval`'s metrics against the corpus's hand-authored ground truth, and record
+the numbers in DESIGN §9 **with date, model, and euros actually spent**, labelled as measured on
+synthetic rasters.
+
+**(d) The free-vs-paid delta — decision 10's justification.**
+
+The five text-layer twins **`plans/v0.2.md` §I2 names** — one per stratum where `layout.py` does
+real work, plus the 12-page baseline as a control — each needing `--force` because they are healthy
+by design and the paid path correctly refuses to spend on them otherwise. The scanned and
+pathological strata supply no twin: a raster is not a text-layer twin, and the pathological
+fixture's whole job is to raise.
+
+```bash
+cp <repo>/tests/pdf-corpus/{two-column-a,tables-bordered,headers-repeating,ligatures-a,baseline-12p}.pdf docs/
+pnk sync --force
+```
+
+Record the per-metric delta beside the free numbers. This is the one measurement that says whether
+bypassing `layout.py` on the paid path costs anything — running-head handling and reading order are
+the two stages it skips.
+
+## Afterwards
+
+1. **`prices.toml`** gains the measured per-page constant and its `measured_on`.
+2. **DESIGN §9** gains the scanned-quality numbers, with date, model and euros.
+3. **DESIGN §7.1** gains the free-vs-paid delta.
+4. **`tests/fixtures/claude/`** — replace the authored bodies with recorded ones, and update the
+   README, which currently states plainly that they are not recordings.
+5. **STATUS.md** drops "output quality is not yet measured", and the release can be cut saying what
+   it measured instead of what it did not.
+
+If the run contradicts the fixtures anywhere, that finding is worth more than the release schedule:
+it is the only evidence that can reach the assumption every branch test rests on.
