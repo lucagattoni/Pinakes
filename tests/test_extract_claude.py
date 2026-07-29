@@ -1264,3 +1264,68 @@ def test_an_entry_with_no_call_ids_prices_at_zero_without_crashing(
         encoding="utf-8",
     )
     assert paid_cache_spend(load(root), cache) == "0.0000"
+
+
+# --- flag scope: what `--force` may and may not overrule ------------------------------------------
+
+
+@pytest.mark.pdf
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
+def test_force_does_not_widen_a_budget_cap(make_fake_kb: Callable[..., Path]) -> None:
+    """`--force` overrules two refusals to spend or discard that a user may legitimately overrule.
+    A cap is neither: a flag that can widen a hard cap is not a hard cap."""
+    from pinakes.extract.claude import extract_document
+
+    root = make_fake_kb(
+        extraction_backend=CLAUDE_VISION,
+        budget={"per_operation_eur": "0.01", "daily_eur": "0.01", "monthly_eur": "0.01"},
+    )
+    accountant = Accountant(load(root), prices=prices(), now=datetime.now(UTC), yes=True)
+    transport = RecordedTransport("happy-five-page-slice")
+
+    with pytest.raises(BudgetRefusedError):
+        extract_document(
+            CORPUS / "baseline-1p.pdf",
+            transport=transport,
+            accountant=accountant,
+            model=MODEL,
+            pages_total=1,
+            force=True,  # bypasses the healthy-PDF refusal, and nothing else
+            sleep=never_sleeps,
+        )
+    assert transport.calls == 0, "the call is refused before it is made, `--force` or not"
+
+
+def test_a_budget_stop_ends_the_run_rather_than_repeating_itself() -> None:
+    """A cap does not un-breach itself, so continuing produces N copies of one fact."""
+    from pinakes.sync import SyncReport
+
+    report = SyncReport(on_exceed="abort")
+    report.failures.append(("docs/a.pdf", "BudgetRefusedError: refused", ""))
+    report.budget_exhausted = "BudgetRefusedError: refused"
+    assert not report.ok
+    assert "did not finish" in (report.budget_line() or "")
+
+
+def test_on_exceed_partial_treats_a_budget_stop_as_success() -> None:
+    """The user asked for whatever fit inside the cap, and got it."""
+    from pinakes.sync import SyncReport
+
+    report = SyncReport(on_exceed="partial")
+    report.failures.append(("docs/a.pdf", "BudgetRefusedError: refused", ""))
+    report.budget_exhausted = "BudgetRefusedError: refused"
+    assert report.ok
+    assert "already indexed are kept" in (report.budget_line() or "")
+
+
+def test_on_exceed_partial_is_corpus_level_never_page_level() -> None:
+    """ "Partial" is permission to index fewer documents, never permission to index part of one —
+    a half-extracted document is the silent truncation the design exists to prevent, so it stays a
+    failure whatever `on_exceed` says."""
+    from pinakes.sync import SyncReport
+
+    report = SyncReport(on_exceed="partial")
+    report.failures.append(("docs/a.pdf", "BudgetRefusedError: refused", ""))
+    report.failures.append(("docs/b.pdf", "ExtractionError: slice 3 of 4 failed", ""))
+    report.budget_exhausted = "BudgetRefusedError: refused"
+    assert not report.ok, "the truncated document still fails the run"

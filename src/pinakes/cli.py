@@ -446,7 +446,13 @@ def _sync_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="with an explicit free --extract: overwrite a paid extraction (prints what it drops)",
+        # The scope, stated in full, because a flag whose reach nobody wrote down grows one.
+        help=(
+            "overrule exactly two refusals: paying to extract a PDF whose free text layer is "
+            "already healthy, and — only together with an explicit free --extract — overwriting "
+            "a paid extraction (prints what it drops). It never widens a budget cap, the "
+            "stale-price refusal, the missing-floor refusal, or the no-terminal abort"
+        ),
     )
     # `all` rather than `free` as the bare form's value: both spellings clear the *whole* cache, so
     # a value named `free` would read as "clear only the free entries", which is not what either

@@ -172,6 +172,16 @@ class SyncReport:
     """How many of `cache_pending_entries` a paid backend wrote (I6b). Its own number because
     `--yes` alone must never authorise destroying paid extractions unattended — that needs the
     explicit `--clear-cache=paid`, which no hook and no CI workflow writes."""
+    budget_exhausted: str | None = None
+    """The refusal that stopped the run, if a `[budget]` cap was reached (I7c).
+
+    The run stops at the first breach rather than trying every remaining document: a cap does not
+    un-breach itself, so continuing produces N copies of one fact. What differs between
+    `on_exceed = "abort"` and `"partial"` is not what was *done* — each document is its own
+    transaction, so whatever completed is committed either way — but whether stopping counts as a
+    failure. `partial` says the run was allowed to do what it could; `abort` says it was not."""
+    on_exceed: str = "abort"
+    """Copied from the manifest so `ok` can read it without the manifest in hand."""
     cache_pending_paid_eur: str = "0.0000"
     """What those entries cost, joined from the ledger on each entry's `call_ids` (I7c).
 
@@ -180,7 +190,31 @@ class SyncReport:
 
     @property
     def ok(self) -> bool:
+        """Whether the run succeeded.
+
+        A budget stop under `on_exceed = "partial"` is **not** a failure: the user asked for
+        whatever fit inside the cap, and got it. Under `"abort"` — the default — it is, because
+        the user asked for the corpus and the corpus is not indexed.
+
+        Honoured at the **corpus** level and never at the page level. A half-extracted document
+        keeps no entry and lands in `failures` whatever `on_exceed` says: "partial" is permission
+        to index fewer documents, never permission to index part of one, which would be the silent
+        truncation §4.6 exists to prevent.
+        """
+        if self.budget_exhausted is not None and self.on_exceed == "partial":
+            return not [failure for failure in self.failures if failure[1] != self.budget_exhausted]
         return not self.failures
+
+    def budget_line(self) -> str | None:
+        """The one line a run stopped by a cap owes the user."""
+        if self.budget_exhausted is None:
+            return None
+        consequence = (
+            'documents already indexed are kept (`on_exceed = "partial"`)'
+            if self.on_exceed == "partial"
+            else 'the run did not finish (`on_exceed = "abort"`)'
+        )
+        return f"stopped at a budget cap: {consequence}. `pnk budget` shows the window."
 
     def lines(self) -> list[str]:
         """What `pnk sync` prints. Counts first, then anything needing a human."""
@@ -265,6 +299,9 @@ class SyncReport:
         remedy that only needs saying once should not scroll past N times.
         """
         lines = [f"failed: {path}: {error}" for path, error, _ in self.failures]
+        stopped = self.budget_line()
+        if stopped is not None:
+            lines.append(stopped)
         seen: list[str] = []
         for _, _, remedy in self.failures:
             if remedy and remedy not in seen:
@@ -528,7 +565,10 @@ def sync(
     with SyncLock(manifest.state_dir, force=options.force_unlock) as lock:
         if not lock.acquired:
             return SyncReport(busy=True)
-        report = SyncReport(reclaimed_lock=lock.outcome is LockOutcome.RECLAIMED)
+        report = SyncReport(
+            reclaimed_lock=lock.outcome is LockOutcome.RECLAIMED,
+            on_exceed=manifest.budget.on_exceed,
+        )
         _run(manifest, options, backend_factory, stamp, report, extraction_backend)
         return report
 
@@ -726,6 +766,11 @@ def _run(
                 extraction_backend=extraction_backend,
                 protected_by_hash=protected_by_hash,
             )
+            if report.budget_exhausted:
+                # A cap does not un-breach itself, so every remaining document would fail for the
+                # same reason and the report would carry N identical failures instead of one fact.
+                # `on_exceed` decides only what that *means* — see `SyncReport.ok`.
+                break
 
         store.set_meta(
             connection,
@@ -921,6 +966,8 @@ def _apply(
         store.record_failure(connection, path=path, stage=stage, error=error, happened=stamp)
         connection.commit()
         report.failures.append((path, error, remedy))
+        if isinstance(exc, PinakesError) and _is_budget_refusal(exc):
+            report.budget_exhausted = error
         return
 
     if survivor is not None or in_place_backend is not None:
@@ -929,6 +976,17 @@ def _apply(
         report.renamed += 1
     else:
         report.embedded += 1
+
+
+def _is_budget_refusal(exc: PinakesError) -> bool:
+    """Whether this failure is a `[budget]` cap refusing, rather than a document being broken.
+
+    Identified by type, never by matching the message: an error string is prose, and prose is
+    exactly what gets reworded by the next person improving it.
+    """
+    from pinakes.extract.claude import BudgetRefusedError
+
+    return isinstance(exc, BudgetRefusedError)
 
 
 def _target(

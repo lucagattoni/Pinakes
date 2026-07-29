@@ -460,6 +460,17 @@ of vanishing; and a *void* record closes a reservation at zero, the one escape h
 never billed. Without that last one, a handful of transient failures would permanently consume
 budget with no way to release it.
 
+**`on_exceed` is a corpus-level rule, never a page-level one.** `abort` (the default) makes a run
+stopped by a cap a failure: the user asked for the corpus and the corpus is not indexed. `partial`
+makes it a success: they asked for whatever fit inside the cap, and got it — every document that
+completed keeps its entry, because each is its own transaction. Either way the run **stops at the
+first breach** rather than trying every remaining document, since a cap does not un-breach itself
+and continuing produces N copies of one fact.
+
+What `partial` never means is part of a *document*. A half-extracted document writes no cache entry
+and lands in `failures` whatever `on_exceed` says — permission to index fewer documents is not
+permission to index part of one, which would be the silent truncation §4.6 exists to prevent.
+
 **Money is `Decimal` end to end, quantised exactly once**, when a record is written to the ledger. A
 cap compared against a float is not a cap: `0.05` has no exact binary representation, so the ceiling
 enforced would differ from the one configured by an amount nobody can predict or explain.
@@ -568,7 +579,20 @@ that prompt for cron use. **`--yes` does not authorise destroying entries a paid
 that needs the explicit `--clear-cache=paid`, which no hook and no generated workflow writes.
 Otherwise a cron line carrying `--yes` for freshness would also throw away paid extractions
 unattended, which is precisely what this guarantee claims to forbid. `ledger.jsonl` is never
-touched, the same guarantee `--rebuild` already gives. Selective removal of paid orphans alone lands with the ledger reader that can price them
+touched, the same guarantee `--rebuild` already gives. **The prompt prices what it is about to
+destroy**, in euros, joined from the ledger on each entry's own `call_ids` — not on its
+`operation_id`, which prices a whole *run* and would attribute every document's spend to each of
+them. A count answers "how many"; only the euros answer "is this worth re-paying for", which is the
+question someone about to type `y` actually has.
+
+**`--force` overrules exactly two refusals**, both of them refusals to spend or discard that a user
+may legitimately overrule: paying to extract a PDF whose free text layer is already healthy, and —
+**only together with an explicit free `--extract`** — letting a free run overwrite a paid
+extraction (§6.4). That qualifier is part of the scope rather than a detail of the rule it names:
+without it, a bare `pnk sync --force` on a KB whose manifest names the free backend destroys every
+paid extraction it has. `--force` never widens `per_operation_eur`, `daily_eur`, `monthly_eur`, the
+stale-price refusal, the missing-floor refusal, or the no-terminal abort — a flag that can widen a
+hard cap is not a hard cap. Selective removal of paid orphans alone lands with the ledger reader that can price them
 (I7c) — building it sooner would mean pricing entries against a ledger that does not exist yet.
 
 `pnk install-hooks` writes **three** hooks, split by what each may touch:
@@ -847,7 +871,7 @@ once, and a tool called `kb_search` is a collision waiting to happen. Every tool
 | **The paid-path allowlist erodes, or its decisive gate is inert** | A one-line import in a new module quietly makes the free path paid; and a behavioural gate that asserts a package is *absent* is vacuously true wherever that package is not installed — the `false_abstain: 0.0` failure reappearing in the flagship safety check. Mitigated by one `.paid-path-allowlist` that `check.sh`, CI and the tests all read, so three copies cannot drift; the gate landed **before** the code it guards, and its first job was to fail on a planted violation. The check that decides runs the whole free path in a fresh subprocess and asserts no paid client reached `sys.modules` — it skips loudly where `[claude]` is absent, runs for real on CI's `[light,pdf,claude]` leg, and has a negative test that plants an import and asserts it fails. It caught two real leaks on the day it landed: `pnk doctor` and `pnk sync` both reported a backend's availability by *loading* it, which imports the client |
 | **Unbounded spend across invocations** | One `pnk sync` is capped; nothing caps the tenth. Freshness is hook-driven (§6.3), which makes `pnk sync` machine-driven, so a per-invocation cap is really an allowance renewed on every commit — the per-invocation framing hides that the invocations are the loop. Mitigated by making the cap arithmetic over a *running* total: `per_operation_eur`, `daily_eur` **and** `monthly_eur` are all checked before every call, aggregated in `[budget] timezone`. `monthly_eur` is **per KB**, so ten paid KBs are ten allowances; v0.2 adds no global cap and says so rather than letting a reader assume one. ⏳ the reservation arithmetic shipped inert (I6a); reading the ledger, forcing hooks and `pnk init --ci` onto the free backend, and the no-TTY abort are **I6b** and are not built ([STATUS.md](STATUS.md)) |
 | **Price-table staleness, and the USD→EUR rate inside it** | The manifest prices in EUR and the vendor bills in USD, so the rate is a second number that goes stale with nothing saying so — and a ledger recording only a EUR figure cannot be re-derived once it moves. Mitigated by giving `usd_per_eur` the same `as_of` as the model prices (both shipped in `prices.toml`), recording `cost_usd`, the rate and its `as_of` on every ledger line with EUR computed at read time, and refusing to estimate against prices older than `max_price_age_days` rather than guessing. Deliberately **not** a CI gate: a wall-clock gate fails a quiet weekend with no code change, so staleness is a `pnk doctor` WARN and a runtime refusal, while CI only checks the file is well-formed. ⏳ the ledger fields and the doctor WARN are **I6b** and are not built ([STATUS.md](STATUS.md)) |
-| **Scanned-PDF quality cannot be measured by the audit that measures everything else** | The completeness audit's witness is the page's native text layer, and a scanned page has none — so the gate is blind on precisely the stratum the paid feature exists for. Mitigated by reporting `exempt K of M` rather than scoring exempt pages as passing (a pass rate that counts unmeasurable pages as passes is the vacuous-metric failure §7 exists to avoid), and by hand-authoring the scanned stratum's ground truth from the generator's spec rather than from any extractor's output. ⏳ the audit is **I7c** and is not built; its measured numbers land in this section with date, model and euros actually spent, labelled as measured on synthetic rasters ([STATUS.md](STATUS.md)) |
+| **Scanned-PDF quality cannot be measured by the audit that measures everything else** | The completeness audit's witness is the page's native text layer, and a scanned page has none — so the gate is blind on precisely the stratum the paid feature exists for. Mitigated by reporting `exempt K of M` rather than scoring exempt pages as passing (a pass rate that counts unmeasurable pages as passes is the vacuous-metric failure §7 exists to avoid), and by hand-authoring the scanned stratum's ground truth from the generator's spec rather than from any extractor's output. the audit is built and **reports only** — it re-extracts nothing and spends nothing, because the loop it would drive needs a floor and the pair that floor must be fitted against is (native layer → Claude output), which does not exist until the first real runs produce it. ⏳ its measured numbers land in this section with date, model and euros actually spent, labelled as measured on synthetic rasters ([STATUS.md](STATUS.md)) |
 | **A paid extraction's text has no durable, cross-machine home (v0.2)** | The sidecar's `provenance.extraction` proves a file is *unchanged* since a paid extraction anywhere (§6.4) — but the extracted *text* itself lives only in one machine's `extract/cache.py` or `index.db`, both gitignored. A fresh clone's first sync over a KB whose paid PDFs were extracted elsewhere gets an honest `PaidExtractionUnavailableError`, never a false "content changed" claim, but also cannot avoid paying again without one of those two local stores. Accepted for v0.2, not solved: a shared or committed store for paid extraction results is a real design question (would it live in git, defeating "originals are the truth"? A remote cache?) deliberately deferred rather than answered under this increment's own scope |
 
 ---
