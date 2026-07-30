@@ -141,6 +141,18 @@ jobs:
       - name: A traversal cannot exceed its caps
         run: uv run --frozen python tools/traversal_cap_gate.py
 
+      - name: The gate can still fail
+        # The sibling link-density job has had this since it shipped, and this one was written
+        # without it. Drives the same artifact against a cap the code does not have, and requires
+        # both a non-zero exit and the stated reason — a crash satisfies the first alone.
+        run: |
+          if uv run --frozen python tools/traversal_cap_gate.py --expect-depth 99; then
+            echo "traversal-cap passed against a cap the code does not have" >&2
+            exit 1
+          fi
+          uv run --frozen python tools/traversal_cap_gate.py --expect-depth 99 2>&1 \
+            | grep -q "the caps moved"
+
   link-density:
     # Its own job because `ci.yml` never invokes `check.sh` — a gate that lives only there runs
     # only on the machine of whoever remembers to run it. Needs no models and no index (it reads

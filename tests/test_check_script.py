@@ -118,4 +118,7 @@ def test_ci_runs_the_traversal_cap_gate() -> None:
     )
     job = re.search(r"^  traversal-caps:\n(?P<body>(?:    .*\n|\n)*)", workflow, re.MULTILINE)
     assert job is not None, "ci.yml has no traversal-caps job"
-    assert "tools/traversal_cap_gate.py" in job.group("body")
+    body = job.group("body")
+    assert "tools/traversal_cap_gate.py" in body
+    assert "--expect-depth 99" in body, "the negative check is gone — nothing proves it gates"
+    assert "the caps moved" in body, "the negative check no longer requires the stated reason"

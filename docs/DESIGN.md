@@ -108,7 +108,7 @@ committed files, never in `.pinakes/`** — a freshly cloned KB has no index at 
 [embedding]             # provider, model, dim — REQUIRED: the index *is* this model's output
 [extraction]            # PDF backend: free or paid
 [chunking]              # structural, max_tokens, overlap
-[retrieval]             # three separate widths, fusion, rerank, vector tier
+[retrieval]             # three separate widths, fusion, rerank, vector tier, adjacent_k
 [retrieval.confidence]  # fitted thresholds; absent ⇒ report `unknown`, never guess
 [rerank]                # mirrors [embedding]
 [budget]                # soft confirm threshold, hard per-operation cap, rolling windows

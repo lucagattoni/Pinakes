@@ -99,7 +99,7 @@ test, or write **none** and say why in the same commit.
 | a partner's bad `include` cannot crash the sync | L2 | `tests/test_sync_links.py::test_a_partners_bad_include_pattern_does_not_crash_the_sync` |
 | a partner root outside its own KB is refused | L2 | `tests/test_sync_links.py::test_a_partner_root_outside_its_own_kb_is_refused` |
 | a failed local run does not blame the partner | L2 | `tests/test_sync_links.py::test_a_failed_local_run_does_not_blame_the_partner` |
-| depth counts logical hops, not physical edges | L3 | `tests/test_traverse.py::test_depth_counts_logical_hops_not_physical_edges` |
+| depth counts one hop per candidate | L3 | `tests/test_traverse.py::test_depth_counts_one_hop_per_candidate` |
 | depth is clamped server-side | L3 | `tests/test_traverse.py::test_depth_is_clamped_to_the_server_maximum` |
 | fan-out keeps the highest-ranked, not the first k | L3 | `tests/test_traverse.py::test_fanout_keeps_the_highest_ranked_neighbours_not_the_first_k` |
 | fan-out is clamped server-side | L3 | `tests/test_traverse.py::test_fanout_is_clamped_to_the_server_maximum` |
@@ -128,6 +128,17 @@ test, or write **none** and say why in the same commit.
 | one query per hop, never a recursive CTE | L4 | `tests/test_cli_links.py::test_one_query_per_hop_not_a_recursive_cte` |
 | a missing local target is unresolved, never a neighbour | L4 | `tests/test_cli_links.py::test_a_local_link_to_a_missing_document_is_unresolved_not_dropped` |
 | a cross-KB target is never called unresolved | L4 | `tests/test_cli_links.py::test_a_cross_kb_target_is_never_called_unresolved` |
+| the frontier is capped like the rest of the response | L3 | `tests/test_traverse.py::test_the_frontier_is_capped_like_the_rest_of_the_response` |
+| a frontier entry is retracted when the node is reached later | L3 | `tests/test_traverse.py::test_a_frontier_entry_is_retracted_when_the_node_is_reached_later` |
+| ...but `terminal` and `depth` describe accepted nodes and stay | L3 | `tests/test_traverse.py::test_an_accepted_node_may_still_be_on_the_frontier_for_terminal_or_depth` |
+| the response caps are clamped server-side too | L3 | `tests/test_traverse.py::test_the_response_caps_are_clamped_server_side_too` |
+| terminal outranks the response caps, not only fanout | L3 | `tests/test_traverse.py::test_terminal_outranks_the_response_caps_as_well_as_fanout` |
+| two relations to one target are two rows | L3 | `tests/test_traverse.py::test_two_relations_to_one_target_are_two_rows` |
+| ...while the node is still expanded once | L3 | `tests/test_traverse.py::test_a_node_reachable_two_ways_is_still_expanded_once` |
+| the row cap keeps the highest-ranked across the whole hop | L3 | `tests/test_traverse.py::test_the_row_cap_keeps_the_highest_ranked_across_the_whole_hop` |
+| a score says whether it came from the query | L3 | `tests/test_traverse.py::test_a_score_says_whether_it_came_from_the_query` |
+| `adjacent_k` defaults to 8 | L3 | `tests/test_manifest.py::test_adjacent_k_defaults_to_eight` |
+| ...and above the cap is refused, not clamped | L3 | `tests/test_manifest.py::test_adjacent_k_above_the_server_cap_is_refused_not_clamped` |
 
 ## The PDF corpus
 

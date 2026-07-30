@@ -320,3 +320,25 @@ def test_find_kb_root_stops_with_a_remedy(tmp_path: Path) -> None:
     with pytest.raises(NoKbFoundError) as exc_info:
         find_kb_root(tmp_path)
     assert "pnk init" in exc_info.value.remedy
+
+
+def test_adjacent_k_defaults_to_eight(write_manifest: Callable[[str], Path]) -> None:
+    """New behaviour ships with its test. The default was asserted only in prose."""
+    from pinakes.graph.traverse import DEFAULT_ADJACENT_K
+
+    assert load(write_manifest(minimal())).retrieval.adjacent_k == DEFAULT_ADJACENT_K
+
+
+def test_adjacent_k_above_the_server_cap_is_refused_not_clamped(
+    write_manifest: Callable[[str], Path],
+) -> None:
+    """Answering 64 to a request for 10,000 while saying nothing leaves the author believing
+    something untrue — which is the whole argument for refusing at parse time, and it was made in
+    a commit message rather than in a test."""
+    from pinakes.errors import ManifestError
+    from pinakes.graph.traverse import MAX_ADJACENT_K
+
+    body = minimal(retrieval="\n[retrieval]\nadjacent_k = 10000\n")
+    with pytest.raises(ManifestError) as caught:
+        load(write_manifest(body))
+    assert str(MAX_ADJACENT_K) in caught.value.message

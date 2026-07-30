@@ -98,7 +98,7 @@ in the output would reveal it.
 | `vector_tier` | `auto` | `auto`, `numpy` or `sqlite-vec`. **Only the NumPy tier is built** — `sqlite-vec` is the template release |
 | `adjacent_k` | `8` | Neighbours kept per expansion when traversing links, applied **after** ranking. Server-capped at 64 whatever this says, and a value above that is refused at parse time rather than silently clamped. **Not stamped into the template**: `pinakes.toml` hard-errors on an unknown key, so a manifest carrying `adjacent_k` cannot be read by any pinakes released before it existed |
 
-Three separate widths rather than one `top_k`, because they are three different cut-offs.
+Three separate *pipeline* widths rather than one `top_k` (`adjacent_k` is not one of them — it bounds link traversal, not retrieval), because they are three different cut-offs.
 
 ### `[retrieval.confidence]`
 

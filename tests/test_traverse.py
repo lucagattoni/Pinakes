@@ -18,6 +18,7 @@ from pinakes.graph.traverse import (
     FANOUT,
     MAX_ADJACENT_K,
     MAX_DEPTH,
+    MAX_ROWS,
     REASONS,
     ROWS,
     TERMINAL,
@@ -88,13 +89,14 @@ def reasons(result: Result) -> dict[str, str]:
 # --- Depth -----------------------------------------------------------------------------------
 
 
-def test_depth_counts_logical_hops_not_physical_edges() -> None:
-    """A hub is transit, not a destination. Counting physically would strand the highest-trust
-    authored edges beyond any usable depth — which is APPROACH §4A's whole argument.
+def test_depth_counts_one_hop_per_candidate() -> None:
+    """Renamed from `..._counts_logical_hops_not_physical_edges`, which it could not hold.
 
-    The provider composes `document → tag → document` into one candidate; the core never sees the
-    hub, so "logical" is a property of what a provider offers, and the core's job is only to count
-    what it is handed once each.
+    "Logical hops" is a property of what a *provider* offers: it composes `document → tag →
+    document` into one candidate, and the core never sees the hub. This fixture has no hub in it,
+    so no mutation could fail this and pass `test_depth_is_clamped_to_the_server_maximum` — it was
+    a second copy of that test wearing a larger claim. What the core actually owes is counted here:
+    one hop per candidate it is handed.
     """
     graph = Graph(
         {
@@ -224,10 +226,11 @@ def test_a_frontier_entry_carries_the_reason_it_was_not_expanded() -> None:
         "drop": FANOUT,
     }
 
-    # rows — free to carry, but too many of them
+    # rows — free to carry, but too many of them. The frontier shares the same `max_rows` budget,
+    # so a request for 2 rows gets 2 explanations, not one per dropped candidate.
     rows = Graph({node("a"): [candidate(f"n{index}", weight=1.0) for index in range(5)]})
     got = reasons(traverse(rows, node("a"), depth=1, max_rows=2, token_budget=10_000))
-    assert sum(1 for reason in got.values() if reason == ROWS) == 3
+    assert sum(1 for reason in got.values() if reason == ROWS) == 2
 
     # tokens — few of them, but each expensive
     tokens = Graph(
@@ -409,3 +412,167 @@ def test_unresolved_accumulates_across_hops() -> None:
 def test_a_walk_that_finds_nothing_is_empty_rather_than_an_error() -> None:
     assert traverse(Graph({}), node("lonely"), depth=3) == traverse(Graph({}), node("lonely"))
     assert traverse(Graph({}), node("lonely")).neighbours == ()
+
+
+# --- What the review found -----------------------------------------------------------------
+
+
+def test_the_frontier_is_capped_like_the_rest_of_the_response() -> None:
+    """It is the response's largest component and was bounded by nothing.
+
+    Measured before the fix: a caller asking for **one** row received a thousand frontier entries —
+    and this is the payload an agent parses. The module docstring claimed the response was
+    "double-capped"; only half of it was.
+    """
+    wide = Graph(
+        {node("a"): [candidate(f"n{index:04}", weight=float(index)) for index in range(1000)]}
+    )
+
+    result = traverse(wide, node("a"), depth=1, adjacent_k=10_000, max_rows=1, token_budget=1)
+
+    assert len(result.neighbours) <= 1
+    assert len(result.frontier) <= 1
+    assert ROWS in result.truncated
+
+
+def test_a_frontier_entry_is_retracted_when_the_node_is_reached_later() -> None:
+    """A node dropped by fan-out at one hop and reached at another kept claiming `fanout` — while
+    sitting in `neighbours` and having been expanded. A caller reading the frontier for "retry with
+    a bigger adjacent_k" got a false positive on a node already in its answer."""
+    graph = Graph(
+        {
+            node("a"): [candidate("b", weight=9.0), candidate("x", weight=0.1)],
+            node("b"): [candidate("x", weight=5.0)],
+            node("x"): [candidate("z")],
+        }
+    )
+
+    result = traverse(graph, node("a"), depth=3, adjacent_k=1)
+
+    assert "x" in names(result)
+    assert reasons(result).get("x") != FANOUT, "a reached node still claims it was dropped"
+
+
+def test_an_accepted_node_may_still_be_on_the_frontier_for_terminal_or_depth() -> None:
+    """The other half of the contract, so the retraction above cannot be over-applied: `terminal`
+    and `depth` describe *accepted* nodes deliberately not expanded, which is exactly what a
+    caller needs to know about a node it does have."""
+    graph = Graph({node("a"): [candidate("t", terminal=True)]})
+    result = traverse(graph, node("a"), depth=3)
+
+    assert "t" in names(result)
+    assert reasons(result)["t"] == TERMINAL
+
+
+def test_the_response_caps_are_clamped_server_side_too() -> None:
+    """ "Every bound is clamped" was true of two of the four. A caller passing `max_rows=10**9` got
+    3,660 rows and an empty `truncated` — and once this is reachable over MCP, the caller supplying
+    it is the untrusted party."""
+    wide = {
+        node(f"{level}-{index}"): [
+            candidate(f"{level + 1}-{index}_{spoke}", weight=float(spoke)) for spoke in range(60)
+        ]
+        for level in range(3)
+        for index in range(60)
+    }
+    wide[node("0-0")] = [candidate(f"1-{spoke}", weight=float(spoke)) for spoke in range(60)]
+
+    result = traverse(
+        Graph(wide),
+        node("0-0"),
+        depth=99,
+        adjacent_k=10_000,
+        max_rows=10**9,
+        token_budget=10**9,
+    )
+
+    assert len(result.neighbours) <= MAX_ROWS
+    assert ROWS in result.truncated
+
+
+def test_terminal_outranks_the_response_caps_as_well_as_fanout() -> None:
+    """The stated precedence is `terminal, depth, fanout, rows, tokens`. Before this, the row and
+    token checks ran before terminality was ever consulted, so a terminal neighbour dropped by the
+    row cap reported `rows` — inviting a retry with a smaller request that cannot help."""
+    graph = Graph(
+        {
+            node("a"): [
+                candidate("keep", weight=9.0),
+                candidate("term", weight=0.5, terminal=True),
+            ]
+        }
+    )
+
+    result = traverse(graph, node("a"), depth=1, max_rows=1, token_budget=10_000)
+
+    assert names(result) == ["keep"]
+    assert reasons(result)["term"] == TERMINAL
+
+
+def test_two_relations_to_one_target_are_two_rows() -> None:
+    """Row dedup is per **edge**, not per node — the plan and APPROACH both say visited-*edge*.
+    Node-level dedup silently dropped the second relation, in a module whose contract is that a
+    fact about the graph is returned rather than dropped."""
+    graph = Graph(
+        {
+            node("a"): [
+                candidate("t", rel="supersedes", weight=9.0),
+                candidate("t", rel="cites", weight=8.0),
+            ]
+        }
+    )
+
+    result = traverse(graph, node("a"), depth=1)
+
+    assert {(row.node_key[1], row.rel) for row in result.neighbours} == {
+        ("t", "supersedes"),
+        ("t", "cites"),
+    }
+
+
+def test_a_node_reachable_two_ways_is_still_expanded_once() -> None:
+    """...and edge-level row dedup must not undo the node-level expansion dedup that bounds the
+    walk."""
+    graph = Graph(
+        {
+            node("a"): [candidate("t", rel="one"), candidate("t", rel="two")],
+            node("t"): [candidate("z")],
+        }
+    )
+
+    traverse(graph, node("a"), depth=3)
+
+    assert graph.asked.count(node("t")) == 1
+
+
+def test_the_row_cap_keeps_the_highest_ranked_across_the_whole_hop() -> None:
+    """Ranking was per parent while the row cap was global, so a high-ranked neighbour behind a
+    low-ranked parent was dropped for a worthless one in front of it — the same mistake as
+    truncate-then-rank, one level up."""
+    graph = Graph(
+        {
+            node("a"): [candidate("p1", weight=1.0), candidate("p2", weight=0.9)],
+            node("p1"): [candidate("junk", weight=0.01)],
+            node("p2"): [candidate("gold", weight=99.0)],
+        }
+    )
+
+    result = traverse(graph, node("a"), depth=2, max_rows=3)
+
+    assert "gold" in names(result), "a top-ranked neighbour lost to a worthless one"
+
+
+def test_a_score_says_whether_it_came_from_the_query() -> None:
+    """Without this the payload's `score` was a similarity or an edge weight with nothing on the
+    wire to say which, so two responses could not be compared."""
+    graph = Graph({node("a"): [candidate("b", weight=2.0, score=0.5)]})
+
+    assert traverse(graph, node("a"), depth=1).neighbours[0].scored_by_query is False
+    assert traverse(graph, node("a"), depth=1, query="q").neighbours[0].scored_by_query is True
+
+
+def test_adjacent_k_zero_means_no_fanout_rather_than_one() -> None:
+    """`max(1, ...)` made "no fan-out" unaskable — the inverse of the reasoning `depth=0` gets one
+    screen away."""
+    graph = Graph({node("a"): [candidate("b")]})
+    assert traverse(graph, node("a"), depth=1, adjacent_k=0).neighbours == ()
