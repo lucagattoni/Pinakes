@@ -56,7 +56,7 @@ it does not include `**/*.pdf` in `[sources]`.
 ## `pnk sync`
 
 ```
-pnk sync [--kb PATH] [--rebuild] [--sidecars-only] [--index-only] [--stage]
+pnk sync [--kb PATH] [--rebuild] [--sidecars-only] [--index-only] [--stage] [--scan-links]
          [--offline] [--force-unlock] [--extract BACKEND] [--force]
          [--estimate-only] [--clear-cache[=paid]] [--yes] [-q]
 ```
@@ -73,6 +73,7 @@ corpus. Failures are recorded, the run continues, and sync exits non-zero listin
 | `--sidecars-only` | Mint missing sidecars; never touch the index. The `pre-commit` half. Refuses to mint over a sidecar that exists but will not parse — it still holds that document's permanent ULID — and records it as a failure, so **a `pre-commit` hook blocks the commit** until the file is repaired. Only a commit staging that *document* is affected; editing the sidecar alone is not |
 | `--index-only` | Update the index; never write into `docs/`. The `post-commit` half |
 | `--stage` | With `--sidecars-only`: limit to staged files and `git add` them, so a document and its ID land in one commit |
+| `--scan-links` | Re-read every `[[links.kb]]`'s committed sidecars now, ignoring the freshness window. Ordinary syncs skip a partner read within the last hour, because this runs on `post-commit` and `post-merge`. Refused together with `--sidecars-only`, which never opens the index at all |
 | `--extract BACKEND` | Override `[extraction] backend` for this run only. Validated against the registry *without importing* it, so an unknown name is a usage error before any extra could matter |
 | `--estimate-only` | Price what a paid run would cost and exit, extracting nothing. **A network call** — it measures the real first-slice request with the vendor's own token counter, so it needs a key. It generates nothing and bills no output. Refuses on a free backend |
 | `--force` | Overrules **exactly two** refusals: paying to extract a PDF whose free text layer is already healthy, and — **only together with an explicit free `--extract`** — overwriting a paid extraction, printing what it discards. It never widens `per_operation_eur`, `daily_eur`, `monthly_eur`, the stale-price refusal, the missing-floor refusal, or the no-terminal abort |

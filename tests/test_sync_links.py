@@ -1,0 +1,679 @@
+"""Reverse-scan: inbound links, `kb_refs`, and the deletes that keep them true (§6.2).
+
+Every fixture here builds **two real KBs on disk** that name each other. A single-KB fixture cannot
+exercise any of this: the whole increment is about what one KB learns by reading another's
+committed sidecars, and the interesting failures — a partner's `self` link, an id mismatch, a
+half-read walk — only exist when there is a second manifest to disagree with.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pytest
+import yaml
+
+from pinakes import store
+from pinakes.embed import EmbeddingBackend, ModelInfo, Vectors
+from pinakes.errors import SyncError
+from pinakes.ids import DocId, KbId, mint_doc_id, mint_kb_id
+from pinakes.linkscan import TTL_MINUTES, is_stale
+from pinakes.manifest import load
+from pinakes.sidecar import SIDECAR_SUFFIX
+from pinakes.sync import SyncOptions, SyncReport, sync
+
+DIM = 8
+
+
+class FakeBackend:
+    """Deterministic and instant — what is under test is the scan, not a model."""
+
+    def embed(self, texts: Sequence[str]) -> Vectors:
+        listed = list(texts)
+        if not listed:
+            return np.zeros((0, DIM), dtype=np.float32)
+        return np.ascontiguousarray(
+            np.vstack([np.full(DIM, (len(text) % 7) / 7.0, dtype=np.float32) for text in listed]),
+            dtype=np.float32,
+        )
+
+    def count_tokens(self, text: str) -> int:
+        return len(text.split())
+
+    def info(self) -> ModelInfo:
+        return ModelInfo("fake", "fake-model", "rev1", DIM, 512)
+
+
+def fake_factory(_manifest: Any, _offline: bool) -> EmbeddingBackend:
+    return FakeBackend()
+
+
+MANIFEST = """\
+[kb]
+name     = "{name}"
+id       = "{kb_id}"
+template = "notes@1.0"
+created  = "20260730 09:00"
+
+[sources]
+roots   = ["{docs}/"]
+include = ["**/*.md"]
+
+[embedding]
+provider = "fastembed"
+model    = "fake-model"
+dim      = {dim}
+
+[chunking]
+strategy   = "structural"
+max_tokens = 120
+overlap    = 16
+
+[retrieval]
+candidates_per_source = 30
+fusion                = "rrf"
+fusion_top_k          = 12
+final_k               = 5
+rerank                = "none"
+vector_tier           = "numpy"
+
+[rerank]
+provider = "none"
+model    = "none"
+"""
+
+
+@dataclass
+class Kb:
+    root: Path
+    kb_id: KbId
+    docs: dict[str, DocId]
+    docs_dir: str = "docs"
+
+    def sidecar(self, name: str) -> Path:
+        return self.root / self.docs_dir / f"{name}.md{SIDECAR_SUFFIX}"
+
+    def uri(self, name: str) -> str:
+        return f"pnk://{self.kb_id}/{self.docs[name]}"
+
+    def set_links(self, name: str, entries: Sequence[tuple[str, str]]) -> None:
+        """Rewrite one sidecar's `links[]` as `(uri, rel)` pairs — the authoring model, by hand."""
+        path = self.sidecar(name)
+        body = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if entries:
+            body["links"] = [{"to": uri, "rel": rel} for uri, rel in entries]
+        else:
+            body.pop("links", None)
+        path.write_text(yaml.safe_dump(body, sort_keys=False), encoding="utf-8")
+
+    def connect(self, other: Kb, alias: str, *, path: str | None = None, kb_id: str | None = None):
+        """Add a `[[links.kb]]` naming `other`. `kb_id`/`path` override to build the bad cases."""
+        manifest = self.root / "pinakes.toml"
+        text = manifest.read_text(encoding="utf-8")
+        target = path if path is not None else _relative(self.root, other.root)
+        text += (
+            f'\n[[links.kb]]\nname = "{alias}"\n'
+            f'id   = "{kb_id or other.kb_id}"\npath = "{target}"\n'
+        )
+        manifest.write_text(text, encoding="utf-8")
+
+    def disconnect_all(self) -> None:
+        manifest = self.root / "pinakes.toml"
+        text = manifest.read_text(encoding="utf-8")
+        manifest.write_text(text.split("\n[[links.kb]]")[0] + "\n", encoding="utf-8")
+
+
+def _relative(here: Path, there: Path) -> str:
+    import os
+
+    return os.path.relpath(there, here)
+
+
+def make_kb(
+    root: Path,
+    name: str,
+    doc_names: Sequence[str],
+    *,
+    docs_dir: str = "docs",
+    kb_id: str | None = None,
+) -> Kb:
+    (root / docs_dir).mkdir(parents=True)
+    identifier = KbId(kb_id) if kb_id else mint_kb_id()
+    (root / "pinakes.toml").write_text(
+        MANIFEST.format(name=name, kb_id=identifier, dim=DIM, docs=docs_dir), encoding="utf-8"
+    )
+    docs: dict[str, DocId] = {}
+    for doc in doc_names:
+        (root / docs_dir / f"{doc}.md").write_text(f"# {doc}\n\nText about {doc}.\n", "utf-8")
+        doc_id = mint_doc_id()
+        docs[doc] = doc_id
+        (root / docs_dir / f"{doc}.md{SIDECAR_SUFFIX}").write_text(
+            yaml.safe_dump({"id": str(doc_id), "title": doc}, sort_keys=False), encoding="utf-8"
+        )
+    return Kb(root=root, kb_id=identifier, docs=docs, docs_dir=docs_dir)
+
+
+def run(kb: Kb, *, now: str = "20260730 12:00", **options: Any) -> SyncReport:
+    return sync(
+        load(kb.root),
+        options=SyncOptions(**options),
+        backend_factory=fake_factory,
+        now=now,
+    )
+
+
+def links_in(kb: Kb, *, origin: str | None = None) -> list[tuple[str, str, str, str, str]]:
+    connection = store.connect_ro(kb.root / ".pinakes" / "index.db")
+    try:
+        sql = "SELECT src_kb_id, src_doc_id, dst_kb_id, dst_doc_id, rel, origin FROM links"
+        rows = [tuple(str(value) for value in row) for row in connection.execute(sql)]
+    finally:
+        connection.close()
+    return sorted((a, b, c, d, e) for a, b, c, d, e, o in rows if origin is None or o == origin)
+
+
+def kb_refs(kb: Kb) -> dict[str, tuple[str, str, str]]:
+    connection = store.connect_ro(kb.root / ".pinakes" / "index.db")
+    try:
+        return {
+            str(row[0]): (str(row[1]), str(row[2]), str(row[3]))
+            for row in connection.execute("SELECT kb_id, alias, path, last_scan FROM kb_refs")
+        }
+    finally:
+        connection.close()
+
+
+@pytest.fixture
+def pair(tmp_path: Path) -> tuple[Kb, Kb]:
+    """A local KB and a partner that links into it. The shape every test here needs."""
+    local = make_kb(tmp_path / "local", "local", ["alpha", "beta"])
+    partner = make_kb(tmp_path / "partner", "partner", ["one", "two"])
+    local.connect(partner, "partner")
+    partner.connect(local, "local")
+    partner.set_links("one", [(local.uri("alpha"), "counterpart")])
+    return local, partner
+
+
+# --- What the scan records ----------------------------------------------------------------------
+
+
+def test_inbound_rows_carry_the_other_kbs_id_as_source(pair: tuple[Kb, Kb]) -> None:
+    local, partner = pair
+    run(local)
+
+    rows = links_in(local, origin="reverse-scan")
+    assert rows == [
+        (
+            str(partner.kb_id),
+            str(partner.docs["one"]),
+            str(local.kb_id),
+            str(local.docs["alpha"]),
+            "counterpart",
+        )
+    ]
+
+
+def test_a_self_link_in_a_partner_sidecar_resolves_to_the_partner_not_the_local_kb(
+    pair: tuple[Kb, Kb],
+) -> None:
+    """The trap. `read_sidecar`'s `owner` expands `pnk://self/<doc>`, and both pre-existing call
+    sites hard-code the *local* KB — so reusing either would resolve a partner's `self` link to us
+    and mint an inbound edge from a document the partner never pointed here.
+
+    The same defect was found and fixed once already (a sidecar copied into another KB silently
+    retargeting its link), which is why `tests/partner-kb/` carries a hand-authored `self` link.
+    """
+    local, partner = pair
+    partner.set_links("two", [(f"pnk://self/{partner.docs['one']}", "related")])
+
+    run(local)
+
+    inbound = links_in(local, origin="reverse-scan")
+    assert all(dst != str(partner.docs["one"]) for _, _, _, dst, _ in inbound), (
+        "a partner's `self` link was resolved against the local KB"
+    )
+    assert len(inbound) == 1  # only the genuine cross-KB one
+
+
+def test_a_partner_link_to_a_third_kb_is_not_recorded(pair: tuple[Kb, Kb]) -> None:
+    """Recording it would accumulate a foreign graph this index can never complete, and a partial
+    view of someone else's links is exactly the silently-incomplete answer §6.2 refuses."""
+    local, partner = pair
+    third = mint_kb_id()
+    partner.set_links(
+        "two", [(f"pnk://{third}/{mint_doc_id()}", "related"), (local.uri("beta"), "related")]
+    )
+
+    run(local)
+
+    inbound = links_in(local, origin="reverse-scan")
+    assert all(src_kb == str(partner.kb_id) for src_kb, _, _, _, _ in inbound)
+    assert len(inbound) == 2
+
+
+def test_kb_refs_records_alias_path_and_scan_time(pair: tuple[Kb, Kb]) -> None:
+    """Four columns that DESIGN §3 defined and nothing had ever written."""
+    local, partner = pair
+    run(local, now="20260730 12:00")
+
+    refs = kb_refs(local)
+    alias, path, last_scan = refs[str(partner.kb_id)]
+    assert alias == "partner"
+    assert Path(path).resolve() == partner.root.resolve()
+    assert last_scan == "20260730 12:00"
+
+
+def test_the_scan_reads_sidecars_not_the_partners_index(pair: tuple[Kb, Kb]) -> None:
+    """The fixture holds a partner index that *contradicts* its sidecars: an inbound row the
+    sidecars do not justify. If the scan read the index, that row would appear here.
+
+    Built with `store.create` plus direct inserts rather than by syncing the partner for real —
+    syncing it would drag an embedding backend into a test that needs none, and would also make
+    the index agree with the sidecars, which is the one thing this fixture must not do.
+    """
+    local, partner = pair
+    partner_index = partner.root / ".pinakes" / "index.db"
+    partner_index.parent.mkdir(parents=True, exist_ok=True)
+    connection = store.create(partner_index)
+    try:
+        connection.execute(
+            "INSERT INTO links VALUES (?, ?, ?, ?, ?, 'sidecar')",
+            (
+                str(partner.kb_id),
+                str(partner.docs["two"]),
+                str(local.kb_id),
+                str(local.docs["beta"]),
+                "invented-by-the-index",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    run(local)
+
+    rels = {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
+    assert "invented-by-the-index" not in rels
+    assert rels == {"counterpart"}
+
+
+def test_a_target_this_kb_does_not_have_is_reported_but_still_recorded(
+    pair: tuple[Kb, Kb],
+) -> None:
+    """Dropping it would hide a real claim the other KB is making — usually it just means the
+    partner is ahead of us."""
+    local, partner = pair
+    absent = mint_doc_id()
+    partner.set_links("two", [(f"pnk://{local.kb_id}/{absent}", "related")])
+
+    report = run(local)
+
+    assert any(str(absent) in message for _, message, _ in report.link_scan)
+    assert any(dst == str(absent) for _, _, _, dst, _ in links_in(local, origin="reverse-scan"))
+
+
+# --- Never overwriting an authored row -----------------------------------------------------------
+
+
+def test_a_reverse_row_never_overwrites_an_authored_row(tmp_path: Path) -> None:
+    """A manifest listing *itself* is the only way an authored tuple and a reverse tuple can
+    collide: an authored row's `src_kb_id` is always the local KB, and duplicate `[[links.kb]]`
+    ids are already refused at parse time. `INSERT OR REPLACE` would flip `origin` to
+    `reverse-scan` and drop the row out of the authored-only population the density gate and
+    `pnk doctor` both count."""
+    kb = make_kb(tmp_path / "solo", "solo", ["alpha", "beta"])
+    kb.connect(kb, "myself")  # the self-listing fixture
+    kb.set_links("alpha", [(kb.uri("beta"), "related")])
+
+    run(kb)
+
+    rows = [
+        (src_doc, dst_doc, rel)
+        for src_kb, src_doc, _dst_kb, dst_doc, rel in links_in(kb, origin="sidecar")
+        if src_kb == str(kb.kb_id)
+    ]
+    assert (str(kb.docs["alpha"]), str(kb.docs["beta"]), "related") in rows, (
+        "the authored row was downgraded to origin=reverse-scan"
+    )
+
+
+def test_an_authored_row_reclaims_a_tuple_a_reverse_scan_already_wrote(tmp_path: Path) -> None:
+    """The other order, which is safe for a different reason: `_replace_links` uses
+    `INSERT OR REPLACE`, so it reclaims the tuple and rewrites `origin` to `sidecar`. Making that
+    writer a `DO NOTHING` too — the symmetric-looking "fix" — would silently undercount authored
+    links forever."""
+    kb = make_kb(tmp_path / "solo", "solo", ["alpha", "beta"])
+    kb.connect(kb, "myself")
+    kb.set_links("alpha", [(kb.uri("beta"), "related")])
+    run(kb)
+
+    connection = store.connect_rw(kb.root / ".pinakes" / "index.db")
+    try:
+        connection.execute("UPDATE links SET origin = 'reverse-scan'")
+        connection.commit()
+    finally:
+        connection.close()
+
+    # The document has to actually be *re-indexed* for `_replace_links` to run: a Skip rewrites
+    # nothing, which is itself worth knowing — the reclaim happens when the authored side changes,
+    # not on every sync.
+    (kb.root / "docs" / "alpha.md").write_text("# alpha\n\nEdited.\n", encoding="utf-8")
+    run(kb, now="20260730 13:00", scan_links=True)
+
+    authored = links_in(kb, origin="sidecar")
+    assert (
+        str(kb.kb_id),
+        str(kb.docs["alpha"]),
+        str(kb.kb_id),
+        str(kb.docs["beta"]),
+        "related",
+    ) in authored
+
+
+# --- The deletes ---------------------------------------------------------------------------------
+
+
+def test_a_removed_link_removes_its_reverse_row(pair: tuple[Kb, Kb]) -> None:
+    local, partner = pair
+    run(local)
+    assert len(links_in(local, origin="reverse-scan")) == 1
+
+    partner.set_links("one", [])
+    run(local, now="20260730 14:00", scan_links=True)
+
+    assert links_in(local, origin="reverse-scan") == []
+
+
+def test_the_delete_is_scoped_to_the_scanned_kb(tmp_path: Path) -> None:
+    """Two partners. Re-scanning one must not touch the other's rows."""
+    local = make_kb(tmp_path / "local", "local", ["alpha"])
+    first = make_kb(tmp_path / "first", "first", ["one"])
+    second = make_kb(tmp_path / "second", "second", ["two"])
+    local.connect(first, "first")
+    local.connect(second, "second")
+    first.connect(local, "local")
+    second.connect(local, "local")
+    first.set_links("one", [(local.uri("alpha"), "from-first")])
+    second.set_links("two", [(local.uri("alpha"), "from-second")])
+    run(local)
+    assert len(links_in(local, origin="reverse-scan")) == 2
+
+    first.set_links("one", [])
+    run(local, now="20260730 14:00", scan_links=True)
+
+    rels = {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
+    assert rels == {"from-second"}
+
+
+def test_delisting_a_linked_kb_removes_its_reverse_rows_and_kb_ref(pair: tuple[Kb, Kb]) -> None:
+    """The per-scanned-KB delete never fires for a KB that is no longer scanned, and nothing else
+    in `src/` removes a reverse row — so before this, disconnecting a partner left
+    `pnk links --direction in` serving its edges until someone happened to rebuild."""
+    local, partner = pair
+    run(local)
+    assert len(links_in(local, origin="reverse-scan")) == 1
+    assert str(partner.kb_id) in kb_refs(local)
+
+    local.disconnect_all()
+    report = run(local, now="20260730 14:00")
+
+    assert links_in(local, origin="reverse-scan") == []
+    assert kb_refs(local) == {}
+    assert report.links_forgotten == 1
+
+
+def test_a_failed_scan_leaves_the_previous_reverse_rows_in_place(pair: tuple[Kb, Kb]) -> None:
+    """The delete is unconditional within its scope, so a half-read partner would lose edges that
+    are still true. Two of the four failure modes reach here."""
+    local, partner = pair
+    run(local)
+    before = links_in(local, origin="reverse-scan")
+    assert len(before) == 1
+
+    # A second partner document whose sidecar will not parse: the walk is now incomplete, and the
+    # rows it *did* read must not be written as if they were the whole picture.
+    partner.sidecar("two").write_text("id: not-a-ulid\n", encoding="utf-8")
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    assert links_in(local, origin="reverse-scan") == before
+    assert any("will not parse" in message for _, message, _ in report.link_scan)
+
+
+def test_a_failed_scan_does_not_stamp_last_scan(pair: tuple[Kb, Kb]) -> None:
+    """Recording the timestamp would suppress the retry for a full TTL on the strength of a walk
+    that failed — the one outcome that must not be sticky."""
+    local, partner = pair
+    run(local, now="20260730 12:00")
+    partner.sidecar("two").write_text("id: not-a-ulid\n", encoding="utf-8")
+
+    run(local, now="20260730 14:00", scan_links=True)
+
+    _alias, _path, last_scan = kb_refs(local)[str(partner.kb_id)]
+    assert last_scan == "20260730 12:00"
+
+
+# --- The failure taxonomy -------------------------------------------------------------------------
+
+
+def test_each_failure_mode_is_recorded_with_its_reason(tmp_path: Path) -> None:
+    """Four shapes, four distinguishable messages, and every one of them constructed rather than
+    raised — the scan carries on to the next KB."""
+    local = make_kb(tmp_path / "local", "local", ["alpha"])
+
+    absent = make_kb(tmp_path / "absent", "absent", ["x"])
+    local.connect(absent, "gone", path="../nowhere-at-all")
+
+    wrong = make_kb(tmp_path / "wrong", "wrong", ["y"])
+    local.connect(wrong, "mismatched", kb_id=str(mint_kb_id()))
+
+    broken = make_kb(tmp_path / "broken", "broken", ["z"])
+    broken.connect(local, "local")
+    broken.sidecar("z").write_text("id: not-a-ulid\n", encoding="utf-8")
+    local.connect(broken, "unparseable")
+
+    ahead = make_kb(tmp_path / "ahead", "ahead", ["w"])
+    ahead.connect(local, "local")
+    ahead.set_links("w", [(f"pnk://{local.kb_id}/{mint_doc_id()}", "related")])
+    local.connect(ahead, "ahead")
+
+    report = run(local)
+
+    by_alias = {alias: message for alias, message, _ in report.link_scan}
+    assert "no such directory" in by_alias["gone"]
+    assert "but the KB at that path is" in by_alias["mismatched"]
+    assert "will not parse" in by_alias["unparseable"]
+    assert "does not have" in by_alias["ahead"]
+    assert all(remedy for _, _, remedy in report.link_scan), "every failure owes a remedy"
+
+
+def test_an_unreachable_linked_kb_does_not_fail_the_sync(tmp_path: Path) -> None:
+    """`SyncReport.ok` is `not self.failures`, and `pnk sync` runs on three git hooks. Recording a
+    missing partner as a failure would block every commit over a KB that is simply not on this
+    machine — contradicting both `[[links.kb]]`'s "non-existence is not an error" and `pnk doctor`
+    reporting it as a warning."""
+    local = make_kb(tmp_path / "local", "local", ["alpha"])
+    other = make_kb(tmp_path / "other", "other", ["one"])
+    local.connect(other, "gone", path="../not-here")
+
+    report = run(local)
+
+    assert report.ok
+    assert report.failures == []
+    assert len(report.link_scan) == 1
+
+
+# --- The TTL --------------------------------------------------------------------------------------
+
+
+def test_a_fresh_kb_refs_entry_skips_the_walk(pair: tuple[Kb, Kb]) -> None:
+    local, partner = pair
+    run(local, now="20260730 12:00")
+
+    partner.set_links("one", [])  # would remove the row, if anyone looked
+    report = run(local, now="20260730 12:30")  # inside the TTL
+
+    assert len(links_in(local, origin="reverse-scan")) == 1
+    assert report.links_scanned == ()
+
+
+def test_an_expired_ttl_forces_a_rescan(pair: tuple[Kb, Kb]) -> None:
+    local, partner = pair
+    run(local, now="20260730 12:00")
+    partner.set_links("one", [])
+
+    run(local, now="20260730 14:00")  # well past the TTL
+
+    assert links_in(local, origin="reverse-scan") == []
+
+
+def test_scan_links_forces_a_rescan(pair: tuple[Kb, Kb]) -> None:
+    local, partner = pair
+    run(local, now="20260730 12:00")
+    partner.set_links("one", [])
+
+    run(local, now="20260730 12:01", scan_links=True)  # far inside the TTL
+
+    assert links_in(local, origin="reverse-scan") == []
+
+
+@pytest.mark.parametrize(
+    ("last_scan", "expected", "why"),
+    [
+        (None, True, "nothing is known yet"),
+        ("20260730 11:59", True, "exactly at the TTL"),
+        ("20260730 12:00", False, "inside the TTL"),
+        (
+            "20260730 23:00",
+            True,
+            "in the future — the clock moved, or the file came from elsewhere",
+        ),
+        ("not a timestamp", True, "unparseable must never read as recent"),
+    ],
+)
+def test_the_ttl_never_reads_uncertainty_as_fresh(
+    last_scan: str | None, expected: bool, why: str
+) -> None:
+    """A future `last_scan` treated as fresh would suppress every scan until real time caught up —
+    the one failure mode with no symptom."""
+    assert is_stale(last_scan, "20260730 12:59", ttl_minutes=TTL_MINUTES) is expected, why
+
+
+# --- Flags ----------------------------------------------------------------------------------------
+
+
+def test_sidecars_only_does_not_scan(pair: tuple[Kb, Kb]) -> None:
+    """Reverse rows are index rows, and `--sidecars-only` returns before the index is opened."""
+    local, _partner = pair
+    run(local, sidecars_only=True)
+
+    assert not (local.root / ".pinakes" / "index.db").exists()
+
+
+def test_sidecars_only_with_scan_links_is_refused(pair: tuple[Kb, Kb]) -> None:
+    """Refused rather than silently resolved: honouring both would mean one flag doing nothing and
+    the user unable to tell which."""
+    local, _partner = pair
+    with pytest.raises(SyncError) as caught:
+        run(local, sidecars_only=True, scan_links=True)
+    assert "nothing to write" in caught.value.message
+    assert "on its own" in caught.value.remedy
+
+
+def test_rebuild_reconstructs_reverse_rows_from_sidecars_alone(pair: tuple[Kb, Kb]) -> None:
+    """A rebuild starts from `store.create` on a fresh file, so `kb_refs` is empty and there is
+    nothing for the TTL to skip on — the inbound picture has to come back from the partner's
+    committed sidecars or not at all."""
+    local, _partner = pair
+    run(local)
+    before = links_in(local, origin="reverse-scan")
+    assert before
+
+    run(local, now="20260730 12:05", rebuild=True)
+
+    assert links_in(local, origin="reverse-scan") == before
+    assert str(_partner.kb_id) in kb_refs(local)
+
+
+def test_a_kb_with_no_linked_kbs_still_sweeps(pair: tuple[Kb, Kb]) -> None:
+    """A manifest can drop its *last* `[[links.kb]]`, which is exactly the case where nothing
+    would ever come back to clean up after it."""
+    local, _partner = pair
+    run(local)
+    assert links_in(local, origin="reverse-scan")
+
+    local.disconnect_all()
+    run(local, now="20260730 14:00")
+
+    assert links_in(local, origin="reverse-scan") == []
+
+
+def test_the_partner_is_never_locked(pair: tuple[Kb, Kb]) -> None:
+    """§6.2: a cross-KB read must never be able to block a partner's own sync. The partner has no
+    `.pinakes/` at all here, and the scan must neither need one nor create one."""
+    local, partner = pair
+    run(local)
+
+    assert not (partner.root / ".pinakes").exists()
+
+
+def test_a_sqlite_connection_is_not_left_open(pair: tuple[Kb, Kb]) -> None:
+    """A stray open connection keeps `-wal`/`-shm` alive and makes a later rebuild assertion fail
+    for reasons unrelated to the rebuild (the lesson `test_sync.index()` records)."""
+    local, _partner = pair
+    run(local)
+    connection = sqlite3.connect(local.root / ".pinakes" / "index.db")
+    try:
+        connection.execute("BEGIN IMMEDIATE").close()  # would raise if another writer held it
+    finally:
+        connection.close()
+
+
+def test_a_mismatched_kb_id_writes_nothing_at_all(tmp_path: Path) -> None:
+    """The refusal, not the assignment, is what makes `src_kb_id` safe.
+
+    `src_kb_id` is taken from the partner's own `[kb] id` rather than the manifest's declared one —
+    but wherever a row is actually written those two are equal, *because* a mismatch refuses first.
+    Mutating the assignment is therefore equivalent code; mutating this guard is not. Trusting the
+    declaration would file another KB's links under this alias, and trusting the partner would
+    silently redirect a link the local author wrote deliberately: with a permanent ULID, one of the
+    two is simply a mistake to fix.
+    """
+    local = make_kb(tmp_path / "local", "local", ["alpha"])
+    partner = make_kb(tmp_path / "partner", "partner", ["one"])
+    partner.connect(local, "local")
+    partner.set_links("one", [(local.uri("alpha"), "counterpart")])
+    local.connect(partner, "partner", kb_id=str(mint_kb_id()))  # declares the wrong ULID
+
+    report = run(local)
+
+    assert links_in(local, origin="reverse-scan") == []
+    assert kb_refs(local) == {}, "a KB that was refused must not be stamped as scanned"
+    assert any("but the KB at that path is" in message for _, message, _ in report.link_scan)
+
+
+def test_reverse_rows_never_enter_the_authored_count(pair: tuple[Kb, Kb]) -> None:
+    """`pnk doctor` and the density gate both count *authored* links, and the reverse scan must not
+    inflate that number — the two populations are the same one by construction, and L7 depends on
+    it staying that way. Asserted here rather than in L7 because this is the increment that could
+    break it.
+    """
+    local, _partner = pair
+    run(local)
+
+    connection = store.connect_ro(local.root / ".pinakes" / "index.db")
+    try:
+        authored = connection.execute(
+            "SELECT count(*) FROM links WHERE src_kb_id = ? AND origin = 'sidecar'",
+            (str(local.kb_id),),
+        ).fetchone()[0]
+    finally:
+        connection.close()
+
+    assert authored == 0, "the local KB authored no links in this fixture"
+    assert links_in(local, origin="reverse-scan"), "...but it did learn an inbound one"
