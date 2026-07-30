@@ -12,6 +12,7 @@ Deliberately *not* named `test_*`: pytest must not collect it. It is a script, r
     python tests/free_path_run.py <modules.json>
 
 The run covers every free surface the design has: `pnk init`, `pnk sync`, `pnk search`,
+`pnk links`,
 `pnk doctor`, and an MCP handshake — through `cli.main`, so CLI dispatch is in the graph too, not
 only the libraries beneath it.
 
@@ -153,6 +154,11 @@ def _run_free_surfaces(root: Path) -> None:
     # accidental paid import, and it is on the free path by definition.
     if main(["budget", "--kb", str(root)]) != 0:
         raise SystemExit(f"free-path run: `pnk budget` failed on {root}")
+    # `pnk links` walks the link graph — no models, no extractor, and nothing that could spend.
+    # It is here because gate 4 asserts a *property of the import graph*, and a surface left out
+    # of the run is a surface the property was never checked on.
+    if main(["links", "docs/a.md", "--kb", str(root)]) != 0:
+        raise SystemExit(f"free-path run: `pnk links` failed on {root}")
     main(["doctor", "--kb", str(root)])
 
 

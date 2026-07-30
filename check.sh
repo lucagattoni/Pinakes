@@ -87,6 +87,14 @@ except ValueError as exc:
     sys.exit(1)
 "
 
+# traversal-cap (L3): a walk asked for more than it may have gets less, and is told so. Drives the
+# *shipped* core at depth=99 and adjacent_k=10000 against a 500-wide, 12-deep fixture graph and
+# checks three things — the depth cap, the fan-out cap, and that `truncated` reports a cap that
+# bit. A unit test proves the clamp works today; this proves nobody has turned a `min()` into a
+# pass-through since, which is cheap to do by accident and expensive to notice, because the failure
+# is a slow query and an enormous answer rather than an exception.
+uv run --frozen python3 tools/traversal_cap_gate.py
+
 # link-density (L1): authored links in the two committed corpora stay sparse — a ceiling on
 # density, a ceiling on any one document's degree, and at least one intra-KB link per corpus.
 # One author writes the corpus, its links and (later) the questions that traverse them, so a

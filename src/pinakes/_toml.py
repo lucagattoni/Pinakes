@@ -78,7 +78,14 @@ class Table:
             )
         return value
 
-    def integer(self, key: str, *, default: int | None = None, minimum: int | None = None) -> int:
+    def integer(
+        self,
+        key: str,
+        *,
+        default: int | None = None,
+        minimum: int | None = None,
+        maximum: int | None = None,
+    ) -> int:
         value = self._take(key, required=default is None)
         if value is None:
             value = default
@@ -87,6 +94,11 @@ class Table:
             raise self._fail(f"`{key}` must be an integer, found {type(value).__name__}")
         if minimum is not None and value < minimum:
             raise self._fail(f"`{key}` must be >= {minimum}, found {value}")
+        if maximum is not None and value > maximum:
+            # Refused at parse time rather than silently clamped: a manifest asking for a fan-out
+            # of 10,000 is a misunderstanding, and answering with 64 while saying nothing leaves
+            # the author believing something that is not true.
+            raise self._fail(f"`{key}` must be <= {maximum}, found {value}")
         return value
 
     def number(

@@ -14,7 +14,9 @@ from pinakes.errors import NotImplementedYetError, PinakesError
 # derived from COMMANDS: a test that reads the same source it checks would pass even if a command
 # were dropped.
 DESIGN_V01_COMMANDS = frozenset({"init", "sync", "search", "doctor", "install-hooks", "serve"})
-DESIGN_COMMANDS = DESIGN_V01_COMMANDS | frozenset({"budget"})  # `budget` lands in I6b (v0.2)
+DESIGN_COMMANDS = DESIGN_V01_COMMANDS | frozenset(
+    {"budget", "links"}
+)  # `budget` lands in I6b (v0.2); `links` in L4 (the links release)
 
 
 def test_version_is_set() -> None:
@@ -37,7 +39,9 @@ def test_bare_invocation_prints_help_and_succeeds(capsys: pytest.CaptureFixture[
         assert name in out
 
 
-IMPLEMENTED = frozenset({"sync", "init", "search", "doctor", "install-hooks", "serve", "budget"})
+IMPLEMENTED = frozenset(
+    {"sync", "init", "search", "doctor", "install-hooks", "serve", "budget", "links"}
+)
 
 
 @pytest.mark.parametrize("command", sorted(DESIGN_COMMANDS - IMPLEMENTED))

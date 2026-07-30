@@ -303,6 +303,10 @@ def _free_path_modules(tmp_path: Path, prelude: str = "") -> set[str]:
         "pinakes.search",
         "pinakes.doctor",
         "pinakes.serve",
+        # Modules, not commands: this list is about what the import graph actually reached, and
+        # the traversal core plus its provider are new territory on the free path (L3, L4).
+        "pinakes.graph.traverse",
+        "pinakes.graph.provider",
     ):
         assert surface in modules, f"the free-path run never reached {surface}"
     return modules

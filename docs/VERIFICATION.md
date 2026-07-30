@@ -99,6 +99,46 @@ test, or write **none** and say why in the same commit.
 | a partner's bad `include` cannot crash the sync | L2 | `tests/test_sync_links.py::test_a_partners_bad_include_pattern_does_not_crash_the_sync` |
 | a partner root outside its own KB is refused | L2 | `tests/test_sync_links.py::test_a_partner_root_outside_its_own_kb_is_refused` |
 | a failed local run does not blame the partner | L2 | `tests/test_sync_links.py::test_a_failed_local_run_does_not_blame_the_partner` |
+| depth counts one hop per candidate | L3 | `tests/test_traverse.py::test_depth_counts_one_hop_per_candidate` |
+| depth is clamped server-side | L3 | `tests/test_traverse.py::test_depth_is_clamped_to_the_server_maximum` |
+| fan-out keeps the highest-ranked, not the first k | L3 | `tests/test_traverse.py::test_fanout_keeps_the_highest_ranked_neighbours_not_the_first_k` |
+| fan-out is clamped server-side | L3 | `tests/test_traverse.py::test_fanout_is_clamped_to_the_server_maximum` |
+| ranking without a query uses edge weight | L3 | `tests/test_traverse.py::test_ranking_without_a_query_uses_edge_weight_then_distance` |
+| ranking with a query uses provider similarity | L3 | `tests/test_traverse.py::test_ranking_with_a_query_uses_provider_supplied_similarity` |
+| a capped answer is reproducible | L3 | `tests/test_traverse.py::test_ranking_is_totally_ordered_so_a_capped_answer_is_reproducible` |
+| the frontier carries why each neighbour was not expanded | L3 | `tests/test_traverse.py::test_a_frontier_entry_carries_the_reason_it_was_not_expanded` |
+| terminal outranks fanout when both apply | L3 | `tests/test_traverse.py::test_terminal_outranks_fanout_when_both_apply` |
+| a cross-KB neighbour is terminal at every depth | L3 | `tests/test_traverse.py::test_a_cross_kb_neighbour_is_frontier_terminal_at_every_depth` |
+| ...and is never asked for its own neighbours | L3 | `tests/test_traverse.py::test_a_terminal_neighbour_is_never_asked_for_its_own_neighbours` |
+| a hub is expanded once globally | L3 | `tests/test_traverse.py::test_a_hub_is_expanded_once_globally` |
+| a cycle terminates | L3 | `tests/test_traverse.py::test_a_cycle_terminates` |
+| the token budget is independent of the row cap | L3 | `tests/test_traverse.py::test_the_token_budget_sets_truncated_independently_of_the_row_cap` |
+| an answer within both caps reports neither | L3 | `tests/test_traverse.py::test_an_answer_within_both_caps_reports_neither` |
+| unresolved targets survive to the caller | L3 | `tests/test_traverse.py::test_unresolved_targets_survive_to_the_caller` |
+| `check.sh` still invokes the traversal-cap gate | L3 | `tests/test_check_script.py::test_check_sh_declares_the_traversal_cap_gate` |
+| CI runs it too | L3 | `tests/test_check_script.py::test_ci_runs_the_traversal_cap_gate` |
+| every neighbour is a document | L4 | `tests/test_cli_links.py::test_every_neighbour_is_a_document` |
+| a cross-KB neighbour is terminal | L4 | `tests/test_cli_links.py::test_a_cross_kb_neighbour_is_marked_terminal` |
+| ...carries its KB ULID and no title | L4 | `tests/test_cli_links.py::test_a_cross_kb_neighbour_carries_its_kb_ulid_and_no_title` |
+| a same-KB neighbour carries its title | L4 | `tests/test_cli_links.py::test_a_same_kb_neighbour_carries_its_title` |
+| `kb_id` is a ULID, never a name | L4 | `tests/test_cli_links.py::test_kb_id_is_a_ulid_not_a_name` |
+| the JSON shape is pinned | L4 | `tests/test_cli_links.py::test_json_output_shape_is_pinned` |
+| depth beyond the cap is served at the cap | L4 | `tests/test_cli_links.py::test_depth_beyond_the_cap_is_served_at_the_cap` |
+| ...and depth is honoured, not merely capped | L4 | `tests/test_cli_links.py::test_depth_is_honoured_not_merely_capped` |
+| one query per hop, never a recursive CTE | L4 | `tests/test_cli_links.py::test_one_query_per_hop_not_a_recursive_cte` |
+| a missing local target is unresolved, never a neighbour | L4 | `tests/test_cli_links.py::test_a_local_link_to_a_missing_document_is_unresolved_not_dropped` |
+| a cross-KB target is never called unresolved | L4 | `tests/test_cli_links.py::test_a_cross_kb_target_is_never_called_unresolved` |
+| the frontier is capped like the rest of the response | L3 | `tests/test_traverse.py::test_the_frontier_is_capped_like_the_rest_of_the_response` |
+| a frontier entry is retracted when the node is reached later | L3 | `tests/test_traverse.py::test_a_frontier_entry_is_retracted_when_the_node_is_reached_later` |
+| ...but `terminal` and `depth` describe accepted nodes and stay | L3 | `tests/test_traverse.py::test_an_accepted_node_may_still_be_on_the_frontier_for_terminal_or_depth` |
+| the response caps are clamped server-side too | L3 | `tests/test_traverse.py::test_the_response_caps_are_clamped_server_side_too` |
+| terminal outranks the response caps, not only fanout | L3 | `tests/test_traverse.py::test_terminal_outranks_the_response_caps_as_well_as_fanout` |
+| two relations to one target are two rows | L3 | `tests/test_traverse.py::test_two_relations_to_one_target_are_two_rows` |
+| ...while the node is still expanded once | L3 | `tests/test_traverse.py::test_a_node_reachable_two_ways_is_still_expanded_once` |
+| the row cap keeps the highest-ranked across the whole hop | L3 | `tests/test_traverse.py::test_the_row_cap_keeps_the_highest_ranked_across_the_whole_hop` |
+| a score says whether it came from the query | L3 | `tests/test_traverse.py::test_a_score_says_whether_it_came_from_the_query` |
+| `adjacent_k` defaults to 8 | L3 | `tests/test_manifest.py::test_adjacent_k_defaults_to_eight` |
+| ...and above the cap is refused, not clamped | L3 | `tests/test_manifest.py::test_adjacent_k_above_the_server_cap_is_refused_not_clamped` |
 
 ## The PDF corpus
 
