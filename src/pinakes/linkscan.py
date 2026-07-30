@@ -36,7 +36,7 @@ every commit red. The caller decides what to do with them; `SyncReport.ok` does 
 """
 
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import cast
@@ -114,14 +114,6 @@ class ScannedKb:
 @dataclass(frozen=True, slots=True)
 class ScanResult:
     scanned: tuple[ScannedKb, ...] = ()
-    delisted: tuple[str, ...] = field(default=())
-    """KB ULIDs with reverse rows here that the manifest no longer lists.
-
-    Their rows are removed. Nothing else would ever remove them: the per-partner delete is scoped
-    to the KB being scanned, and a KB dropped from `[[links.kb]]` is never scanned again — so
-    without this, disconnecting a partner left `pnk links --direction in` serving its edges until
-    someone happened to rebuild.
-    """
 
     @property
     def issues(self) -> tuple[LinkScanError, ...]:
@@ -137,11 +129,17 @@ def resolve_path(root: Path, raw: str) -> Path:
     since a committed absolute path publishes a filesystem layout.
     """
     expanded = Path(raw).expanduser()
-    return expanded if expanded.is_absolute() else (root / expanded).resolve()
+    # `.resolve()` on both branches: `kb_refs.path` is shown to a person and compared by later
+    # increments, and `/a/b/../c` is the same place as `/a/c` written two ways.
+    return (expanded if expanded.is_absolute() else root / expanded).resolve()
 
 
-def partner_sources(root: Path) -> tuple[KbId, list[str], list[str]]:
-    """`([kb] id, [sources] roots, [sources] include)` from a partner's manifest.
+def partner_sources(root: Path) -> tuple[KbId, list[str], list[str], list[str]]:
+    """`([kb] id, roots, include, exclude)` from a partner's manifest.
+
+    **`exclude` is not optional to read.** The shipped `notes` template stamps
+    `exclude = ["**/drafts/**"]`, so it is present in every KB `pnk init` creates — ignoring it
+    meant recording inbound links from documents the partner's own KB does not contain.
 
     Read with `tomllib` directly rather than through `manifest.load`, which validates the *whole*
     file against this pinakes' schema. A partner may legitimately be running a newer version with
@@ -171,36 +169,74 @@ def partner_sources(root: Path) -> tuple[KbId, list[str], list[str]]:
         values = [value for value in cast(list[object], raw) if isinstance(value, str)]
         return values or default
 
-    return parse_kb_id(identifier), strings("roots", ["docs/"]), strings("include", ["**/*.md"])
+    return (
+        parse_kb_id(identifier),
+        strings("roots", ["docs/"]),
+        strings("include", ["**/*.md"]),
+        strings("exclude", []),
+    )
 
 
-def sidecars_under(root: Path, roots: list[str], include: list[str]) -> list[Path]:
-    """Every sidecar beside a document the partner's own `[sources]` would ingest.
+def sidecars_under(
+    root: Path, roots: list[str], include: list[str], exclude: list[str]
+) -> tuple[list[Path], list[str]]:
+    """Every sidecar beside a document the partner's own `[sources]` would ingest, and what went
+    wrong — `(sidecars, problems)`.
 
     Driven from the *documents* rather than by globbing `**/*.pnk.yaml`, so a stray sidecar outside
-    the partner's roots — or one whose document was excluded — contributes nothing. What the
-    partner does not consider part of its KB is not something this KB should be recording links
-    from.
+    the partner's roots, or one whose document its `exclude` removes, contributes nothing. What the
+    partner does not consider part of its KB is not something this KB may record links from.
+
+    **Every input here is partner-controlled, and none of it went through `manifest.load`.** That
+    bypass is deliberate — a partner may run a newer pinakes with keys this one does not know — but
+    it also skipped the validation `load` performs, so this function has to do it:
+
+    * a `roots` entry that resolves outside the partner KB is refused. `manifest._sources` already
+      rejects absolute roots and `..`; without the same check here, a partner manifest could point
+      the walk at any directory on this machine, and `roots = ["/"]` would be an unbounded walk on
+      a `post-commit` hook.
+    * a `roots` entry that is **not a directory** is a *problem*, never a quiet skip. Skipping it
+      yielded zero sidecars, which reads as "this partner has no inbound links" — and the caller
+      then deletes every row it had. A partner renaming its own `docs/` silently destroyed the
+      whole inbound picture and stamped the scan as fresh.
     """
     found: set[Path] = set()
+    problems: list[str] = []
     for name in roots:
         base = (root / name).resolve()
+        if not base.is_relative_to(root.resolve()):
+            problems.append(f"[sources] roots entry {name!r} points outside the KB")
+            continue
         if not base.is_dir():
+            problems.append(f"[sources] roots entry {name!r} is not a directory")
             continue
         for pattern in include:
             for candidate in base.glob(pattern):
                 if not candidate.is_file() or candidate.name.endswith(SIDECAR_SUFFIX):
                     continue
+                relative = candidate.relative_to(root).as_posix()
+                if any(candidate.match(rule) or Path(relative).match(rule) for rule in exclude):
+                    continue
                 sidecar = candidate.with_name(candidate.name + SIDECAR_SUFFIX)
                 if sidecar.is_file():
                     found.add(sidecar)
-    return sorted(found)
+    return sorted(found), problems
 
 
 def scan_one(
-    linked: LinkedKb, *, local_root: Path, local_kb: KbId, known_documents: frozenset[DocId]
+    linked: LinkedKb,
+    *,
+    local_root: Path,
+    local_kb: KbId,
+    known_documents: frozenset[DocId] | None,
 ) -> ScannedKb:
-    """Walk one linked KB. Never raises: every failure comes back in `issues`."""
+    """Walk one linked KB. Never raises: every failure comes back in `issues`.
+
+    `known_documents=None` means *this run does not know which documents exist* — a sync whose own
+    document loop failed has an incomplete picture, and reporting a partner's link as pointing at a
+    missing document would be blaming the partner for our failure. The rows are still recorded;
+    they come from the partner's sidecars and owe nothing to our local state.
+    """
     path = resolve_path(local_root, linked.path)
     base = ScannedKb(alias=linked.name, declared_id=linked.id, path=path)
 
@@ -209,7 +245,7 @@ def scan_one(
         return _with(base, issues=(LinkedKbUnreachableError(linked.name, path, reason=reason),))
 
     try:
-        partner_id, roots, include = partner_sources(path)
+        partner_id, roots, include, exclude = partner_sources(path)
     except (OSError, ValueError, tomllib.TOMLDecodeError, PinakesError) as exc:
         return _with(base, issues=(LinkedKbUnreachableError(linked.name, path, reason=str(exc)),))
 
@@ -233,7 +269,27 @@ def scan_one(
     complete = True
     missing: list[DocId] = []
 
-    for sidecar in sidecars_under(path, roots, include):
+    try:
+        # Inside the try, not outside it. `glob` raises on patterns `manifest.load` would have
+        # rejected — `NotImplementedError` for a non-relative pattern, `ValueError` for an empty
+        # one — and every one of those inputs comes from a *partner's* manifest. Outside the try
+        # they escaped `sync()` entirely and crashed `pnk sync` on a git hook, which is exactly the
+        # "nothing here raises" promise this module is built on.
+        found, problems = sidecars_under(path, roots, include, exclude)
+    except (OSError, ValueError, NotImplementedError, PinakesError) as exc:
+        return _with(
+            base,
+            kb_id=partner_id,
+            issues=(LinkedKbUnreachableError(linked.name, path, reason=f"[sources] {exc}"),),
+        )
+
+    for problem in problems:
+        # A walk failure, never a quiet skip: zero sidecars reads as "no inbound links", and the
+        # caller then deletes every row this partner had.
+        issues.append(LinkedKbUnreachableError(linked.name, path, reason=problem))
+        complete = False
+
+    for sidecar in found:
         try:
             # `owner=partner_id`, never the local KB — see the module docstring.
             parsed = read_sidecar(sidecar, owner=partner_id)
@@ -244,7 +300,7 @@ def scan_one(
         for link in parsed.links:
             if link.to.kb != local_kb:
                 continue  # a third KB's business, and a partial view of it would be a lie
-            if link.to.doc not in known_documents:
+            if known_documents is not None and link.to.doc not in known_documents:
                 missing.append(link.to.doc)
             rows.append(
                 ReverseRow(
@@ -325,16 +381,15 @@ def is_stale(last_scan: str | None, now: str, *, ttl_minutes: int = TTL_MINUTES)
 def scan(
     manifest: Manifest,
     *,
-    local_documents: frozenset[DocId],
+    local_documents: frozenset[DocId] | None,
     last_scans: dict[str, str],
     now: str,
     force: bool = False,
-    known_kb_ids: frozenset[str] = frozenset(),
 ) -> ScanResult:
     """Walk every `[[links.kb]]`, skipping the ones still inside the TTL.
 
-    `known_kb_ids` is what the index already holds reverse rows for; anything in it that the
-    manifest no longer lists comes back in `delisted`.
+    Sweeping a *delisted* KB's rows is the caller's job, through `store.forget_reverse_links` —
+    it needs the index, and this module deliberately does not have one.
     """
     scanned: list[ScannedKb] = []
     for linked in manifest.links:
@@ -358,8 +413,4 @@ def scan(
             )
         )
 
-    listed = {str(linked.id) for linked in manifest.links}
-    return ScanResult(
-        scanned=tuple(scanned),
-        delisted=tuple(sorted(known_kb_ids - listed)),
-    )
+    return ScanResult(scanned=tuple(scanned))

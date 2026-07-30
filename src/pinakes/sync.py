@@ -1753,15 +1753,27 @@ def _scan_linked_kbs(
     if not manifest.links:
         # Still sweep: a manifest can drop its *last* `[[links.kb]]`, and that is exactly the case
         # where nothing would ever come back to clean up after it.
-        removed = store.forget_reverse_links(connection, keep=())
-        if removed:
-            report.links_forgotten = removed
-            connection.commit()
+        report.links_forgotten = store.forget_reverse_links(connection, keep=())
+        # Committed unconditionally: `forget_reverse_links` also clears `kb_refs`, and a KB with a
+        # `kb_refs` row but no reverse rows would otherwise return with that delete uncommitted,
+        # relying on a later commit that this branch does not reach.
+        connection.commit()
         return
 
-    documents = frozenset(
-        parse_doc_id(str(row[0]))
-        for row in connection.execute("SELECT id FROM documents WHERE state = 'active'")
+    # `None` when this run's own document loop failed or was cut short by a budget cap: the local
+    # picture is incomplete, and "the partner links to a document we do not have" would then be
+    # blaming the partner for our failure — for a document we do have, and failed to index. The
+    # rows are recorded either way; they come from the partner's sidecars and owe nothing to our
+    # local state. (`_run` guards `active_content_hashes` on `report.ok` for the same class of
+    # reason.)
+    complete_locally = not report.failures and report.budget_exhausted is None
+    documents = (
+        frozenset(
+            parse_doc_id(str(row[0]))
+            for row in connection.execute("SELECT id FROM documents WHERE state = 'active'")
+        )
+        if complete_locally
+        else None
     )
     result = linkscan.scan(
         manifest,
@@ -1769,7 +1781,6 @@ def _scan_linked_kbs(
         last_scans=store.read_kb_refs(connection),
         now=stamp,
         force=options.scan_links,
-        known_kb_ids=frozenset(store.reverse_scanned_kb_ids(connection)),
     )
 
     scanned: list[tuple[str, int]] = []
@@ -1777,7 +1788,7 @@ def _scan_linked_kbs(
         if kb.skipped_fresh:
             continue
         if kb.kb_id is not None and kb.complete:
-            store.replace_reverse_links(
+            written = store.replace_reverse_links(
                 connection,
                 src_kb_id=str(kb.kb_id),
                 rows=[
@@ -1792,7 +1803,7 @@ def _scan_linked_kbs(
                 path=str(kb.path),
                 last_scan=stamp,
             )
-            scanned.append((kb.alias, len(kb.rows)))
+            scanned.append((kb.alias, written))
             connection.commit()
         # An incomplete walk writes nothing at all — not the rows, and not `last_scan`. Recording
         # the timestamp would suppress the retry for a full TTL on the strength of a walk that

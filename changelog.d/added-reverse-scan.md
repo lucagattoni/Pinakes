@@ -12,4 +12,8 @@
   a one-hour freshness window because `pnk sync` runs on `post-commit` and `post-merge`, and
   **`--scan-links`** ignores it. Every failure — unreachable path, id mismatch, unparseable
   sidecar, a target this KB does not have — is reported with a remedy and **does not fail the
-  sync**: a partner that is simply not on this machine must not block every commit.
+  sync**: a partner that is simply not on this machine must not block every commit. The partner's
+  own `[sources]` is honoured in full — `exclude` included, which matters because the shipped
+  template stamps one — and a `roots` entry that has vanished, points outside the partner KB, or
+  uses a pattern the walker rejects is a reported failure rather than a walk that quietly finds
+  nothing and deletes what it had.

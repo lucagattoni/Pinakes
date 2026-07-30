@@ -8,7 +8,6 @@ half-read walk — only exist when there is a second manifest to disagree with.
 
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -614,24 +613,145 @@ def test_a_kb_with_no_linked_kbs_still_sweeps(pair: tuple[Kb, Kb]) -> None:
 
 
 def test_the_partner_is_never_locked(pair: tuple[Kb, Kb]) -> None:
-    """§6.2: a cross-KB read must never be able to block a partner's own sync. The partner has no
-    `.pinakes/` at all here, and the scan must neither need one nor create one."""
+    """§6.2: a cross-KB read must never block, or be blocked by, a partner's own sync.
+
+    The partner holds its **own sync lock** for the duration — the state a partner mid-sync is
+    actually in. An earlier version of this test asserted the partner had no `.pinakes/`, on a
+    fixture where it never had one: it proved nothing was created and nothing at all about locking.
+    """
+    from pinakes.lock import SyncLock
+
     local, partner = pair
-    run(local)
+    (partner.root / ".pinakes").mkdir(parents=True, exist_ok=True)
 
-    assert not (partner.root / ".pinakes").exists()
+    with SyncLock(partner.root / ".pinakes") as held:
+        assert held.acquired, "the fixture failed to take the partner's lock"
+        report = run(local)
+
+    assert report.ok
+    assert len(links_in(local, origin="reverse-scan")) == 1
 
 
-def test_a_sqlite_connection_is_not_left_open(pair: tuple[Kb, Kb]) -> None:
-    """A stray open connection keeps `-wal`/`-shm` alive and makes a later rebuild assertion fail
-    for reasons unrelated to the rebuild (the lesson `test_sync.index()` records)."""
-    local, _partner = pair
-    run(local)
-    connection = sqlite3.connect(local.root / ".pinakes" / "index.db")
-    try:
-        connection.execute("BEGIN IMMEDIATE").close()  # would raise if another writer held it
-    finally:
-        connection.close()
+def test_a_vanished_partner_root_deletes_nothing(pair: tuple[Kb, Kb]) -> None:
+    """A partner renaming its own `docs/` yielded zero sidecars — which reads as "no inbound
+    links" — so every row was deleted and `last_scan` stamped fresh, with nothing reported.
+
+    Reproduced before the fix: rows 1 → 0, `link_scan` empty, `last_scan` advanced. It is the same
+    mass deletion the `complete` flag exists to prevent, arriving through the one door the flag was
+    not watching, and no "successful walk" test could see it because they all leave the sidecars
+    where they are.
+    """
+    local, partner = pair
+    run(local, now="20260730 12:00")
+    assert len(links_in(local, origin="reverse-scan")) == 1
+
+    (partner.root / partner.docs_dir).rename(partner.root / "renamed")
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    assert len(links_in(local, origin="reverse-scan")) == 1, "the inbound rows were deleted"
+    assert any("not a directory" in message for _, message, _ in report.link_scan)
+    _alias, _path, last_scan = kb_refs(local)[str(partner.kb_id)]
+    assert last_scan == "20260730 12:00", "a failed walk stamped itself as fresh"
+
+
+def test_a_partners_exclude_is_honoured(pair: tuple[Kb, Kb]) -> None:
+    """The shipped `notes` template stamps `exclude = ["**/drafts/**"]`, so this is the shape of
+    every KB `pnk init` creates — and ignoring it recorded inbound links from documents the
+    partner's own KB does not contain."""
+    local, partner = pair
+    drafts = partner.root / partner.docs_dir / "drafts"
+    drafts.mkdir()
+    (drafts / "wip.md").write_text("# wip\n\nDraft.\n", encoding="utf-8")
+    (drafts / f"wip.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump(
+            {
+                "id": str(mint_doc_id()),
+                "links": [{"to": local.uri("beta"), "rel": "from-a-draft"}],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    manifest = partner.root / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]', 'include = ["**/*.md"]\nexclude = ["**/drafts/**"]'
+        ),
+        encoding="utf-8",
+    )
+
+    run(local, now="20260730 14:00", scan_links=True)
+
+    rels = {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
+    assert "from-a-draft" not in rels
+    assert rels == {"counterpart"}
+
+
+def test_a_partners_bad_include_pattern_does_not_crash_the_sync(pair: tuple[Kb, Kb]) -> None:
+    """`glob` raises on patterns `manifest.load` would have rejected, and every one of these
+    inputs comes from a *partner's* manifest. Bypassing `load` to tolerate unknown keys removed the
+    only validation and added none, so these escaped `sync()` and crashed `pnk sync` on a git hook
+    — the opposite of what "nothing here raises" is for."""
+    local, partner = pair
+    manifest = partner.root / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]', 'include = ["/etc/**/*.md"]'
+        ),
+        encoding="utf-8",
+    )
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    assert report.ok
+    assert any("[sources]" in message for _, message, _ in report.link_scan)
+
+
+def test_a_partner_root_outside_its_own_kb_is_refused(pair: tuple[Kb, Kb], tmp_path: Path) -> None:
+    """`manifest._sources` refuses absolute roots and `..`; nothing re-applied that to a partner's
+    manifest, so it could point this walk anywhere on the machine — and `roots = ["/"]` would be an
+    unbounded walk on a `post-commit` hook."""
+    local, partner = pair
+    outside = tmp_path / "outside" / "docs"
+    outside.mkdir(parents=True)
+    (outside / "smuggled.md").write_text("# s\n\nText.\n", encoding="utf-8")
+    (outside / f"smuggled.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump(
+            {"id": str(mint_doc_id()), "links": [{"to": local.uri("beta"), "rel": "smuggled"}]},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    manifest = partner.root / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'roots   = ["docs/"]', f'roots   = ["docs/", "{outside}"]'
+        ),
+        encoding="utf-8",
+    )
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    rels = {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
+    assert "smuggled" not in rels
+    assert any("outside the KB" in message for _, message, _ in report.link_scan)
+
+
+def test_a_failed_local_run_does_not_blame_the_partner(pair: tuple[Kb, Kb]) -> None:
+    """`known_documents` comes from the index, so a document that failed *this run* is absent from
+    it — and a true inbound link would be reported as pointing at a document we do not have. We do
+    have it; we failed to index it."""
+    local, partner = pair
+    (local.root / local.docs_dir / f"beta.md{SIDECAR_SUFFIX}").write_text(
+        "id: not-a-ulid\n", encoding="utf-8"
+    )
+    partner.set_links("one", [(local.uri("alpha"), "counterpart"), (local.uri("beta"), "related")])
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    assert not report.ok, "the fixture failed to break the local document"
+    assert not any("does not have" in message for _, message, _ in report.link_scan)
+    assert len(links_in(local, origin="reverse-scan")) == 2, "the rows are still recorded"
 
 
 def test_a_mismatched_kb_id_writes_nothing_at_all(tmp_path: Path) -> None:

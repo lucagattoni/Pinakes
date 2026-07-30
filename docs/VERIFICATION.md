@@ -93,7 +93,12 @@ test, or write **none** and say why in the same commit.
 | `--sidecars-only` does not scan | L2 | `tests/test_sync_links.py::test_sidecars_only_does_not_scan` |
 | ...and refuses `--scan-links` | L2 | `tests/test_sync_links.py::test_sidecars_only_with_scan_links_is_refused` |
 | a rebuild reconstructs reverse rows from sidecars alone | L2 | `tests/test_sync_links.py::test_rebuild_reconstructs_reverse_rows_from_sidecars_alone` |
-| the partner is never locked | L2 | `tests/test_sync_links.py::test_the_partner_is_never_locked` |
+| the partner is never locked, even mid-sync | L2 | `tests/test_sync_links.py::test_the_partner_is_never_locked` |
+| a vanished partner root deletes nothing | L2 | `tests/test_sync_links.py::test_a_vanished_partner_root_deletes_nothing` |
+| a partner's `exclude` is honoured | L2 | `tests/test_sync_links.py::test_a_partners_exclude_is_honoured` |
+| a partner's bad `include` cannot crash the sync | L2 | `tests/test_sync_links.py::test_a_partners_bad_include_pattern_does_not_crash_the_sync` |
+| a partner root outside its own KB is refused | L2 | `tests/test_sync_links.py::test_a_partner_root_outside_its_own_kb_is_refused` |
+| a failed local run does not blame the partner | L2 | `tests/test_sync_links.py::test_a_failed_local_run_does_not_blame_the_partner` |
 
 ## The PDF corpus
 

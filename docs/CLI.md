@@ -56,7 +56,7 @@ it does not include `**/*.pdf` in `[sources]`.
 ## `pnk sync`
 
 ```
-pnk sync [--kb PATH] [--rebuild] [--sidecars-only] [--index-only] [--stage] [--scan-links]
+pnk sync [--kb PATH] [--rebuild] [--sidecars-only] [--index-only] [--stage] [--offline] [--scan-links]
          [--offline] [--force-unlock] [--extract BACKEND] [--force]
          [--estimate-only] [--clear-cache[=paid]] [--yes] [-q]
 ```

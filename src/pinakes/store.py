@@ -348,22 +348,12 @@ def read_kb_refs(connection: sqlite3.Connection) -> dict[str, str]:
     }
 
 
-def reverse_scanned_kb_ids(connection: sqlite3.Connection) -> set[str]:
-    """Every KB this index holds inbound rows for — including ones the manifest no longer lists."""
-    return {
-        str(row[0])
-        for row in connection.execute(
-            "SELECT DISTINCT src_kb_id FROM links WHERE origin = 'reverse-scan'"
-        )
-    }
-
-
 def replace_reverse_links(
     connection: sqlite3.Connection,
     *,
     src_kb_id: str,
     rows: Sequence[tuple[str, str, str, str]],
-) -> None:
+) -> int:
     """Replace one partner's inbound rows: `(src_doc_id, dst_kb_id, dst_doc_id, rel)` each.
 
     **Scoped by `src_kb_id` *and* `origin`, and both matter.** Under a manifest that lists itself
@@ -381,11 +371,18 @@ def replace_reverse_links(
     connection.execute(
         "DELETE FROM links WHERE src_kb_id = ? AND origin = 'reverse-scan'", (src_kb_id,)
     )
+    written = 0
     for src_doc_id, dst_kb_id, dst_doc_id, rel in rows:
-        connection.execute(
+        cursor = connection.execute(
             "INSERT INTO links VALUES (?, ?, ?, ?, ?, 'reverse-scan') ON CONFLICT DO NOTHING",
             (src_kb_id, src_doc_id, dst_kb_id, dst_doc_id, rel),
         )
+        written += cursor.rowcount or 0
+    # The count of rows *written*, not rows read: a duplicate entry in one sidecar, or (under a
+    # self-listing manifest) a collision with an authored row, is dropped by DO NOTHING — so the
+    # two numbers differ exactly when something interesting happened, and reporting the larger one
+    # would overstate what is in the table.
+    return written
 
 
 def forget_reverse_links(connection: sqlite3.Connection, *, keep: Sequence[str]) -> int:
