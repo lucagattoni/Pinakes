@@ -101,3 +101,21 @@ def test_ci_runs_the_link_density_gate_and_proves_it_can_fail() -> None:
     assert "tools/link_density_gate.py" in body
     assert "--max-degree 0" in body, "the negative check is gone — nothing proves the gate gates"
     assert "exit 1" in body, "the negative check no longer fails the job"
+
+
+def test_check_sh_declares_the_traversal_cap_gate() -> None:
+    """L3's caps are the only thing between an agent's `depth=99` and most of a KB in one
+    response. Same pinning as the two gates above: match the real invocation."""
+    text = CHECK_SH.read_text(encoding="utf-8")
+    assert re.search(
+        r"^uv run --frozen python3 tools/traversal_cap_gate\.py\s*$", text, re.MULTILINE
+    ), "check.sh no longer invokes the traversal-cap gate"
+
+
+def test_ci_runs_the_traversal_cap_gate() -> None:
+    workflow = (Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+    job = re.search(r"^  traversal-caps:\n(?P<body>(?:    .*\n|\n)*)", workflow, re.MULTILINE)
+    assert job is not None, "ci.yml has no traversal-caps job"
+    assert "tools/traversal_cap_gate.py" in job.group("body")

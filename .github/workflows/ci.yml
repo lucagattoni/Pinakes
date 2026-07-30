@@ -123,6 +123,24 @@ jobs:
           uv run --frozen python -m pinakes.extract.quality tests/pdf-corpus \
             --check-floors src/pinakes/extract/floors.toml
 
+  traversal-caps:
+    # Its own job for the same reason link-density has one: `ci.yml` never invokes `check.sh`.
+    # Needs no models, no index and no extras — the core has no dependencies at all, which is what
+    # being pure buys.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      - name: A traversal cannot exceed its caps
+        run: uv run --frozen python tools/traversal_cap_gate.py
+
   link-density:
     # Its own job because `ci.yml` never invokes `check.sh` — a gate that lives only there runs
     # only on the machine of whoever remembers to run it. Needs no models and no index (it reads

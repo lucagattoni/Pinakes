@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pinakes._toml import ROOT_NAME, Table
 from pinakes.errors import InvalidIdError, ManifestError, NoKbFoundError
 from pinakes.extract import registered_extractors
+from pinakes.graph.traverse import DEFAULT_ADJACENT_K, MAX_ADJACENT_K
 from pinakes.ids import KbId, parse_kb_id
 
 MANIFEST_NAME = "pinakes.toml"
@@ -97,6 +98,7 @@ class RetrievalSection:
     final_k: int
     rerank: str
     vector_tier: str
+    adjacent_k: int
     confidence: ConfidenceSection | None
 
 
@@ -342,6 +344,7 @@ def _retrieval(root_table: Table, path: Path) -> RetrievalSection:
             final_k=8,
             rerank="local",
             vector_tier="auto",
+            adjacent_k=DEFAULT_ADJACENT_K,
             confidence=None,
         )
     confidence = _confidence(table, path)
@@ -355,6 +358,14 @@ def _retrieval(root_table: Table, path: Path) -> RetrievalSection:
         final_k=table.integer("final_k", default=8, minimum=1),
         rerank=table.choice("rerank", RERANK_MODES, default="local"),
         vector_tier=table.choice("vector_tier", VECTOR_TIERS, default="auto"),
+        # Deliberately **not** stamped into the `notes` template, in this release or the next:
+        # `_toml.py` hard-errors on an unknown key, so a manifest carrying `adjacent_k` cannot be
+        # read by any pinakes built before it existed. `[kb] requires_pinakes` cannot help
+        # retroactively either — an older build has no pre-pass and fails on that key itself — so
+        # the key stays settable-but-unstamped until a release deliberately accepts the break.
+        adjacent_k=table.integer(
+            "adjacent_k", default=DEFAULT_ADJACENT_K, minimum=1, maximum=MAX_ADJACENT_K
+        ),
         confidence=confidence,
     )
     table.done()

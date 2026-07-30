@@ -235,6 +235,22 @@ matters because a table of three tiers reads as three *available* tiers.
 
 ## 4. Retrieval
 
+**Traversal is bounded four ways, and the bounds are not interchangeable.** Depth counts **logical
+hops**, not physical edges — composition through a hub is one hop, because counting physically would
+strand the highest-trust authored edges beyond any usable depth. `[retrieval] adjacent_k` caps
+fan-out per expansion and is applied **after** ranking, so a cap never selects by whatever order a
+provider happened to return. The response carries its own two caps — a row count and a token
+budget — reported **independently**, because "too many neighbours" and "too much text" have
+different remedies and a single flag would leave a caller guessing. Every bound is clamped
+server-side; a caller asking for more gets less and is told so, and a gate drives the shipped core
+at absurd values on every commit to keep that true.
+
+A neighbour that was found and **not** expanded comes back on a `frontier` with one of five
+reasons — `terminal`, `depth`, `fanout`, `rows`, `tokens` — in that precedence. Five rather than one
+because they mean different things to whoever asked: `depth` and `fanout` invite a retry with
+different arguments, `rows` and `tokens` invite a narrower request, and `terminal` invites none at
+all. A caller told `fanout` about a terminal neighbour retries a hop that can never succeed.
+
 ### 4.1 The free pipeline (every query, €0)
 
 ```

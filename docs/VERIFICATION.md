@@ -99,6 +99,24 @@ test, or write **none** and say why in the same commit.
 | a partner's bad `include` cannot crash the sync | L2 | `tests/test_sync_links.py::test_a_partners_bad_include_pattern_does_not_crash_the_sync` |
 | a partner root outside its own KB is refused | L2 | `tests/test_sync_links.py::test_a_partner_root_outside_its_own_kb_is_refused` |
 | a failed local run does not blame the partner | L2 | `tests/test_sync_links.py::test_a_failed_local_run_does_not_blame_the_partner` |
+| depth counts logical hops, not physical edges | L3 | `tests/test_traverse.py::test_depth_counts_logical_hops_not_physical_edges` |
+| depth is clamped server-side | L3 | `tests/test_traverse.py::test_depth_is_clamped_to_the_server_maximum` |
+| fan-out keeps the highest-ranked, not the first k | L3 | `tests/test_traverse.py::test_fanout_keeps_the_highest_ranked_neighbours_not_the_first_k` |
+| fan-out is clamped server-side | L3 | `tests/test_traverse.py::test_fanout_is_clamped_to_the_server_maximum` |
+| ranking without a query uses edge weight | L3 | `tests/test_traverse.py::test_ranking_without_a_query_uses_edge_weight_then_distance` |
+| ranking with a query uses provider similarity | L3 | `tests/test_traverse.py::test_ranking_with_a_query_uses_provider_supplied_similarity` |
+| a capped answer is reproducible | L3 | `tests/test_traverse.py::test_ranking_is_totally_ordered_so_a_capped_answer_is_reproducible` |
+| the frontier carries why each neighbour was not expanded | L3 | `tests/test_traverse.py::test_a_frontier_entry_carries_the_reason_it_was_not_expanded` |
+| terminal outranks fanout when both apply | L3 | `tests/test_traverse.py::test_terminal_outranks_fanout_when_both_apply` |
+| a cross-KB neighbour is terminal at every depth | L3 | `tests/test_traverse.py::test_a_cross_kb_neighbour_is_frontier_terminal_at_every_depth` |
+| ...and is never asked for its own neighbours | L3 | `tests/test_traverse.py::test_a_terminal_neighbour_is_never_asked_for_its_own_neighbours` |
+| a hub is expanded once globally | L3 | `tests/test_traverse.py::test_a_hub_is_expanded_once_globally` |
+| a cycle terminates | L3 | `tests/test_traverse.py::test_a_cycle_terminates` |
+| the token budget is independent of the row cap | L3 | `tests/test_traverse.py::test_the_token_budget_sets_truncated_independently_of_the_row_cap` |
+| an answer within both caps reports neither | L3 | `tests/test_traverse.py::test_an_answer_within_both_caps_reports_neither` |
+| unresolved targets survive to the caller | L3 | `tests/test_traverse.py::test_unresolved_targets_survive_to_the_caller` |
+| `check.sh` still invokes the traversal-cap gate | L3 | `tests/test_check_script.py::test_check_sh_declares_the_traversal_cap_gate` |
+| CI runs it too | L3 | `tests/test_check_script.py::test_ci_runs_the_traversal_cap_gate` |
 
 ## The PDF corpus
 
