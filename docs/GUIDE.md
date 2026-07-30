@@ -389,3 +389,64 @@ traversing them lands in the links release; the *schema* ships today precisely b
 | Searches slow past ~50k chunks | NumPy tier is exact, not sublinear | Expected; `pnk doctor` warns. The `sqlite-vec` tier is the template release — splitting the KB is the honest answer |
 
 Nothing here spends money, and nothing can: see [STATUS](STATUS.md#the-surface-you-can-use-today).
+
+## Following links between two KBs
+
+Two KBs know about each other through `[[links.kb]]`, and a link is written in the *source*
+document's sidecar:
+
+```toml
+# archive/pinakes.toml
+[[links.kb]]
+name = "museum"                        # a local alias; it means nothing on another machine
+id   = "01KYP11WY2ZGX9B2Q5V7PJ8DW1"    # the KB's ULID — this is what travels
+path = "../museum"                     # where it lives here
+```
+
+```yaml
+# archive/docs/loans-outward.md.pnk.yaml
+links:
+  - to: pnk://01KYP11WY2ZGX9B2Q5V7PJ8DW1/01KYP8878AZWS2ZWEBD0KQYTXE
+    rel: counterpart
+```
+
+`pnk sync` records that link, and also reads the *other* KB's committed sidecars to learn what
+points back:
+
+```console
+$ pnk sync --scan-links
+30 indexed, 0 renamed, 0 metadata-only, 0 unchanged, 0 removed
+inbound links: museum 6
+```
+
+Then ask what a document connects to:
+
+```console
+$ pnk links docs/loans-outward.md
+-> related: conservation assessment  [hop 1]
+<- governs: 01KYP88789WHHN93TW49AX096C (other KB)  [hop 1]
+-> counterpart: 01KYP8878AZWS2ZWEBD0KQYTXE (other KB)  [hop 1]
+```
+
+`->` is a link written here; `<-` is one pointing here, learned by scanning the other KB. A
+neighbour in another KB shows its ULID rather than a title, because this KB holds the partner's
+*links*, not its documents.
+
+Going deeper follows same-KB links only:
+
+```console
+$ pnk links docs/loans-outward.md --depth 2
+-> related: conservation assessment  [hop 1]
+<- governs: 01KYP88789WHHN93TW49AX096C (other KB)  [hop 1]
+-> counterpart: 01KYP8878AZWS2ZWEBD0KQYTXE (other KB)  [hop 1]
+-> related: pest management  [hop 2]
+-> related: storage environment  [hop 2]
+```
+
+The two cross-KB neighbours are still there and still at hop 1: **a neighbour in another KB is
+terminal**. Not because there is nothing beyond it — this index does hold that KB's links pointing
+back here — but because expanding it would show a partial slice of someone else's graph that you
+could not tell apart from the whole. To go further, open that KB and ask it.
+
+`--json` adds `frontier` (what was found and not expanded, and why), `unresolved` (links whose
+target is missing) and `truncated` (which caps bit).

@@ -248,6 +248,40 @@ rebuild — so a sync during a session is safe.
 
 ---
 
+## `pnk links`
+
+```text
+pnk links <document> [--kb PATH] [--rel R] [--direction out|in|both] [--depth N] [--query Q]
+          [--offline] [--json]
+```
+
+What a document connects to, and what connects to it. `<document>` is a ULID or the path `pnk
+search` prints.
+
+| Flag | Notes |
+|---|---|
+| `--rel` | Only links carrying this relation |
+| `--direction` | `out` (links written here), `in` (links pointing here), `both` (default) |
+| `--depth` | Hops to follow. Default 1, **server-capped at 3** |
+| `--query` | Rank neighbours by similarity to this instead of by edge. Loads the embedding model; without it, no model is loaded at all |
+| `--json` | `{document, neighbours, frontier, unresolved, truncated}` |
+
+**Every neighbour is a document**, and `kb_id` is always the KB's ULID — never `[kb] name`, which
+is free to rename, and never a `[[links.kb]]` alias, which means nothing on another machine.
+
+A neighbour in **another KB is terminal**: it is returned, and never expanded, at any depth. Not
+because there is nothing there — this index holds that KB's links *pointing back here* — but
+because expanding it would show a systematically partial slice of someone else's graph that you
+could not tell apart from the whole. `title` is present for a local neighbour and absent for a
+cross-KB one, for the same reason: this index has the partner's links, not its documents.
+
+Neighbours found but **not** expanded come back on `frontier` with one of five reasons —
+`terminal`, `depth`, `fanout`, `rows`, `tokens`. Links whose target this KB does not have come back
+under `unresolved` rather than being dropped, and never appear as neighbours: there is no document
+there to be one.
+
+---
+
 ## Planned — not built yet
 
 Listed so the shape is known in advance; each names the increment that lands it
@@ -256,5 +290,5 @@ Listed so the shape is known in advance; each names the increment that lands it
 | Surface | Increment | Adds |
 |---|---|---|
 | `pnk ask --deep` | the deep release | Bounded, budgeted synthesis for CLI and cron use, where no agent is present |
-| `pnk link`, `pinakes_links`, `pnk links` | the links release | Authoring and traversing cross-KB links |
+| `pnk link`, `pinakes_links` | the links release | Authoring a link from the command line, and traversing over MCP. `pnk links` is **built** — see above |
 | `pnk upgrade` | the template release | Diffs a KB's template version against the installed one and *prints* a migration — never applies one |

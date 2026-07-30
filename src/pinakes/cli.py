@@ -622,6 +622,136 @@ def _run_clear_cache(loaded: Manifest, args: argparse.Namespace) -> int:
 
 # The v0.1 surface (docs/DESIGN.md §8), in the order a user meets it. `increment` points at
 # plans/v0.1.md, so an unimplemented command tells the user exactly when it arrives.
+def _links_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("document", help="a document ULID, or its path within the KB")
+    _kb_argument(parser)
+    parser.add_argument("--rel", default=None, help="only links with this relation")
+    parser.add_argument(
+        "--direction",
+        default="both",
+        choices=("out", "in", "both"),
+        help="links written here (out), links pointing here (in), or both",
+    )
+    parser.add_argument(
+        "--depth", type=int, default=1, help="how many hops to follow (server-capped at 3)"
+    )
+    parser.add_argument(
+        "--query", default=None, help="rank neighbours by similarity to this instead of by edge"
+    )
+    parser.add_argument("--offline", action="store_true", help="never reach out for model weights")
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
+
+
+def run_links(args: argparse.Namespace) -> int:
+    """`pnk links`. What this document connects to, and what connects to it."""
+    import json as json_module
+
+    from pinakes import manifest as manifest_module
+    from pinakes import store
+    from pinakes.errors import PinakesError
+    from pinakes.graph import provider as provider_module
+    from pinakes.graph.traverse import traverse
+
+    loaded = manifest_module.discover(args.kb)
+    connection = store.connect_ro(loaded.index_path)
+    try:
+        start_doc = provider_module.resolve_document(connection, args.document)
+        if start_doc is None:
+            raise PinakesError(
+                f"no active document in this KB matches {args.document!r}.",
+                remedy="Pass a document ULID, or its path as `pnk search` prints it.",
+            )
+
+        scores: dict[str, float] = {}
+        if args.query is not None:
+            # Loaded only when a query was given: ranking by edge needs no model at all, and
+            # `pnk links` should not pull weights for the common case.
+            from pinakes.embed import load_backend
+
+            scores = provider_module.score_documents(
+                connection,
+                load_backend(loaded.embedding, offline=args.offline),
+                args.query,
+                dim=loaded.embedding.dim,
+            )
+
+        provider = provider_module.DocumentProvider(
+            connection,
+            local_kb=loaded.kb.id,
+            direction=args.direction,
+            rel=args.rel,
+            scores=scores,
+        )
+        result = traverse(
+            provider,
+            provider_module.document_key(str(loaded.kb.id), str(start_doc)),
+            depth=args.depth,
+            adjacent_k=loaded.retrieval.adjacent_k,
+            query=args.query,
+        )
+        rows = [
+            {
+                "kb_id": neighbour.node_key[0],
+                "doc_id": neighbour.node_key[1],
+                "rel": neighbour.rel,
+                "direction": provider.directions.get(neighbour.node_key, args.direction),
+                "distance": neighbour.distance,
+                "score": round(neighbour.score, 4),
+                "terminal": neighbour.terminal,
+                **(
+                    {"title": title}
+                    if (title := provider.title(*neighbour.node_key)) is not None
+                    else {}
+                ),
+            }
+            for neighbour in result.neighbours
+        ]
+    finally:
+        connection.close()
+
+    if args.json:
+        print(
+            json_module.dumps(
+                {
+                    "document": str(start_doc),
+                    "neighbours": rows,
+                    "frontier": [
+                        {
+                            "kb_id": entry.node_key[0],
+                            "doc_id": entry.node_key[1],
+                            "rel": entry.rel,
+                            "reason": entry.reason,
+                        }
+                        for entry in result.frontier
+                    ],
+                    "unresolved": [
+                        {"doc_id": entry.node_key[1], "rel": entry.rel, "reason": entry.reason}
+                        for entry in result.unresolved
+                    ],
+                    "truncated": sorted(result.truncated),
+                },
+                indent=2,
+            )
+        )
+        return EXIT_OK
+
+    if not rows:
+        print("no links")
+    for row in rows:
+        arrow = "->" if row["direction"] == "out" else "<-"
+        label = row.get("title") or row["doc_id"]
+        marker = " (other KB)" if row["terminal"] else ""
+        print(f"{arrow} {row['rel']}: {label}{marker}  [hop {row['distance']}]")
+    for entry in result.unresolved:
+        print(f"!  {entry.rel}: {entry.node_key[1]} — {entry.reason}", file=sys.stderr)
+    if result.truncated:
+        print(
+            f"truncated ({', '.join(sorted(result.truncated))}) — ask for fewer, or a lower depth",
+            file=sys.stderr,
+        )
+    return EXIT_OK
+
+
 COMMANDS: tuple[Command, ...] = (
     Command(
         "init",
@@ -636,6 +766,13 @@ COMMANDS: tuple[Command, ...] = (
         "I8b",
         runner=lambda args: run_sync(args),
         arguments=_sync_arguments,
+    ),
+    Command(
+        "links",
+        "What a document connects to, and what connects to it",
+        "L4",
+        runner=lambda args: run_links(args),
+        arguments=_links_arguments,
     ),
     Command(
         "search",
