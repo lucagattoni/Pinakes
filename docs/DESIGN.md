@@ -566,12 +566,42 @@ Addressing is `pnk://<kb-ulid>/<doc-ulid>` (§2.2). Aliases in `[[links.kb]]` ma
 path; resolution is machine-local, the link itself is not.
 
 Forward traversal reads this KB's own `links` table. **Reverse links are computed by scanning the
-other KB's committed sidecars** (`docs/**/*.pnk.yaml`) at sync time — *not* its index, which is
-gitignored and simply absent in a fresh clone. Results are cached in `kb_refs` + `links`.
+other KB's committed sidecars** at sync time — *not* its index, which is gitignored and simply
+absent in a fresh clone, and which could not be read without holding a second KB's lock. Results
+are cached in `kb_refs` + `links` with `origin = 'reverse-scan'`.
 
-Failure modes are explicit rather than silent: an unresolvable KB id, an unreachable path, or a
-`pnk://` target whose doc no longer exists are all reported by `pnk doctor` as dangling, and
-traversal returns them as `unresolved` with the reason attached instead of dropping them.
+**The partner's `pinakes.toml` is read too, and must be.** A sidecar does not carry the KB it
+belongs to, so sidecars alone cannot supply `links.src_kb_id`, cannot key `kb_refs.kb_id`, and
+cannot even locate the sidecars — which live under the partner's own `[sources] roots` and need not
+be `docs/`. Three rules follow. `src_kb_id` comes from the partner's **own `[kb] id`**, never from
+the `[[links.kb]] id` this manifest declared: when they disagree nothing is scanned, because
+trusting the declaration would file one KB's links under another's alias and trusting the partner
+would silently redirect a link the local author wrote deliberately. Sidecars are enumerated from the
+partner's `[sources]`. And they are read with **the partner's id as owner**, so a partner's
+`pnk://self/<doc>` resolves to the partner — reusing the local one would mint inbound edges the
+partner never wrote, which is the retargeting defect §2.2's `self` expansion exists to prevent.
+
+**Only links targeting this KB are kept.** A partner's link to a third KB is read and discarded: a
+partial view of someone else's graph is the silently-incomplete answer this section refuses.
+
+**Replacing a partner's rows is all-or-nothing, and only after a complete walk.** The delete is
+scoped to that `src_kb_id` *and* to `origin = 'reverse-scan'` — both, because a manifest may list
+itself, and then an origin-blind delete would remove the authored rows the insert's
+`ON CONFLICT DO NOTHING` exists to protect. If any sidecar failed to parse mid-walk, nothing is
+written at all: the previously known rows are still true, and a half-read partner would otherwise
+lose edges that never went away. A failed walk does not stamp `last_scan` either, or the retry would
+be suppressed for a full window on the strength of the failure.
+
+**A KB dropped from `[[links.kb]]` has its inbound rows and `kb_refs` entry removed.** Nothing else
+would ever remove them — the per-partner delete only fires for a KB being scanned, and a delisted
+one never is.
+
+Failure modes are explicit rather than silent — an unresolvable KB id, an unreachable path, a
+sidecar that will not parse, or a `pnk://` target whose document is absent here. Each is reported
+with a remedy, each lets the scan continue to the next KB, and **none of them fails the sync**:
+`pnk sync` runs on three git hooks, and a partner that is merely not on this machine must not block
+every commit. A missing target is still recorded as an edge — dropping it would hide a real claim
+the other KB is making — and traversal returns it as `unresolved` with the reason attached.
 
 **The honest limitation:** without fan-out query, a question must *start* in one KB and travel via
 links. If no link exists, the connection is invisible. Link coverage is the ceiling on cross-KB
@@ -581,6 +611,20 @@ mysterious. If it bites, federated query is the v2 answer.
 ### 6.3 Freshness
 
 `pnk sync` is the primitive: walk sources, compare content hashes, re-process only what changed.
+
+**The cross-KB scan is bounded by a freshness window**, because `pnk sync` runs on `post-commit` and
+`post-merge`: a partner with a thousand sidecars costs a thousand reads, and paying that on every
+commit to learn an inbound link an hour sooner is the wrong trade. `kb_refs.last_scan` records when
+each partner was last read; `--scan-links` ignores the window entirely. The window is a code
+constant rather than a manifest key — "how stale may a cross-KB link be" is a question about this
+engine's cost model, not about a KB. Uncertainty always resolves to *stale*: no stamp, an
+unparseable stamp, or a stamp **in the future** all force a re-read, the last because a clock that
+moved backwards would otherwise suppress every scan until real time caught up, with no symptom.
+
+`--sidecars-only` does not scan — reverse rows are index rows and that mode never opens the index —
+and `--sidecars-only --scan-links` together is refused rather than silently resolved, since
+honouring both would mean one of the two flags doing nothing with no way to tell which.
+
 `pnk sync --rebuild` rebuilds **`index.db` only** — `ledger.jsonl` survives, always. Free,
 deterministic, cron-safe. A rebuild that wiped `.pinakes/` wholesale would destroy the spend history
 that §5's rolling budget is computed from, turning a routine maintenance command into a silent

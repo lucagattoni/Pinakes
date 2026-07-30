@@ -32,6 +32,7 @@ if TYPE_CHECKING:  # `budget.accountant` reads the price table; a free sync must
     from pinakes.budget.accountant import Accountant
     from pinakes.ids import OperationId
 
+from pinakes import linkscan
 from pinakes.chunk import PDF_SUFFIXES, assert_chunkable, chunk_document, source_type
 from pinakes.embed import EmbeddingBackend, load_backend
 from pinakes.errors import (
@@ -55,7 +56,7 @@ from pinakes.extract import (
     registered_extractors,
 )
 from pinakes.extract import cache as extract_cache
-from pinakes.ids import DocId, KbId
+from pinakes.ids import DocId, KbId, parse_doc_id
 from pinakes.lock import LockOutcome, SyncLock
 from pinakes.manifest import Manifest
 from pinakes.pairing import (
@@ -130,6 +131,12 @@ class SyncOptions:
     force: bool = False
     """Only meaningful together with an explicit `extract=` naming a *free* backend (I5): the one
     combination allowed to overwrite a paid extraction. `--force` alone changes nothing."""
+    scan_links: bool = False
+    """Re-read every `[[links.kb]]` now, ignoring the TTL (§6.2).
+
+    Ordinary syncs skip a partner scanned within `linkscan.TTL_MINUTES`, because the walk runs on
+    `post-commit` and `post-merge` and a partner with a thousand sidecars costs a thousand reads.
+    This is the flag for "I know the other KB just changed"."""
 
 
 @dataclass(slots=True)
@@ -195,6 +202,20 @@ class SyncReport:
     `on_exceed = "abort"` and `"partial"` is not what was *done* — each document is its own
     transaction, so whatever completed is committed either way — but whether stopping counts as a
     failure. `partial` says the run was allowed to do what it could; `abort` says it was not."""
+    link_scan: tuple[tuple[str, str, str], ...] = ()
+    """`(alias, message, remedy)` per linked KB that could not be fully scanned (§6.2).
+
+    **Its own field, and deliberately not `failures`.** `ok` is `not self.failures`, so recording
+    an unreachable partner there would make `pnk sync` exit non-zero on every `post-commit` and
+    `post-merge` hook — for a KB that is simply not on this machine, which §6.2 already calls an
+    honest limitation rather than an error. Nothing in `src/` ever deletes from the `failures`
+    table either, so one absent partner would add a row per sync forever and `pnk doctor` would
+    report the running total as if the count meant something."""
+    links_scanned: tuple[tuple[str, int], ...] = ()
+    """`(alias, inbound rows recorded)` for each partner actually walked this run."""
+    links_forgotten: int = 0
+    """Inbound rows dropped because their KB is no longer in `[[links.kb]]`."""
+
     on_exceed: str = "abort"
     """Copied from the manifest so `ok` can read it without the manifest in hand."""
     cache_pending_paid_eur: str = "0.0000"
@@ -241,6 +262,15 @@ class SyncReport:
             f"{self.deleted} removed",
         ]
         lines = [", ".join(summary)]
+        if self.links_scanned:
+            lines.append(
+                "inbound links: "
+                + ", ".join(f"{alias} {count}" for alias, count in self.links_scanned)
+            )
+        if self.links_forgotten:
+            lines.append(
+                f"{self.links_forgotten} inbound link(s) dropped — their KB is no longer linked"
+            )
         if self.unmatched:
             lines.append(self.unmatched_line())
         for path in self.paid_extraction_overwritten:
@@ -314,6 +344,11 @@ class SyncReport:
         remedy that only needs saying once should not scroll past N times.
         """
         lines = [f"failed: {path}: {error}" for path, error, _ in self.failures]
+        # Printed here because these are things a person may want to act on — and *not* counted by
+        # `ok`, which is the whole distinction: `pnk sync` still succeeds with an unreachable
+        # partner, so a hook does not block a commit over a KB that is simply not on this machine.
+        for _alias, message, _remedy in self.link_scan:
+            lines.append(f"link scan: {message}")
         for path, summary in self.audits:
             lines.append(f"completeness: {path}: {summary}")
         if self.low_coverage:
@@ -565,6 +600,20 @@ def sync(
     options = options or SyncOptions()
     stamp = now or datetime.now().strftime("%Y%m%d %H:%M")
 
+    if options.scan_links and options.sidecars_only:
+        # Refused rather than silently resolved: `--sidecars-only` returns before the index is even
+        # opened, and reverse rows are index rows — so honouring both would mean one of the two
+        # flags doing nothing, and the user cannot tell which. This combination is also what the
+        # `pre-commit` hook would produce if someone added `--scan-links` to it, where the answer
+        # "it did nothing" is worst of all.
+        raise SyncError(
+            "--scan-links has nothing to write under --sidecars-only.",
+            remedy=(
+                "Inbound links are index rows, and `--sidecars-only` never opens the index. Run "
+                "`pnk sync --scan-links` on its own."
+            ),
+        )
+
     if options.clear_cache:
         # A standalone mode: empties `cache/extract/` and nothing else (§6.3) — never the walk,
         # never the index, never `ledger.jsonl`. Needs no extraction backend to be valid, so it is
@@ -793,6 +842,15 @@ def _run(
                 # same reason and the report would carry N identical failures instead of one fact.
                 # `on_exceed` decides only what that *means* — see `SyncReport.ok`.
                 break
+
+        # After the document loop, never before. The order is not arbitrary: `_replace_links`
+        # writes each document's authored rows with `INSERT OR REPLACE`, so it *reclaims* a tuple a
+        # previous reverse scan wrote and rewrites `origin` to `sidecar`. The reverse scan's own
+        # `ON CONFLICT DO NOTHING` protects the other direction. Both orders are therefore safe —
+        # for different reasons, which is why both have a test: making `_replace_links` a
+        # `DO NOTHING` too, the symmetric-looking "fix", would silently undercount authored links
+        # forever.
+        _scan_linked_kbs(manifest, connection, options, stamp, report)
 
         store.set_meta(
             connection,
@@ -1675,3 +1733,88 @@ def _index_document(
 def _sidecar_hash(sidecar_by_document: dict[str, WalkedSidecar], path: str) -> str | None:
     found = sidecar_by_document.get(path)
     return found.file_hash if found else None
+
+
+def _scan_linked_kbs(
+    manifest: Manifest,
+    connection: sqlite3.Connection,
+    options: SyncOptions,
+    stamp: str,
+    report: SyncReport,
+) -> None:
+    """Record what the other KBs say points at this one (§6.2), and forget what no longer does.
+
+    Runs inside the sync's open connection but commits **per partner**, because each partner's
+    delete-and-reinsert is the unit that must be all-or-nothing: a partner whose walk did not
+    finish keeps the rows it had, and one that did gets replaced wholesale. Committing once at the
+    end would let a failure midway through partner three roll back partners one and two, which had
+    nothing wrong with them.
+    """
+    if not manifest.links:
+        # Still sweep: a manifest can drop its *last* `[[links.kb]]`, and that is exactly the case
+        # where nothing would ever come back to clean up after it.
+        report.links_forgotten = store.forget_reverse_links(connection, keep=())
+        # Committed unconditionally: `forget_reverse_links` also clears `kb_refs`, and a KB with a
+        # `kb_refs` row but no reverse rows would otherwise return with that delete uncommitted,
+        # relying on a later commit that this branch does not reach.
+        connection.commit()
+        return
+
+    # `None` when this run's own document loop failed or was cut short by a budget cap: the local
+    # picture is incomplete, and "the partner links to a document we do not have" would then be
+    # blaming the partner for our failure — for a document we do have, and failed to index. The
+    # rows are recorded either way; they come from the partner's sidecars and owe nothing to our
+    # local state. (`_run` guards `active_content_hashes` on `report.ok` for the same class of
+    # reason.)
+    complete_locally = not report.failures and report.budget_exhausted is None
+    documents = (
+        frozenset(
+            parse_doc_id(str(row[0]))
+            for row in connection.execute("SELECT id FROM documents WHERE state = 'active'")
+        )
+        if complete_locally
+        else None
+    )
+    result = linkscan.scan(
+        manifest,
+        local_documents=documents,
+        last_scans=store.read_kb_refs(connection),
+        now=stamp,
+        force=options.scan_links,
+    )
+
+    scanned: list[tuple[str, int]] = []
+    for kb in result.scanned:
+        if kb.skipped_fresh:
+            continue
+        if kb.kb_id is not None and kb.complete:
+            written = store.replace_reverse_links(
+                connection,
+                src_kb_id=str(kb.kb_id),
+                rows=[
+                    (str(row.src_doc_id), str(manifest.kb.id), str(row.dst_doc_id), row.rel)
+                    for row in kb.rows
+                ],
+            )
+            store.record_kb_ref(
+                connection,
+                kb_id=str(kb.kb_id),
+                alias=kb.alias,
+                path=str(kb.path),
+                last_scan=stamp,
+            )
+            scanned.append((kb.alias, written))
+            connection.commit()
+        # An incomplete walk writes nothing at all — not the rows, and not `last_scan`. Recording
+        # the timestamp would suppress the retry for a full TTL on the strength of a walk that
+        # failed, which is the one outcome that must not be sticky.
+
+    removed = store.forget_reverse_links(
+        connection, keep=[str(linked.id) for linked in manifest.links]
+    )
+    if removed:
+        report.links_forgotten = removed
+
+    report.links_scanned = tuple(scanned)
+    report.link_scan = tuple((issue.alias, issue.message, issue.remedy) for issue in result.issues)
+    connection.commit()

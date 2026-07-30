@@ -17,7 +17,7 @@ returns the chunk ids in the same row order so a matrix index can be turned back
 
 import json
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, Final, cast
 
@@ -338,3 +338,78 @@ def replace_chunks(
         )
         ids.append(int(cursor.lastrowid or 0))
     return ids
+
+
+def read_kb_refs(connection: sqlite3.Connection) -> dict[str, str]:
+    """`kb_id -> last_scan` for every linked KB this index has scanned (§3, §6.2)."""
+    return {
+        str(row["kb_id"]): str(row["last_scan"] or "")
+        for row in connection.execute("SELECT kb_id, last_scan FROM kb_refs")
+    }
+
+
+def replace_reverse_links(
+    connection: sqlite3.Connection,
+    *,
+    src_kb_id: str,
+    rows: Sequence[tuple[str, str, str, str]],
+) -> int:
+    """Replace one partner's inbound rows: `(src_doc_id, dst_kb_id, dst_doc_id, rel)` each.
+
+    **Scoped by `src_kb_id` *and* `origin`, and both matter.** Under a manifest that lists itself
+    as a `[[links.kb]]` — which nothing forbids, and which is the only way an authored row and a
+    reverse row can ever collide — the scanned `src_kb_id` *is* the local KB, so an origin-blind
+    delete would take out exactly the authored rows the insert below is written to protect.
+
+    `ON CONFLICT DO NOTHING`, because `origin` is not in the primary key: a plain
+    `INSERT OR REPLACE` would flip a colliding authored row's origin to `reverse-scan` and drop it
+    out of the authored-only population `pnk doctor` and the density gate both count.
+
+    The caller runs this **only for a partner whose walk completed** — the delete is unconditional
+    within its scope, so a half-read partner would lose edges that are still true.
+    """
+    connection.execute(
+        "DELETE FROM links WHERE src_kb_id = ? AND origin = 'reverse-scan'", (src_kb_id,)
+    )
+    written = 0
+    for src_doc_id, dst_kb_id, dst_doc_id, rel in rows:
+        cursor = connection.execute(
+            "INSERT INTO links VALUES (?, ?, ?, ?, ?, 'reverse-scan') ON CONFLICT DO NOTHING",
+            (src_kb_id, src_doc_id, dst_kb_id, dst_doc_id, rel),
+        )
+        written += cursor.rowcount or 0
+    # The count of rows *written*, not rows read: a duplicate entry in one sidecar, or (under a
+    # self-listing manifest) a collision with an authored row, is dropped by DO NOTHING — so the
+    # two numbers differ exactly when something interesting happened, and reporting the larger one
+    # would overstate what is in the table.
+    return written
+
+
+def forget_reverse_links(connection: sqlite3.Connection, *, keep: Sequence[str]) -> int:
+    """Drop inbound rows (and `kb_refs`) for every KB not in `keep`. Returns rows removed.
+
+    Nothing else would ever remove them: `replace_reverse_links` is scoped to the KB being scanned,
+    and a KB dropped from `[[links.kb]]` is never scanned again. Without this, disconnecting a
+    partner — or correcting a mistyped `[[links.kb]] id` — left its edges being served indefinitely.
+    """
+    placeholders = ",".join("?" for _ in keep)
+    predicate = f"src_kb_id NOT IN ({placeholders})" if keep else "1"
+    cursor = connection.execute(
+        f"DELETE FROM links WHERE origin = 'reverse-scan' AND {predicate}", tuple(keep)
+    )
+    removed = cursor.rowcount or 0
+    ref_predicate = f"kb_id NOT IN ({placeholders})" if keep else "1"
+    connection.execute(f"DELETE FROM kb_refs WHERE {ref_predicate}", tuple(keep))
+    return removed
+
+
+def record_kb_ref(
+    connection: sqlite3.Connection, *, kb_id: str, alias: str, path: str, last_scan: str
+) -> None:
+    """What was scanned, where it was found, and when (§3's four columns, finally written)."""
+    connection.execute(
+        "INSERT INTO kb_refs (kb_id, alias, path, last_scan) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(kb_id) DO UPDATE SET alias = excluded.alias, path = excluded.path, "
+        "last_scan = excluded.last_scan",
+        (kb_id, alias, path, last_scan),
+    )

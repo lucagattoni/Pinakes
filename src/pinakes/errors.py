@@ -465,6 +465,90 @@ class UnknownCallError(PinakesError):
         self.call_id = call_id
 
 
+class LinkScanError(PinakesError):
+    """A linked KB could not be scanned for inbound links (§6.2).
+
+    Four shapes, one base. Every one is **constructed and never raised**: the scan reports each and
+    carries on to the next KB, because `pnk sync` runs on three git hooks and a partner that is
+    merely absent on this machine must not turn every commit red. `SyncReport.ok` does not count
+    them for the same reason — an unreachable partner is a fact about *this machine*, and §6.2
+    already calls incomplete link coverage an honest limitation rather than a failure.
+
+    They carry a message and a remedy so the scan can print one line a person can act on, and so
+    `pnk doctor` (L7) can re-derive severity from the manifest without inventing new prose.
+    """
+
+    def __init__(self, alias: str, message: str, *, remedy: str) -> None:
+        super().__init__(f"linked KB `{alias}` {message}.", remedy=remedy)
+        self.alias = alias
+
+
+class LinkedKbUnreachableError(LinkScanError):
+    """`[[links.kb]] path` does not exist on this machine, or holds no readable `pinakes.toml`."""
+
+    def __init__(self, alias: str, path: Path, *, reason: str) -> None:
+        super().__init__(
+            alias,
+            f"cannot be read at {path}: {reason}",
+            remedy=(
+                "Not an error in itself — a KB is routinely shared without its partners, and "
+                "inbound links from it are simply not known here. Fix `[[links.kb]] path` if it "
+                "should resolve."
+            ),
+        )
+        self.path = path
+
+
+class LinkedKbIdMismatchError(LinkScanError):
+    """The partner's own `[kb] id` is not the ULID this manifest declared for it."""
+
+    def __init__(self, alias: str, *, declared: str, found: str) -> None:
+        super().__init__(
+            alias,
+            f"is declared as {declared} but the KB at that path is {found}",
+            remedy=(
+                "A KB ULID is permanent, so one of the two points at the wrong KB. Correct the "
+                "`[[links.kb]] id` or its `path`. Nothing is scanned until they agree — guessing "
+                "which is right would attribute one KB's links to another."
+            ),
+        )
+        self.declared = declared
+        self.found = found
+
+
+class LinkedSidecarUnreadableError(LinkScanError):
+    """One of the partner's sidecars will not parse."""
+
+    def __init__(self, alias: str, path: Path, *, reason: str) -> None:
+        super().__init__(
+            alias,
+            f"has a sidecar that will not parse ({path}): {reason}",
+            remedy=(
+                "Its inbound links are not recorded, and the ones already known here are kept "
+                "untouched. Repair the file in the other KB, then `pnk sync --scan-links`."
+            ),
+        )
+        self.path = path
+
+
+class LinkTargetMissingError(LinkScanError):
+    """The partner links to a document ULID this KB does not have."""
+
+    def __init__(self, alias: str, *, doc_id: str, count: int = 1) -> None:
+        subject = "a document" if count == 1 else f"{count} documents"
+        super().__init__(
+            alias,
+            f"links to {subject} this KB does not have (first: {doc_id})",
+            remedy=(
+                "Usually the other KB is ahead of this one, or a document was deleted here. The "
+                "inbound edge is recorded anyway — dropping it would hide a real claim the other "
+                "KB is making."
+            ),
+        )
+        self.doc_id = doc_id
+        self.count = count
+
+
 def _rebuild(cls: type[PinakesError], message: str, remedy: str) -> PinakesError:
     """Unpickling helper for `PinakesError.__reduce__` — must stay module-level to be importable.
 

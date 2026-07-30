@@ -438,6 +438,11 @@ def _sync_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--offline", action="store_true", help="never reach out for model weights")
     parser.add_argument(
+        "--scan-links",
+        action="store_true",
+        help="re-read every linked KB's sidecars now, ignoring the freshness window",
+    )
+    parser.add_argument(
         "--force-unlock", action="store_true", help="take a lock held by another machine"
     )
     parser.add_argument(
@@ -525,6 +530,7 @@ def run_sync(args: argparse.Namespace) -> int:
         options=SyncOptions(
             rebuild=args.rebuild,
             sidecars_only=args.sidecars_only,
+            scan_links=args.scan_links,
             index_only=args.index_only,
             stage=args.stage,
             offline=args.offline,

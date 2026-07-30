@@ -70,6 +70,35 @@ test, or write **none** and say why in the same commit.
 | the gate's link count agrees with the product's | L1 | `tests/test_partner_kb.py::test_the_gate_and_the_product_agree_on_the_link_count` |
 | `check.sh` still invokes the link-density gate | L1 | `tests/test_check_script.py::test_check_sh_declares_the_link_density_gate` |
 | CI runs it and proves it can fail | L1 | `tests/test_check_script.py::test_ci_runs_the_link_density_gate_and_proves_it_can_fail` |
+| inbound rows carry the other KB's id as source | L2 | `tests/test_sync_links.py::test_inbound_rows_carry_the_other_kbs_id_as_source` |
+| a partner's `self` link resolves to the partner, not to us | L2 | `tests/test_sync_links.py::test_a_self_link_in_a_partner_sidecar_resolves_to_the_partner_not_the_local_kb` |
+| only links targeting this KB are recorded | L2 | `tests/test_sync_links.py::test_a_partner_link_to_a_third_kb_is_not_recorded` |
+| `kb_refs` records alias, path and scan time | L2 | `tests/test_sync_links.py::test_kb_refs_records_alias_path_and_scan_time` |
+| the scan reads sidecars, never the partner's index | L2 | `tests/test_sync_links.py::test_the_scan_reads_sidecars_not_the_partners_index` |
+| a reverse row never overwrites an authored one | L2 | `tests/test_sync_links.py::test_a_reverse_row_never_overwrites_an_authored_row` |
+| an authored row reclaims a tuple a reverse scan wrote | L2 | `tests/test_sync_links.py::test_an_authored_row_reclaims_a_tuple_a_reverse_scan_already_wrote` |
+| reverse rows never enter the authored count | L2 | `tests/test_sync_links.py::test_reverse_rows_never_enter_the_authored_count` |
+| a removed link removes its reverse row | L2 | `tests/test_sync_links.py::test_a_removed_link_removes_its_reverse_row` |
+| the delete is scoped to the scanned KB | L2 | `tests/test_sync_links.py::test_the_delete_is_scoped_to_the_scanned_kb` |
+| a delisted KB's rows and `kb_refs` entry go with it | L2 | `tests/test_sync_links.py::test_delisting_a_linked_kb_removes_its_reverse_rows_and_kb_ref` |
+| a failed scan deletes nothing | L2 | `tests/test_sync_links.py::test_a_failed_scan_leaves_the_previous_reverse_rows_in_place` |
+| ...and does not stamp `last_scan` | L2 | `tests/test_sync_links.py::test_a_failed_scan_does_not_stamp_last_scan` |
+| a mismatched KB id writes nothing at all | L2 | `tests/test_sync_links.py::test_a_mismatched_kb_id_writes_nothing_at_all` |
+| each failure mode is recorded with its reason | L2 | `tests/test_sync_links.py::test_each_failure_mode_is_recorded_with_its_reason` |
+| an unreachable linked KB does not fail the sync | L2 | `tests/test_sync_links.py::test_an_unreachable_linked_kb_does_not_fail_the_sync` |
+| a fresh `kb_refs` entry skips the walk | L2 | `tests/test_sync_links.py::test_a_fresh_kb_refs_entry_skips_the_walk` |
+| an expired window forces a rescan | L2 | `tests/test_sync_links.py::test_an_expired_ttl_forces_a_rescan` |
+| `--scan-links` forces a rescan | L2 | `tests/test_sync_links.py::test_scan_links_forces_a_rescan` |
+| the window never reads uncertainty as fresh | L2 | `tests/test_sync_links.py::test_the_ttl_never_reads_uncertainty_as_fresh` |
+| `--sidecars-only` does not scan | L2 | `tests/test_sync_links.py::test_sidecars_only_does_not_scan` |
+| ...and refuses `--scan-links` | L2 | `tests/test_sync_links.py::test_sidecars_only_with_scan_links_is_refused` |
+| a rebuild reconstructs reverse rows from sidecars alone | L2 | `tests/test_sync_links.py::test_rebuild_reconstructs_reverse_rows_from_sidecars_alone` |
+| the partner is never locked, even mid-sync | L2 | `tests/test_sync_links.py::test_the_partner_is_never_locked` |
+| a vanished partner root deletes nothing | L2 | `tests/test_sync_links.py::test_a_vanished_partner_root_deletes_nothing` |
+| a partner's `exclude` is honoured | L2 | `tests/test_sync_links.py::test_a_partners_exclude_is_honoured` |
+| a partner's bad `include` cannot crash the sync | L2 | `tests/test_sync_links.py::test_a_partners_bad_include_pattern_does_not_crash_the_sync` |
+| a partner root outside its own KB is refused | L2 | `tests/test_sync_links.py::test_a_partner_root_outside_its_own_kb_is_refused` |
+| a failed local run does not blame the partner | L2 | `tests/test_sync_links.py::test_a_failed_local_run_does_not_blame_the_partner` |
 
 ## The PDF corpus
 
