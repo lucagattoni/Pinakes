@@ -87,14 +87,16 @@ def _authored(value: str) -> str | SingleQuotedScalarString:
     return SingleQuotedScalarString(value) if needs_quoting(value) else value
 
 
-def _json_encodable(path: Path, name: str, mapping: dict[str, Any]) -> None:
+def _json_encodable(path: Path, mapping: dict[str, Any]) -> None:
     """Refuse a mapping the index could not store — **the assembled mapping, not each value**.
 
     `store.dumps_metadata` is `json.dumps(metadata, sort_keys=True, ensure_ascii=False)`, and
-    `_metadata()` hands it `tags`, `provenance` and every `extra` key at once. Checking values one
-    at a time accepts `{123: v, abc: w}` — both values encode fine — and the `TypeError` then
-    escapes from `pnk sync`, because the failure is a comparison *between* keys, not a property of
-    either. So the call here is exactly the call being protected.
+    `_metadata()` hands it `tags`, `provenance` and every `extra` key **at once** — so this is
+    called with that same union, not with the parts. Two escapes come from getting the argument
+    wrong: checking each *value* accepts `{123: v, abc: w}`, both of which encode fine on their own;
+    and checking `extra` *alone* accepts a uniformly int-keyed `{1: a}`, which only becomes mixed
+    once `tags` and `provenance` join it. The failure is a comparison between keys that meet
+    nowhere else.
 
     **This keeps behaviour equivalent; it is not a new refusal.** PyYAML rejects an unknown tag
     today as a clean `SidecarError` (`ConstructorError` subclasses `YAMLError`); ruamel returns a
@@ -119,20 +121,16 @@ def _json_encodable(path: Path, name: str, mapping: dict[str, Any]) -> None:
         )
         raise SidecarError(
             path,
-            f"has an unusable `{name}` value the index cannot store: {offending}",
+            f"has a value the index cannot store: {offending}",
             remedy=(
-                "The index stores sidecar metadata as JSON, so every value under "
-                f"`{name}` must be JSON-encodable. A tag on a *scalar* (`!!binary`, `!!set`, "
+                "The index stores sidecar metadata as JSON, so every value in the sidecar "
+                "must be JSON-encodable, and its keys must all be strings. A tag on a "
+                "*scalar* (`!!binary`, `!!set`, "
                 "`!!timestamp`, `!!str`, or one of your own), a bare date, or a mapping mixing "
                 "string and non-string keys will not encode — a custom tag on a mapping or a "
                 "sequence is fine, because it serialises. Quote it, or drop the tag."
             ),
         ) from exc
-
-
-def _checked(path: Path, name: str, mapping: dict[str, Any]) -> dict[str, Any]:
-    _json_encodable(path, name, mapping)
-    return mapping
 
 
 def _encodes(value: Any) -> bool:
@@ -165,6 +163,14 @@ class Sidecar:
 
     An explicit `tags: []` is not the same as no `tags` at all: the first is something the user
     wrote and expects to still be there. Without this, writing back would quietly delete it.
+    """
+
+    owner: KbId | None = field(default=None, compare=False, repr=False)
+    """The KB this sidecar was read against — what `self` in a link means.
+
+    `write()` needs it to recognise that a node still saying `pnk://self/X` is the same link
+    `read()` handed back as `pnk://<owner>/X`. `None` on a freshly minted sidecar, which has no
+    document to reconcile against.
     """
 
     original: CommentedMap | None = field(default=None, compare=False, repr=False)
@@ -223,23 +229,29 @@ def read(path: Path, *, owner: KbId) -> Sidecar:
         raise SidecarError(path, f"must be a mapping, found {type(loaded).__name__}")
 
     data = cast(CommentedMap, loaded)
+    tags = _tags(path, data)
+    provenance = deepcopy(_mapping(path, data, "provenance"))
+    extra = deepcopy({key: value for key, value in data.items() if key not in KNOWN_KEYS})
+    # **Checked over the shape `_metadata()` assembles**, not over `extra` and `provenance`
+    # separately. A uniformly int-keyed `extra` passes on its own — `{1: "a"}` sorts fine — and
+    # `_metadata()` then merges it with the string keys `tags` and `provenance`, making the union
+    # mixed and `json.dumps(sort_keys=True)` raise out of `pnk sync`. Validating the parts is not
+    # validating the whole; the failure is a comparison *between* keys that only meet here.
+    _json_encodable(path, {"tags": list(tags), "provenance": dict(provenance), **extra})
     return Sidecar(
         id=_id(path, data),
         title=_optional_str(path, data, "title"),
-        tags=_tags(path, data),
+        tags=tags,
         created=_optional_str(path, data, "created"),
         links=_links(path, data, owner=owner),
         # **Copies, not the live nodes.** `_mapping` would otherwise hand back the very node stored
         # in `original`, and `dataclasses.replace` shares it between the pre- and post-extraction
         # sidecar — so `write()` would merge a mapping into itself. That is a silent no-op, not a
         # crash, which is the worst way for it to be wrong.
-        provenance=_checked(path, "provenance", deepcopy(_mapping(path, data, "provenance"))),
-        extra=_checked(
-            path,
-            "extra",
-            deepcopy({key: value for key, value in data.items() if key not in KNOWN_KEYS}),
-        ),
+        provenance=provenance,
+        extra=extra,
         present=frozenset(key for key in KNOWN_KEYS if key in data),
+        owner=owner,
         original=data,
     )
 
@@ -272,24 +284,29 @@ def _merge_mapping(existing: Any, incoming: dict[str, Any], *, delete_missing: b
             existing[key] = value
 
 
-def _merge_links(existing: Any, links: tuple[Link, ...]) -> None:
-    """Reconcile the `links` block **by `to` URI, never by position**.
+def _merge_links(existing: Any, links: tuple[Link, ...], *, owner: KbId | None) -> None:
+    """Reconcile the `links` block. Three rules, each of which a shipped version of this got wrong.
 
-    Positional matching misattributes the user's comments onto different links the moment the list
-    is reordered, and deletes them when it shrinks — measured, and worse than losing a comment
-    outright, because the prose then describes the wrong link.
+    **(a) Resolve before comparing.** `read()` expands `pnk://self/X` to `pnk://<kb-ulid>/X`, so a
+    loaded entry's `to` never equals the raw text still in the node. Comparing raw text found no
+    match, deleted the entry and appended a bare replacement — reproduced on a committed corpus
+    sidecar, on a **no-op write**, taking the user's comment and their unknown per-link keys with it
+    and moving the entry to the end.
 
-    Only `to` and `rel` are assigned inside a matched entry, and **nothing is deleted from one**:
-    `_links()` surfaces those two fields alone, so a delete-what-is-missing merge would destroy the
-    unknown per-link keys DESIGN §2.2 requires to round-trip.
+    **(b) Multiplicity, never a set.** `{(to, rel), …}` collapses two identical entries and the
+    second is then deleted — three links in, one out. `_links()` does not deduplicate; only the
+    index's primary key does. So `wanted` is a **list**, consumed by `remove`.
+
+    **(c) A `rel` edit is an in-place assignment, not delete-and-append.** Keying on the whole
+    `(to, rel)` pair makes the pair the entire content of an entry, so no matched entry is ever
+    updated and every edit becomes a delete plus an append — which by the pinned limitation below
+    misattributes one comment and destroys another. Match on the resolved `to`, preferring an entry
+    whose `rel` already agrees, and assign `rel` into the node otherwise.
+
+    Nothing else inside a matched entry is touched: `_links()` surfaces `to` and `rel` alone, so a
+    delete-what-is-missing merge would destroy the unknown per-link keys DESIGN §2.2 round-trips.
     """
-    # Keyed on the **(to, rel) pair**, which is the index's own identity
-    # (`store.py`'s `PRIMARY KEY (src_kb_id, src_doc_id, dst_kb_id, dst_doc_id, rel)`). Two links
-    # may share a `to` with different `rel`s — `_links()` accepts it and the index stores two rows —
-    # so `{to: link}` collapses them: measured, dropping an *unrelated* third link then rewrote the
-    # first link's `rel` and deleted the second, leaving one row carrying the wrong relation under
-    # the other's comment. Exactly the misattribution this rule exists to prevent.
-    wanted = {(str(link.to), link.rel) for link in links}
+    wanted = list(links)
     # **Deleted by index, highest first — never by slice assignment.** `existing[:] = keep` wipes
     # `CommentedSeq.ca.items` outright, taking every comment in the sequence with it; `del` shifts
     # the surviving indices and their comments along with them. Measured: after a slice assignment
@@ -303,33 +320,35 @@ def _merge_links(existing: Any, links: tuple[Link, ...]) -> None:
             del existing[index]
             continue
         entry = cast(dict[str, Any], raw_entry)
-        rel = str(entry.get("rel"))
-        written = str(entry.get("to"))
-        # **Matched on the *resolved* URI, then updated in place.** `_links()` expands `self`, so a
-        # `pnk://self/DOC` entry never equals any link in `wanted` — it was deleted and a bare
-        # replacement appended at the end, taking the user's comment and their unknown per-link
-        # keys with it, and reordering the block. Reproduced on a committed corpus sidecar. A `self`
-        # URI matches on `(doc, rel)`: it means "this KB" by definition, and document ULIDs are
-        # unique, so there is nothing else it could name.
-        pair = next(
-            (
-                candidate
-                for candidate in wanted
-                if candidate[1] == rel
-                and (candidate[0] == written or _is_self_for(written, candidate[0]))
-            ),
-            None,
+        written, rel = str(entry.get("to")), str(entry.get("rel"))
+        resolved = _resolved_uri(written, owner)
+        # An entry whose `rel` already agrees wins, so that two links to one document keep their
+        # own relations; the pair disambiguates only when one `to` appears more than once.
+        match = next(
+            (link for link in wanted if str(link.to) == resolved and link.rel == rel), None
         )
-        if pair is not None:
-            wanted.discard(pair)
-            if pair[0] != written:
-                entry["to"] = _authored(pair[0])  # expand `self`, keeping the entry itself
-        else:
+        if match is None:
+            match = next((link for link in wanted if str(link.to) == resolved), None)
+        if match is None:
             del existing[index]
-    for link in links:
-        if (str(link.to), link.rel) in wanted:  # never seen in the document — append it
-            existing.append(CommentedMap(to=_authored(str(link.to)), rel=_authored(link.rel)))
-            wanted.discard((str(link.to), link.rel))
+            continue
+        wanted.remove(match)
+        if written != str(match.to):
+            entry["to"] = _authored(str(match.to))  # expand `self`, keeping the entry itself
+        if rel != match.rel:
+            entry["rel"] = _authored(match.rel)  # an edit, in place — never delete-and-append
+    for link in wanted:  # never seen in the document — appended, in the order they were given
+        existing.append(CommentedMap(to=_authored(str(link.to)), rel=_authored(link.rel)))
+
+
+def _resolved_uri(written: str, owner: KbId | None) -> str:
+    """The URI a node's `to` text denotes, with `self` expanded — what `read()` already returned."""
+    if owner is None:
+        return written
+    try:
+        return str(resolve_link(written, "", owner=owner).to)
+    except InvalidUriError:
+        return written
 
 
 def _unchanged(existing: object, incoming: object) -> bool:
@@ -396,15 +415,6 @@ _QUOTE_IT = (
     "tagged value (`!!str`, `!!binary`, or one of your own) is not a string either. Wrapping it in "
     "quotes makes it the string it looks like."
 )
-
-
-def _is_self_for(written: str, resolved: str) -> bool:
-    """Whether a `pnk://self/…` as written names the same document as an already-resolved URI."""
-    try:
-        parsed = parse_uri(written)
-    except InvalidUriError:
-        return False
-    return parsed.is_self and str(parsed.doc) == resolved.rsplit("/", 1)[-1]
 
 
 def _merge_tags(existing: Any, tags: tuple[str, ...]) -> None:
@@ -478,7 +488,7 @@ def write(path: Path, sidecar: Sidecar) -> None:
             elif _unchanged(document.get(key), value):
                 continue  # the node already says this; touching it can only lose a comment
             elif key == "links":
-                _merge_links(document[key], sidecar.links)
+                _merge_links(document[key], sidecar.links, owner=sidecar.owner)
             elif key == "tags" and isinstance(document.get(key), list):
                 _merge_tags(document[key], sidecar.tags)
             elif isinstance(value, dict) and isinstance(document.get(key), dict):

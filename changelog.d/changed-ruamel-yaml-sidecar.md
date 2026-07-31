@@ -28,3 +28,6 @@
   detected` when the index serialised it. It is now silently read as `null`, and the anchor and
   alias do not survive the next write. Pathological input, and the only place this change trades a
   loud failure for a quiet one — which is the direction that matters, so it is written down.
+
+  **A non-string key at the top level of a sidecar is now refused**, with a remedy. It used to crash
+  `pnk sync` from inside the index writer.

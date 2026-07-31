@@ -846,6 +846,22 @@ def test_a_tagged_mapping_is_accepted_because_it_serialises(tmp_path: Path, owne
     assert read(path, owner=owner).extra["block"] == {"a": 1}
 
 
+def test_a_non_string_key_at_the_top_level_is_refused(tmp_path: Path, owner: KbId) -> None:
+    """The union escape. `{1: a}` is uniformly int-keyed, so `extra` alone sorts and encodes —
+    and `_metadata()` then merges it with the string keys `tags` and `provenance`, making the
+    union mixed and `json.dumps(sort_keys=True)` raise out of `pnk sync`.
+
+    Checking the parts is not checking the whole: the comparison that fails is between keys that
+    meet nowhere but in the assembled metadata.
+    """
+    path = tmp_path / f"jj.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\n1: a\n", encoding="utf-8")
+    with pytest.raises(SidecarError) as caught:
+        read(path, owner=owner)
+    assert "cannot store" in caught.value.message
+    assert "keys must all be strings" in caught.value.remedy
+
+
 def test_a_uniformly_non_string_keyed_mapping_is_a_stated_residual(
     tmp_path: Path, owner: KbId
 ) -> None:
@@ -855,6 +871,8 @@ def test_a_uniformly_non_string_keyed_mapping_is_a_stated_residual(
     path = tmp_path / f"r.md{SIDECAR_SUFFIX}"
     path.write_text(f"id: {mint_doc_id()}\nm:\n  1: a\n  2: b\n", encoding="utf-8")
     assert read(path, owner=owner).extra["m"] == {1: "a", 2: "b"}
+    # *Nested* is the residual. At the **top level** the same shape is refused, because the
+    # assembled metadata puts it beside `tags` and `provenance` — see the test above.
 
 
 def test_a_comment_on_a_tags_entry_survives_a_rewrite(tmp_path: Path, owner: KbId) -> None:
@@ -1222,3 +1240,55 @@ def test_a_self_link_keeps_its_place_its_comment_and_its_unknown_keys(
     assert lines.index(f"- to: pnk://{other}/{target}") > lines.index(
         "# the sibling in this same KB"
     )
+
+
+def test_two_identical_link_entries_both_survive(tmp_path: Path, owner: KbId) -> None:
+    """Multiplicity, never a set. `_links()` does not deduplicate — only the index's primary key
+    does — so a sidecar carrying the same `(to, rel)` twice has two links, and a `set` of pairs
+    silently deletes the second: three in, one out."""
+    kb, target, other = mint_kb_id(), mint_doc_id(), mint_doc_id()
+    path = tmp_path / f"hh.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\nlinks:\n"
+        f"- to: pnk://{kb}/{target}\n  rel: related\n"
+        f"- to: pnk://{kb}/{target}\n  rel: related\n"
+        f"- to: pnk://{kb}/{other}\n  rel: counterpart\n",
+        encoding="utf-8",
+    )
+    parsed = read(path, owner=owner)
+    assert len(parsed.links) == 3, "the duplicate is a real link, not a parse artefact"
+
+    # The write must **change** something, or the unchanged-key short-circuit skips the merge
+    # entirely and the test cannot see how it reconciles. The first version of this test did a
+    # plain read-write and a `wanted` that deduplicates survived it.
+    write(path, replace(parsed, links=parsed.links[:2]))
+    after = path.read_text(encoding="utf-8")
+
+    assert after.count("rel: related") == 2, "both identical entries survive"
+    assert str(other) not in after
+
+
+def test_editing_a_rel_updates_the_entry_rather_than_replacing_it(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """A `rel` edit is an assignment into the existing node.
+
+    Keying on the whole `(to, rel)` pair makes the pair the entire content of an entry, so no
+    matched entry is ever updated and every edit becomes a delete plus an append — which by the
+    pinned deletion limitation misattributes one comment and destroys another. This is what `pnk
+    link` will do when it changes a relation, so the common case must keep the prose beside it.
+    """
+    kb, target = mint_kb_id(), mint_doc_id()
+    path = tmp_path / f"ii.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\nlinks:\n# why these two are connected\n"
+        f"- to: pnk://{kb}/{target}\n  rel: related\n  confidence: high\n",
+        encoding="utf-8",
+    )
+    parsed = read(path, owner=owner)
+    write(path, replace(parsed, links=(Link(to=parsed.links[0].to, rel="supersedes"),)))
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    assert lines[lines.index("# why these two are connected") + 1] == f"- to: pnk://{kb}/{target}"
+    assert "  rel: supersedes" in lines, "the relation changed"
+    assert "  confidence: high" in lines, "and the entry's own keys are still there"

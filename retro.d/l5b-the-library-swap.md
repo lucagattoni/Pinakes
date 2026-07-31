@@ -67,3 +67,23 @@ almost all of them. Three quoting mutations survived the whole suite.
 **An error message is part of the interface.** Three of this increment's breaking changes surfaced
 as `TaggedScalar`, `ScalarFloat` and `OctalInt` — ruamel class names, from a library the user never
 chose, with no remedy. The type is not what they need; "quote it, or drop the tag" is.
+
+**A fix instruction can carry its own defects, and two of pass 6's did.** Keying `links` on the
+`(to, rel)` pair made the pair the *entire content* of an entry, so no matched entry was ever
+updated and every `rel` edit became a delete plus an append — landing straight in the comment
+misattribution the rule was written to avoid. And "positional fallback among equal pairs" was too
+vague to implement; what I wrote from it used a `set`, which collapses two identical entries: three
+links in, one out. The final rule needed three explicit clauses — resolve before comparing,
+multiplicity never a set, assign `rel` in place — each naming the shipped version that got it wrong.
+
+**"Exactly the call being protected" was true of the call and false of the argument.** The
+JSON-encodability check ran `json.dumps(extra, sort_keys=True, ensure_ascii=False)` — the same
+function `store.dumps_metadata` calls — over `extra` alone. `_metadata()` hands that function
+`{"tags": …, "provenance": …, **extra}`. A uniformly int-keyed `{1: a}` sorts perfectly on its own
+and becomes mixed the moment the string keys join it, so `pnk sync` still crashed. Checking the
+parts is not checking the whole, and the docstring asserting otherwise is what made it look done.
+
+**Two tests could not observe what they claimed, for the same reason.** A plain read-write of an
+unchanged document short-circuits before the merge runs, so a `wanted` that deduplicates survived
+`test_two_identical_link_entries_both_survive` and a `set`-based collapse was invisible. Any test of
+reconciliation has to *change* something first, or it is testing the short-circuit.
