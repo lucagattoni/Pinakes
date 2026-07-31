@@ -21,7 +21,10 @@ the point rather than a side effect (`plans/decision-ruamel-yaml.md`):
   reconciles the known keys *into the document that was read* instead of rendering a fresh one.
 * **`country: NO` stays `NO`.** Under YAML 1.1 it was read as `False` and written back as `false` —
   along with `0755` → `493` and `1:30` → `90` — silently, on keys this module documents as
-  round-tripped untouched. 1.2 reads them as the strings they visibly are.
+  round-tripped untouched. 1.2 reads **three of the four** as the strings they visibly are; `0755`
+  becomes int **755**, not the string and not PyYAML's octal 493, and survives on disk only because
+  ruamel preserves the source form. The index still stores a number. Corruption reduced, not
+  eliminated.
 """
 
 import json

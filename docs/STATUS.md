@@ -221,7 +221,7 @@ and this release can be numbered whenever it is cut.
 >
 > | Name | What it is |
 > |---|---|
-> | **the links release** | `pnk link`, `pnk links`, `pinakes_links`, reverse-scan, link-coverage reporting |
+> | **the links release** | `pnk link`, `pnk links`, `pinakes_links`, reverse-scan |
 > | **the graph release** | Structural edges, the expansion channel — each eval-gated |
 > | **the deep release** | `pnk ask --deep` |
 > | **the template release** | Template ecosystem, `pnk upgrade`, the `sqlite-vec` tier |
@@ -290,9 +290,13 @@ rather than assuming it away.
 
 ## Published on PyPI
 
-**[`pinakes` is on PyPI](https://pypi.org/project/pinakes/).** `uv add "pinakes[light]"` works —
-verified 20260729 01:01 by installing the published wheel into an empty venv and running
-`init` → `sync` → `search`.
+**[`pinakes` is on PyPI](https://pypi.org/project/pinakes/).** `uv add "pinakes[light]"` installs,
+and needs **one manifest edit before it can sync**: `pnk init` stamps
+`provider = "sentence-transformers"` whatever extras you have, so a `[light]` install fails with
+*"the `sentence-transformers` backend is not installed"* until `provider` is changed to
+`"fastembed"` — the edit [README.md](../README.md) and the [Guide](GUIDE.md#choosing-a-backend)
+both call out. Verified 20260731 12:10 against **0.5.0** from the index: `init` → edit → `sync` →
+`search` returns the document. The earlier claim that it worked unedited was wrong.
 
 | | |
 |---|---|

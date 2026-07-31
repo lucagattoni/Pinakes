@@ -128,9 +128,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `title`, `created`, `tags[]`, `links[].to`, `links[].rel`) is refused. And an **`!!str`-tagged
   value** is refused — the only *working* tag that changes behaviour; `!!int`, `!!float`, `!!bool`,
   `!!seq` and `!!map` still load to the same values they always did, though the tag itself is not
-  written back (`!!int 3` comes back as `3`). And **a key that is not a string is refused** — the
-  index stores metadata as JSON, whose keys must be strings, and a sidecar with `1: a` at the top
-  level used to crash `pnk sync` from inside the index writer instead.
+  written back (`!!int 3` comes back as `3`). And **a non-string key at the
+  top level, or a mapping mixing string and non-string keys at any depth, is refused** — the index
+  stores metadata as JSON, and a sidecar with `1: a` at the top level used to crash `pnk sync` from
+  inside the index writer instead. A *uniformly* non-string-keyed **nested** mapping is still
+  accepted and silently coerced (`outer:` / `  2: b` becomes `{"2": "b"}`), as it was before.
 
   **Separately, four shapes whose unhandled `TypeError` becomes a named error** — `!!binary`,
   `!!set`, `!!timestamp` and a bare date all crashed `pnk sync` out of `json.dumps` before, and are
@@ -144,9 +146,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   detected` when the index serialised it. It is now silently read as `null`, and the anchor and
   alias do not survive the next write. Pathological input, and the only place this change trades a
   loud failure for a quiet one — which is the direction that matters, so it is written down.
-
-  **A non-string key at the top level of a sidecar is now refused**, with a remedy. It used to crash
-  `pnk sync` from inside the index writer.
 
   **A reused anchor name is refused**, as it was before the swap. The new parser accepts it and
   resolves every alias to the *last* anchor of that name — so `a: &dup 1`, `b: &dup 2`, `c: *dup`
