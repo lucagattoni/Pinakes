@@ -192,39 +192,64 @@ def test_no_module_under_src_imports_pyyaml() -> None:
 
 
 def test_every_symbol_the_ruamel_stub_declares_matches_inspect_signature() -> None:
-    """A stub that **declares a parameter ruamel does not have** is pyright-green and a `TypeError`
-    at runtime — an import-only check would not catch it, which is decision 20's whole point.
+    """**Parsed out of the `.pyi` files**, never mirrored by hand.
 
-    A stub that *omits* a real parameter is not a mismatch: no minimal stub could pass otherwise.
-    `preserve_quotes` and `width` are *instance* attributes, so `inspect.signature` does not apply
-    and `getattr(YAML, "width")` raises — they are asserted by setting them on an instance instead.
+    The first version of this listed the symbols in a Python dict and checked them with `hasattr`,
+    against hardcoded signature supersets. That is green against a stub declaring a parameter
+    ruamel does not have — under pytest *and* pyright — which is the single failure decision 20
+    exists to catch: such a stub type-checks and `TypeError`s at runtime. A gate that never reads
+    the artifact it guards is checking a copy of it.
+
+    A stub that **omits** a real parameter is fine; no minimal stub could pass otherwise. A stub
+    that **invents** one is not.
     """
+    import ast
     import inspect
 
-    declared = {
-        "ruamel.yaml": ["YAML"],
-        "ruamel.yaml.comments": ["CommentedMap", "CommentedSeq", "TaggedScalar"],
-        "ruamel.yaml.error": ["YAMLError", "ReusedAnchorWarning"],
-        "ruamel.yaml.constructor": ["DuplicateKeyError", "ScalarBoolean"],
-        "ruamel.yaml.scalarstring": ["SingleQuotedScalarString"],
-        "ruamel.yaml.scalarbool": ["ScalarBoolean"],
-        "ruamel.yaml.nodes": ["ScalarNode"],
-        "ruamel.yaml.resolver": ["VersionedResolver"],
-    }
-    for module_name, symbols in declared.items():
+    stub_root = PYPROJECT.parent / "stubs" / "ruamel" / "yaml"
+    stubs = sorted(stub_root.glob("*.pyi"))
+    assert stubs, "the stub package is missing entirely"
+
+    checked = 0
+    for stub in stubs:
+        module_name = "ruamel.yaml" + ("" if stub.stem == "__init__" else f".{stub.stem}")
         module = import_module(module_name)
-        for symbol in symbols:
-            assert hasattr(module, symbol), f"{module_name}.{symbol} does not exist"
+        tree = ast.parse(stub.read_text(encoding="utf-8"), filename=str(stub))
 
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            real = getattr(module, node.name, None)
+            assert real is not None, f"{module_name}.{node.name} is declared and does not exist"
+            checked += 1
+
+            for member in node.body:
+                if not isinstance(member, ast.FunctionDef):
+                    continue
+                attribute = getattr(real, member.name, None)
+                assert attribute is not None, (
+                    f"{module_name}.{node.name}.{member.name} is declared and does not exist"
+                )
+                if not callable(attribute):
+                    continue
+                declared = {
+                    argument.arg
+                    for argument in [*member.args.args, *member.args.kwonlyargs]
+                    if argument.arg != "self"
+                }
+                actual = set(inspect.signature(attribute).parameters)
+                invented = declared - actual
+                assert not invented, (
+                    f"{module_name}.{node.name}.{member.name} declares parameters ruamel does not "
+                    f"have: {sorted(invented)}"
+                )
+
+    assert checked >= 8, f"only {checked} classes parsed; the stub layout has moved"
+
+    # `preserve_quotes` and `width` are *instance* attributes: `inspect.signature` does not apply
+    # and `getattr(YAML, "width")` raises, so they are asserted by setting them on an instance.
     from ruamel.yaml import YAML
-    from ruamel.yaml.resolver import VersionedResolver
 
-    assert set(inspect.signature(YAML.__init__).parameters) >= {"self", "typ"}
-    assert set(inspect.signature(VersionedResolver.resolve).parameters) >= {
-        "kind",
-        "value",
-        "implicit",
-    }
     instance = YAML()
     instance.preserve_quotes = True
     instance.width = 4096

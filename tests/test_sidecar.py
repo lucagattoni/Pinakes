@@ -788,8 +788,6 @@ def test_deleting_a_commented_key_loses_one_comment_and_misattributes_another(
         ("when: !!timestamp 2026-07-31", "a timestamp"),
         ("when: 2026-07-31", "a bare date"),
         ("thing: !whatever v", "an unknown tag"),
-        ("!whatever k: v", "a tagged key"),
-        ("m:\n  1: a\n  b: c", "a mapping mixing string and non-string keys"),
     ],
 )
 def test_a_json_unencodable_extra_value_is_refused_with_a_remedy(
@@ -811,6 +809,27 @@ def test_a_json_unencodable_extra_value_is_refused_with_a_remedy(
         read(path, owner=owner)
     assert "cannot store" in caught.value.message, why
     assert "JSON" in caught.value.remedy
+
+
+@pytest.mark.parametrize(
+    ("body", "why"),
+    [
+        ("!whatever k: v", "a tagged key"),
+        ("m:\n  1: a\n  b: c", "a mapping mixing string and non-string keys"),
+        ("1: a", "a non-string key at the top level"),
+    ],
+)
+def test_a_key_that_is_not_a_string_is_refused_as_a_key(
+    tmp_path: Path, owner: KbId, body: str, why: str
+) -> None:
+    """Reported as a *key* problem, naming the key — not as "has a value the index cannot store"
+    followed by a raw comparison error, which named nothing the user could act on."""
+    path = tmp_path / f"nk.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\n{body}\n", encoding="utf-8")
+    with pytest.raises(SidecarError) as caught:
+        read(path, owner=owner)
+    assert "key that is not a string" in caught.value.message, why
+    assert "must be strings" in caught.value.remedy
 
 
 def test_a_double_bang_str_value_is_refused(tmp_path: Path, owner: KbId) -> None:
@@ -858,8 +877,8 @@ def test_a_non_string_key_at_the_top_level_is_refused(tmp_path: Path, owner: KbI
     path.write_text(f"id: {mint_doc_id()}\n1: a\n", encoding="utf-8")
     with pytest.raises(SidecarError) as caught:
         read(path, owner=owner)
-    assert "cannot store" in caught.value.message
-    assert "keys must all be strings" in caught.value.remedy
+    assert "key that is not a string" in caught.value.message
+    assert "must be strings" in caught.value.remedy
 
 
 def test_a_uniformly_non_string_keyed_mapping_is_a_stated_residual(
@@ -1416,3 +1435,104 @@ def test_a_missing_trailing_newline_is_added(tmp_path: Path, owner: KbId) -> Non
         tmp_path / f"pp.md{SIDECAR_SUFFIX}", owner, f"id: {mint_doc_id()}\nk: v".encode()
     )
     assert after.endswith(b"k: v\n")
+
+
+def test_reading_a_directive_does_not_contaminate_the_next_document(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """**One shared parser is a cross-document corruption bug.**
+
+    ruamel keeps the `%YAML` directive from the last `load()` on the instance and applies it to
+    every later load *and* dump. Read a sidecar carrying `%YAML 1.1`, then write an unrelated one
+    that never did, and it comes back with the directive injected and `country: NO` rewritten to
+    `false` — the exact corruption this module exists to prevent, reintroduced across documents in
+    exchange for 117 microseconds.
+    """
+    first = tmp_path / f"first.md{SIDECAR_SUFFIX}"
+    first.write_text(f"%YAML 1.1\n---\nid: {mint_doc_id()}\ncountry: NO\n", encoding="utf-8")
+    read(first, owner=owner)
+
+    second = tmp_path / f"second.md{SIDECAR_SUFFIX}"
+    body = f"id: {mint_doc_id()}\ncountry: NO\nshelf: 0755\n"
+    second.write_text(body, encoding="utf-8")
+    write(second, read(second, owner=owner))
+    after = second.read_text(encoding="utf-8")
+
+    assert after == body, "a document that never carried a directive must not acquire one"
+    assert "%YAML" not in after and "false" not in after
+
+
+def test_a_minted_sidecar_is_not_contaminated_either(tmp_path: Path, owner: KbId) -> None:
+    """The same leak reaches `skeleton()`, which has no document of its own to be influenced by."""
+    first = tmp_path / f"first.md{SIDECAR_SUFFIX}"
+    first.write_text(f"%YAML 1.1\n---\nid: {mint_doc_id()}\nk: v\n", encoding="utf-8")
+    read(first, owner=owner)
+
+    minted = tmp_path / f"NO.md{SIDECAR_SUFFIX}"
+    write(minted, skeleton(Path("docs/NO.md"), created="20260725 18:00"))
+    assert "%YAML" not in minted.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("body", ["links:\n", "tags:\n", "provenance:\n"])
+def test_a_known_key_with_a_null_value_does_not_crash_the_writer(
+    tmp_path: Path, owner: KbId, body: str
+) -> None:
+    """`links:` with nothing under it is what a user writes *before* adding their first link, and
+    what a template can leave behind. `tags` and `provenance` were guarded and `links` was not, so
+    it raised an unhandled `TypeError` out of `write()` — escaping `pnk sync`, including the
+    paid-extraction write that happens after money has been spent."""
+    path = tmp_path / f"qq.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\n{body}", encoding="utf-8")
+
+    write(path, read(path, owner=owner))
+    assert "id:" in path.read_text(encoding="utf-8")
+
+
+def test_editing_one_rel_where_two_links_share_a_to_moves_neither_comment(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """Two passes, not one pass with two tiers.
+
+    Matching each entry to an exact `(to, rel)` and otherwise falling back to `to` alone, in one
+    walk, lets a later entry's *fallback* consume the exact match an earlier entry was owed — so
+    editing one relation swapped both and left both comments on the wrong entries. That is the
+    defect the whole reconciliation rule exists to prevent, reintroduced by its own fix.
+    """
+    kb, shared = mint_kb_id(), mint_doc_id()
+    path = tmp_path / f"rr.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\nlinks:\n"
+        f"# why counterpart\n- to: pnk://{kb}/{shared}\n  rel: counterpart\n"
+        f"# why cites\n- to: pnk://{kb}/{shared}\n  rel: cites\n",
+        encoding="utf-8",
+    )
+    parsed = read(path, owner=owner)
+
+    # **Editing the *second* entry is the case that breaks a single pass.** Entries are walked in
+    # descending index order, so the second is processed first; with no exact match left for it,
+    # its fallback claims the link the *first* entry was owed exactly, and both relations end up
+    # swapped under the wrong comments. Editing the first entry happens to come out right either
+    # way, which is why the first version of this test passed against the defective form.
+    write(
+        path,
+        replace(parsed, links=(parsed.links[0], replace(parsed.links[1], rel="supersedes"))),
+    )
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    assert lines[lines.index("# why counterpart") + 2] == "  rel: counterpart", "untouched"
+    assert lines[lines.index("# why cites") + 2] == "  rel: supersedes", "the edited one"
+
+
+def test_a_non_string_key_is_reported_as_a_key_not_a_value(tmp_path: Path, owner: KbId) -> None:
+    """It used to say "has a value the index cannot store" and then quote `'<' not supported
+    between instances of 'int' and 'str'` — naming neither the key nor anything actionable, which
+    is what `_describe` exists to prevent one level up."""
+    path = tmp_path / f"ss.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\nm:\n  x: 1\n  2: b\n", encoding="utf-8")
+
+    with pytest.raises(SidecarError) as caught:
+        read(path, owner=owner)
+    assert "key that is not a string" in caught.value.message
+    assert "2" in caught.value.message and "a number" in caught.value.message
+    assert "not supported between" not in caught.value.message, "no raw comparison error"
+    assert "CommentedMap" not in caught.value.remedy

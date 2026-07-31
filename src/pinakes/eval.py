@@ -36,13 +36,19 @@ from pinakes.search import HIGH, LOW, UNKNOWN, Filters, search
 DEFAULT_K = 5
 
 
-_YAML = YAML(typ="safe")
-"""The golden set is data, never a document to round-trip — `typ="safe"` is the right loader.
+def _yaml() -> YAML:
+    """A fresh safe loader per call — the golden set is data, never a document to round-trip.
 
-Reused rather than constructed per call, like `sidecar.py`'s. Duplicate keys are mapped the same
-way there and here: `load_questions` has no `try/except` of its own, so a repeated question key in
-a user's golden set would otherwise escape `make eval` as a bare `DuplicateKeyError`.
-"""
+    Fresh for the same reason `sidecar.py`'s is: ruamel keeps the `%YAML` directive from the last
+    `load()` on the instance, so one golden set carrying one would silently change how the next is
+    parsed. Read-only here and so lower stakes than a sidecar, but it is the same defect and the
+    same one-line prevention.
+
+    Duplicate keys are mapped the same way in both places: `load_questions` has no `try/except` of
+    its own, so a repeated question key would otherwise escape `make eval` as a bare
+    `DuplicateKeyError`.
+    """
+    return YAML(typ="safe")
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,7 +125,7 @@ class Metrics:
 
 def load_questions(path: Path) -> list[Question]:
     try:
-        raw: object = _YAML.load(path.read_text(encoding="utf-8"))
+        raw: object = _yaml().load(path.read_text(encoding="utf-8"))
     except DuplicateKeyError as exc:
         raise EvalError(
             f"{path} repeats a question key: {str(exc).splitlines()[0]}",

@@ -51,19 +51,31 @@ SIDECAR_SUFFIX = ".pnk.yaml"
 # Keys this module understands. Anything else is preserved verbatim under `extra`.
 KNOWN_KEYS = frozenset({"id", "title", "tags", "created", "links", "provenance"})
 
-_YAML = YAML()  # round-trip, YAML 1.2
-_YAML.preserve_quotes = True
-_YAML.width = 4096
-"""One instance, module-level, serving both `load` and `dump` interleaved.
 
-Both settings are load-bearing. Without `preserve_quotes` a quoted scalar comes back bare on the
-next write; `width` at ruamel's default of 80 folds a long value with spaces in it across lines,
-which changes the file for a document nobody edited. 4096 exceeds what PyYAML did rather than
-restoring parity with it.
+def _yaml() -> YAML:
+    """A **fresh** round-trip parser, per call. Never one shared instance.
 
-Rebuilt per call the parse costs 399 µs against 282 µs, and there is nothing to gain: `lock.py`
-serialises every writer, so no two calls are in flight at once.
-"""
+    Sharing one was specified, and measured at 282 µs against 399 µs. It is a cross-document
+    corruption bug: ruamel keeps the `%YAML` directive from the last `load()` on the instance and
+    applies it to every later load *and* dump. Read a sidecar that carries `%YAML 1.1`, then write
+    an unrelated one that never did, and it comes back with a `%YAML 1.1` header injected and
+    `country: NO` rewritten to `false` — the exact corruption this module exists to prevent,
+    reintroduced across documents in exchange for 117 microseconds. Freshly minted sidecars are
+    contaminated the same way.
+
+    Nothing softer works: resetting `version` after the load still emits the directive, pinning it
+    up front is overwritten by the next load, and nulling `_yaml_version` between loads is not
+    enough. A fresh instance is the fix.
+
+    Both settings below are load-bearing. Without `preserve_quotes` a quoted scalar comes back bare
+    on the next write; `width` at ruamel's default of 80 folds a long value with spaces across
+    lines, changing a file nobody edited. 4096 exceeds what PyYAML did rather than matching it.
+    """
+    parser = YAML()  # round-trip, YAML 1.2
+    parser.preserve_quotes = True
+    parser.width = 4096
+    return parser
+
 
 _RESOLVERS = (VersionedResolver((1, 1)), VersionedResolver((1, 2)))
 _STRING_TAG = "tag:yaml.org,2002:str"
@@ -113,9 +125,24 @@ def _json_encodable(path: Path, mapping: dict[str, Any]) -> None:
     try:
         json.dumps(dict(mapping), sort_keys=True, ensure_ascii=False)
     except TypeError as exc:
+        # **A key failure and a value failure are different sentences.** Reported as one, a
+        # non-string key surfaced as "has a value the index cannot store" followed by the raw
+        # `'<' not supported between instances of 'int' and 'str'` — naming neither the key nor
+        # anything the user can act on, which is what `_describe` exists to prevent one level up.
+        bad_key = _first_non_string_key(mapping)
+        if bad_key is not None:
+            raise SidecarError(
+                path,
+                f"has a key that is not a string: {bad_key[0]!r} ({_describe(bad_key[0])})",
+                remedy=(
+                    "The index stores sidecar metadata as JSON, whose keys must be strings. "
+                    "Quote "
+                    f'it — `"{bad_key[0]}":` rather than `{bad_key[0]}:`' + bad_key[1] + "."
+                ),
+            ) from exc
         offending = next(
             (
-                f"{key!r} ({type(value).__name__})"
+                f"{key!r} ({_describe(value)})"
                 for key, value in mapping.items()
                 if not _encodes(value)
             ),
@@ -133,6 +160,24 @@ def _json_encodable(path: Path, mapping: dict[str, Any]) -> None:
                 "sequence is fine, because it serialises. Quote it, or drop the tag."
             ),
         ) from exc
+
+
+def _first_non_string_key(mapping: dict[Any, Any], trail: str = "") -> tuple[object, str] | None:
+    """The first key that is not a string, and where it sits — searched at every depth.
+
+    `json.dumps(sort_keys=True)` raises only when the keys of one mapping are of *mixed* types, so
+    the exception says nothing about which key is at fault, and a uniformly non-string mapping does
+    not raise at all — it is silently coerced. Finding the key ourselves reports the real problem in
+    both cases.
+    """
+    for key, value in mapping.items():
+        if not isinstance(key, str):
+            return key, trail
+        if isinstance(value, dict):
+            found = _first_non_string_key(cast(dict[Any, Any], value), f"{trail}, under `{key}`")
+            if found is not None:
+                return found
+    return None
 
 
 def _encodes(value: Any) -> bool:
@@ -222,7 +267,7 @@ def read(path: Path, *, owner: KbId) -> Sidecar:
         # caller's warning filters happen to be.
         with warnings.catch_warnings():
             warnings.simplefilter("error", ReusedAnchorWarning)
-            loaded: object = _YAML.load(raw)
+            loaded: object = _yaml().load(raw)
     except ReusedAnchorWarning as exc:
         raise SidecarError(
             path,
@@ -329,6 +374,7 @@ def _merge_links(existing: Any, links: tuple[Link, ...], *, owner: KbId | None) 
     delete-what-is-missing merge would destroy the unknown per-link keys DESIGN §2.2 round-trips.
     """
     wanted = list(links)
+    pending: list[tuple[int, dict[str, Any], str, str, str]] = []
     # **Deleted by index, highest first — never by slice assignment.** `existing[:] = keep` wipes
     # `CommentedSeq.ca.items` outright, taking every comment in the sequence with it; `del` shifts
     # the surviving indices and their comments along with them. Measured: after a slice assignment
@@ -344,17 +390,35 @@ def _merge_links(existing: Any, links: tuple[Link, ...], *, owner: KbId | None) 
         entry = cast(dict[str, Any], raw_entry)
         written, rel = str(entry.get("to")), str(entry.get("rel"))
         resolved = _resolved_uri(written, owner)
-        # An entry whose `rel` already agrees wins, so that two links to one document keep their
-        # own relations; the pair disambiguates only when one `to` appears more than once.
-        match = next(
+        pending.append((index, entry, written, resolved, rel))
+
+    # **Two passes, not one pass with two tiers.** Matching each entry to an exact `(to, rel)` and
+    # otherwise falling back to `to` alone, in a single walk, lets a later entry's *fallback*
+    # consume the exact match an earlier entry was owed: editing one relation where two links share
+    # a `to` swapped both relations and left both comments on the wrong entries — the defect this
+    # rule exists to prevent. Every exact match is claimed first; only then do the leftovers pair
+    # up by `to` alone, which is what turns a `rel` edit into an in-place assignment.
+    matched: dict[int, Link] = {}
+    for index, _entry, _written, resolved, rel in pending:
+        exact = next(
             (link for link in wanted if str(link.to) == resolved and link.rel == rel), None
         )
-        if match is None:
-            match = next((link for link in wanted if str(link.to) == resolved), None)
+        if exact is not None:
+            wanted.remove(exact)
+            matched[index] = exact
+    for index, _entry, _written, resolved, _rel in pending:
+        if index in matched:
+            continue
+        loose = next((link for link in wanted if str(link.to) == resolved), None)
+        if loose is not None:
+            wanted.remove(loose)
+            matched[index] = loose
+
+    for index, entry, written, _resolved, rel in pending:
+        match = matched.get(index)
         if match is None:
             del existing[index]
             continue
-        wanted.remove(match)
         if written != str(match.to):
             entry["to"] = _authored(str(match.to))  # expand `self`, keeping the entry itself
         if rel != match.rel:
@@ -509,7 +573,7 @@ def write(path: Path, sidecar: Sidecar) -> None:
                 document[key] = value
             elif _unchanged(document.get(key), value):
                 continue  # the node already says this; touching it can only lose a comment
-            elif key == "links":
+            elif key == "links" and isinstance(document.get(key), list):
                 _merge_links(document[key], sidecar.links, owner=sidecar.owner)
             elif key == "tags" and isinstance(document.get(key), list):
                 _merge_tags(document[key], sidecar.tags)
@@ -522,7 +586,7 @@ def write(path: Path, sidecar: Sidecar) -> None:
             del document[key]
 
     stream = StringIO()
-    _YAML.dump(document, stream)
+    _yaml().dump(document, stream)
     rendered = stream.getvalue()
 
     # Atomically: write beside the target, then rename over it. A truncated sidecar would lose the

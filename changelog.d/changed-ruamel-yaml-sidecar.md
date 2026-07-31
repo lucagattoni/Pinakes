@@ -36,3 +36,7 @@
   **A reused anchor name is refused**, as it was before the swap. The new parser accepts it and
   resolves every alias to the *last* anchor of that name — so `a: &dup 1`, `b: &dup 2`, `c: *dup`
   would have made `c` equal 2 — reporting it only as a warning on stderr.
+
+  **A `links:`, `tags:` or `provenance:` key with nothing under it no longer crashes a write.**
+  `links:` alone — what a sidecar carries before its first link is added — raised an unhandled
+  error out of `pnk sync`, including the write that follows a paid extraction.

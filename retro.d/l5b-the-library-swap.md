@@ -124,3 +124,27 @@ So the CI assertion is correctly scoped to the bare wheel — pinakes never asks
 consequence is the part worth remembering: **`import yaml` will succeed in a real install**, so a
 stray import in `src/` would quietly work instead of failing loudly. That is what makes the AST scan
 load-bearing rather than a second belt.
+
+**The worst defect in this increment was a rule the plan itself wrote.** *"One instance, reused
+rather than reconstructed per call"*, justified by 282 µs against 399 µs. ruamel keeps the `%YAML`
+directive from the last `load()` **on the instance** and applies it to every later load *and* dump:
+read a sidecar carrying `%YAML 1.1`, then write an unrelated one that never did, and it comes back
+with the directive injected and `country: NO` rewritten to `false`. The exact corruption this
+increment exists to remove, reintroduced *across documents*, in exchange for 117 microseconds — and
+freshly minted sidecars are contaminated the same way. Nothing softer fixes it: resetting `version`
+after the load still emits the directive, pinning it up front is overwritten by the next load. A
+performance justification measured in microseconds should be read as an argument that the
+optimisation does not matter.
+
+**A gate that never reads the artifact it guards is checking a copy.** The stub-signature test
+listed the symbols in a hand-written Python dict, checked them with `hasattr`, and compared against
+hardcoded signature supersets — so a stub declaring a parameter ruamel does not have was green under
+pytest *and* pyright, which is the single failure decision 20 exists to catch. It parses the `.pyi`
+files with `ast` now.
+
+**A fixture can be right for the wrong reason and hide the defect it was written for.** The
+two-links-sharing-a-`to` test edited the *first* entry, and entries are walked in descending index
+order — so the single-pass form it was meant to catch happened to produce the correct answer.
+Editing the *second* entry is the discriminating case: its fallback claims the link the first was
+owed exactly, and both relations end up swapped under the wrong comments. Two of this increment's
+tests have now needed the *specific* case rather than a representative one.
