@@ -92,8 +92,15 @@ for it (a `[[links.kb]] path` may be `~/kbs/partner`) did not survive the trip.
 Its docstring then named the escaping-non-`PinakesError` class as the reason — and two more instances
 of that same class were left in the same function: `Path.is_file()` ignores `ENOENT`/`ENOTDIR`/
 `EBADF`/`ELOOP` and nothing else, so an unreadable parent directory (`EACCES`) and an over-long name
-(`ENAMETOOLONG`) both raised through `cli.main`. Naming a defect class is not fixing it; the fix is
-to go looking for the rest of the class.
+(`ENAMETOOLONG`) both raised through `cli.main`.
+
+Fixing *those* left a third, one branch over: `_via_alias` probes a partner KB with `is_file()` and
+`is_dir()`, so a partner directory this user cannot read raised `PermissionError` out of
+`cli.main` — found by grepping the module for the pattern instead of reading the diff again. Three
+instances of one class in one increment, each fix closing the instance in front of it. **A defect
+class is not closed until it has been searched for**, and the search is mechanical: grep the module
+for every call that touches the filesystem and ask which errno each one swallows. `Path.resolve()`
+is safe (`strict=False` suppresses); `is_file`, `is_dir` and `expanduser` are not.
 
 ### Mutation testing: a killed run poisons everything after it
 

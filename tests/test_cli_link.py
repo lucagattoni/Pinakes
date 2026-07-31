@@ -220,6 +220,25 @@ def test_a_kb_declaring_no_linked_kbs_says_that_rather_than_listing_none(
     assert "declares no `[[links.kb]]` at all" in caught.value.remedy
 
 
+def test_a_partner_kb_that_cannot_be_read_is_unreachable_not_a_traceback(
+    pair: tuple[Kb, Kb],
+) -> None:
+    """A partner directory this user cannot read raised `PermissionError` out of `cli.main`.
+
+    The third instance of one class in one increment: `expanduser()`'s `RuntimeError`, `is_file()`'s
+    `EACCES` on the source path, and this. Twice the fix closed the instance in front of it and
+    left the rest — a defect class is not closed until it has been searched for.
+    """
+    local, partner = pair
+    partner.root.chmod(0o000)
+    try:
+        with pytest.raises(PinakesError) as caught:
+            add(load(local.root), source="docs/alpha.md", target="partner:docs/one.md", rel="cites")
+        assert caught.value.message.startswith("linked KB `partner` ")
+    finally:
+        partner.root.chmod(0o755)
+
+
 def test_an_alias_whose_partner_declares_a_different_id_is_refused(pair: tuple[Kb, Kb]) -> None:
     """The partner's own `[kb] id` decides, and a disagreement is refused rather than resolved —
     `linkscan`'s rule 1, and sharper here: what gets written is permanent."""

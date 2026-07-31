@@ -170,9 +170,19 @@ def _via_alias(linked: LinkedKb, relative: str, *, local_root: Path) -> PnkUri:
     # Against the *local KB root*, never the working directory: a manifest is committed and
     # shared, so `../partner-kb` has to mean the same place whatever directory `pnk` ran from.
     root = resolve_path(local_root, linked.path)
-    if not (root / MANIFEST_NAME).is_file():
-        reason = "no pinakes.toml there" if root.is_dir() else "no such directory"
-        raise LinkedKbUnreachableError(linked.name, root, reason=reason)
+    try:
+        # Both probes inside the `try`. `is_file()` and `is_dir()` swallow a missing path and
+        # nothing else, so a partner directory this user cannot read raises `PermissionError`
+        # here — an `OSError`, which `cli.main` does not catch, straight out as a traceback. The
+        # same class `expanduser()` was dropped for, and the same class `_is_file` was written
+        # for; both times only the instance in front of me was fixed. `LinkedKbUnreachableError`
+        # is the right answer anyway: a partner that cannot be read is unreachable, whether that
+        # is because it is absent or because it is locked.
+        if not (root / MANIFEST_NAME).is_file():
+            reason = "no pinakes.toml there" if root.is_dir() else "no such directory"
+            raise LinkedKbUnreachableError(linked.name, root, reason=reason)
+    except OSError as exc:
+        raise LinkedKbUnreachableError(linked.name, root, reason=exc.strerror or str(exc)) from exc
 
     try:
         partner_id, *_ = partner_sources(root)
