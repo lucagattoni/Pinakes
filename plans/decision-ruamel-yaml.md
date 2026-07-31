@@ -269,3 +269,29 @@ the breaking one.
 | 23 | **A minted sidecar quotes any scalar YAML 1.1 *or* 1.2 would resolve to a non-string.** `skeleton()` derives the title from the filename stem, so `NO.md` mints `title: NO`, which ruamel writes bare and every 1.1 reader — including `tools/link_density_gate.py` — reads back as `False`. Today PyYAML quotes it. Verified: single-quoting the union of both resolvers restores today's output on 23 of 26 shapes and makes the other three (`1e3`, `1E3`, `0o17`) *safer* than today, because a quoted value cannot become the third breaking line. Only what pinakes **writes** is covered; a hand-written bare `NO` round-trips as the user wrote it |
 | 24 | **A tagged node is refused at `read()`**, restoring today's behaviour exactly — PyYAML rejects `!mytag` on scalars, mappings and sequences alike. The detector must cover **both** shapes: `TaggedScalar` for a tagged scalar, and `node.tag.value is not None` for a tagged `CommentedMap`/`CommentedSeq`. A `TaggedScalar`-only check misses `shelf: !mymap {a: 1}` — which happens to serialise, so it is a silent widening rather than a crash |
 | 25 | **L5b cuts its own MINOR release, named — never numbered — *the sidecar-fidelity release***, added to the unbuilt-work tables in `CLAUDE.md` and `docs/STATUS.md`. Complete, breaking, self-contained work does not wait for L6–L8. The plan's *Two releases* section becomes three |
+
+---
+
+## Adversarial review, pass 2 — 20260731 07:45
+
+**8 HIGH again**, on the revision rather than the original. Two findings overturned decisions taken
+in pass 1, which is why they are recorded here rather than edited above.
+
+### What pass 2 overturned
+
+| Pass-1 position | What pass 2 measured |
+|---|---|
+| Decision 25 — *L5b cuts **the sidecar-fidelity release*** | **Impossible as framed.** L1–L4 are already on `main` and L5 lands first, so any tag cut at L5b necessarily ships reverse-scan, the traversal core and `pnk links` — and `tools/fragments.py --apply` consumes *their* changelog fragments too. Superseded by decision 27 |
+| Decision 24 — *refuse tagged nodes, restoring today's behaviour exactly* | **Both over- and under-inclusive.** PyYAML rejects *unknown* tags but accepts the standard `!!` set, so the detector refused the harmless `!!str` while missing `!!binary`, `!!set` and `!!timestamp` — all of which **already crash `pnk sync`** with an unhandled `TypeError` from `json.dumps`. Tagged *keys* escaped it entirely. Superseded by decision 26 |
+| *"Merge mappings key-by-key"* | **One level deep, and both named tests pass on the defective code.** `with_extraction_provenance` builds a plain `dict` for `extraction`, so a one-level merge still replaces that node — and because ruamel stores a comment as the *preceding key's* trailer, a comment describing a **sibling** of `extraction` physically lives inside it and is deleted with it. The stated mutation target was a level too shallow to bite |
+| The `sys.modules` walk gate | **Wrong twice.** `extract/pdfium.py:42` imports `pypdfium2` at module level, which the `[light]` CI leg does not install — and loading a backend to inspect it is the exact pattern `CLAUDE.md` forbids and I7a removed. Separately, an import walk executes *module scope, not function bodies*, so a lazy `import yaml` is invisible to it — the precise advantage claimed over a grep |
+| Decision 23, scoped to minting | Misses `pnk link --rel no`, which writes `rel: no` into an **existing** sidecar; a 1.1 reader takes it as `False`. The scope must key on *the value being assigned by pinakes*, not on `original is None` |
+| *"any string either resolver would read as…"* | **Not a specification** — there are three resolvers and two disagree: `y`, `n`, `Y` are strings to PyYAML 1.1 and booleans to ruamel 1.1. `=` resolves to `tag:yaml.org,2002:value` in all three and was outside the enumerated type list |
+| The byte-identity invariant | **Indentation is not preserved** — ruamel re-indents nested sequences and mappings to its dumper settings. The counter-example is `docs/GUIDE.md:407`, which the same increment filed as a cosmetic typo without noticing it falsifies the invariant. `!` (the non-specific tag) is also normalised away |
+
+### Decisions taken — 20260731 07:45 (the user)
+
+| # | Decision |
+|---|---|
+| 26 | **Supersedes 24.** Instead of a tag taxonomy, one rule at `read()`: **every value under `extra` and `provenance` must be JSON-encodable**, else `SidecarError` with a remedy. It is the constraint the index actually imposes (`store.dumps_metadata` → `json.dumps`), so it tests the real thing rather than a proxy, and it closes the whole class at every depth including tagged keys. Measured blast radius: five shapes newly refused — `!!str`, `!!binary`, `!!set`, `!!timestamp`, bare `2020-01-01` — of which **four already crash `pnk sync` today** with an unhandled `TypeError`, so refusing them converts a traceback into a named error. **`!!str` is the only shape that works end-to-end today and stops working.** Accepted widening, documented and tested: a tagged *mapping* or *sequence* (`!mymap {a: 1}`) serialises fine and is now accepted where PyYAML refused it |
+| 27 | **Supersedes 25.** No third release and no new name. **The links release cuts twice**: an interim MINOR at L5b (carrying L1–L5 and the sidecar fix) and the final cut at L8. L8's procedure splits into an interim form and a final form. Nothing is added to the 🚫 unbuilt-work tables, so nothing has to be removed from them a tag later |

@@ -1,7 +1,7 @@
 # The links release and the graph release — implementation plan
 
 **Status:** revised after adversarial passes 1 (22 HIGH), 2 (26 HIGH), 3 (24 HIGH), 4 (13 HIGH),
-5 (3 HIGH), 6 (2 HIGH) and 7 (6 HIGH). **L1–L8 are implementable; G1–G6 are not yet.** Pass 7 split
+5 (3 HIGH), 6 (2 HIGH) and 7 (6 HIGH). **L1–L8 are implementable; G1–G6 are not yet.** L5b was added 20260731 and reviewed twice more (06:25, 07:45), each pass returning *not implementable as written*; see the Iteration log. Pass 7 split
 along that line: its L2 findings are localised, fixed and now carry tests and mutation targets, while
 its G5 findings were two ways for the gate to license a default it never measured. **Assume this
 revision has defects too** — seven passes have each found something real, and pass 7 found two of
@@ -40,12 +40,17 @@ Re-verify before L1. `main` moved fifteen commits and cut a release under the fi
 
 ---
 
-## Three releases
+## Two releases, three cuts
 
 | Release | What it is | Rebuild? | Needs the golden set? |
 |---|---|---|---|
-| **the sidecar-fidelity release** | L5b: `ruamel.yaml` replaces `pyyaml`; comments, quoting and unknown keys survive a rewrite | **No** | **No** |
-| **the links release** | `pnk link`, `pnk links`, `pinakes_links`, reverse-scan, link coverage | **No** | **No** |
+| **the links release** | `pnk link`, `pnk links`, `pinakes_links`, reverse-scan, link coverage, the sidecar round-trip fix | **No** | **No** |
+
+**The links release cuts twice** (decision 27): an interim MINOR at **L5b**, carrying L1–L5 and the
+sidecar fix, and the final cut at L8. A tag is a point on `main`, so a cut at L5b ships everything
+merged before it — naming it after one increment would have been false, and
+`tools/fragments.py --apply` consumes L1–L5's changelog fragments either way.
+
 | **the graph release** | Structural edges, the expansion channel, `schema_version` 3 | Yes, once | Yes — it is the whole gate |
 
 **A third outcome exists and is planned for**, not discovered: if G2's precondition fails, G3 and G5
@@ -91,12 +96,13 @@ earlier.
 | # | Decision | When | Consequence |
 |---|---|---|---|
 | 1 | A second synthetic KB is committed, deliberately sparse; the ClaudeKB realism check is optional and human-gated | 02:30–03:10 | L1, L8 |
-| 2 | Two releases, cut after the links surface; names split | 02:30–03:10 | L8 |
+| 2 | Two releases, cut after the links surface; names split | 02:30–03:10 | L8 — **amended by decision 27: the links release cuts twice** |
 | 3 | The golden set grows and gains a `simple-lookup` class; one re-baseline | 02:30–03:10 | G2 — **amended by 12 and 14** |
 | 4 | Minimum of [KB-UPDATES](../docs/KB-UPDATES.md): the `requires_pinakes` pre-pass only | 02:30–03:10 | G4 |
 | 5 | `pnk link` writes forward only, into the source document's sidecar | 02:30–03:10 | L6 |
 | 6 | PPR and the `[ner]` extra are out | 02:30–03:10 | — |
 | 7 | Adversarial subagent passes until one comes back clean | 02:30–03:10 | Passes 1–7 done. **No pass has come back clean**, so the rule is honoured per-phase instead: L1–L8 build now, G5's clauses are re-reviewed before G5 |
+| 19–27 | Recorded in [`decision-ruamel-yaml.md`](decision-ruamel-yaml.md), not here — they were taken across three review layers, and 24 and 25 are superseded by 26 and 27 | 20260731 | L5b |
 | 18 | ~~**`pnk link` ships without a comment-preserving YAML writer**~~ — **superseded 20260731 06:00 by [`decision-ruamel-yaml.md`](decision-ruamel-yaml.md)**, which measured the two premises below and found both wrong. This row is left as written; the plan's own updates are not made here | 20260729 05:58 (the user) | L6. `ruamel.yaml` as a second YAML library — core or extra — is a poor trade for one authoring command against *"core dependencies stay light"*; a later paid-extraction sync rewrites the same sidecar through `pyyaml` and destroys the comments anyway, so the guarantee would be partial either way. `test_comments_in_the_sidecar_survive_a_rewrite` lands **xfail**, DESIGN §2.2 records the deferral, and `pnk link` **warns when the sidecar it is about to rewrite contains comments** — losing them silently at the moment of loss is the part that is not acceptable |
 | 8 | `pinakes_search`'s `entities`/`concepts` are cut | 03:20–03:35 | RRF here is unweighted by construction |
 | 9 | The eval harness is repaired before it is grown | 03:20–03:35 | Landed `b637be4`, released in 0.3.0 |
@@ -194,9 +200,8 @@ earlier.
 | Rule | Amendment | Lands in |
 |---|---|---|
 | *"`docs/` belongs to the user … never any other key"* | A second, narrower exception: **a user-invoked authoring command** writing `links[]` to the source document's own sidecar | L6 |
-| The "🚫 Unbuilt work is named" table (**not** the "Naming (fixed…)" table) in `CLAUDE.md` **and** `docs/STATUS.md` | Both files' links-release rows gain `pnk links` | L4 |
-| The "🚫 Unbuilt work is named" table in `CLAUDE.md` **and** `docs/STATUS.md` | Both gain **the sidecar-fidelity release** (decision 25), and lose it again when L5b's tag is cut | L5b |
-| *Invariants that must not be broken* | A new one: **an unknown key in a sidecar round-trips byte-identically** — stronger and more testable than "untouched", and false until L5b. It excludes what pinakes normalises by design (`pnk://self/…` expansion; canonical ordering **on a minted sidecar only** — an existing file keeps the user's order) and what YAML itself does not carry (CRLF, a BOM, `---`/`...` markers) | L5b |
+| The "🚫 Unbuilt work is named" table (**not** the "Naming (fixed…)" table) in `CLAUDE.md` **and** `docs/STATUS.md` | Both files' links-release rows gain `pnk links`. **Reconcile the two tables first** — `CLAUDE.md` still carries the paid-extraction row that 0.4.0 retired and `docs/STATUS.md` has already dropped | L4 |
+| *Invariants that must not be broken* | A new one: **an unknown key in a sidecar round-trips byte-identically** — stronger and more testable than "untouched", and false until L5b. It excludes what pinakes normalises by design (`pnk://self/…` expansion; canonical ordering **on a minted sidecar only** — an existing file keeps the user's order), what **ruamel** normalises (block-sequence and nested-mapping **indentation**, which follows the dumper settings rather than the source; the non-specific `!` tag), and what YAML itself does not carry (CRLF, a BOM, `---`/`...` markers) | L5b |
 
 ---
 
@@ -587,24 +592,40 @@ reintroduces four refuted claims.
    - `write()` **reconciles known keys into the existing document node-by-node** — it must not
      rebuild them. `document["provenance"] = dict(...)` replaces the node and destroys every comment
      *inside* it, which is precisely the block the only existing rewrite path writes to. Assign
-     scalars in place; merge mappings key-by-key; replace `links` entries positionally rather than
-     replacing the sequence object; delete only keys that left `present`. **State where a
+     scalars in place; **merge mappings key-by-key at every depth**, never replacing a mapping node
+     that already exists; replace `links` entries positionally rather than replacing the sequence
+     object; delete only keys that left `present`. *One level is not enough:*
+     `with_extraction_provenance` builds a plain `dict` for `extraction`, and because ruamel stores a
+     comment as the **preceding key's** trailer, a comment describing a *sibling* of `extraction`
+     physically lives inside that node and dies with it. **State where a
      newly-appearing known key is inserted** — `provenance` first appears on a paid extraction, and
      the plan must say whether it lands before or after the user's unknown keys.
    - **The user's key order is left alone** when an original exists. Canonical ordering is for a
      minted sidecar only.
-   - **Minting quotes 1.1/1.2-ambiguous scalars** (decision 23): any string either resolver would
-     read as a bool, int, float, null or timestamp is emitted single-quoted, via
-     `SingleQuotedScalarString`. `skeleton()` derives the title from the filename stem, so `NO.md`
-     otherwise mints a bare `title: NO` that PyYAML reads back as `False`.
+   - **Every scalar pinakes itself writes is quoted when ambiguous** (decision 23) — minted *or*
+     newly assigned into an existing document, keyed on **the value being assigned**, never on
+     `original is None`. `pnk link --rel no` writes into an existing sidecar, and a mint-only rule
+     would miss it. Scalars pinakes did not author are left exactly as the user wrote them
+     (verified: `write()` does not re-quote a bare `country: NO`).
+     **The predicate is the union of three resolvers**, named rather than enumerated by type:
+     `yaml.resolver.Resolver` (PyYAML 1.1), `ruamel.yaml.resolver.VersionedResolver` at `(1, 1)`
+     and at `(1, 2)`. Anything not resolving to `tag:yaml.org,2002:str` in **all three** is emitted
+     `SingleQuotedScalarString`. "Either resolver" was not a specification: `y`, `n` and `Y` are
+     strings to PyYAML 1.1 and booleans to ruamel 1.1, and `=` resolves to `…:value` in all three
+     while belonging to no enumerated type.
    - **Top-level keys must be strings** (decision 19), else `SidecarError` with a remedy. Top level
      only; nested user maps stay unconstrained. Note a **single** non-string key writes back fine
      today — it is the single-key case that is the breaking one, not just `sorted()`'s mixed-type
      crash.
-   - **Tagged nodes are refused** (decision 24), matching today's PyYAML behaviour. Detect **both**
-     `TaggedScalar` *and* `node.tag.value is not None` on `CommentedMap`/`CommentedSeq`; a
-     `TaggedScalar`-only check misses `shelf: !mymap {a: 1}`, which serialises and so widens
-     acceptance silently.
+   - **Every value under `extra` and `provenance` must be JSON-encodable** (decision 26,
+     superseding 24), else `SidecarError` with a remedy. This is the constraint the index actually
+     imposes — `_metadata()` spreads `**extra` into `store.dumps_metadata` → `json.dumps` — so the
+     check tests the real thing rather than a tag taxonomy, and it reaches every depth including
+     tagged **keys**. Measured: five shapes newly refused (`!!str`, `!!binary`, `!!set`,
+     `!!timestamp`, bare `2020-01-01`), of which **four already crash `pnk sync` today** with an
+     unhandled `TypeError`; refusing them turns a traceback into a named error. **`!!str` is the
+     only shape that works end-to-end today and stops working.** Accepted, documented widening: a
+     tagged *mapping* or *sequence* serialises fine and is now accepted where PyYAML refused it.
    - `DuplicateKeyError` (from **`ruamel.yaml.constructor`**) is caught *before* the general
      `YAMLError` and given a pinakes message — ruamel's own ends with
      `To suppress this check see: <URL>`.
@@ -615,22 +636,31 @@ reintroduces four refuted claims.
    in a user's golden set would otherwise escape `make eval` as an uncaught `DuplicateKeyError`.
 
 5. **`tools/link_density_gate.py` migrates to ruamel too.** It is a shipped gate, not a fixture
-   writer. Left on PyYAML it parses sidecars under 1.1 while the product parses them under 1.2, so
-   it would count sidecars pinakes now refuses — and `check.sh:105` says keeping those two
-   populations identical is the whole reason the gate exists.
+   writer. Left on PyYAML it parses sidecars under 1.1 while the product parses them under 1.2, so it would
+   count sidecars pinakes now refuses — and `check.sh:105` says keeping those two populations
+   identical is the whole reason the gate exists. The migration closes the **scalar-resolution and
+   duplicate-key** divergence only; `typ="safe"` still accepts the JSON-unencodable and non-string-key
+   shapes the product refuses, and the plan says so rather than implying parity.
 
-6. **`stubs/ruamel/yaml/{__init__,comments,error,constructor}.pyi`** — ~18 lines, covering only the
-   surface pinakes calls (decision 20). Reaches **0 pyright errors with 0 suppressions**. Needs a
+6. **`stubs/ruamel/yaml/{__init__,comments,error,constructor}.pyi`** — ~18 lines, covering every ruamel symbol used
+   under `src/`, `tests/` **and** `tools/` — `pyproject.toml`'s pyright `include` covers all three
+   and a stub overrides the real package for all of them, so item 5's `YAML(typ="safe")` must be in
+   it (decision 20). Reaches **0 pyright errors with 0 suppressions**. Needs a
    comment recording why a `py.typed` library is stubbed, and that `cast(Any, _yaml()).load(...)`
    *also* reaches zero — it was rejected for erasing the surface, not for failing.
 
 7. **Two gates.**
-   - **No `pyyaml` under `src/`**: a subprocess that imports **every** module under `src/pinakes`
-     (`pkgutil.walk_packages`) and asserts `yaml` never enters `sys.modules`. `free_path_run.py`'s
-     harness alone is **not sufficient** — it never loads `pinakes.eval`, one of the two modules
-     this increment migrates. Predicate: `name == "yaml" or name.startswith("yaml.")`, never a
-     substring — the module list really does contain
-     `pydantic_settings.sources.providers.yaml`, and `tests/test_paid_path.py` already paid for this
+   - **No `pyyaml` under `src/`** — an **AST scan** over every `Import`/`ImportFrom` node under
+     `src/pinakes`, *not* an import walk. A walk was specified first and is wrong twice:
+     `extract/pdfium.py:42` imports `pypdfium2` at module level, which the `[light]` CI leg does not
+     install, and loading a backend to inspect it is the pattern `CLAUDE.md` forbids and I7a
+     removed; and importing executes module scope, not function bodies, so a **lazy** `import yaml`
+     — the very case a grep is said to miss — is invisible to it. The AST scan sees lazy and
+     function-scoped imports, executes nothing, and needs no extras. Pair it with the existing
+     `free_path_run.py` runtime check, which covers dynamic and transitive imports the AST cannot:
+     neither alone is sufficient. Runtime predicate: `name == "yaml" or name.startswith("yaml.")`,
+     never a substring — the module list really does contain
+     `pydantic_settings.sources.providers.yaml`, and `tests/test_paid_path.py` already paid for that
      lesson with `google.protobuf`.
    - **The stub describes the real library**: compare each declared symbol against
      `inspect.signature`, not merely `getattr`. An importability check passes a stub that declares a
@@ -640,7 +670,8 @@ reintroduces four refuted claims.
 comments, so an equality assertion can never detect their loss.
 
 `tests/test_sidecar.py::test_an_unknown_key_round_trips_byte_identically`;
-`::test_a_comment_inside_the_provenance_block_survives_a_paid_extraction_merge`;
+`::test_a_comment_inside_provenance_extraction_survives_a_re_extraction` (the fixture's comment
+must sit on the **last key of the nested map** — the only position that reproduces the loss);
 `::test_a_comment_inside_the_links_block_survives_a_rewrite`;
 `::test_comments_survive_a_rewrite`; `::test_quoting_style_survives_a_rewrite`;
 `::test_a_value_with_spaces_past_eighty_columns_is_not_folded`;
@@ -653,15 +684,21 @@ PyYAML**, which is the property that matters);
 `::test_a_duplicate_key_is_refused_without_ruamels_suppression_url`;
 `::test_a_non_string_top_level_key_is_refused_with_a_remedy`;
 `::test_a_single_non_string_key_is_refused_too` (it writes back fine today);
-`::test_a_tagged_scalar_is_refused`; `::test_a_tagged_mapping_is_refused`;
+`::test_a_json_unencodable_extra_value_is_refused_with_a_remedy` (`!!binary`, `!!set`,
+`!!timestamp`, bare `2020-01-01`, an unknown tag, and a tagged **key**);
+`::test_a_double_bang_str_value_is_refused` (the one shape that works end-to-end today);
+`::test_a_tagged_mapping_is_accepted_because_it_serialises` (the documented widening);
+`::test_a_two_space_indented_sequence_is_reindented` (**pins** ruamel's normalisation — the
+invariant excludes indentation, and `docs/GUIDE.md:407` is written in the style that proves it);
+`::test_the_original_document_is_excluded_from_equality` (`compare=False`; `tests/test_sidecar.py:76`
+is the assertion that would otherwise change meaning);
 `::test_deleting_a_commented_key_loses_one_comment_and_misattributes_another` (**pins the
 limitation**, does not fix it);
 `::test_with_extraction_provenance_preserves_comments`;
 `::test_without_extraction_provenance_preserves_comments`;
-`::test_a_string_field_that_yaml_1_2_resolves_as_a_number_is_refused` (`title: 1e3`, `0o17` — the
-third breaking line).
+`::test_a_string_field_that_yaml_1_2_resolves_as_a_number_is_refused` (`title: 1e3`, `0o17`).
 
-`tests/test_sync.py::test_a_tagged_sidecar_does_not_abort_the_sync_with_a_traceback`;
+`tests/test_sync.py::test_a_json_unencodable_sidecar_does_not_abort_the_sync_with_a_traceback`;
 `tests/test_doctor.py::test_a_non_string_top_level_key_is_reported_not_crashed`;
 `tests/test_partner_kb.py::test_every_committed_sidecar_round_trips_through_read_and_write`
 (copy each into `tmp_path` first — `write()` writes to the path it is given, and running in place
@@ -670,8 +707,12 @@ would rewrite `pnk://self/` out of the only fixture that exercises `self` resolu
 `tests/test_packaging.py::test_pyyaml_is_dev_only_never_core_and_never_an_extra` (assert all three:
 absent from core, absent from every extra, **present in dev** — the `pillow` precedent);
 `::test_ruamel_yaml_is_a_core_dependency`;
-`::test_no_module_under_src_imports_pyyaml`;
+`::test_no_module_under_src_imports_pyyaml` (AST scan);
+`::test_the_free_path_run_never_loads_yaml` (runtime, the other half);
 `::test_every_symbol_the_ruamel_stub_declares_matches_inspect_signature`.
+
+**Lands in L6, not here, but decision 23 owns it:**
+`tests/test_cli_link.py::test_a_rel_that_looks_like_a_boolean_is_quoted`.
 
 **Amend, do not delete.** `test_malformed_sidecars_are_rejected`'s `{id: x, : }` fixture becomes
 `{id: x` — an unclosed flow map, which both libraries reject. The reason is **branch coverage**: the
@@ -682,8 +723,10 @@ just via the key-type branch.
 spaced-long-value test fails. Rebuild `document["provenance"]` wholesale instead of merging → the
 nested-comment test fails. Restore `sorted(extra)` on the original-document path → the key-order test
 fails. Drop the mint-quoting predicate → the boolean-title test fails. Revert one `replace()` to a
-hand-enumerated constructor → a comment-preservation test fails. Narrow the tag detector to
-`TaggedScalar` only → the tagged-mapping test fails.
+hand-enumerated constructor → a comment-preservation test fails. Make the known-key merge one level deep
+(`document["provenance"]["extraction"] = dict(...)`) → the nested-comment test fails. Drop the
+JSON-encodability check → the `!!binary` test fails. Replace the AST scan with an import walk → the
+lazy-import test fails.
 
 **Known limitation, documented not fixed.** ruamel stores a comment as the **preceding** key's
 trailer, so deleting a key misattributes its leading comment to the next key *and silently deletes
@@ -696,19 +739,46 @@ lives — `plans/` holds the historical record, `docs/README.md`'s routing table
 byte-identically, with the exclusions); `CLAUDE.md` (the new invariant; *the sidecar-fidelity
 release* in the 🚫 table); `docs/VERIFICATION.md`; `docs/STATUS.md` (PyPI table, roadmap, the 🚫
 table); `src/pinakes/sidecar.py`'s module docstring and `Sidecar.extra`'s docstring; `docs/GUIDE.md`
-(its `links:` example at line ~407 uses an indentation pinakes never emits); a `changelog.d/`
-fragment carrying **all three** breaking lines — duplicate keys, non-string top-level keys, and
-string fields YAML 1.2 resolves as numbers.
+(its `links:` example at line ~407 uses an indentation pinakes never emits — and which ruamel
+**re-indents**, so it is also the counter-example to the byte-identity invariant, not a typo);
+`check.sh:109`'s *"it needs PyYAML"* comment and `ci.yml`'s link-density job comment, both of which
+item 5 falsifies; a `changelog.d/`
+fragment carrying **all four** breaking lines — duplicate keys, non-string top-level keys, string
+fields YAML 1.2 resolves as numbers (`1e3`, `0o17`), and `!!str`-tagged values — **and** the four
+shapes whose current unhandled `TypeError` becomes a named error (`!!binary`, `!!set`,
+`!!timestamp`, a bare date), which are a fix rather than a break and should not be listed as one.
+
+`docs/MANIFEST.md:222` — *"It is the one place a machine writes into `docs/`"* — is **L6's** to
+falsify, not L5b's, but name the sentence there: MANIFEST is already in L6's Docs line as a bare
+filename, and an executor updating the field table would not notice a claim eleven lines below it.
+
+**Read before writing DESIGN §2.2:** [`docs/KB-UPDATES.md`](../docs/KB-UPDATES.md) §5 already argues
+for adding `tomlkit` **to core** to preserve comments in `pinakes.toml` — the same trade, decided the
+same way, committed before decision 18 claimed the opposite. The rationale in §2.2 should be
+consistent with it, and should note that pinakes now carries two round-trip-preserving parsers.
 
 **Deliberately not touched:** `plans/v0.1.md` and `plans/v0.2.md` name PyYAML and become stale.
 `CLAUDE.md` classes `plans/` as historical — they keep what they were written with.
 
-**Release.** L5b cuts its own MINOR release, **the sidecar-fidelity release** (decision 25), by L8's
-procedure. Do not write a version number anywhere until the tag is cut.
+**Release.** L5b cuts the **interim MINOR** of the links release (decision 27), carrying L1–L5 and
+this fix. There is no third release and no new name: a tag is a point on `main`, so this cut ships
+everything merged before it. Follow L8's procedure in its *interim* form — every step except those
+needing `pnk link`, which is unbuilt here. Do not write a version number anywhere until the tag is
+cut.
 
-**Exit criteria.** `./check.sh` green — including `ty check`, which behaves differently from pyright
-on stubs (`check.sh:9-13`); 0 pyright errors with no suppression added anywhere; each new gate fails
-when its protection is removed.
+**Verification, before the interim cut.**
+
+1. `./check.sh` green — including `ty check`, which behaves differently from pyright on stubs
+   (`check.sh:9-13`); 0 pyright errors with **no suppression added anywhere**.
+2. Green on **all three** CI legs (`[light]`, `[light,pdf]`, `[light,pdf,claude]`) — this increment
+   changes `[project.dependencies]` and `uv.lock`, so a one-leg check proves nothing.
+3. The `build` job's wheel smoke test passes: `ruamel.yaml` resolves and `pyyaml` does not install.
+4. `.paid-path-allowlist` byte-identical, and the free-path gate still green.
+5. `make eval` unchanged — L5b swaps the loader `load_questions` uses; movement means the
+   inertness measurement was wrong.
+6. Each new gate fails when its protection is removed.
+7. `tools/fragments.py --apply` splices L1–L5's fragments **and** L5b's; the CHANGELOG section
+   covers all of them, not just this increment.
 
 ---
 
@@ -1261,9 +1331,9 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | The user's key order survives a rewrite | measurement review | L5b | `test_the_users_key_order_is_preserved_on_rewrite` |
 | A duplicate key is a hard error, not a silent last-wins | decision-ruamel-yaml | L5b | `test_a_duplicate_key_is_refused_without_ruamels_suppression_url` |
 | A non-string top-level key is refused | decision 19 | L5b | `test_a_non_string_top_level_key_is_refused_with_a_remedy`, `test_a_single_non_string_key_is_refused_too` |
-| A tagged node is refused, scalar or collection | decision 24 | L5b | `test_a_tagged_scalar_is_refused`, `test_a_tagged_mapping_is_refused`, `test_a_tagged_sidecar_does_not_abort_the_sync_with_a_traceback` |
-| A minted sidecar is readable by a YAML 1.1 parser | decision 23 | L5b | `test_a_minted_title_that_looks_like_a_boolean_is_quoted` |
-| A comment inside a known-key block survives | adversarial review | L5b | `test_a_comment_inside_the_provenance_block_survives_a_paid_extraction_merge` |
+| `extra`/`provenance` values are JSON-encodable | decision 26 | L5b | `test_a_json_unencodable_extra_value_is_refused_with_a_remedy`, `test_a_json_unencodable_sidecar_does_not_abort_the_sync_with_a_traceback` |
+| Every scalar pinakes writes is readable by a YAML 1.1 parser | decision 23 | L5b, L6 | `test_a_minted_title_that_looks_like_a_boolean_is_quoted`, `test_a_rel_that_looks_like_a_boolean_is_quoted` |
+| A comment inside a nested known-key block survives | pass 2 | L5b | `test_a_comment_inside_provenance_extraction_survives_a_re_extraction` |
 | `src/` never imports `pyyaml` again | decision 21 | L5b | `test_no_module_under_src_imports_pyyaml` (walks every module — the free-path harness never loads `pinakes.eval`) |
 | The ruamel stub describes the real library | decision 20 | L5b | `test_every_symbol_the_ruamel_stub_declares_matches_inspect_signature` |
 | Unknown per-link keys round-trip | DESIGN §2.2 | L6 | `test_unknown_keys_inside_a_link_entry_survive_a_rewrite` |
@@ -1322,7 +1392,7 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | Edge derivation is slow at scale | It runs on every sync, on a hook path | Wall-clock and edge counts reported, as a G3 exit criterion |
 | The channel is slow at query time | It runs on every query when on | Latency reported on and off, as a G5 exit criterion |
 | ~~A YAML dependency creeps in~~ | Superseded: `ruamel.yaml` **replaces** `pyyaml`, so the count is unchanged | L5b's `sys.modules` gate proves `src/` never imports `pyyaml` again |
-| A hand-written stub drifts from ruamel | pyright validates against the stub, not the library | An import-verification test — this failed twice in the prototype, green both times |
+| A hand-written stub drifts from ruamel | pyright validates against the stub, not the library | A **signature** comparison against `inspect.signature`. An import-verification test is not enough: a stub declaring a parameter ruamel does not have is pyright-green and `TypeError`s at runtime |
 
 ---
 
@@ -1340,3 +1410,4 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | 20260729 05:43 | **Pass 6** — **2 HIGH**, both narrow, and the pass-5 fixes verified correct. Gate clause 4 stated one of its two guards backwards: it made a *rise* in `confidence_coverage` a stop, but a rise is an improvement and the metric is 1.0 in the baseline — so the clause could never fire while the guard the re-baseline actually removes (a drop) stayed unrestored. It now names all six `compare()` families with the direction `eval.py` checks. And the anti-circularity guard was asserted to live in G5 and appeared only in G2 and G3, so an engineer building G5 would have computed the sign test once over all edges including L1's hand-authored links, passed, and flipped the default. G5 now computes it twice and ships `off` if only the authored run passes. **Pass 7 required**, scoped to G5's clauses and L2's delete |
 | 20260731 06:25 | **Decision 18 superseded, and L5b inserted.** [`decision-ruamel-yaml.md`](decision-ruamel-yaml.md) reversed the YAML decision on measurement; this pass turned it into a buildable increment. The swap was prototyped against the real suite first — **871 of 872 tests pass** — which corrected four of the decision's own claims (quoting and line width are *not* preserved at ruamel's default, so a default-configured swap is a fidelity regression; `0755` becomes int `755`, not a string; `py.typed` does **not** satisfy pyright strict here; `pyyaml` cannot leave the project, only core) and surfaced five behaviours it had not anticipated — chief among them that **a non-string top-level key crashes `write()` on `main` today**, and that canonical key ordering and byte-identical round-tripping are mutually exclusive. Decisions 19–22 taken with the user. The stub hazard was demonstrated rather than argued: a wrong stub gave 0 pyright errors and an `ImportError` at runtime, twice |
 | 20260731 07:10 | **Adversarial review of L5b — 8 HIGH, verdict *not implementable as written*.** Two reviewers, both reproducing every claim by running code, and both refuting claims made by the pass that wrote the increment. Two findings changed the design: `1e3`/`1E3`/`0o17` resolve as **numbers** under 1.2 where PyYAML 1.1 left them strings, so `title: 1e3` syncs today and hard-errors after — the decision record's *"1.1 → 1.2 only ever turns a hard error into acceptance"* is false in both directions; and an unknown YAML tag, cleanly refused today, becomes an unhandled `TypeError` out of `json.dumps` inside `pnk sync`, which has no `except TypeError` anywhere. Three of the previous pass's own measurements fell: **PyYAML does wrap** (its emitter folds at 80 too — the earlier test used an unbreakable token), minted output is byte-identical on **49 of 57** shapes rather than 7 of 7 — and one difference is a live hazard, since `NO.md` mints `title: NO` that a 1.1 reader takes as `False` — and `cast(Any, instance)` *does* satisfy pyright, so decision 20's justification was wrong even though its conclusion held. The increment's own spec was under-determined at its most important point: `write()`'s one-sentence instruction permits rebuilding known keys wholesale, which destroys comments **inside** `provenance:` and `links:` — the only block the only existing rewrite path touches — and none of the eighteen listed tests would have caught it. Also found: the `sys.modules` gate could not prove its claim (`pinakes.eval` is not in the free path's import graph), `CommentedMap.__eq__` ignores comments so **no equality assertion can detect comment loss**, the 51-sidecar corpus exercises neither `preserve_quotes` nor `width`, and 50/51 is already true on `main`. Decisions 23–25 taken with the user: quote 1.1-ambiguous scalars on mint, refuse tagged nodes at read, and cut L5b as **the sidecar-fidelity release** — a third release, named not numbered, after the first draft wrote `0.5.0` into a rule that forbids exactly that |
+| 20260731 07:45 | **Pass 2 on L5b — 8 HIGH again**, on the revision rather than the original, and two of pass 1's own decisions fell. **Decision 25 was impossible as framed:** L1–L4 are already on `main` and L5 lands first, so a tag cut at L5b necessarily ships reverse-scan, the traversal core and `pnk links`, and `fragments.py --apply` consumes their fragments too — replaced by decision 27, the links release cutting twice, with no third name entering the 🚫 tables. **Decision 24's tag detector was both over- and under-inclusive:** PyYAML rejects *unknown* tags but accepts the standard `!!` set, so it refused the harmless `!!str` while missing `!!binary`, `!!set` and `!!timestamp`, all of which already crash `pnk sync` — replaced by decision 26, one JSON-encodability rule at `read()` that closes the class at every depth including tagged keys, of whose five new refusals four replace a current traceback. The gate specified in pass 1 was wrong twice: an import walk loads `pypdfium2` (absent on the `[light]` leg) and reintroduces the backend-probing pattern I7a removed, and it cannot see the lazy import that is its stated advantage over a grep — now an AST scan paired with the runtime check. Pass 1's "merge mappings key-by-key" was one level deep, and both of its named comment tests passed on the defective code, because ruamel stores a comment as the *preceding key's* trailer and a comment describing a sibling of `extraction` lives inside it. Also: decision 23 was scoped to minting and missed `pnk link --rel no`; "either resolver" was not a specification (three resolvers, two disagree on `y`/`n`/`Y`); and **indentation is not preserved** — the counter-example being `docs/GUIDE.md:407`, which the same pass had filed as a cosmetic typo |
