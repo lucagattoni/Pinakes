@@ -51,6 +51,14 @@ test, or write **none** and say why in the same commit.
 | a sidecar that arrives after the walk asks for a rerun | fix | `tests/test_sync.py::test_a_sidecar_that_appears_after_the_walk_asks_for_a_rerun` |
 | a write failure is recorded, never raised, on the pre-commit path | fix | `tests/test_sync.py::test_a_write_failure_on_the_pre_commit_path_is_recorded_not_raised` |
 | minting refuses a dangling symlink too | fix | `tests/test_sidecar.py::test_create_refuses_a_dangling_symlink_too` |
+
+## The links release: the corpora, the density gate and reverse-scan (L1–L2)
+
+Authored links are sparse by design, so the corpora are gated on it; and a reverse scan reads
+someone else's KB, so every failure mode has to be named rather than swallowed.
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
 | both committed corpora load and name each other by ULID | L1 | `tests/test_partner_kb.py::test_both_corpora_load_and_validate` |
 | every sidecar ULID is well-formed and unique across both KBs | L1 | `tests/test_partner_kb.py::test_every_sidecar_ulid_is_wellformed_and_unique_across_both_kbs` |
 | every authored link target is a resolvable URI | L1 | `tests/test_partner_kb.py::test_every_link_target_is_a_resolvable_uri` |
@@ -99,6 +107,14 @@ test, or write **none** and say why in the same commit.
 | a partner's bad `include` cannot crash the sync | L2 | `tests/test_sync_links.py::test_a_partners_bad_include_pattern_does_not_crash_the_sync` |
 | a partner root outside its own KB is refused | L2 | `tests/test_sync_links.py::test_a_partner_root_outside_its_own_kb_is_refused` |
 | a failed local run does not blame the partner | L2 | `tests/test_sync_links.py::test_a_failed_local_run_does_not_blame_the_partner` |
+
+## The links release: traversal, `pnk links` and `pinakes_links` (L3–L5)
+
+Depth in **logical hops**, the double cap, `frontier` and `unresolved` — the properties a
+caller cannot check for itself, on both the CLI and the MCP surface.
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
 | depth counts one hop per candidate | L3 | `tests/test_traverse.py::test_depth_counts_one_hop_per_candidate` |
 | depth is clamped server-side | L3 | `tests/test_traverse.py::test_depth_is_clamped_to_the_server_maximum` |
 | fan-out keeps the highest-ranked, not the first k | L3 | `tests/test_traverse.py::test_fanout_keeps_the_highest_ranked_neighbours_not_the_first_k` |
