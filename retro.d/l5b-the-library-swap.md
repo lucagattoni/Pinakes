@@ -97,3 +97,22 @@ under this project's `filterwarnings = ["error"]` it escapes as a bare warning t
 a named error. Promoting it at the load makes the outcome independent of whatever warning filters
 the calling program happens to have set — which is the right place for a property of the file
 format to live.
+
+**An exclusion list is a set of claims, and claims rot.** Every bound on the byte-identity
+invariant — indentation, `!!` tags, anchors, CRLF, BOM, document markers — was prose in a table
+until it was pinned by a test. Writing those tests measured two behaviours that were *not on the
+list at all*: a plain (non-recursive) anchor on an **empty** value is destroyed, where the list
+named only the self-referential case; and a file with **no trailing newline** gains one. Both are
+byte changes to a file nobody edited, which is exactly what the invariant claims does not happen.
+A bound stated only in prose cannot notice the library moving under it, and cannot be wrong out loud.
+
+It also falsified a changelog line I had written: *"`!!int`, `!!float`, `!!bool`, `!!seq` and
+`!!map` keep working — verified"*. Verified of **loading**; the tag itself is dropped on write, so
+`!!int 3` comes back as `3`. True of the value, false of the invariant, and the word "verified" is
+what made it read as covering both.
+
+**A gate that has never been shown to fail is a claim too.** The AST scan now proves it sees all
+four shapes of a planted import — including the function-scoped one an import walk cannot reach —
+and does not fire on any of the four legal `ruamel` forms, every one of which contains "yaml". The
+stub signature test proves it can fail: writing `transform` into the expected set failed it,
+because `transform` belongs to `dump` rather than `__init__`.

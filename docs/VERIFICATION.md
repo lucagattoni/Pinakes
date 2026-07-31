@@ -202,6 +202,13 @@ test, or write **none** and say why in the same commit.
 | ...while the tags that worked before still work | L5b | `tests/test_sidecar.py::test_the_standard_tags_that_worked_before_the_swap_still_work` |
 | a custom-tagged mapping is accepted (documented widening) | L5b | `tests/test_sidecar.py::test_a_tagged_mapping_is_accepted_because_it_serialises` |
 | a uniformly non-string-keyed mapping is a stated residual | L5b | `tests/test_sidecar.py::test_a_uniformly_non_string_keyed_mapping_is_a_stated_residual` |
+| an explicit `!!` tag is stripped | L5b | `tests/test_sidecar.py::test_an_explicit_double_bang_tag_is_stripped` |
+| an anchor on an empty value is destroyed | L5b | `tests/test_sidecar.py::test_an_anchor_on_an_empty_value_is_destroyed` |
+| ...while one on a real value survives | L5b | `tests/test_sidecar.py::test_an_anchor_on_a_real_value_survives` |
+| CRLF, BOM and `---`/`...` are not carried | L5b | `tests/test_sidecar.py::test_what_yaml_does_not_carry_is_not_carried` |
+| a missing trailing newline is added | L5b | `tests/test_sidecar.py::test_a_missing_trailing_newline_is_added` |
+| the AST scan catches a function-scoped import | L5b | `tests/test_packaging.py::test_the_ast_scan_catches_a_function_scoped_import` |
+| the stub signature test catches a fabricated parameter | L5b | `tests/test_packaging.py::test_the_stub_signature_test_catches_a_fabricated_parameter` |
 | ruamel's sequence reindentation is a documented exclusion | L5b | `tests/test_sidecar.py::test_a_two_space_indented_sequence_is_reindented` |
 | two links sharing a `to` keep their own `rel` and comment | L5b | `tests/test_sidecar.py::test_two_links_sharing_a_to_keep_their_own_rel_and_comment` |
 | a user key inside `provenance.extraction` survives a re-extraction | L5b | `tests/test_sidecar.py::test_a_user_key_inside_provenance_extraction_survives_a_re_extraction` |

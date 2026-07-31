@@ -61,8 +61,10 @@ written with and carry a header note.
   an AST scan over `src/` plus a runtime check on the free path. `write()` reconciles known keys
   *into* the loaded document; it never renders a fresh one. Bounded by what pinakes normalises
   (`pnk://self/…`, canonical order on a **minted** sidecar only), what ruamel normalises (sequence
-  and nested-mapping indentation), and what YAML does not carry (CRLF, BOM, `---`). Values must be
-  JSON-encodable, because the index stores metadata as JSON.
+  and nested-mapping indentation, explicit `!!` tags, an anchor with no value, a missing final
+  newline), and what YAML does not carry (CRLF, BOM, `---`). Values must be JSON-encodable and
+  every key a string, because the index stores metadata as JSON. **Each exclusion is pinned by a
+  test** — a bound stated only in prose cannot notice the library's behaviour moving under it.
 - **`docs/` belongs to the user.** Never modify source documents, and never delete a sidecar without
   an explicit `--prune`-style flag plus a printed list. The one exception: a paid PDF extraction (or
   `--force` discarding one) additively rewrites that document's own sidecar with

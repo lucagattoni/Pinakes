@@ -1330,3 +1330,80 @@ def test_a_reused_anchor_is_refused_whatever_the_ambient_warning_filter_says(
         warnings_module.simplefilter("ignore")
         with pytest.raises(SidecarError):
             read(path, owner=owner)
+
+
+# --- The documented exclusions, pinned ----------------------------------------------------------
+#
+# Every bound on the byte-identity invariant was prose until this block. A claim in a docs table is
+# not a test: it cannot notice when the library's behaviour moves, and it cannot be wrong out loud.
+# Two of these were measured *while writing them* and were missing from the list entirely.
+
+
+def _round_trip(path: Path, owner: KbId, raw: bytes) -> bytes:
+    path.write_bytes(raw)
+    write(path, read(path, owner=owner))
+    return path.read_bytes()
+
+
+def test_an_explicit_double_bang_tag_is_stripped(tmp_path: Path, owner: KbId) -> None:
+    """`!!int 3` becomes `3` and `!!seq [a]` becomes `[a]`. The value is unchanged and the *tag* is
+    not preserved — so "these tags keep working" is true of loading and false of byte-identity, and
+    the changelog said the former while the invariant promises the latter."""
+    after = _round_trip(
+        tmp_path / f"mm.md{SIDECAR_SUFFIX}",
+        owner,
+        f"id: {mint_doc_id()}\ni: !!int 3\ns: !!seq [a]\n".encode(),
+    )
+    assert b"!!int" not in after and b"!!seq" not in after
+    assert b"i: 3" in after and b"s: [a]" in after
+
+
+def test_an_anchor_on_an_empty_value_is_destroyed(tmp_path: Path, owner: KbId) -> None:
+    """**Not in any exclusion list until this test.** The list named the *self-referential* case;
+    this anchor is ordinary, it simply has nothing after it, and `&x` does not survive. An anchor on
+    a non-empty value does — asserted below, so the two cases stay distinguishable."""
+    after = _round_trip(
+        tmp_path / f"nn.md{SIDECAR_SUFFIX}",
+        owner,
+        f"id: {mint_doc_id()}\nmine: &x\nother: 1\n".encode(),
+    )
+    assert b"&x" not in after
+    assert b"mine:" in after and b"other: 1" in after
+
+
+def test_an_anchor_on_a_real_value_survives(tmp_path: Path, owner: KbId) -> None:
+    """The counterpart, so the exclusion above stays narrow. An ordinary anchor and its alias
+    round-trip byte-identically — this is not a general "anchors are lost" caveat."""
+    raw = f"id: {mint_doc_id()}\na: &x 1\nb: *x\n".encode()
+    assert _round_trip(tmp_path / f"oo.md{SIDECAR_SUFFIX}", owner, raw) == raw
+
+
+@pytest.mark.parametrize(
+    ("name", "raw", "gone"),
+    [
+        ("crlf", b"id: %s\r\nk: v\r\n", b"\r\n"),
+        ("bom", "﻿id: %s\nk: v\n".encode(), b"\xef\xbb\xbf"),
+        ("markers", b"---\nid: %s\nk: v\n...\n", b"---"),
+    ],
+)
+def test_what_yaml_does_not_carry_is_not_carried(
+    tmp_path: Path, owner: KbId, name: str, raw: bytes, gone: bytes
+) -> None:
+    """CRLF, a byte-order mark and `---`/`...` markers are all lost. They are documented as lost;
+    documented is not the same as tested, and a library that started preserving one of them would
+    change the file without anything noticing."""
+    body = raw.replace(b"%s", str(mint_doc_id()).encode())
+    after = _round_trip(tmp_path / f"{name}.md{SIDECAR_SUFFIX}", owner, body)
+
+    assert gone not in after
+    assert b"k: v" in after, "the content survives; only the framing does not"
+
+
+def test_a_missing_trailing_newline_is_added(tmp_path: Path, owner: KbId) -> None:
+    """**Also missing from the exclusion list.** A sidecar whose last line has no newline gains
+    one. Harmless, and a byte difference on a file nobody edited — which is exactly what the
+    invariant claims does not happen, so it belongs in the list rather than in a surprise."""
+    after = _round_trip(
+        tmp_path / f"pp.md{SIDECAR_SUFFIX}", owner, f"id: {mint_doc_id()}\nk: v".encode()
+    )
+    assert after.endswith(b"k: v\n")

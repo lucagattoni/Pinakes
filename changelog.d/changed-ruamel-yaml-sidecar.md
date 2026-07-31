@@ -14,7 +14,8 @@
   not pass on. A **string field that YAML 1.2 resolves as a number** (`1e3`, `1E3`, `0o17` in
   `title`, `created`, `tags[]`, `links[].to`, `links[].rel`) is refused. And an **`!!str`-tagged
   value** is refused — the only *working* tag that changes behaviour; `!!int`, `!!float`, `!!bool`,
-  `!!seq` and `!!map` all worked before and still do.
+  `!!seq` and `!!map` still load to the same values they always did, though the tag itself is not
+  written back (`!!int 3` comes back as `3`).
 
   **Separately, four shapes whose unhandled `TypeError` becomes a named error** — `!!binary`,
   `!!set`, `!!timestamp` and a bare date all crashed `pnk sync` out of `json.dumps` before, and are

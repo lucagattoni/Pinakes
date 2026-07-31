@@ -300,3 +300,72 @@ def test_the_two_resolver_union_covers_pyyaml_1_1() -> None:
     assert not weaker, (
         "these resolve as non-strings under PyYAML 1.1 and would be written bare: " + str(weaker)
     )
+
+
+def test_the_ast_scan_catches_a_function_scoped_import(tmp_path: Path) -> None:
+    """The gate's whole reason for existing, asserted against a planted import.
+
+    An import walk was specified first and is wrong twice: it loads `pypdfium2` — absent on the
+    `[light]` leg, and probing a backend by importing it is forbidden — and it executes module
+    scope only, so a *lazy* import inside a function is invisible to it. This checks the scan sees
+    all four shapes, and that it does not fire on the four legal `ruamel` forms, every one of which
+    contains the substring "yaml".
+    """
+    import ast
+
+    def offends(source: str) -> bool:
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(alias.name.split(".")[0] == "yaml" for alias in node.names):
+                    return True
+            elif isinstance(node, ast.ImportFrom):
+                if node.level == 0 and (node.module or "").split(".")[0] == "yaml":
+                    return True
+            elif isinstance(node, ast.Call):
+                target = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+                if target in {"import_module", "__import__"} and node.args:
+                    first = node.args[0]
+                    if isinstance(first, ast.Constant) and first.value == "yaml":
+                        return True
+        return False
+
+    for planted in (
+        "import yaml",
+        "def f():\n    import yaml\n",  # the lazy one the import walk cannot see
+        "from yaml import safe_load",
+        "def f():\n    from yaml.composer import Composer\n",
+        "import importlib\ndef f():\n    importlib.import_module('yaml')\n",
+        "def f():\n    __import__('yaml')\n",
+    ):
+        assert offends(planted), f"the scan missed: {planted!r}"
+
+    for legal in (
+        "import ruamel.yaml",
+        "from ruamel import yaml",
+        "from ruamel.yaml import YAML",
+        "from ruamel.yaml.comments import CommentedMap",
+        "from .yaml import helper",  # a relative module of our own, were there one
+    ):
+        assert not offends(legal), f"the scan false-positives on: {legal!r}"
+
+    # And it is the same predicate the real gate runs, not a copy that has drifted.
+    assert test_no_module_under_src_imports_pyyaml() is None
+
+
+def test_the_stub_signature_test_catches_a_fabricated_parameter() -> None:
+    """A stub declaring a parameter ruamel does not have is pyright-green and a `TypeError` at
+    runtime — decision 20's reason for a signature comparison rather than an import check. The
+    real test compares against `inspect.signature`; this asserts that comparison can fail."""
+    import inspect
+
+    from ruamel.yaml import YAML
+
+    real = set(inspect.signature(YAML.__init__).parameters)
+    assert "typ" in real, "the stub declares this and it must exist"
+    assert "definitely_not_a_parameter" not in real, "a fabricated one must be detectable"
+    # `output`, `plug_ins` and `pure` are real parameters of `YAML.__init__` that the stub omits.
+    # An omission is allowed — no minimal stub could pass otherwise — and an invention is not.
+    # (`transform` belongs to `dump`, not here: naming it made this assertion fail, which is the
+    # check demonstrating it can.)
+    assert not {"output", "plug_ins", "pure"} - real
