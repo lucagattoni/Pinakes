@@ -500,8 +500,8 @@ class LinkedKbUnreachableError(LinkScanError):
             f"cannot be read at {path}: {reason}",
             remedy=(
                 "Not an error in itself — a KB is routinely shared without its partners, and "
-                "inbound links from it are simply not known here. Fix `[[links.kb]] path` if it "
-                "should resolve."
+                "inbound links from it are simply not known here. If it should resolve, fix "
+                "`[[links.kb]] path`, or check that you can read the directory it names."
             ),
         )
         self.path = path

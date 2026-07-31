@@ -134,6 +134,20 @@ def resolve_path(root: Path, raw: str) -> Path:
     return (expanded if expanded.is_absolute() else root / expanded).resolve()
 
 
+def why_not_a_kb(path: Path) -> str:
+    """Why `path` holds no readable `pinakes.toml`, in words that name the actual situation.
+
+    Three cases, not two. A two-way `is_dir()` split reported a `[[links.kb]] path` that points at
+    an existing *regular file* as "no such directory", which is the one answer a person would check
+    and find false — the path is right there.
+    """
+    if not path.exists():
+        return "no such directory"
+    if not path.is_dir():
+        return "not a directory"
+    return "no pinakes.toml there"
+
+
 def partner_sources(root: Path) -> tuple[KbId, list[str], list[str], list[str]]:
     """`([kb] id, roots, include, exclude)` from a partner's manifest.
 
@@ -237,12 +251,33 @@ def scan_one(
     missing document would be blaming the partner for our failure. The rows are still recorded;
     they come from the partner's sidecars and owe nothing to our local state.
     """
-    path = resolve_path(local_root, linked.path)
-    base = ScannedKb(alias=linked.name, declared_id=linked.id, path=path)
-
-    if not (path / MANIFEST_NAME).is_file():
-        reason = "no pinakes.toml there" if path.is_dir() else "no such directory"
-        return _with(base, issues=(LinkedKbUnreachableError(linked.name, path, reason=reason),))
+    # **All three probes inside the `try`, because "never raises" was not true of any of them.**
+    # `resolve_path` calls `expanduser()`, which raises `RuntimeError` on an unknown user; `is_file`
+    # and `is_dir` swallow a missing path and nothing else, so an unreadable partner directory
+    # raises `PermissionError`. Every one of those turned `pnk sync` on a `post-commit` hook into a
+    # traceback — the exact failure this module's "nothing here raises" promise exists to prevent,
+    # broken by the three lines that ran before any of the handling did. Found by grepping the
+    # module for calls that touch the filesystem, after the same class had been fixed four times
+    # one instance at a time in `link.py` (L6).
+    path = local_root
+    try:
+        path = resolve_path(local_root, linked.path)
+        base = ScannedKb(alias=linked.name, declared_id=linked.id, path=path)
+        if not (path / MANIFEST_NAME).is_file():
+            return _with(
+                base,
+                issues=(LinkedKbUnreachableError(linked.name, path, reason=why_not_a_kb(path)),),
+            )
+    except (OSError, RuntimeError) as exc:
+        base = ScannedKb(alias=linked.name, declared_id=linked.id, path=path)
+        return _with(
+            base,
+            issues=(
+                LinkedKbUnreachableError(
+                    linked.name, path, reason=getattr(exc, "strerror", None) or str(exc)
+                ),
+            ),
+        )
 
     try:
         partner_id, roots, include, exclude = partner_sources(path)

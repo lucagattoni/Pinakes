@@ -235,8 +235,75 @@ def test_a_partner_kb_that_cannot_be_read_is_unreachable_not_a_traceback(
         with pytest.raises(PinakesError) as caught:
             add(load(local.root), source="docs/alpha.md", target="partner:docs/one.md", rel="cites")
         assert caught.value.message.startswith("linked KB `partner` ")
+        # The errno text, not just the class. Asserting only the prefix left the `strerror`
+        # extraction unpinned — blanking the reason kept all 42 tests green.
+        assert "Permission denied" in caught.value.message
     finally:
         partner.root.chmod(0o755)
+
+
+def test_a_linked_kb_path_that_will_not_expand_is_unreachable_not_a_traceback(
+    pair: tuple[Kb, Kb],
+) -> None:
+    """`[[links.kb]] path` may be `~/kbs/partner`, so `resolve_path` calls `expanduser()` — which
+    raises `RuntimeError` on an unknown user. It sat one line *above* the try that had just been
+    added for exactly this class, which is how it survived four rounds of fixing that class."""
+    local, _partner = pair
+    manifest = local.root / "pinakes.toml"
+    text = manifest.read_text(encoding="utf-8")
+    manifest.write_text(
+        text.replace(f'path = "{_declared_path(text)}"', 'path = "~nosuchuser12345/kb"'),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PinakesError) as caught:
+        add(load(local.root), source="docs/alpha.md", target="partner:docs/one.md", rel="cites")
+    assert caught.value.message.startswith("linked KB `partner` ")
+
+
+def _declared_path(manifest_text: str) -> str:
+    """The `[[links.kb]] path` value, read back rather than assumed — `make_kb` computes it with
+    `os.path.relpath`, so hard-coding it here would break the day the fixture layout moves."""
+    for line in manifest_text.splitlines():
+        if line.startswith("path = "):
+            return line.split('"')[1]
+    raise AssertionError("the fixture manifest declares no [[links.kb]] path")
+
+
+def test_a_linked_kb_path_naming_a_regular_file_says_so(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """Three cases, not two: an `is_dir()` split called an existing regular file "no such
+    directory", which is the one answer a person would check and find false."""
+    local, _partner = pair
+    decoy = tmp_path / "decoy"
+    decoy.write_text("not a KB\n", encoding="utf-8")
+    manifest = local.root / "pinakes.toml"
+    text = manifest.read_text(encoding="utf-8")
+    manifest.write_text(
+        text.replace(f'path = "{_declared_path(text)}"', f'path = "{decoy}"'), encoding="utf-8"
+    )
+
+    with pytest.raises(PinakesError) as caught:
+        add(load(local.root), source="docs/alpha.md", target="partner:docs/one.md", rel="cites")
+    assert "not a directory" in caught.value.message
+
+
+def test_a_partner_with_a_malformed_kb_id_names_the_kb_it_came_from(pair: tuple[Kb, Kb]) -> None:
+    """`partner_sources` raises `InvalidIdError` — a `PinakesError`, so no traceback, but on its own
+    it says only that some string is not a ULID, naming neither the KB nor the file. `scan_one`
+    already caught `PinakesError` for this reason; this branch did not."""
+    local, partner = pair
+    manifest = partner.root / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(str(partner.kb_id), "not-a-ulid"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PinakesError) as caught:
+        add(load(local.root), source="docs/alpha.md", target="partner:docs/one.md", rel="cites")
+    assert caught.value.message.startswith("linked KB `partner` ")
+    assert "not-a-ulid" in caught.value.message
 
 
 def test_an_alias_whose_partner_declares_a_different_id_is_refused(pair: tuple[Kb, Kb]) -> None:

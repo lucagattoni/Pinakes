@@ -28,7 +28,7 @@ from pinakes.errors import (
     SidecarError,
 )
 from pinakes.ids import DocId, KbId
-from pinakes.linkscan import MANIFEST_NAME, partner_sources, resolve_path
+from pinakes.linkscan import MANIFEST_NAME, partner_sources, resolve_path, why_not_a_kb
 from pinakes.manifest import LinkedKb, Manifest
 from pinakes.sidecar import Link
 from pinakes.uri import PnkUri
@@ -167,27 +167,42 @@ def _via_alias(linked: LinkedKb, relative: str, *, local_root: Path) -> PnkUri:
             remedy=f"Give the path within that KB, for example `{linked.name}:docs/notes.md`.",
         )
 
-    # Against the *local KB root*, never the working directory: a manifest is committed and
-    # shared, so `../partner-kb` has to mean the same place whatever directory `pnk` ran from.
-    root = resolve_path(local_root, linked.path)
+    # **`resolve_path` is inside the `try`, not above it.** It calls `expanduser()` — a
+    # `[[links.kb]] path` may legitimately be `~/kbs/partner` — which raises `RuntimeError` on an
+    # unknown user, and `RuntimeError` is not a `PinakesError`, so `cli.main` let it out as a
+    # traceback. That is the *fourth* instance of one class in this increment: `expanduser()` on
+    # `<source>`, `is_file()` on the source path, the two probes below, and this. Each earlier fix
+    # closed the instance in front of it and stopped; the search that finally worked was grepping
+    # the module for every call that touches the filesystem, this one included.
+    #
+    # `root` is bound before the `try` so the handler can name it, and only the `resolve_path`
+    # failure has to fall back to `linked.path` — at that point there is no resolved path to show.
+    root = local_root
     try:
-        # Both probes inside the `try`. `is_file()` and `is_dir()` swallow a missing path and
-        # nothing else, so a partner directory this user cannot read raises `PermissionError`
-        # here — an `OSError`, which `cli.main` does not catch, straight out as a traceback. The
-        # same class `expanduser()` was dropped for, and the same class `_is_file` was written
-        # for; both times only the instance in front of me was fixed. `LinkedKbUnreachableError`
-        # is the right answer anyway: a partner that cannot be read is unreachable, whether that
-        # is because it is absent or because it is locked.
+        # Against the *local KB root*, never the working directory: a manifest is committed and
+        # shared, so `../partner-kb` has to mean the same place whatever directory `pnk` ran from.
+        root = resolve_path(local_root, linked.path)
+        # `is_file()` and `is_dir()` swallow a missing path and nothing else, so a partner
+        # directory this user cannot read raises `PermissionError` here.
+        # `LinkedKbUnreachableError` is the right answer to all of it: a partner that cannot be
+        # read is unreachable, whether it is absent, locked, or named by a path that will not
+        # expand.
         if not (root / MANIFEST_NAME).is_file():
-            reason = "no pinakes.toml there" if root.is_dir() else "no such directory"
-            raise LinkedKbUnreachableError(linked.name, root, reason=reason)
-    except OSError as exc:
-        raise LinkedKbUnreachableError(linked.name, root, reason=exc.strerror or str(exc)) from exc
+            raise LinkedKbUnreachableError(linked.name, root, reason=why_not_a_kb(root))
+    except (OSError, RuntimeError) as exc:
+        raise LinkedKbUnreachableError(
+            linked.name, root, reason=getattr(exc, "strerror", None) or str(exc)
+        ) from exc
 
     try:
+        # **`PinakesError` is in the tuple, matching `linkscan.scan_one`.** `partner_sources` parses
+        # the partner's `[kb] id`, so a malformed one raises `InvalidIdError` — a `PinakesError`, so
+        # no traceback, but the user typed `museum:docs/…` and was told only that some string is not
+        # a ULID, naming neither the KB it came from nor the file.
         partner_id, *_ = partner_sources(root)
-    except (OSError, ValueError, tomllib.TOMLDecodeError) as exc:
-        raise LinkedKbUnreachableError(linked.name, root, reason=str(exc)) from exc
+    except (OSError, ValueError, tomllib.TOMLDecodeError, PinakesError) as exc:
+        reason = exc.message if isinstance(exc, PinakesError) else str(exc)
+        raise LinkedKbUnreachableError(linked.name, root, reason=reason) from exc
 
     if partner_id != linked.id:
         raise LinkedKbIdMismatchError(linked.name, declared=str(linked.id), found=str(partner_id))

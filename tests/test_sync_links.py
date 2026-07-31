@@ -507,6 +507,38 @@ def test_an_unreachable_linked_kb_does_not_fail_the_sync(tmp_path: Path) -> None
     assert len(report.link_scan) == 1
 
 
+def test_a_linked_kb_that_raises_before_the_handling_is_still_only_an_issue(
+    pair: tuple[Kb, Kb],
+) -> None:
+    """*"Nothing here raises"* was false of the three lines that ran before any handling did.
+
+    `resolve_path` calls `expanduser()`, which raises `RuntimeError` on an unknown user; `is_file`
+    and `is_dir` swallow a missing path and nothing else, so an unreadable partner directory raises
+    `PermissionError`. Both escaped `scan_one` entirely and turned `pnk sync` on a `post-commit`
+    hook into a traceback — the precise failure the promise exists to prevent. Found by grepping
+    the module for calls that touch the filesystem, after L6 had fixed the same class in
+    `link.py` four times, one instance at a time.
+    """
+    local, partner = pair
+
+    partner.root.chmod(0o000)
+    try:
+        report = run(local, now="20260730 12:00")
+    finally:
+        partner.root.chmod(0o755)
+    assert report.ok  # an unreadable partner is a fact about this machine, never a sync failure
+    assert len(report.link_scan) == 1
+
+    manifest = local.root / "pinakes.toml"
+    text = manifest.read_text(encoding="utf-8")
+    path_line = next(line for line in text.splitlines() if line.startswith("path = "))
+    manifest.write_text(text.replace(path_line, 'path = "~nosuchuser12345/kb"'), encoding="utf-8")
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+    assert report.ok
+    assert len(report.link_scan) == 1
+
+
 # --- The TTL --------------------------------------------------------------------------------------
 
 

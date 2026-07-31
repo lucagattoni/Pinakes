@@ -432,7 +432,7 @@ docs/loans-outward.md.pnk.yaml: counterpart -> pnk://01KYP11WY2ZGX9B2Q5V7PJ8DW1/
 which leaves:
 
 ```yaml
-# archive/docs/loans-outward.md.pnk.yaml
+# archive/docs/loans-outward.md.pnk.yaml — the id, title and any other links are above
 links:
 - to: pnk://01KYP11WY2ZGX9B2Q5V7PJ8DW1/01KYP8878AZWS2ZWEBD0KQYTXE
   rel: counterpart

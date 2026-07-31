@@ -1,10 +1,11 @@
 ## L6 — `pnk link` (20260731 13:45)
 
-Three adversarial rounds, and each one found defects in the round before it. What follows is the
-state after all three, not a log of them: the rule is to rewrite to the current state rather than
-layer corrections, and an earlier draft of this fragment broke it twice — it still described a
-concurrency scenario that round 2 had disproved, and still called every self-link a typo after
-round 2's own fix existed because it is not.
+Five adversarial rounds, and every one found defects in the round before it. What follows is the
+state after all of them, not a log: the rule is to rewrite to the current state rather than layer
+corrections, and earlier drafts of this fragment broke it three times — describing a concurrency
+scenario a later round had disproved, calling every self-link a typo after the fix for the other
+case existed, and counting the rounds that had happened when it was written rather than the ones
+that had.
 
 ### The containment check took three spellings, and the first two were each wrong in one direction
 
@@ -95,12 +96,25 @@ of that same class were left in the same function: `Path.is_file()` ignores `ENO
 (`ENAMETOOLONG`) both raised through `cli.main`.
 
 Fixing *those* left a third, one branch over: `_via_alias` probes a partner KB with `is_file()` and
-`is_dir()`, so a partner directory this user cannot read raised `PermissionError` out of
-`cli.main` — found by grepping the module for the pattern instead of reading the diff again. Three
-instances of one class in one increment, each fix closing the instance in front of it. **A defect
-class is not closed until it has been searched for**, and the search is mechanical: grep the module
-for every call that touches the filesystem and ask which errno each one swallows. `Path.resolve()`
-is safe (`strict=False` suppresses); `is_file`, `is_dir` and `expanduser` are not.
+`is_dir()`, so a partner directory this user cannot read raised `PermissionError` out of `cli.main`.
+Fixing *that* left a fourth, on the line immediately above the `try` just added for it —
+`resolve_path`, which calls `expanduser()` because a `[[links.kb]] path` may legitimately be
+`~/kbs/partner`, and so raises `RuntimeError` on an unknown user.
+
+Four instances of one class in one increment, each fix closing the instance in front of it and
+stopping. **A defect class is not closed until it has been searched for**, and the search is
+mechanical: list every call in the module that touches the filesystem, and ask of each which errors
+it swallows. `is_file`, `is_dir` and `expanduser` swallow almost nothing — `is_file`/`is_dir` ignore
+`ENOENT`, `ENOTDIR`, `EBADF` and `ELOOP` and raise everything else. `Path.resolve()` is safe at both
+call sites here because `strict=False` suppresses and both bases are absolute; it is not safe in
+general, since a relative path calls `os.getcwd()`.
+
+The same search then found the class in the module `link.py` calls *into*. `linkscan.scan_one`'s
+docstring promises *"Never raises: every failure comes back in `issues`"*, and all three of these
+sat in the three lines that ran before any handling did — so an unreadable partner directory, or a
+`~` path that will not expand, turned `pnk sync` on a `post-commit` hook into a traceback. That is
+exactly the failure the promise exists to prevent, and it had been there since L2. Fixed with its
+own test, because a promise in a docstring that nothing checks is a comment.
 
 ### Mutation testing: a killed run poisons everything after it
 
@@ -116,11 +130,15 @@ snapshot taken before the first mutation and asserted after every restore** — 
 useless in the increment's own worktree where the source is legitimately dirty. Scope the run to the
 modules under test, too: the full-suite run is what blew the timeout that caused this.
 
-Thirty-four mutants across three rounds, all but one caught by the intended test. That one is
-genuinely equivalent — substituting the locally declared `[[links.kb]] id` for the partner's own when
-writing an alias target changes nothing, because the refusal above has established the two are equal.
-Saying so is part of the result: the rule is enforced by that refusal, which *is* caught, and the
-docstring records it so nobody simplifies the variable away on the grounds that they are the same.
+Every fix in every round was mutation-tested against the test written for it, and all but one mutant
+was caught by exactly that test. (An earlier draft gave a total here; it was stale within a round and
+unverifiable afterwards, since the runs leave no artefact. The method is the durable part.)
+
+The exception is genuinely equivalent — substituting the locally declared `[[links.kb]] id` for the
+partner's own when writing an alias target changes nothing, because the refusal above has already
+established the two are equal. Saying so is part of the result: the rule is enforced by that refusal,
+which *is* caught, and the docstring records it so nobody simplifies the variable away on the grounds
+that they are the same.
 
 ### Green expires at the next keystroke
 
