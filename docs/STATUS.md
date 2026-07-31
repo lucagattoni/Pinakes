@@ -74,8 +74,10 @@ every PDF into a failed document rather than a skipped one.
 ⚠️ **A template change reaches new KBs only.** The explanatory line above shipped in 0.2.2 and
 appears in no KB created before it, and nothing today detects or reports that divergence — so existing KBs stay PDF-blind
 permanently unless their owner edits the manifest by hand. That gap, and what to do about it, is
-worked through in [KB-UPDATES.md](KB-UPDATES.md) (a proposal; its `requires_pinakes` half is
-assigned to G4 in [`plans/links-and-graph.md`](../plans/links-and-graph.md), still unbuilt).
+worked through in [KB-UPDATES.md](KB-UPDATES.md). Its `requires_pinakes` half is **built (G4), on
+`main`, unreleased** — a manifest can now declare the oldest pinakes that can read it, so an
+out-of-date build says so instead of reporting a typo. That closes the *diagnosis*, not this gap:
+nothing yet detects template drift or adopts a new default into an existing manifest.
 
 ### Caveat: the `[light]` backend needs a manifest edit
 
@@ -250,7 +252,7 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.4.0** ✅ | `path:page` citations on both surfaces, `pnk doctor` text yield (I8); the verification table and its gate (I9) |
 | **0.4.1** ✅ | A sidecar that will not parse is no longer overwritten by a freshly minted one, and no longer aborts the whole sync — data loss present since v0.1 |
 | **0.5.0** ✅ *(the links release, interim)* | `pnk links`, `pinakes_links`, reverse-scan and the sidecar round-trip fix — no `schema_version` bump, so no rebuild. **The release cuts twice** (decision 27): this is the interim MINOR at L5b; the final cut is at L8, and the name stays in the unbuilt-work table until then. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **L5b landed:** `ruamel.yaml` replaces `pyyaml` in the sidecar, so a rewrite preserves comments, quoting and blank lines — and `country: NO` stops becoming `false` ([decision](../plans/decision-ruamel-yaml.md)). **Next: L6**, the one refusal pinakes chooses, then L6–L8 |
-| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated |
+| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. **G4 is on `main`, unreleased:** `[kb] requires_pinakes`, a compatibility floor read before strict validation, so a KB from a newer pinakes names the version it needs instead of failing as a typo. If G2's headroom measurement fails, G3 and G5 do not start and G1/G2/G4 are cut as their own release, named at the cut |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
 | *the deep release* | `pnk ask --deep` |
 | *the template release* | Template ecosystem, `pnk upgrade` migrations, the `sqlite-vec` tier |

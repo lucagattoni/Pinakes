@@ -454,6 +454,19 @@ test, or write **none** and say why in the same commit.
 | two machines answer every question the same way | G1 | CI's `eval-cross-machine` and `eval-cross-machine-compare` jobs; `tests/test_check_script.py::test_ci_compares_per_question_outcomes_across_two_operating_systems` asserts both legs are still there |
 | the gate is invoked, and can still fail | G1 | `tests/test_check_script.py::test_check_sh_declares_the_eval_reproducibility_gate`, `tests/test_check_script.py::test_ci_runs_the_eval_reproducibility_gate_and_proves_it_can_fail` |
 
+## The manifest compatibility floor (G4)
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| the floor is read **before** strict validation | G4 | `tests/test_manifest_compat.py::test_the_pre_pass_runs_before_strict_validation` |
+| a KB needing a newer pinakes names both versions | G4 | `tests/test_manifest_compat.py::test_a_manifest_requiring_a_newer_pinakes_names_the_version` |
+| an absent floor is not an error | G4 | `tests/test_manifest_compat.py::test_an_absent_requires_pinakes_is_not_an_error` |
+| a floor this build exactly meets is accepted | G4 | `tests/test_manifest_compat.py::test_a_floor_this_build_meets_exactly_is_accepted`, `tests/test_manifest_compat.py::test_a_shorter_floor_compares_as_the_same_version`, `tests/test_manifest_compat.py::test_a_longer_floor_of_trailing_zeros_is_the_same_version` |
+| only a floor is accepted — no ceiling, no bare version | G4 | `tests/test_manifest_compat.py::test_a_floor_that_is_not_a_lower_bound_is_refused` |
+| a version that is not dotted ASCII digits is refused, not compared | G4 | `tests/test_manifest_compat.py::test_a_floor_that_is_not_a_dotted_number_is_refused` |
+| the field does not trip the unknown-key check it exists to explain | G4 | `tests/test_manifest_compat.py::test_the_field_does_not_trip_the_unknown_key_check` |
+| the pre-pass reports one error, never a second one for the same mistake | G4 | `tests/test_manifest_compat.py::test_a_malformed_kb_table_is_left_to_the_strict_validator` |
+
 ## Release machinery
 
 | What must be true | Increment | Where it is checked |
