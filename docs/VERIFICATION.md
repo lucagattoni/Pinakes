@@ -173,6 +173,34 @@ test, or write **none** and say why in the same commit.
 | the CLI and MCP surfaces project the same keys | L5 | `tests/test_graph_present.py::test_the_two_surfaces_project_the_same_keys` |
 | an empty answer says whether the arguments emptied it | L5 | `tests/test_serve.py::test_an_empty_answer_says_whether_the_arguments_emptied_it` |
 | a neighbour in a second served KB says which KB to fetch it from | L5 | `tests/test_serve.py::test_a_neighbour_in_a_second_served_kb_says_which_kb_to_fetch_it_from` |
+| an alias is resolved to a ULID before it reaches disk | L6 | `tests/test_cli_link.py::test_an_alias_is_resolved_to_a_ulid_on_write` |
+| ...and so is `self` | L6 | `tests/test_cli_link.py::test_self_is_expanded_on_write` |
+| all three target grammars resolve | L6 | `tests/test_cli_link.py::test_each_dst_grammar_resolves` |
+| ...with `pnk://` tried before the alias form | L6 | `tests/test_cli_link.py::test_a_pnk_uri_wins_over_an_alias_that_happens_to_be_called_pnk` |
+| ...and a colon in a path is still a path | L6 | `tests/test_cli_link.py::test_a_colon_in_a_path_that_is_not_a_declared_alias_stays_a_path` |
+| a well-formed `pnk://` to an absent target is written | L6 | `tests/test_cli_link.py::test_a_well_formed_pnk_uri_to_an_absent_target_is_written` |
+| an unresolvable target is refused with its remedy | L6 | `tests/test_cli_link.py::test_an_unresolvable_dst_is_refused_with_its_remedy` |
+| ...including an alias whose KB is not on this machine | L6 | `tests/test_cli_link.py::test_an_alias_pointing_at_a_kb_that_is_not_here_is_refused` |
+| ...and one whose partner declares a different `[kb] id` | L6 | `tests/test_cli_link.py::test_an_alias_whose_partner_declares_a_different_id_is_refused` |
+| a source with no sidecar is refused, and none is minted | L6 | `tests/test_cli_link.py::test_a_source_with_no_sidecar_is_refused_and_none_is_minted` |
+| an unreadable source sidecar is never overwritten | L6 | `tests/test_cli_link.py::test_an_unreadable_source_sidecar_is_never_overwritten` |
+| a source outside the KB is refused | L6 | `tests/test_cli_link.py::test_a_source_outside_the_kb_is_refused` |
+| ...and a sidecar named as the source | L6 | `tests/test_cli_link.py::test_a_sidecar_named_as_the_source_is_refused` |
+| an empty `--rel` is refused before anything is read | L6 | `tests/test_cli_link.py::test_an_empty_rel_is_refused_before_anything_is_read` |
+| ...and a missing one is a usage error | L6 | `tests/test_cli_link.py::test_a_missing_rel_is_a_usage_error` |
+| comments survive a rewrite through `pnk link` | L6 | `tests/test_cli_link.py::test_comments_survive_a_rewrite_through_pnk_link` |
+| unknown keys inside a link entry survive it | L6 | `tests/test_cli_link.py::test_unknown_keys_inside_a_link_entry_survive_through_pnk_link` |
+| no line outside the `links` block changes | L6 | `tests/test_cli_link.py::test_no_line_outside_the_links_block_changes_when_a_link_is_added` |
+| ...while an indented block is reindented (pinned) | L6 | `tests/test_cli_link.py::test_an_indented_links_block_is_reindented_when_a_link_is_added` |
+| ...and a document-trailing comment is captured (pinned) | L6 | `tests/test_cli_link.py::test_a_document_trailing_comment_is_captured_when_the_first_link_is_appended` |
+| a first link into a null `links` value does not crash | L6 | `tests/test_cli_link.py::test_a_first_link_into_a_null_links_value_does_not_crash` |
+| a `rel` that looks like a boolean is quoted, on both write paths | L6 | `tests/test_cli_link.py::test_a_rel_that_looks_like_a_boolean_is_quoted`, `::test_a_rel_that_looks_like_a_boolean_is_quoted_on_a_first_link_too` |
+| the source document is byte-identical afterwards | L6 | `tests/test_cli_link.py::test_the_source_document_is_byte_identical_afterwards` |
+| the write is atomic under an interrupted rename | L6 | `tests/test_cli_link.py::test_the_write_is_atomic_under_an_interrupted_rename` |
+| the same link twice writes nothing the second time | L6 | `tests/test_cli_link.py::test_the_same_link_twice_writes_nothing_the_second_time` |
+| ...while a second relation to one target is a second entry | L6 | `tests/test_cli_link.py::test_a_second_relation_to_the_same_target_is_a_second_entry` |
+| what `pnk link` writes reaches the `links` table | L6 | `tests/test_cli_link.py::test_a_link_round_trips_through_sync_into_the_links_table` |
+| the grammar is reachable without the CLI | L6 | `tests/test_cli_link.py::test_resolve_target_is_reachable_without_the_cli` |
 
 ## The sidecar round-trip (L5b)
 

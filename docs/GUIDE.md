@@ -388,8 +388,8 @@ ledger) off any remote.
 cannot enforce anything here; check before you push.
 
 Links between KBs use `pnk://<kb-ulid>/<doc-ulid>` — ULIDs, never aliases — so they survive renames,
-moves, and being shared with someone whose local alias for your KB is different. Authoring and
-traversing them lands in the links release; the *schema* ships today precisely because IDs cannot be retrofitted.
+moves, and being shared with someone whose local alias for your KB is different. `pnk link` authors
+them and `pnk links` traverses them: see [Following links between two KBs](#following-links-between-two-kbs).
 
 ## Troubleshooting
 
@@ -428,9 +428,31 @@ links:
     rel: counterpart
 ```
 
-Write it however you like — including the indented style above. Your comments, your quoting, your
-blank lines and your own key order all survive a rewrite, and values are never reinterpreted:
-`country: NO` stays the string `NO` rather than turning into `false`.
+`pnk link` writes that entry for you, and is the only thing that ever needs to know the alias:
+
+```console
+$ pnk link docs/loans-outward.md museum:docs/incoming-loans.md --rel counterpart
+docs/loans-outward.md.pnk.yaml: counterpart -> pnk://01KYP11WY2ZGX9B2Q5V7PJ8DW1/01KYP8878AZWS2ZWEBD0KQYTXE
+`pnk sync` to index it, then commit the sidecar.
+```
+
+`museum:` is looked up in *this* manifest and never written down — what lands on disk is the pair of
+ULIDs, which is what makes the link mean the same thing on someone else's machine. A path in this KB
+(`docs/pest-management.md`) or a `pnk://` URI work as the target too. Run the same command twice and
+the second run writes nothing:
+
+```console
+$ pnk link docs/loans-outward.md museum:docs/incoming-loans.md --rel counterpart
+docs/loans-outward.md.pnk.yaml already carries counterpart -> pnk://01KYP11WY2ZGX9B2Q5V7PJ8DW1/01KYP8878AZWS2ZWEBD0KQYTXE; nothing written.
+```
+
+It writes into the **source** document's sidecar and nothing else — the museum's files are never
+touched — and it refuses a document that has no sidecar yet, because the ULID a link needs is minted
+by `pnk sync`. [CLI](CLI.md#pnk-link) has the full grammar and the refusals.
+
+Write it by hand instead if you prefer — including the indented style above. Your comments, your
+quoting, your blank lines and your own key order all survive a rewrite, and values are never
+reinterpreted: `country: NO` stays the string `NO` rather than turning into `false`.
 
 The one thing that changes about *layout* is exactly this indentation — pinakes re-emits a block
 sequence as `- to:` at the left margin, once. [MANIFEST](MANIFEST.md#the-sidecar--filepnkyaml) lists

@@ -66,10 +66,12 @@ written with and carry a header note.
   every key a string, because the index stores metadata as JSON. **Each exclusion is pinned by a
   test** — a bound stated only in prose cannot notice the library's behaviour moving under it.
 - **`docs/` belongs to the user.** Never modify source documents, and never delete a sidecar without
-  an explicit `--prune`-style flag plus a printed list. The one exception: a paid PDF extraction (or
-  `--force` discarding one) additively rewrites that document's own sidecar with
-  `provenance.extraction` (docs/DESIGN.md §2.2) — never any other key, and never for a free
-  extraction.
+  an explicit `--prune`-style flag plus a printed list. Two exceptions, both writing only the named
+  document's *own* sidecar, both rename-atomic, and neither ever touching the other end of a link
+  (docs/DESIGN.md §2.2): a paid PDF extraction (or `--force` discarding one) additively writes
+  `provenance.extraction` — never any other key, never for a free extraction; and `pnk link`
+  appends one `links[]` entry. Adding a third needs this line, DESIGN §2.2 and
+  docs/MANIFEST.md edited together.
 - **`.pinakes/` is disposable except `ledger.jsonl` and any cache entry a paid backend wrote** —
   a rebuild must preserve spend history, and the ledger is append-only: correct a record by
   appending another (`pnk budget --resolve`), never by editing or rewriting it. A paid cache entry

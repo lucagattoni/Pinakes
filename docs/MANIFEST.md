@@ -198,8 +198,8 @@ provenance:
 | `title` | you | Shown in results |
 | `tags` | you | What `pnk search --tag` filters on |
 | `created` | sync | Optional; date filters use the document's mtime instead, since every document has one |
-| `links[].to` | you / `pnk link` (the links release) | A `pnk://` URI. Aliases and `self` are resolved to ULIDs **on write**, so what reaches disk survives being shared |
-| `links[].rel` | you / `pnk link` (the links release) | Free-form relation, e.g. `cites`, `supersedes` |
+| `links[].to` | you / [`pnk link`](CLI.md#pnk-link) | A `pnk://` URI. Aliases and `self` are resolved to ULIDs **on write**, so what reaches disk survives being shared |
+| `links[].rel` | you / [`pnk link`](CLI.md#pnk-link) | Free-form relation, e.g. `cites`, `supersedes` |
 | `provenance.source` | you | Where the document came from |
 | `provenance.extraction` | **sync, paid PDFs only** | `{backend, fingerprint, extracted, content_hash}` |
 
@@ -238,7 +238,13 @@ the moment a rebuild needs it.
 
 **Sync writes `provenance.extraction` and nothing else into your sidecars**, and only when a paid
 extraction actually ran or `--force` discarded one — never for the routine free case. The write is
-additive; existing keys survive. It is the one place a machine writes into `docs/`.
+additive; existing keys survive.
+
+Exactly two things write into `docs/`, and only ever into a sidecar. Sync is the unattended one — it
+runs from a git hook and from CI, which is why what it may touch is a single key. The other is
+[`pnk link`](CLI.md#pnk-link), which appends one `links[]` entry to the sidecar of the document you
+named, and only that one. Neither ever modifies a source document, and neither writes into another
+document's sidecar.
 
 Writes are atomic (write beside, then rename): a truncated sidecar would lose a permanent ULID and
 every inbound link with it.

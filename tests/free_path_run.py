@@ -11,10 +11,9 @@ Deliberately *not* named `test_*`: pytest must not collect it. It is a script, r
 
     python tests/free_path_run.py <modules.json>
 
-The run covers every free surface the design has: `pnk init`, `pnk sync`, `pnk search`,
-`pnk links`,
-`pnk doctor`, and an MCP handshake — through `cli.main`, so CLI dispatch is in the graph too, not
-only the libraries beneath it.
+The run covers every free surface the design has: `pnk init`, `pnk sync`, `pnk search`, `pnk link`,
+`pnk links`, `pnk budget`, `pnk doctor`, and an MCP handshake — through `cli.main`, so CLI dispatch
+is in the graph too, not only the libraries beneath it.
 
 **Two KBs, and the second is the point.** The first is an ordinary free KB. The second is
 configured for `claude-vision` and gets a `pnk doctor`, because that is the combination where the
@@ -144,38 +143,22 @@ def _build(root: Path, *, backend: str) -> Path:
 def _author_links(root: Path) -> None:
     """Written after the first sync, which is what mints `b.md`'s ULID for `a.md` to point at.
 
-    Through `pinakes.sidecar`, never PyYAML. This helper used to `yaml.safe_dump` a sidecar, which
-    put `yaml` into the very module list the free-path gate inspects — so the gate that forbids
-    PyYAML on the free path was red on day one, defeated by its own harness. It was also the last
-    PyYAML sidecar *writer* in the repo, which is exactly the divergence that gate exists to
-    prevent: a fixture written by one library and read by another.
+    **Through `pnk link` itself** (L6), so the authoring command's own import graph is in the gate
+    rather than only the library beneath it — it is the one command that writes into `docs/`, which
+    makes it the most consequential place for an accidental import to hide. Two grammars, because
+    they take different branches: `docs/b.md` is resolved by reading that document's sidecar, and
+    the `pnk://` form is written without any file behind it existing at all.
+
+    Never PyYAML. This helper used to `yaml.safe_dump` a sidecar, which put `yaml` into the very
+    module list the free-path gate inspects — so the gate that forbids PyYAML on the free path was
+    red on day one, defeated by its own harness.
     """
-    from dataclasses import replace
+    if main(["link", "docs/a.md", "docs/b.md", "--kb", str(root), "--rel", "related"]) != 0:
+        raise SystemExit(f"free-path run: `pnk link` failed on {root}")
+    absent = f"pnk://{UNSERVED_KB}/{UNSERVED_DOC}"
+    if main(["link", "docs/a.md", absent, "--kb", str(root), "--rel", "counterpart"]) != 0:
+        raise SystemExit(f"free-path run: `pnk link` refused a well-formed pnk:// URI on {root}")
 
-    from pinakes.sidecar import SIDECAR_SUFFIX, Link, read, write
-    from pinakes.uri import PnkUri
-    from pinakes.uri import parse as parse_uri
-
-    def sidecar(name: str) -> Path:
-        return root / "docs" / f"{name}{SIDECAR_SUFFIX}"
-
-    kb_id = load(root).kb.id
-    target = read(sidecar("b.md"), owner=kb_id).id
-    source = read(sidecar("a.md"), owner=kb_id)
-    write(
-        sidecar("a.md"),
-        replace(
-            source,
-            links=(
-                Link(to=PnkUri(kb=kb_id, doc=target), rel="related"),
-                Link(
-                    to=parse_uri(f"pnk://{UNSERVED_KB}/{UNSERVED_DOC}").resolve(owner=kb_id),
-                    rel="counterpart",
-                ),
-            ),
-            present=source.present | {"links"},
-        ),
-    )
     if main(["sync", "--kb", str(root)]) != 0:
         raise SystemExit("free-path run: re-syncing the authored links failed")
 

@@ -620,6 +620,37 @@ def _run_clear_cache(loaded: Manifest, args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _link_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "source", help="the document the link is written in, relative to the KB root"
+    )
+    parser.add_argument(
+        "target",
+        help="pnk://<kb>/<doc> (self accepted), <alias>:<path> in a linked KB, or a path here",
+    )
+    _kb_argument(parser)
+    parser.add_argument(
+        "--rel", required=True, metavar="REL", help="the relation, for example cites or supersedes"
+    )
+
+
+def run_link(args: argparse.Namespace) -> int:
+    """`pnk link`. Writes one entry into the source document's own sidecar, and nothing else."""
+    from pinakes import manifest as manifest_module
+    from pinakes.link import add
+
+    loaded = manifest_module.discover(args.kb)
+    outcome = add(loaded, source=args.source, target=args.target, rel=args.rel)
+    where = outcome.sidecar.relative_to(loaded.root)
+
+    if not outcome.written:
+        print(f"{where} already carries {outcome.rel} -> {outcome.target}; nothing written.")
+        return EXIT_OK
+    print(f"{where}: {outcome.rel} -> {outcome.target}")
+    print("`pnk sync` to index it, then commit the sidecar.")
+    return EXIT_OK
+
+
 # The v0.1 surface (docs/DESIGN.md §8), in the order a user meets it. `increment` points at
 # plans/v0.1.md, so an unimplemented command tells the user exactly when it arrives.
 def _links_arguments(parser: argparse.ArgumentParser) -> None:
@@ -737,6 +768,13 @@ COMMANDS: tuple[Command, ...] = (
         "I8b",
         runner=lambda args: run_sync(args),
         arguments=_sync_arguments,
+    ),
+    Command(
+        "link",
+        "Write a link from one document to another, into the source's sidecar",
+        "L6",
+        runner=lambda args: run_link(args),
+        arguments=_link_arguments,
     ),
     Command(
         "links",
