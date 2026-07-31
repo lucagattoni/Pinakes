@@ -94,8 +94,10 @@ written with and carry a header note.
 
 ## Building a release — one increment at a time
 
-Each version has a reviewed plan under [`plans/`](plans/) that is the build order (v0.1 shipped as
-I1–I15; the current plan is the newest file there). Never batch increments; each one is a separate,
+Each version has a reviewed plan under [`plans/`](plans/) that is the build order. The current one
+is [`plans/links-and-graph.md`](plans/links-and-graph.md) — **not** "the newest file there", which
+`plans/` no longer supports: it also holds shipped plans, that plan's iteration log, and
+standalone increments such as [`source-walk-containment.md`](plans/source-walk-containment.md). Never batch increments; each one is a separate,
 bisectable landing:
 
 1. Own worktree, branch `YYYYMMDD_HHMM-i<N>-<slug>`.
