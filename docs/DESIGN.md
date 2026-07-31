@@ -167,9 +167,30 @@ invisible at the exact moment a rebuild needs it, and a paid extraction would ei
 re-billed or silently overwritten by whatever free backend the manifest names. The write is additive
 (existing `provenance` keys survive) and happens only when a *paid* extraction actually ran, or was
 explicitly discarded by `--force` (§6.4) — never for the common, no-money-involved case of an
-ordinary free extraction. The cost is real and accepted: PyYAML drops comments and re-sorts unknown
-keys on this one write, same as any other `write()` call would; a comment-preserving writer is `pnk
-link`'s problem (the links release), not pulled forward here.
+ordinary free extraction. This write costs the file nothing: the sidecar
+is read and written through a **round-trip YAML parser**, so `write()` reconciles the keys pinakes
+owns *into the document that was read* rather than rendering a fresh one — comments, quoting, block
+scalars, blank lines and the author's own key order all survive.
+
+**Why a round-trip parser rather than the obvious one.** The choice looks like a dependency
+question and is really a data-integrity one. `extra` promises above that unknown keys are preserved,
+and under YAML 1.1 that promise was false in a way nobody would notice: `country: NO` was read as
+`False` and written back as `false`, `shelf: 0755` as `493`, `duration: 1:30` as `90`. The values
+changed, the file still parsed, and nothing failed. YAML 1.2 reads them as the strings they visibly
+are. The same reasoning already argued for `tomlkit` over a plain TOML writer in
+[KB-UPDATES.md](KB-UPDATES.md) §5 — a file a person edits needs a parser that can put it back.
+
+The promise is now **byte-identical**, which is testable in a way "untouched" was not, and it is
+bounded by what pinakes normalises by design (`pnk://self/…` expansion; canonical key ordering on a
+*minted* sidecar only), by what the parser normalises (block-sequence and nested-mapping
+indentation, which follows the dumper rather than the source), and by what YAML does not carry
+(CRLF, a BOM, `---`/`...` markers). One limitation is pinned rather than fixed: a comment is stored
+against the construct *preceding* it, so deleting a key or a list entry leaves that comment
+attached to whatever takes its place and loses the last one in the block.
+
+**Values must also be JSON-encodable**, because the index stores document metadata as JSON (§3).
+That bound is not a new refusal — it is what keeps behaviour the same across the parser change,
+which accepts tags the previous one rejected outright.
 
 Why sidecars rather than in-text links: a PDF cannot carry a wikilink without being rewritten, and
 mutating source documents breaks the "originals are the truth" contract. One mechanism that works

@@ -37,6 +37,7 @@
 | Budget ledger, `pnk budget`, the accountant | shipped 0.3.0 | I6b. `ledger.jsonl`, the reservation/outcome protocol, and I6a's decisions read from it — now driven by I7b's extractor |
 | `path:page` citations | shipped | I8. `docs/paper.pdf:p7` / `:p7-8`, on the CLI and MCP alike; `pnk doctor` names the pages with no text layer |
 | Cross-KB links (`pnk link`, `pnk links`, `pinakes_links`) | **partly built** — `pnk sync` records what other KBs link into this one (`--scan-links`), and `pnk links` and `pinakes_links` traverse. The authoring command is not built | the links release |
+| Sidecar round-trip | **shipped** — `ruamel.yaml` in round-trip mode at YAML 1.2: comments, quoting, block scalars and blank lines survive a rewrite, and an unknown key's value is no longer reinterpreted | the links release |
 | `sqlite-vec` tier, template ecosystem | **not built** | the template release |
 
 ⚠️ **0.3.0 is the first release that can spend money — and it will not, unless you ask it to.**
@@ -248,7 +249,7 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.3.0** ✅ | Budget machinery, the opt-in paid Claude-vision extractor (I6–I7c) |
 | **0.4.0** ✅ | `path:page` citations on both surfaces, `pnk doctor` text yield (I8); the verification table and its gate (I9) |
 | **0.4.1** ✅ | A sidecar that will not parse is no longer overwritten by a freshly minted one, and no longer aborts the whole sync — data loss present since v0.1 |
-| *the links release* | `pnk link`, `pinakes_links`, reverse-scan, link-coverage reporting — no `schema_version` bump, so no rebuild. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **Next: L5b then L5c** — the `ruamel.yaml` sidecar swap, split in two on 20260731 after three adversarial passes returned 8, 8 and 7 HIGH on it as one increment ([plan](../plans/links-and-graph.md), [decision](../plans/decision-ruamel-yaml.md)). **This release cuts twice**: an interim MINOR at L5b, and the final cut at L8 |
+| *the links release* | `pnk link`, `pinakes_links`, reverse-scan, link-coverage reporting — no `schema_version` bump, so no rebuild. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **L5b landed:** `ruamel.yaml` replaces `pyyaml` in the sidecar, so a rewrite preserves comments, quoting and blank lines — and `country: NO` stops becoming `false` ([decision](../plans/decision-ruamel-yaml.md)). **Next: L5c**, the one refusal pinakes chooses. **This release cuts twice**: an interim MINOR at L5b, and the final cut at L8 |
 | *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
 | *the deep release* | `pnk ask --deep` |

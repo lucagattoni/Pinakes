@@ -6,10 +6,13 @@
 set -e
 uv run --frozen ruff format --check .
 uv run --frozen ruff check .
-# --extra-search-path stubs/: pypdfium2 ships no py.typed marker (stubs/pypdfium2.pyi covers it
-# for pyright); ty has no pyproject-level stubPath equivalent yet, so it needs the same path named
-# on its own command line, or it hard-errors on a [light]-only checkout where pypdfium2 isn't
-# installed — unlike pyright, which only warns (I2, docs/RETROSPECTIVES.md).
+# --extra-search-path stubs/: two stubs live there for two different reasons. pypdfium2 ships no
+# py.typed marker (stubs/pypdfium2.pyi covers it for pyright); ruamel.yaml *does* ship one, and is
+# stubbed anyway because `load`/`dump` take an untyped `stream` that pyright strict will not accept
+# at the call sites (L5b, decision 20). ty has no pyproject-level stubPath equivalent yet, so it
+# needs the same path named on its own command line, or it hard-errors on a [light]-only checkout
+# where pypdfium2 isn't installed — unlike pyright, which only warns (I2,
+# docs/RETROSPECTIVES.md).
 uv run --frozen ty check --extra-search-path stubs .
 uv run --frozen pyright
 uv run --frozen pytest -q -rs
@@ -106,8 +109,10 @@ uv run --frozen python3 tools/traversal_cap_gate.py
 # numbers disagreeing by three is how 0.4.1's data-loss bug was found; keeping them the same
 # population is not tidiness.
 #
-# `uv run` rather than plain `python3`: it needs PyYAML. Unlike the paid-path gate, nothing has to
-# run this before the package is installed.
+# `uv run` rather than plain `python3`: it needs ruamel.yaml — the same library the product reads
+# sidecars with, so the gate counts the same population it enforces. (It read through PyYAML until
+# L5b; on a library the product no longer uses it would have counted sidecars the product now
+# refuses.) Unlike the paid-path gate, nothing has to run this before the package is installed.
 uv run --frozen python3 tools/link_density_gate.py
 
 # changelog/retrospective fragments are well-formed. Cheap, offline, and it fails *here* rather

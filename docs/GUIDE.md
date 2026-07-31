@@ -428,6 +428,12 @@ links:
     rel: counterpart
 ```
 
+Write it however you like — including the indented style above. Everything in a sidecar survives a
+rewrite: your comments, your quoting, your blank lines and your own key order. The **one** thing
+that does not is exactly this indentation: pinakes re-emits a block sequence as `- to:` at the left
+margin. Nothing is lost, and it happens once. Values are never reinterpreted — `country: NO` stays
+the string `NO` rather than turning into `false`.
+
 `pnk sync` records that link, and also reads the *other* KB's committed sidecars to learn what
 points back:
 

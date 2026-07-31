@@ -174,6 +174,44 @@ test, or write **none** and say why in the same commit.
 | an empty answer says whether the arguments emptied it | L5 | `tests/test_serve.py::test_an_empty_answer_says_whether_the_arguments_emptied_it` |
 | a neighbour in a second served KB says which KB to fetch it from | L5 | `tests/test_serve.py::test_a_neighbour_in_a_second_served_kb_says_which_kb_to_fetch_it_from` |
 
+## The sidecar round-trip (L5b)
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| an unknown key round-trips byte-identically | L5b | `tests/test_sidecar.py::test_an_unknown_key_round_trips_byte_identically` |
+| comments survive a rewrite | L5b | `tests/test_sidecar.py::test_comments_survive_a_rewrite` |
+| ...inside `provenance.extraction` | L5b | `tests/test_sidecar.py::test_a_comment_inside_provenance_extraction_survives_a_re_extraction` |
+| ...on a `tags` entry | L5b | `tests/test_sidecar.py::test_a_comment_on_a_tags_entry_survives_a_rewrite` |
+| ...and through both provenance helpers | L5b | `tests/test_sidecar.py::test_with_extraction_provenance_preserves_comments`, `::test_without_extraction_provenance_preserves_comments` |
+| quoting style survives | L5b | `tests/test_sidecar.py::test_quoting_style_survives_a_rewrite` |
+| block scalars and blank lines survive | L5b | `tests/test_sidecar.py::test_block_scalars_and_blank_lines_survive_a_rewrite` |
+| a long spaced value is not folded | L5b | `tests/test_sidecar.py::test_a_value_with_spaces_past_eighty_columns_is_not_folded` |
+| YAML 1.1 scalars are no longer corrupted | L5b | `tests/test_sidecar.py::test_yaml_1_1_scalars_are_no_longer_corrupted` |
+| the user's key order is preserved | L5b | `tests/test_sidecar.py::test_the_users_key_order_is_preserved_on_rewrite` |
+| ...while a minted sidecar is canonical | L5b | `tests/test_sidecar.py::test_a_minted_sidecar_still_uses_canonical_order` |
+| `provenance` first appearing is appended, moving no comment | L5b | `tests/test_sidecar.py::test_provenance_first_appearing_is_appended_and_moves_no_comment` |
+| links reconcile by `to`, not by position | L5b | `tests/test_sidecar.py::test_reordering_links_does_not_move_their_comments` |
+| ...and a removed link takes only its own comment | L5b | `tests/test_sidecar.py::test_a_removed_link_takes_only_its_own_comment` |
+| unknown per-link keys survive | L5b | `tests/test_sidecar.py::test_unknown_keys_inside_a_link_entry_survive_a_rewrite` |
+| changed tags keep the surviving entries' comments | L5b | `tests/test_sidecar.py::test_changed_tags_keep_the_comments_of_the_entries_that_remain` |
+| an unchanged known key is not reassigned | L5b | `tests/test_sidecar.py::test_an_unchanged_known_key_is_not_reassigned`, `::test_an_unchanged_links_block_is_not_rewritten` |
+| a minted ambiguous title is quoted, read back through PyYAML | L5b | `tests/test_sidecar.py::test_a_minted_title_that_looks_like_a_boolean_is_quoted` |
+| a duplicate key is refused without ruamel's suppression URL | L5b | `tests/test_sidecar.py::test_a_duplicate_key_is_refused_without_ruamels_suppression_url` |
+| a JSON-unencodable value is refused with a remedy | L5b | `tests/test_sidecar.py::test_a_json_unencodable_extra_value_is_refused_with_a_remedy` |
+| ...including `!!str` | L5b | `tests/test_sidecar.py::test_a_double_bang_str_value_is_refused` |
+| ...while the tags that worked before still work | L5b | `tests/test_sidecar.py::test_the_standard_tags_that_worked_before_the_swap_still_work` |
+| a custom-tagged mapping is accepted (documented widening) | L5b | `tests/test_sidecar.py::test_a_tagged_mapping_is_accepted_because_it_serialises` |
+| a uniformly non-string-keyed mapping is a stated residual | L5b | `tests/test_sidecar.py::test_a_uniformly_non_string_keyed_mapping_is_a_stated_residual` |
+| ruamel's sequence reindentation is a documented exclusion | L5b | `tests/test_sidecar.py::test_a_two_space_indented_sequence_is_reindented` |
+| the deletion limitation is pinned, not fixed | L5b | `tests/test_sidecar.py::test_deleting_a_commented_key_loses_one_comment_and_misattributes_another` |
+| `original` is excluded from equality | L5b | `tests/test_sidecar.py::test_the_original_document_is_excluded_from_equality` |
+| an anchored or aliased boolean indexes as `true`, at every depth | L5b | `tests/test_sync.py::test_an_anchored_boolean_is_indexed_as_true_not_one` |
+| `ruamel.yaml` is a core dependency | L5b | `tests/test_packaging.py::test_ruamel_yaml_is_a_core_dependency` |
+| `pyyaml` is dev-only, never core, never an extra | L5b | `tests/test_packaging.py::test_pyyaml_is_dev_only_never_core_and_never_an_extra` |
+| no module under `src/` imports PyYAML (AST) | L5b | `tests/test_packaging.py::test_no_module_under_src_imports_pyyaml` |
+| ...nor does the free path load it (runtime) | L5b | `tests/test_paid_path.py::test_the_free_path_run_never_loads_yaml` |
+| every stub symbol matches its real signature | L5b | `tests/test_packaging.py::test_every_symbol_the_ruamel_stub_declares_matches_inspect_signature` |
+
 ## The PDF corpus
 
 | What must be true | Increment | Where it is checked |
