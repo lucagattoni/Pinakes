@@ -454,6 +454,25 @@ test, or write **none** and say why in the same commit.
 | two machines answer every question the same way | G1 | CI's `eval-cross-machine` and `eval-cross-machine-compare` jobs; `tests/test_check_script.py::test_ci_compares_per_question_outcomes_across_two_operating_systems` asserts both legs are still there |
 | the gate is invoked, and can still fail | G1 | `tests/test_check_script.py::test_check_sh_declares_the_eval_reproducibility_gate`, `tests/test_check_script.py::test_ci_runs_the_eval_reproducibility_gate_and_proves_it_can_fail` |
 
+## The manifest compatibility floor (G4)
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| the floor is read **before** strict validation | G4 | `tests/test_manifest_compat.py::test_the_pre_pass_runs_before_strict_validation` |
+| a KB needing a newer pinakes names both versions | G4 | `tests/test_manifest_compat.py::test_a_manifest_requiring_a_newer_pinakes_names_the_version` |
+| an absent floor is not an error | G4 | `tests/test_manifest_compat.py::test_an_absent_requires_pinakes_is_not_an_error` |
+| a floor this build exactly meets is accepted | G4 | `tests/test_manifest_compat.py::test_a_floor_this_build_meets_exactly_is_accepted`, `tests/test_manifest_compat.py::test_a_shorter_floor_compares_as_the_same_version`, `tests/test_manifest_compat.py::test_a_longer_floor_of_trailing_zeros_is_the_same_version` |
+| only a floor is accepted — no ceiling, no bare version | G4 | `tests/test_manifest_compat.py::test_a_floor_that_is_not_a_lower_bound_is_refused` |
+| a version that is not dotted ASCII digits is refused, not compared | G4 | `tests/test_manifest_compat.py::test_a_floor_that_is_not_a_dotted_number_is_refused` |
+| the field does not trip the unknown-key check it exists to explain | G4 | `tests/test_manifest_compat.py::test_the_field_does_not_trip_the_unknown_key_check` |
+| the pre-pass reports one error, never a second one for the same mistake | G4 | `tests/test_manifest_compat.py::test_a_missing_or_non_table_kb_is_left_to_the_strict_validator` — asserts the strict validator's *exact* wording, because a keyword match survived a deliberately duplicated pre-pass error |
+| a version component too long for `int()` is refused, not a traceback | G4 | `tests/test_manifest_compat.py::test_a_version_component_of_absurd_length_is_refused_not_a_traceback` |
+| whitespace around the version is refused, as the digits already were | G4 | `tests/test_manifest_compat.py::test_whitespace_around_the_version_is_refused` |
+| a leading zero compares as the number it is | G4 | `tests/test_manifest_compat.py::test_a_leading_zero_compares_as_the_number_it_is` |
+| a non-string value names the TOML type, never a Python repr | G4 | `tests/test_manifest_compat.py::test_a_non_string_value_names_the_toml_type_not_a_python_repr` |
+| an unparseable `__version__` skips the check instead of crashing every command | G4 | `tests/test_manifest_compat.py::test_an_unparseable_own_version_skips_the_check_rather_than_crashing` |
+| `pnk init` stamps no floor | G4 | `tests/test_manifest_compat.py::test_the_template_does_not_stamp_a_floor` |
+
 ## Release machinery
 
 | What must be true | Increment | Where it is checked |

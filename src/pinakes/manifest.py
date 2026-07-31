@@ -14,6 +14,13 @@ cannot produce sane behaviour should fail when it is read, not three commands la
 * `overlap < max_tokens` — otherwise every chunk contains the previous one entire.
 * `[retrieval.confidence]` requires `fitted_for`: thresholds fitted against a different reranker are
   not thresholds, and §4.2 would rather report `unknown` than a number it cannot justify.
+
+**One check runs before all of that**: `[kb] requires_pinakes`, in a pre-pass over the raw TOML
+(G4). Strictness means an unknown key is a hard error, so a manifest written by a newer pinakes
+fails on the first key this build has never heard of — and tells the user they made a typo when
+their actual problem is an out-of-date pinakes. Reading the compatibility floor *before* the strict
+validator is the only ordering in which that field can do its job; after it, the parse has already
+died and the good error is unreachable (docs/KB-UPDATES.md §7).
 """
 
 import tomllib
@@ -22,8 +29,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from pinakes import __version__
 from pinakes._toml import ROOT_NAME, Table
 from pinakes.errors import InvalidIdError, ManifestError, NoKbFoundError
 from pinakes.extract import registered_extractors
@@ -195,6 +204,11 @@ def load(root: Path) -> Manifest:
     except tomllib.TOMLDecodeError as exc:
         raise ManifestError(path, table=None, message=f"is not valid TOML: {exc}") from exc
 
+    # The pre-pass, and its position in this function is the whole feature (G4). Every line below
+    # this one can fail on a key a newer pinakes introduced; this one runs first so the failure can
+    # say *why* instead of blaming a typo.
+    _check_required_version(data, path)
+
     root_table = Table(data, name=ROOT_NAME, source=path)
     manifest = Manifest(
         root=root.resolve(),
@@ -214,6 +228,174 @@ def load(root: Path) -> Manifest:
 
 def discover(start: Path | None = None) -> Manifest:
     return load(find_kb_root(start))
+
+
+REQUIRES_PINAKES = "requires_pinakes"
+REQUIRES_PREFIX = ">="
+
+
+def _check_required_version(data: dict[str, Any], path: Path) -> None:
+    """`[kb] requires_pinakes` — refuse a KB this build is too old to read (G4).
+
+    Runs over the **raw** parsed TOML, before `Table` validates anything, because the field only
+    earns its keep in the case where a later key is one this build has never heard of. Read
+    afterwards it would be unreachable exactly when it is needed.
+
+    **Its absence means compatible, never an error.** Every KB in existence lacks the field; a
+    missing floor is "no floor declared", not a refusal — and this must stay true, or shipping the
+    check would break every KB on the planet at once.
+
+    A **floor only**, which is what the compatibility posture actually is: a KB may be opened by the
+    pinakes that wrote it or a newer one, never an older one (docs/KB-UPDATES.md §4). There is no
+    ceiling to express, so there is no specifier grammar to support and no dependency to take on for
+    parsing one.
+
+    This deliberately does not touch anything else in `data`: `[kb]` being absent or malformed is
+    the strict validator's to report, in its own words, a few lines later. A pre-pass that started
+    duplicating those errors would give two different messages for one mistake.
+    """
+    kb = data.get("kb")
+    if not isinstance(kb, dict):
+        return
+    raw = cast(dict[str, Any], kb).get(REQUIRES_PINAKES)
+    if raw is None:
+        return
+
+    if not isinstance(raw, str) or not raw.startswith(REQUIRES_PREFIX):
+        raise ManifestError(
+            path,
+            table="kb",
+            # The TOML type, never `repr`: a manifest saying `requires_pinakes = 2026-01-01` is
+            # handed to us as a `datetime.date`, and telling its author they wrote
+            # `datetime.date(2026, 1, 1)` describes Python rather than their file.
+            message=(
+                f'`{REQUIRES_PINAKES}` must be a string like `">={__version__}"`, '
+                f"found {_toml_kind(raw)}"
+            ),
+            remedy=(
+                "It states the oldest pinakes that can read this KB, and only a floor is "
+                "supported — a KB is readable by the version that wrote it or any newer one. If "
+                "this KB came from a newer pinakes that writes something richer here, upgrade "
+                "pinakes rather than editing the file."
+            ),
+        )
+
+    # No `.strip()`. It would accept `">= 0.9"`, a trailing newline, and — since `str.strip()`
+    # is Unicode-aware — a non-breaking space, while this same function refuses non-ASCII *digits*
+    # on the grounds that leniency there is a silently wrong comparison. One rule, not two.
+    required = _version_tuple(raw.removeprefix(REQUIRES_PREFIX))
+    if required is None:
+        raise ManifestError(
+            path,
+            table="kb",
+            message=(
+                f"`{REQUIRES_PINAKES}` names a version this build cannot read: {raw!r} "
+                f"(this build is {__version__})"
+            ),
+            remedy=(
+                "A version is digits separated by dots, like `0.5` or `0.5.0`. A newer pinakes may "
+                "write a form this one does not understand, in which case upgrading is the fix."
+            ),
+        )
+
+    # **Not an `assert`.** `python -O` strips those, and this one guarded a `None` that reaches
+    # `len()` two lines later — so under `-O` a `__version__` carrying a release-candidate or
+    # `.dev` suffix turned every KB with this field into a `TypeError`, including ones whose floor
+    # the build plainly meets. `tests/test_cli.py::test_version_is_set` pins the release format,
+    # but this module must not fail catastrophically if that pin is ever relaxed.
+    running = _version_tuple(__version__) or _version_tuple(_numeric_prefix(__version__))
+    if running is None:
+        # Nothing to compare against. A build whose own version is unparseable cannot honestly
+        # refuse anyone else's KB, and refusing every KB is a far worse failure than skipping an
+        # advisory check — so the floor goes unenforced rather than unopenable.
+        return
+    if _pad(required, len(running)) > _pad(running, len(required)):
+        raise ManifestError(
+            path,
+            table="kb",
+            message=(f"this KB requires pinakes {raw} (this build is {__version__})"),
+            remedy=(
+                "Upgrade pinakes — `uv add --upgrade pinakes` — or open the KB with the version "
+                "that wrote it. Downgrading a KB is not supported: nothing rewrites a manifest a "
+                "user owns (docs/KB-UPDATES.md §4)."
+            ),
+        )
+
+
+#: Python refuses `int()` on a decimal string longer than `sys.int_info.default_max_str_digits`
+#: (4300 since 3.11) and raises `ValueError`. A version component is never remotely this long, so
+#: the bound costs nothing — and without it `">=" + "9" * 5000` passed the digit check below and
+#: crashed `pnk doctor` with a traceback, on the code path this whole increment exists to make
+#: diagnostic rather than baffling.
+MAX_VERSION_DIGITS = 32
+
+
+def _version_tuple(text: str) -> tuple[int, ...] | None:
+    """`"1.2.3"` -> `(1, 2, 3)`; `None` for anything that is not a short dotted ASCII number.
+
+    Total by construction: every rejection is a `None`, never an exception. Two guards, each for a
+    case where Python is more permissive than a version format should be — `"٣".isdigit()` is
+    `True` and `int("٣")` is `3`, so Eastern Arabic numerals would otherwise *compare* rather than
+    be refused; and `int()` raises above 4300 digits rather than returning a large number.
+    """
+    parts = text.split(".")
+    return (
+        tuple(int(part) for part in parts)
+        if parts
+        and all(
+            part.isascii() and part.isdigit() and len(part) <= MAX_VERSION_DIGITS for part in parts
+        )
+        else None
+    )
+
+
+def _numeric_prefix(version: str) -> str:
+    """`"1.2.3rc1"` -> `"1.2.3"` — the dotted-numeric head of a PEP 440 version.
+
+    Only ever applied to `pinakes.__version__`, never to a manifest's floor: a user writing
+    `">=0.6.0rc1"` is told their version is unreadable, which is honest, while a *release candidate
+    of pinakes itself* should still be able to compare against a floor rather than skip the check.
+    """
+    head: list[str] = []
+    for part in version.split("."):
+        digits = ""
+        for character in part:
+            if not (character.isascii() and character.isdigit()):
+                break
+            digits += character
+        if not digits:
+            break
+        head.append(digits)
+        if digits != part:  # `0rc1` — the numeric run ended inside this component
+            break
+    return ".".join(head)
+
+
+#: TOML's own vocabulary for the types `tomllib` produces. `bool` before `int`, because it is a
+#: subclass of it and `isinstance(True, int)` is `True`.
+_TOML_KINDS: tuple[tuple[type, str], ...] = (
+    (bool, "a boolean"),
+    (int, "an integer"),
+    (float, "a float"),
+    (str, "a string"),
+    (list, "an array"),
+    (dict, "a table"),
+)
+
+
+def _toml_kind(value: object) -> str:
+    """What a TOML author would call this, so an error names their file rather than our runtime."""
+    for kind, name in _TOML_KINDS:
+        if isinstance(value, kind):
+            return name
+    # Dates and times, which `tomllib` returns as `datetime` objects. Naming the TOML concept beats
+    # `datetime.date(2026, 1, 1)`, which describes our runtime rather than the line they wrote.
+    return "a date or time"
+
+
+def _pad(version: tuple[int, ...], length: int) -> tuple[int, ...]:
+    """`0.5` and `0.5.0` are the same version, and tuple comparison does not know that."""
+    return version + (0,) * (length - len(version))
 
 
 def _required_table(root_table: Table, name: str, path: Path) -> Table:
@@ -256,6 +438,12 @@ def _kb(root_table: Table, path: Path) -> KbSection:
                 table="kb",
                 message=f"`created` must look like `20260725 09:14`, found {created!r}",
             ) from exc
+
+    # Consumed, not read: `_check_required_version` has already acted on it, over the raw TOML,
+    # before this function ran. Taking it here is what stops `done()` below rejecting it as an
+    # unknown key — the field would otherwise be refused by the very strictness it exists to
+    # explain, which is a self-defeating shape a test pins directly.
+    table.optional_string(REQUIRES_PINAKES)
 
     section = KbSection(
         name=name, id=kb_id, template=table.optional_string("template"), created=created
