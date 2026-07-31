@@ -130,6 +130,46 @@ a reviewer doing that comparison.
 
 ---
 
+## 9 · L6 review 7 — the freshness-branch test never enters the freshness branch
+
+**Blocks the merge.** Everything else in `1d4de4e` is correct: I ran the failure paths end to end
+and the gate on that tip (**1034 passed, 0 pyright errors, ruff clean, all gates green**).
+
+**Current:** `test_a_fresh_partner_with_an_unresolvable_path_does_not_crash_the_sync`
+(`tests/test_sync_links.py`) asserts only `report.ok`. Its docstring says it covers *"the freshness branch of
+`scan()` — which **plain `pnk sync`** takes … No test touched this branch at all"*. It does not
+touch it either: the assertion holds whether the branch runs or not.
+
+**Proof** — `is_stale` forced to `return True`, so the fresh branch is never taken:
+
+```text
+unmutated:  PROBE link_scan = ()                      1 passed
+mutated:    PROBE link_scan = (('partner', 'linked KB `partner` cannot be read at
+            ~nosuchuser12345/kb: no such directory.', …),)   1 passed
+```
+
+**Required:** add `assert report.link_scan == ()` after `assert report.ok`. That is the
+discriminating assertion, and the output above is why: a skipped-fresh row carries no issue, so
+`link_scan` is empty **only** when the branch was taken. Confirm by re-running the same mutation —
+it must now fail.
+
+**Why it matters:** this is the increment's own recurring class — an assertion satisfied by
+something other than the property it names — inside the fix for the finding that said *"that branch
+had no test at all"*. The commit message calls the two wrapper removals "mutation-verified"; this
+test was not.
+
+**Also verified, so do not re-derive:** `Path.is_file()`, `.is_dir()` and `.exists()` swallow the
+`ValueError` an embedded NUL raises (they return `False`), so narrowing `scan_one`'s handler from
+`(OSError, RuntimeError)` to `OSError` leaves no escape, and `why_not_a_kb` — which touches only
+`exists()` and `is_dir()` — is safe on such a path. `tomllib` does accept `\u0000`, and
+`expanduser("~nosuchuser/kb")` does raise `RuntimeError`, both as the commit claims. End to end on
+a KB declaring a NUL path and a `~nosuchuser` path: `pnk sync` and `pnk sync --scan-links` both
+exit 0 and report each partner as unreachable naming the declared text; `pnk link` through either
+alias exits 1 with the same message. The declared-text fallback is pinned at
+`tests/test_sync_links.py:543`, so the totality test not pinning it is not a gap.
+
+---
+
 ## Not to be fixed — recorded so nobody tries
 
 - **A sidecar carrying its own `%YAML 1.1` directive** is parsed at 1.1, so `country: NO` becomes
@@ -139,3 +179,8 @@ a reviewer doing that comparison.
   `docs/MANIFEST.md`'s bounds table, not a defect.
 - **The `v0.5.0` tag annotation** says "Three breaking changes". Tag annotations are not cleanly
   rewritable and the tag is published; the release body and CHANGELOG are the corrected records.
+- **A raw NUL byte reaches user-facing output** — a `[[links.kb]] path` written as `part\u0000ner`
+  produces `cannot be read at part<NUL>ner`, which makes the line binary to `grep` and to any log
+  consumer. Reachable only from a hand-written manifest using the `\u0000` escape, never from
+  `argv`, which cannot carry one. Sanitising the path into the message would mean every error
+  string stops showing exactly what the author wrote — the property review 7 exists to protect.
