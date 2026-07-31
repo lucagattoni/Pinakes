@@ -129,7 +129,7 @@ replaces**; three rounds of unverified prose about the same paragraph is what ha
 
 ### Fixtures that were representative rather than discriminating
 
-**MEDIUM, three times.** A test can be green because the code is right or because the input never
+**MEDIUM, four times.** A test can be green because the code is right or because the input never
 reaches it, and the two look identical from the outside.
 
 * `test_no_line_outside_the_links_block_changes_when_a_link_is_added` used a sidecar with a
@@ -148,6 +148,12 @@ reaches it, and the two look identical from the outside.
   message` against a `tmp_path` ending in `/partner`. Both were satisfied by the interpolated path,
   so the *reason* could have vanished from the wording with the test still green — proven by
   rewording the error and watching all 29 pass. Fixtures renamed, phrases asserted.
+* The test written for the freshness branch — the branch a finding had just called untested —
+  asserted only `report.ok`, which holds whether that branch runs or not. Proven by forcing
+  `is_stale` to return `True`: the branch never ran and the test still passed. A skipped-fresh row
+  carries no issue, so `link_scan` is the assertion that discriminates. Found by a reviewer, not by
+  the round that wrote it, in the commit whose message called its other two fixes mutation-verified
+  — **"mutation-verified" is a per-assertion claim, not a per-commit one.**
 
 ### A docstring claiming a safety property its function cannot have
 

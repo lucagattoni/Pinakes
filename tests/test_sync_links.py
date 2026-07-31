@@ -571,7 +571,7 @@ def test_resolve_path_never_raises_whatever_the_manifest_says() -> None:
         assert answer is not None and answer.is_absolute(), raw
 
 
-def test_a_fresh_partner_with_an_unresolvable_path_does_not_crash_the_sync(
+def test_an_unresolvable_path_is_reported_rather_than_fresh_skipped(
     pair: tuple[Kb, Kb],
 ) -> None:
     """The freshness branch of `scan()` — which **plain `pnk sync` takes**, since `force` is only
@@ -581,6 +581,13 @@ def test_a_fresh_partner_with_an_unresolvable_path_does_not_crash_the_sync(
     is edited to something that will not resolve — a typo, or a path valid on the machine the
     manifest was committed from. Every commit inside the hour-long TTL was then a traceback. No
     test touched this branch at all: `grep skipped_fresh tests/` returned nothing.
+
+    **The assertion that discriminates is `link_scan`, not `report.ok`.** A first version asserted
+    only `ok`, which holds whether the branch runs or not — the increment's own recurring class,
+    inside the fix for a finding that said the branch had no test. A skipped-fresh row carries no
+    issue, so a non-empty `link_scan` is the proof this path was *not* silently skipped. The
+    freshness branch proper is pinned by `test_a_fresh_kb_refs_entry_skips_the_walk`; both
+    directions are mutation-verified.
     """
     local, _partner = pair
     run(local, now="20260730 12:00")  # writes kb_refs.last_scan

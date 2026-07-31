@@ -219,7 +219,7 @@ test, or write **none** and say why in the same commit.
 | `<alias>:` naming no document says so | L6 review | `tests/test_cli_link.py::test_an_alias_naming_no_document_says_so` |
 | ...and a manifest declaring no linked KBs says that | L6 review | `tests/test_cli_link.py::test_a_kb_declaring_no_linked_kbs_says_that_rather_than_listing_none` |
 | `resolve_path` never raises, and answers an **absolute** path or `None` | L6 review 7, 8 | `tests/test_sync_links.py::test_resolve_path_never_raises_whatever_the_manifest_says` |
-| ...so a fresh partner whose path will not resolve is an issue, not a crash | L6 review 7 | `tests/test_sync_links.py::test_a_fresh_partner_with_an_unresolvable_path_does_not_crash_the_sync` |
+| ...so an unresolvable path is reported, never silently fresh-skipped | L6 review 7, 8 | `tests/test_sync_links.py::test_an_unresolvable_path_is_reported_rather_than_fresh_skipped` |
 | ...and an unresolvable path is never walked from the working directory | L6 review 8 | `tests/test_sync_links.py::test_an_unresolvable_path_is_never_walked_from_the_working_directory` |
 | ...nor resolved through it into a permanent link | L6 review 8 | `tests/test_cli_link.py::test_an_unresolvable_linked_kb_path_is_never_resolved_through_the_working_directory` |
 | an embedded NUL in a path is refused, not a `ValueError` traceback | L6 review 7 | `tests/test_cli_link.py::test_a_path_with_an_embedded_nul_is_refused_rather_than_crashing` |
