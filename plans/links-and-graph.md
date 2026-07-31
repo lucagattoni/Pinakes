@@ -223,7 +223,7 @@ earlier.
 | *"`docs/` belongs to the user … never any other key"* | A second, narrower exception: **a user-invoked authoring command** writing `links[]` to the source document's own sidecar | L6 |
 | The "🚫 Unbuilt work is named" table (**not** the "Naming (fixed…)" table) in `CLAUDE.md` **and** `docs/STATUS.md` | **Only `docs/STATUS.md`'s *roadmap* row lacks `pnk links`** — both 🚫 tables already carry it, and only `CLAUDE.md`'s 🚫 table still needs the paid-extraction row dropped. Check each before editing. **Reconcile the two tables** — `CLAUDE.md` still carries the paid-extraction row that 0.4.0 retired and `docs/STATUS.md` has already dropped. Assigned to L4, which landed without doing it; **reassigned to L5b**, the cutting increment | L4 → **L5b** |
 | *Landing work: always push, always release* | A release that **cuts more than once** keeps its name in the 🚫 unbuilt-work table until the **final** cut; the roadmap row carries both tags. CLAUDE.md today says to drop the name when the roadmap row is ticked, which at an interim cut deletes a name L8 needs back — the churn decision 27 was chosen to avoid | L5b |
-| *Invariants that must not be broken* | A new one: **an unknown key in a sidecar round-trips byte-identically** — stronger and more testable than "untouched", and false until L5b. It excludes what pinakes normalises by design (`pnk://self/…` expansion; canonical ordering **on a minted sidecar only** — an existing file keeps the user's order), what **ruamel** normalises (block-sequence and nested-mapping **indentation**, which follows the dumper settings rather than the source; **every explicit YAML tag on a value ruamel resolves natively** — `!!int`, `!!bool`, `!!seq`, `!!map`, `!!null` and the non-specific `!` — all dropped on write; and an anchor whose value is **null or recursive**, whose anchor and alias are destroyed and whose value is nulled), and what YAML itself does not carry (CRLF, a BOM, `---`/`...` markers) | L5b |
+| *Invariants that must not be broken* | A new one: **an unknown key in a sidecar round-trips byte-identically** — stronger and more testable than "untouched", and false until L5b. It excludes what pinakes normalises by design (`pnk://self/…` expansion; canonical ordering **on a minted sidecar only** — an existing file keeps the user's order), what **ruamel** normalises (block-sequence and nested-mapping **indentation**, which follows the dumper settings rather than the source; **every explicit YAML tag on a value ruamel resolves natively** — `!!int`, `!!bool`, `!!seq`, `!!map`, `!!null` and the non-specific `!` — all dropped on write; and an anchor whose value is **null or recursive**, whose anchor and alias are destroyed and whose value is nulled), and what YAML itself does not carry (CRLF, a BOM, `---`/`...` markers, and **a missing trailing newline**, which is added) | L5b |
 
 ---
 
@@ -895,7 +895,14 @@ widened acceptance becoming a crash.
      **declares one that does not exist** is.
 
 
-**Tests.** **Every sequence and mapping key needs a test that changes a *different* key.** The
+**Tests.** **Every documented exclusion needs a pinning test, not a table row.** Writing them found
+two behaviours on no list at all — a plain (non-recursive) anchor on an **empty** value is destroyed,
+and a file with **no trailing newline** gains one. Both are byte changes to a file nobody edited,
+which is exactly what the invariant says does not happen. Assert the narrow side too (an anchor on a
+*real* value survives), or the exclusion widens silently. Each test must fail if ruamel ever starts
+preserving what it currently drops.
+
+**Every sequence and mapping key needs a test that changes a *different* key.** The
 "assign only when changed" rule short-circuits reconciliation whenever the value is unchanged, so a
 fixture that modifies the thing under test never exercises the reconciliation path at all — the
 defect only bites on a write that modifies something *else*. Reported by the executor, 20260731,
