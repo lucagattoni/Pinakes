@@ -30,6 +30,11 @@ Decided by the user 20260801 01:24.
 **How to propose:** `git diff <sha> -- <file>` against a **named commit**, in your branch's commit
 message or a note the planner reads. Never an edit, never "it is one line".
 
+**What the planner does with it:** incorporates it — judging *when*, not whether. A correction to
+what is true **today** lands on `main` at once, independently of your branch. A doc change that
+describes **your unlanded work** lands with your merge, because main must not describe a command
+that does not exist yet.
+
 **Why:** documentation is the coordination surface. Several agents work here at once, a clean
 auto-merge is **not** a correct merge (20260729 — two documents merged silently and contradicted
 themselves while every command reported success), and a document edited by whoever happened to be in

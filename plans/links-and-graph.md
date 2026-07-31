@@ -92,11 +92,21 @@ is what the links release ships with. All eval work moves to the graph release, 
 assumed: none of the three touches a file the L-track touches, and none depends on the links work.
 **G3 and G5 may not start either way** — they are gated behind G2's headroom measurement.
 
+**That verification was too narrow, and G1 found out by landing** (proposed by the G-track,
+incorporated 20260801 01:26). It compared the two tracks' *owned* files and never asked what a new
+**gate** touches: the Ground rules oblige every one to edit `check.sh`,
+`.github/workflows/ci.yml` and `tests/test_check_script.py`, and each is appended to at the end of
+the same region. G1 also edits `src/pinakes/search.py` and `src/pinakes/store.py`, which appear in
+**neither** column — reproducibility is a property of core retrieval, so no G-increment could have
+avoided them. Scope it honestly: the L-track has touched none of these five so far and L7/L8 may
+never add a gate, so this is where a clean auto-merge is *least likely* to be a correct one, not a
+collision already in progress. Nothing here forbids the work.
+
 | Track | Owns | Never edits |
 |---|---|---|
 | **L** — L6, L7, L8 | `doctor.py`, `link.py`, `linkscan.py`, `sidecar.py`, `cli.py`, `errors.py`, `tests/test_doctor.py`, `tests/test_cli_link.py`, `tests/test_sync_links.py`, `docs/CLI.md` | `eval.py`, `manifest.py`, `tests/test_eval.py`, the golden set, `baseline.json` |
 | **G** — G1, G2, G4 | `eval.py`, `manifest.py`, `tests/test_eval.py`, `tests/demo-kb/eval/*`, `src/pinakes/templates/notes/eval/*`, the two new test files | `doctor.py`, `link.py`, `linkscan.py`, `sidecar.py`, `docs/CLI.md` |
-| **Shared, and the reason the overlap gate is mandatory** | `docs/STATUS.md` (all six increments), `docs/DESIGN.md` (G2 §7, G4 §2.1, L-track elsewhere), `docs/MANIFEST.md` (G4 and L7), `docs/VERIFICATION.md` (all) | — |
+| **Shared, and the reason the overlap gate is mandatory** | `docs/STATUS.md` (all six increments), `docs/DESIGN.md` (G2 §7, G4 §2.1, L-track elsewhere), `docs/MANIFEST.md` (G4 and L7), `docs/VERIFICATION.md` (all), **`check.sh` + `.github/workflows/ci.yml` + `tests/test_check_script.py`** (any increment that adds a gate — appended to at the same place), **`src/pinakes/search.py` + `src/pinakes/store.py`** (core retrieval, owned by neither track) | — |
 
 Four rules, each closing a failure this plan or CLAUDE.md has already recorded once:
 
