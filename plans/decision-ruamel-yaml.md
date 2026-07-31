@@ -54,8 +54,10 @@ tests pass**.
 
 **1.1 → 1.2 runs both ways.** `title: NO` goes from hard error to acceptance, but `1e3`, `1E3` and
 `0o17` are *strings* to PyYAML 1.1 and *numbers* to 1.2, so `title: 1e3` **syncs today and
-hard-errors after**. Anchors and merge keys survive semantically; `isinstance(doc, dict)` and the
-`str` checks hold against `CommentedMap`.
+hard-errors after**. Anchors and merge keys survive semantically **in the YAML**, but not in the index: a boolean
+carrying an anchor returns `ScalarBoolean`, an `int` subclass, which encodes as `1` where PyYAML
+wrote `true` — hence the coercion in L5b item 3. `isinstance(doc, dict)` and the `str` checks hold
+against `CommentedMap`.
 
 **Four breaking changes**, and separately **four crashes that become named errors** — `!!binary`,
 `!!set`, `!!timestamp` and a bare date all raise an unhandled `TypeError` from `json.dumps` today.
@@ -64,7 +66,7 @@ hard-errors after**. Anchors and merge keys survive semantically; `isinstance(do
 |---|---|
 | A duplicate key | silent last-wins |
 | A non-string top-level key | worked, unless mixed types made `sorted()` raise |
-| A string field 1.2 resolves as a number (`1e3`, `0o17`) | a string |
+| A string field 1.2 resolves as a number (`1e3`, `0o17`) — `title`, `created`, `tags[]`, `links[].to`, `links[].rel` alike | a string |
 | An `!!str`-tagged value | worked |
 
 ## Decisions
