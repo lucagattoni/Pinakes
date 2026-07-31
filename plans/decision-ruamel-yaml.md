@@ -136,3 +136,77 @@ named line.**
   makes the claim this decision found to be false.
 
 Ordering is settled: the swap is its own increment, then L6.
+
+---
+
+## Measurement review — 20260731 06:25
+
+The decision above stands. Its measurements were re-run independently, and the swap was prototyped
+against the real suite in a throwaway worktree: **871 of 872 tests pass**. The sections above are
+left as they were written; this section records where the evidence differs, because an executor
+building from those claims alone would build the wrong thing.
+
+### Confirmed exactly as written
+
+51/51 byte-identical round-trip · 0/51 parse differently · the four corruptions are real ·
+`DuplicateKeyError` is a `YAMLError` subclass, so the existing `except` clause catches it unchanged ·
+no warnings under `filterwarnings = ["error"]` · comments, blank lines, block scalars, anchors and
+unicode all survive · **freshly minted output is byte-identical to PyYAML's** across seven shapes,
+so adoption causes no fixture churn · both `eval/questions.yaml` parse identically, making the
+`eval.py` swap inert · and the predicted silently-dropped field **reproduced**: both provenance
+helpers returned `original=None` and destroyed the comments until `dataclasses.replace` replaced the
+hand-enumerated constructors.
+
+### Four claims corrected
+
+| Claim | What measurement shows |
+|---|---|
+| *"51/51 at ruamel's **default** config"* | True for indentation, **false for quoting and line width**. At the default, `q: "quoted"` → `q: quoted`, and a value past 80 columns is wrapped onto a continuation line — which PyYAML does **not** do. A default-configured swap is a fidelity **regression**. `preserve_quotes = True` and `width = 4096` restore both, and still give 51/51 and still give byte-identical minted output |
+| *"1.2 reads them as the strings they visibly are"* | True of `NO`, `yes` and `1:30`; **false of `0755`**, which becomes int `755` — not the string, not PyYAML's octal `493`. The file still round-trips byte-identically because ruamel preserves the representation, so the promise holds; the explanation does not |
+| *"ships `py.typed` (so pyright strict needs no stub package)"* | **False under this project's settings.** `YAML.load` and `YAML.dump` carry an untyped `stream` parameter, which `reportUnknownMemberType` rejects: 2 errors. A `cast` does not help — pyright flags the member access before the cast applies |
+| *"`pyyaml` leaves `[project.dependencies]`"* | It leaves core, but **cannot leave the project**: eight files under `tests/` and `tools/` import it (`test_ci.py` parses workflows, `link_density_gate.py` reads sidecars, `test_partner_kb.py` writes fixtures). It moves to `[dependency-groups] dev` |
+
+### Five behaviours the decision did not anticipate
+
+1. **ruamel accepts documents PyYAML rejects.** `{id: x, : }` — an empty key — is valid YAML 1.2.
+   This is the one failing test. The widening is in **syntax**, not only in scalar resolution.
+2. **A non-string top-level key crashes `write()` — on `main`, today.** `id: X` plus `123: v` plus
+   `abc: w` reads fine under PyYAML and then dies in `sorted()` comparing `int` to `str`. A live
+   bug, independent of this decision, and this increment is the right place to close it.
+3. **Canonical ordering and byte-identical round-trip are mutually exclusive.** `write()` sorts
+   `extra` alphabetically today; a file whose keys are not already alphabetical cannot be both
+   re-sorted and preserved. Resolved by scoping canonical order to **minting** only.
+4. **Deleting a commented key orphans its comment.** ruamel attaches a comment to the *preceding*
+   key, so `del document["provenance"]` leaves the comment describing whatever follows. Inherent to
+   the model — it gets a pinning test and a documented limitation, not a fix.
+5. **The `DuplicateKeyError` message ends with `To suppress this check see: <ruamel URL>`**, which
+   would reach a user inside a `SidecarError` and recommend precisely the behaviour this decision
+   rejected.
+
+Also: through pinakes' own `read()` → `write()` it is **50/51**, not 51/51 — `pnk://self/…` expands
+to a ULID in `tests/partner-kb/docs/outgoing-loans.md.pnk.yaml`. That is pinakes' documented
+normalisation of a *known* key, not a regression, and it is why the new invariant is scoped to
+**unknown** keys. CRLF, a BOM and `---`/`...` document markers are likewise normalised away, and the
+invariant names those exclusions.
+
+### The stub hazard, demonstrated
+
+The chosen answer to pyright is a local stub under `stubs/` (the `stubs/pypdfium2.pyi` precedent),
+which reaches **0 errors with 0 suppressions**. It carries one sharp edge, found the hard way:
+
+> A stub *overrides* the real package, so pyright validates against the stub's fiction. Declaring
+> `DuplicateKeyError` importable from `ruamel.yaml` gave **0 pyright errors** and an `ImportError`
+> at runtime. Correcting it to `ruamel.yaml.error` gave **0 pyright errors** and an `ImportError`
+> again. It lives in `ruamel.yaml.constructor`.
+
+Twice green on code that could not run. The stub therefore ships with a test that imports every
+symbol it declares — a gate is only as true as the fiction it checks.
+
+### Decisions taken on the back of this review — 20260731 06:25 (the user)
+
+| # | Decision |
+|---|---|
+| 19 | **Non-string top-level keys are refused at `read()`**, with a `SidecarError` and a remedy — top level only, since that is exactly the mapping pinakes partitions into `KNOWN_KEYS`/`extra`. It makes `extra: dict[str, Any]` honest, matches what `sidecar.py` already does with every other type violation, and closes behaviour 2 above at its cause. Separately, `test_malformed_sidecars_are_rejected`'s `{id: x, : }` fixture is **replaced by `{id: x`** (an unclosed flow map, which both libraries reject): that case exists to exercise the parse-error branch, and flipping its assertion would leave the branch untested |
+| 20 | **pyright is satisfied by a local stub plus an import-verification test**, not by inline suppressions — v0.1 rule 7 holds literally |
+| 21 | **A subprocess `sys.modules` gate proves `src/` never imports `pyyaml` again**, reusing `tests/free_path_run.py`'s technique. A grep would miss a lazy or indirect import, which is the lesson the paid-path gate already paid for |
+| 22 | **The release is MINOR — 0.5.0 — with the behaviour change called out explicitly** in `CHANGELOG.md`. Pre-1.0 SemVer carries breaking changes in MINOR, and 1.0.0 stays reserved for an actual surface freeze. Two lines belong in that breaking list: duplicate keys now hard-error, and a non-string top-level key now hard-errors |

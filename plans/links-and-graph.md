@@ -114,8 +114,8 @@ earlier.
 
 | Question | Default | Revisit when |
 |---|---|---|
-| ~~Does `pnk link` gain a comment-preserving YAML dependency?~~ | **Decided 20260729 05:58 — no.** See decision 18 | Settled |
-| Does that writer become *the* sidecar writer? | Only `pnk link`'s, and DESIGN §2.2 records that a later paid-extraction sync destroys the comments it preserved | The churn is observed |
+| ~~Does `pnk link` gain a comment-preserving YAML dependency?~~ | **Decided 20260729 05:58 — no**, then **superseded 20260731 06:00 — yes**, on measurement. See [`decision-ruamel-yaml.md`](decision-ruamel-yaml.md) | Settled |
+| ~~Does that writer become *the* sidecar writer?~~ | **Yes** — `ruamel.yaml` replaces `pyyaml` outright in L5b, so there is one writer and no fallback. The premise of the old default (that a later paid-extraction sync destroys the comments anyway) was measured and found false: nothing on the free path rewrites an existing sidecar | Settled |
 | PPR, the `[ner]` extra, `pnk adopt`, `--deep`, federated query, a graph query language, migrations | Out | — |
 | `pnk unlink` | Out; fix a mistyped link by editing the sidecar | A user hits it |
 | Held-out eval splits | Out at this corpus size | The set is large enough that a holdout can still gate |
@@ -130,7 +130,7 @@ earlier.
 - **A gate that cannot run says so and is still a gate**, with a test asserting the printed reason.
 - **Worktree + branch per increment**, `YYYYMMDD_HHMM-<id>-<slug>`, timestamp from `date`.
 - **Before merging, run `python3 tools/shared_file_overlap.py --fetch --strict`** and read the merged
-  state of anything it names. A clean auto-merge is not a correct merge. Thirteen of these fourteen
+  state of anything it names. A clean auto-merge is not a correct merge. Fourteen of these fifteen
   increments touch `docs/DESIGN.md` or `docs/STATUS.md` by their own Docs lines.
 - **The changelog entry is a [`changelog.d/`](../changelog.d/README.md) fragment**, in the same
   commit as the code. **Never edit `CHANGELOG.md`.** Retrospective findings are a
@@ -160,7 +160,8 @@ earlier.
 | §2.1 | `[retrieval] adjacent_k` | L3 |
 | §2.1 | `[retrieval] graph_channel` | G5 |
 | §2.1 | `[kb] requires_pinakes` | G4 |
-| §2.2 | The comment-preserving writer delivered or its deferral re-recorded; `links[]` round-trips unknown per-link keys | L6 |
+| §2.2 | The comment-preserving writer **delivered**; the PyYAML deferral sentence goes; an unknown key round-trips byte-identically | L5b |
+| §2.2 | `links[]` round-trips unknown per-link keys | L6 |
 | §3 | The node model, `nodes`/`edges`, `schema_version` 3 | G3 |
 | §4.1, new §4.8 | The graph channel | G5 |
 | §4.7 | Publishing a KB publishes the ULIDs and relations of every KB it links to | L1 |
@@ -191,6 +192,7 @@ earlier.
 |---|---|---|
 | *"`docs/` belongs to the user … never any other key"* | A second, narrower exception: **a user-invoked authoring command** writing `links[]` to the source document's own sidecar | L6 |
 | The "🚫 Unbuilt work is named" table (**not** the "Naming (fixed…)" table) in `CLAUDE.md` **and** `docs/STATUS.md` | Both files' links-release rows gain `pnk links` | L4 |
+| *Invariants that must not be broken* | A new one: **an unknown key in a sidecar round-trips byte-identically** — stronger and more testable than "untouched", and false until L5b. It excludes what pinakes normalises by design (`pnk://self/…` expansion, known-key ordering) and what YAML itself does not carry (CRLF, a BOM, `---`/`...` markers) | L5b |
 
 ---
 
@@ -542,11 +544,115 @@ explicit `kb`), `docs/STATUS.md`, a `changelog.d/` fragment.
 
 ---
 
+### L5b — `ruamel.yaml` replaces `pyyaml` in the sidecar
+
+**Why here.** A data-integrity fix to *existing* behaviour, ordered before L6 because L6 is what
+makes the corruption routine. Specified by [`decision-ruamel-yaml.md`](decision-ruamel-yaml.md) and
+its **Measurement review** section — read both before starting. The review corrects four claims in
+the decision body, and building from the body alone builds the wrong thing.
+
+**What lands.**
+
+1. **`pyproject.toml`.** `pyyaml>=6.0` leaves `[project.dependencies]`; `ruamel.yaml>=0.19` enters
+   (the distribution name has a **dot**, not a hyphen). `pyyaml>=6.0` joins
+   `[dependency-groups] dev` — eight files under `tests/` and `tools/` import it and are not being
+   migrated. **Regenerate `uv.lock` in the same commit**: every gate runs `--frozen`.
+
+2. **`src/pinakes/sidecar.py`.** One configured loader, and both settings are load-bearing:
+
+   ```python
+   def _yaml() -> YAML:
+       yaml = YAML()  # round-trip mode, YAML 1.2
+       yaml.preserve_quotes = True  # else `q: "x"` -> `q: x`
+       yaml.width = 4096  # else a value past 80 columns wraps; PyYAML does not wrap
+       return yaml
+   ```
+
+   - `Sidecar` gains `original: Any = field(default=None, compare=False, repr=False)` — the loaded
+     document, `None` when minted. **`compare=False` is required**, or every equality assertion in
+     the suite silently changes meaning.
+   - `read()` stores the loaded document on the dataclass.
+   - `write()` mutates `original` in place when present, and builds a fresh `CommentedMap` when not.
+     **When an original exists its key order is left alone** — canonical ordering applies only to a
+     minted sidecar. Re-sorting `extra` and round-tripping byte-identically are mutually exclusive.
+   - **Top-level keys must be strings** (decision 19), else `SidecarError` with a remedy. Top level
+     only; nested user maps stay unconstrained.
+   - `DuplicateKeyError` (imported from **`ruamel.yaml.constructor`**) is caught *before* the general
+     `YAMLError` and given a pinakes message. ruamel's own ends with
+     `To suppress this check see: <URL>`, which would tell the user to do the thing this decision
+     rejected.
+   - `with_extraction_provenance` and `without_extraction_provenance` become `dataclasses.replace`.
+     Their hand-enumerated constructors **did** drop `original` in the prototype and destroy the
+     comments — not a hypothetical.
+
+3. **`src/pinakes/eval.py`.** Its single `safe_load` becomes `YAML(typ="safe").load`. Verified
+   inert: both committed `eval/questions.yaml` parse identically under 1.1 and 1.2.
+
+4. **`stubs/ruamel/yaml/{__init__,comments,error,constructor}.pyi`** — ~15 lines total, covering only
+   the surface pinakes calls (decision 20). Reaches **0 pyright errors with 0 suppressions**. Needs a
+   comment saying why a library that *does* ship `py.typed` is being stubbed: `YAML.load`/`YAML.dump`
+   carry an untyped `stream` parameter that `reportUnknownMemberType` rejects, and a `cast` does not
+   help — pyright flags the member access before the cast applies.
+
+5. **Two gates.** A subprocess `sys.modules` check that `src/` never imports `pyyaml` again
+   (decision 21, reusing `tests/free_path_run.py`'s technique — a grep would miss a lazy or indirect
+   import), and an import-verification test for the stub (decision 20).
+
+**Tests.**
+`tests/test_sidecar.py::test_an_unknown_key_round_trips_byte_identically`;
+`::test_comments_survive_a_rewrite`;
+`::test_quoting_style_survives_a_rewrite`;
+`::test_a_value_past_eighty_columns_is_not_wrapped`;
+`::test_block_scalars_and_blank_lines_survive_a_rewrite`;
+`::test_yaml_1_1_scalars_are_no_longer_corrupted` (`NO`, `yes`, `0755`, `1:30`);
+`::test_the_users_key_order_is_preserved_on_rewrite`;
+`::test_a_minted_sidecar_still_uses_canonical_order`;
+`::test_a_duplicate_key_is_refused_without_ruamels_suppression_url`;
+`::test_a_non_string_top_level_key_is_refused_with_a_remedy`;
+`::test_a_deleted_commented_key_orphans_its_comment` (**pins the limitation**, does not fix it);
+`::test_with_extraction_provenance_preserves_comments`;
+`::test_without_extraction_provenance_preserves_comments`;
+`tests/test_partner_kb.py::test_every_committed_sidecar_round_trips_through_read_and_write`
+(**50/51** — `tests/partner-kb/docs/outgoing-loans.md.pnk.yaml` differs because `pnk://self/…`
+expands to a ULID, pinakes' own documented normalisation of a *known* key; assert that one
+explicitly rather than excluding it);
+`tests/test_packaging.py::test_pyyaml_is_not_a_runtime_dependency`;
+`::test_the_free_path_never_imports_pyyaml`;
+`::test_every_symbol_the_ruamel_stub_declares_can_be_imported`.
+
+**Amend, do not delete.** `test_malformed_sidecars_are_rejected`'s `{id: x, : }` fixture becomes
+`{id: x` — an unclosed flow map, which both libraries reject. That case exists to exercise the
+parse-error branch; ruamel simply stopped considering the old string malformed, and flipping its
+assertion to "accepts" would leave the branch untested.
+
+**Mutation targets.** Delete `preserve_quotes` → the quoting test must fail. Delete `width = 4096` →
+the long-value test must fail. Restore the `sorted(extra)` reordering on the original-document path →
+the key-order test must fail. Drop `compare=False` → an equality assertion must fail. Revert one
+`replace()` to a hand-enumerated constructor → a comment-preservation test must fail.
+
+**Known limitation, documented not fixed.** ruamel attaches a comment to the *preceding* key, so
+deleting a key leaves any comment above it describing whatever now follows. Reachable only through
+`without_extraction_provenance` (`--force` discarding a paid extraction).
+
+**Docs.** `docs/DESIGN.md` §2.2 (the deferral becomes a delivery; the PyYAML sentence goes),
+`docs/MANIFEST.md` (*"Your unknown keys round-trip untouched"* becomes true for the first time and
+should say byte-identically), `CLAUDE.md` (the new invariant; qualify *Core dependencies stay light*
+if needed), `docs/VERIFICATION.md`, `docs/STATUS.md`, `src/pinakes/sidecar.py`'s module docstring
+(its last paragraph names PyYAML and defers the writer to `pnk link`) and `Sidecar.extra`'s docstring
+(whose "untouched" claim this increment finally makes true), `check.sh`'s comment at the
+link-density gate (*"it needs PyYAML"*), and a `changelog.d/` fragment carrying **both** breaking
+lines.
+
+**Exit criteria.** `./check.sh` green; 0 pyright errors with no suppression added anywhere; each new
+gate fails when its protection is removed.
+
+---
+
 ### L6 — `pnk link`
 
-**Unblocked** — decision 18 settled the YAML question: no `ruamel.yaml`, the comment test lands
-xfail, DESIGN §2.2 records the deferral, and `pnk link` **warns before rewriting a sidecar that
-contains comments**, so the loss is announced at the moment it happens rather than discovered later.
+**Unblocked** — L5b delivered the comment-preserving writer, superseding decision 18. There is no
+fallback path: no `pyyaml` retry, no comment-loss warning, and
+`test_comments_in_the_sidecar_survive_a_rewrite` lands **passing**.
 
 **What lands.** `pnk link <src> <dst> --rel <rel>`, writing one entry into the **source document's
 sidecar only**, rename-atomically.
@@ -565,8 +671,8 @@ survive via `extra`, per-link keys do not.
 `::test_unknown_keys_inside_a_link_entry_survive_a_rewrite`;
 `::test_the_write_is_atomic_under_an_interrupted_rename`;
 `::test_the_source_document_is_byte_identical_afterwards`;
-`::test_comments_in_the_sidecar_survive_a_rewrite` (**xfail** — decision 18);
-`::test_rewriting_a_commented_sidecar_warns_before_the_comments_are_lost`.
+`::test_comments_in_the_sidecar_survive_a_rewrite` (**passing**, on L5b's writer);
+`::test_every_other_line_of_the_sidecar_is_byte_identical_after_a_link_is_added`.
 
 **Exit criteria.** `DESIGN_COMMANDS`, `IMPLEMENTED`, DESIGN §8's command list and CLAUDE.md's
 `docs/`-ownership amendment all land here.
@@ -1083,7 +1189,14 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | The zero-link nudge | APPROACH §3 | L7 | `test_a_kb_with_no_authored_links_nudges` |
 | Absolute linked-KB paths are a publication hazard | DESIGN §4.7 | L7 | `test_an_absolute_linked_kb_path_warns` |
 | Aliases never inside a `pnk://` URI | DESIGN §2.2 | L6 | `test_an_alias_is_resolved_to_a_ulid_on_write` |
-| Comment-preserving sidecar writer | DESIGN §2.2 | L6 | `test_comments_in_the_sidecar_survive_a_rewrite`, or an amended §2.2 |
+| Comment-preserving sidecar writer | DESIGN §2.2 | **L5b** | `test_comments_survive_a_rewrite` |
+| An unknown key round-trips **byte-identically** | decision-ruamel-yaml | L5b | `test_an_unknown_key_round_trips_byte_identically`, `test_every_committed_sidecar_round_trips_through_read_and_write` |
+| `extra` is no longer corrupted by YAML 1.1 | decision-ruamel-yaml | L5b | `test_yaml_1_1_scalars_are_no_longer_corrupted` |
+| The user's key order survives a rewrite | measurement review | L5b | `test_the_users_key_order_is_preserved_on_rewrite` |
+| A duplicate key is a hard error, not a silent last-wins | decision-ruamel-yaml | L5b | `test_a_duplicate_key_is_refused_without_ruamels_suppression_url` |
+| A non-string top-level key is refused | decision 19 | L5b | `test_a_non_string_top_level_key_is_refused_with_a_remedy` |
+| `src/` never imports `pyyaml` again | decision 21 | L5b | `test_the_free_path_never_imports_pyyaml` |
+| The ruamel stub describes the real library | decision 20 | L5b | `test_every_symbol_the_ruamel_stub_declares_can_be_imported` |
 | Unknown per-link keys round-trip | DESIGN §2.2 | L6 | `test_unknown_keys_inside_a_link_entry_survive_a_rewrite` |
 | Sidecar writes are rename-atomic | v0.1 rule 12 | L6 | `test_the_write_is_atomic_under_an_interrupted_rename` |
 | Server reaches only its configured KBs | DESIGN §4.7 | L5 | `test_a_neighbour_outside_the_served_kbs_returns_its_kb_id_and_a_reason` |
@@ -1139,7 +1252,8 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | Cross-KB reads race the other KB's sync | The advisory lock is per-KB | Never take the other lock; a torn read is a recorded reason |
 | Edge derivation is slow at scale | It runs on every sync, on a hook path | Wall-clock and edge counts reported, as a G3 exit criterion |
 | The channel is slow at query time | It runs on every query when on | Latency reported on and off, as a G5 exit criterion |
-| A YAML dependency creeps in | DESIGN §2.2 assigns the writer; core deps stay light | Undecided, with a default that unblocks the chain |
+| ~~A YAML dependency creeps in~~ | Superseded: `ruamel.yaml` **replaces** `pyyaml`, so the count is unchanged | L5b's `sys.modules` gate proves `src/` never imports `pyyaml` again |
+| A hand-written stub drifts from ruamel | pyright validates against the stub, not the library | An import-verification test — this failed twice in the prototype, green both times |
 
 ---
 
@@ -1155,3 +1269,4 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | 20260729 05:06 | **Pass 5** — **3 HIGH, down from 13.** All three on the pass-4 seams. Decision 16's *conclusion* survived but its *premise* did not: the plan claimed K's index has nothing to walk past a cross-KB neighbour, and `store.py` says a reverse link's source lives in another KB — so the hop is walkable and terminality is a policy needing an explicit suppression, which no test or mutation target had. The real reason to stop is partiality, not emptiness, and the user reconfirmed on the corrected basis. Whether authored `doc ↔ doc` edges are in the channel was never stated while three things depended on it — they are, and stating it exposed a circularity (the gate satisfiable by hand-authored links bridging hand-authored questions) now guarded by reporting reachability and the gate with and without them. And the clause-3 remedy had disarmed `compare()`'s guard on `false_confidence`, which clause 4 restores. **Pass 6 required** |
 | 20260729 06:03 | **Pass 7** — two reviewers, **6 HIGH** (4 on L2, 2 on G5), and the verdict on each half was *not implementable as written*. Both halves failed the same way: a rule that was correct in its conclusion and unenforced in its mechanism. **L2** deleted every reverse row for a partner before re-walking it, so any mid-walk failure was the mass deletion the same section forbids; a delisted partner's rows were unreachable by the only delete that existed; the scan could not compute `src_kb_id` from sidecars at all (a sidecar does not carry its KB's ULID), and the natural workaround — reusing the local `owner=` — re-creates a defect already fixed once, silently retargeting a partner's `self` links at us; and the failure taxonomy's only recording channel makes `pnk sync` exit non-zero on a git hook. **G5** made the *without*-authored run binding while shipping the *with*-authored configuration, so a channel that helps only through hand-authored links and does nothing in its shipped form passes three green clauses and becomes the default; G2's headroom threshold never said which of its two reachability numbers counted, so the schema could be bumped irreversibly on the one that licenses nothing; and clause 4 promised six `compare()` families, named five, and the one it omitted (`by_kind`) is the only one a channel actually moves — while two it did name cannot fire at all. Also: the gate had no code home, its *before* leg was taken across a schema bump and a forced rebuild, and nothing forbade re-authoring the questions until the probe passed. Every claim was verified against the source before being accepted; two of pass 6's own justifications were false about the code (a "weight-2.0" column that does not exist, and an alias collision `manifest._reject_duplicates` already refuses). **Pass 8 not required for L1–L8**: L2's findings are localised and now testable, and the build proceeds. G5's clauses are re-reviewed before G5, not before L1 |
 | 20260729 05:43 | **Pass 6** — **2 HIGH**, both narrow, and the pass-5 fixes verified correct. Gate clause 4 stated one of its two guards backwards: it made a *rise* in `confidence_coverage` a stop, but a rise is an improvement and the metric is 1.0 in the baseline — so the clause could never fire while the guard the re-baseline actually removes (a drop) stayed unrestored. It now names all six `compare()` families with the direction `eval.py` checks. And the anti-circularity guard was asserted to live in G5 and appeared only in G2 and G3, so an engineer building G5 would have computed the sign test once over all edges including L1's hand-authored links, passed, and flipped the default. G5 now computes it twice and ships `off` if only the authored run passes. **Pass 7 required**, scoped to G5's clauses and L2's delete |
+| 20260731 06:25 | **Decision 18 superseded, and L5b inserted.** [`decision-ruamel-yaml.md`](decision-ruamel-yaml.md) reversed the YAML decision on measurement; this pass turned it into a buildable increment. The swap was prototyped against the real suite first — **871 of 872 tests pass** — which corrected four of the decision's own claims (quoting and line width are *not* preserved at ruamel's default, so a default-configured swap is a fidelity regression; `0755` becomes int `755`, not a string; `py.typed` does **not** satisfy pyright strict here; `pyyaml` cannot leave the project, only core) and surfaced five behaviours it had not anticipated — chief among them that **a non-string top-level key crashes `write()` on `main` today**, and that canonical key ordering and byte-identical round-tripping are mutually exclusive. Decisions 19–22 taken with the user. The stub hazard was demonstrated rather than argued: a wrong stub gave 0 pyright errors and an `ImportError` at runtime, twice |
