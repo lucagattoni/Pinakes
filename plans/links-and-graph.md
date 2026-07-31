@@ -558,8 +558,11 @@ explicit `kb`), `docs/STATUS.md`, a `changelog.d/` fragment.
 **Read [`decision-ruamel-yaml.md`](decision-ruamel-yaml.md) first** — it owns the rationale, the
 measurements and decisions 19–27. This section is instructions only.
 
-**Lands after L5 merges**: L5 touches `free_path_run.py`, `test_paid_path.py`, `DESIGN.md`,
-`STATUS.md` and `VERIFICATION.md`, all of which L5b needs.
+**Precondition met** — L5 merged at `d40e305`. Branch `YYYYMMDD_HHMM-l5b-ruamel-sidecar`, from the
+clock, own worktree.
+
+**Every decision below is made. Nothing here is delegated** — if a sentence reads as a question,
+treat it as a defect in this plan and say so rather than choosing.
 
 **What lands.**
 
@@ -567,34 +570,52 @@ measurements and decisions 19–27. This section is instructions only.
    `[dependency-groups] dev`; `ruamel.yaml>=0.19` (a **dot**, not a hyphen) takes its place.
    Regenerate `uv.lock` in the same commit: every gate runs `--frozen`.
 
-2. **The loader**, one instance, reused rather than reconstructed per call:
+2. **The loader** — a module-level private constant in `sidecar.py`, built once. One instance
+   serves both `load` and `dump`, interleaved, verified. Constructing one per call costs 399 µs
+   against 282 µs. Concurrency is not a concern: `lock.py` serialises the writers.
 
    ```python
-   yaml = YAML()  # round-trip, YAML 1.2
-   yaml.preserve_quotes = True
-   yaml.width = 4096
+   _YAML = YAML()  # round-trip, YAML 1.2
+   _YAML.preserve_quotes = True
+   _YAML.width = 4096
    ```
 
    Both settings are load-bearing. Do not comment `width` as restoring parity with PyYAML — it
    exceeds it.
 
 3. **`sidecar.py`.**
-   - `Sidecar` gains `original: Any = field(default=None, compare=False, repr=False)`.
-   - `write()` **reconciles known keys into the existing document, merging mappings key-by-key at
-     every depth** — never replacing a mapping node that exists. One level is not enough:
-     `with_extraction_provenance` builds a plain `dict` for `extraction`, and ruamel stores a comment
-     as the **preceding key's** trailer, so a comment describing a *sibling* of `extraction` lives
-     inside it and dies with it. Replace `links` entries positionally; delete only keys that left
-     `present`. **State where a newly-appearing known key is inserted** — `provenance` first appears
-     on a paid extraction.
+   - `Sidecar` gains `original: CommentedMap | None = field(default=None, compare=False,
+     repr=False)` — typed, not `Any`; the stub in item 6 makes `CommentedMap` nameable.
+   - `write()` **reconciles known keys into the existing document**. Exactly:
+     - **A scalar** (`id`, `title`, `created`) — assign it to the existing key.
+     - **A mapping** (`provenance`) — merge **key-by-key at every depth**, never replacing a mapping
+       node that already exists. One level is not enough: `with_extraction_provenance` builds a plain
+       `dict` for `extraction`, and ruamel stores a comment as the **preceding key's** trailer, so a
+       comment describing a *sibling* of `extraction` lives inside that node and dies with it.
+     - **A sequence** (`links`, `tags`) — reconcile **by position**: for indices present in both,
+       update the existing entry's fields in place; if the new sequence is **longer**, append; if
+       **shorter**, delete the tail. A comment on a deleted tail entry is lost — pinned by a test,
+       not fixed.
+     - **A key that left `present`** — delete it, and only it.
+     - **A key not previously in the document** — **append it at the end**, never insert it among
+       existing keys. `provenance` first appears on a paid extraction; inserting it mid-document
+       would displace the user's comments, since ruamel binds each to its preceding key.
    - **The user's key order is untouched.** Canonical ordering is for minting only.
    - **Quote ambiguous scalars pinakes writes** (decision 23), keyed on *the value being
      assigned*, never on `original is None`. Predicate: the union of `yaml.resolver.Resolver`
      (PyYAML 1.1) and `ruamel.yaml.resolver.VersionedResolver` at `(1, 1)` and `(1, 2)` — anything
      not resolving to `tag:yaml.org,2002:str` in **all three** is emitted
      `SingleQuotedScalarString`. Scalars pinakes did not author are left as the user wrote them.
-   - **Refuse non-string top-level keys** (19) and **JSON-unencodable `extra`/`provenance` values**
-     (26), each with a remedy.
+   - **Refuse non-string top-level keys** (19), at `read()`, before `Sidecar` is constructed. The
+     remedy names the offending key and says pinakes partitions top-level keys into its own and the
+     user's, so each must be a string.
+   - **Refuse JSON-unencodable `extra`/`provenance` values** (26), at `read()`, using **exactly the
+     call `store.dumps_metadata` makes** — `json.dumps(value, sort_keys=True, ensure_ascii=False)` —
+     so the check and the thing it protects cannot disagree. Do not add `allow_nan=False`: the store
+     does not, and a stricter check would refuse what the index would have accepted. Note
+     `sort_keys=True` also catches non-string keys **nested** below the top level, which decision 19
+     does not reach. The remedy names the key and the offending type, and says the index stores
+     metadata as JSON.
    - `DuplicateKeyError` (from **`ruamel.yaml.constructor`**) is caught before `YAMLError` and given
      a pinakes message; ruamel's own ends with `To suppress this check see: <URL>`.
    - `with_/without_extraction_provenance` become `dataclasses.replace`.
@@ -608,15 +629,30 @@ measurements and decisions 19–27. This section is instructions only.
    populations identical is why the gate exists. It closes the scalar-resolution and duplicate-key
    divergence only; `typ="safe"` still accepts the JSON-unencodable and non-string-key shapes.
 
-6. **`stubs/ruamel/yaml/{__init__,comments,error,constructor}.pyi`** — ~18 lines, covering every
-   ruamel symbol used under `src/`, `tests/` **and** `tools/` (pyright's `include` spans all three
-   and a stub overrides for all of them, so item 5's `typ=` must be in it).
+6. **`stubs/ruamel/yaml/{__init__,comments,error,constructor,resolver,scalarstring}.pyi`.** pyright's
+   `include` spans `src/`, `tests/` and `tools/`, and a stub overrides the real package for all
+   three, so **every symbol any of them touches must be declared or that file stops type-checking**.
+   The list, complete: `YAML` (`__init__` with `typ=`, `load`, `dump`, `preserve_quotes`, `width`),
+   `CommentedMap`, `CommentedSeq`, `TaggedScalar`, `YAMLError`, `DuplicateKeyError`,
+   `SingleQuotedScalarString`, `VersionedResolver`, and `Resolver` if the predicate imports it.
+   Declare only what is used; a symbol declared in the wrong module is pyright-green and an
+   `ImportError` at runtime, which is why item 7's signature test exists.
 
-7. **Two gates** — an **AST scan** over every `Import`/`ImportFrom` under `src/pinakes`, paired with
-   the existing `free_path_run.py` runtime check (predicate `name == "yaml" or
-   name.startswith("yaml.")`, never a substring: the module list contains
-   `pydantic_settings.sources.providers.yaml`). Neither alone suffices. Plus the stub's
-   signature-comparison test.
+7. **Three tests, in two named files.** Neither gate alone suffices: the AST scan sees lazy and
+   function-scoped imports but not dynamic ones; the runtime check sees transitive and dynamic
+   imports but only what the run actually executes.
+   - `tests/test_packaging.py::test_no_module_under_src_imports_pyyaml` — walk every `.py` under
+     `src/pinakes` with `ast.parse`, and for each `Import`/`ImportFrom` compare the **root** module
+     name: `name.split(".")[0] == "yaml"`. The root form cannot false-positive on `ruamel.yaml`,
+     whose root is `ruamel`. Also flag `importlib.import_module("yaml")` and `__import__("yaml")`
+     with a literal argument; a computed argument is out of reach and the runtime check covers it.
+   - `tests/test_paid_path.py::test_the_free_path_run_never_loads_yaml` — **this file, not
+     `test_packaging.py`**: it already owns `FREE_PATH_RUN` and the subprocess harness. Predicate
+     `name == "yaml" or name.startswith("yaml.")`, never a substring — the module list contains
+     `pydantic_settings.sources.providers.yaml`.
+   - `tests/test_packaging.py::test_every_symbol_the_ruamel_stub_declares_matches_inspect_signature`
+     — import each declared symbol from the module the stub declares it in, and compare against
+     `inspect.signature`. An importability check is not enough.
 
 **Tests.** Every comment test **compares file bytes** — `CommentedMap.__eq__` ignores comments, so
 an equality assertion can never detect their loss.
@@ -682,8 +718,8 @@ with the exclusions, **and** the new JSON-encodability bound, a user-facing cont
 `CLI.md` — doctor's new refusal classes. · `CLAUDE.md` — the new invariant. · `VERIFICATION.md`. ·
 `STATUS.md` — PyPI table and the roadmap row, which describes one cut and must describe two. ·
 `GUIDE.md` — its `links:` example (~407) uses an indentation ruamel **re-indents**, so it is the
-counter-example to the invariant, not a typo. · `check.sh:109` (*"it needs PyYAML"*, falsified by
-item 5) and `check.sh:9` (explains `--extra-search-path stubs` as being about a missing `py.typed`;
+counter-example to the invariant, not a typo. · `check.sh:109` — the comment says *"it needs PyYAML"*; item 5 falsifies
+it, but the `uv run` invocation stays, because ruamel is a dependency too and `check.sh:9` (explains `--extra-search-path stubs` as being about a missing `py.typed`;
 ruamel ships one, so the second stub exists for a different reason). · `ci.yml`'s link-density job
 comment. · A `changelog.d/` fragment carrying the **four** breaking lines, and separately the four
 crashes that become named errors — a fix, not a break.
