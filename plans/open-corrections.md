@@ -105,6 +105,31 @@ Sort by timestamp. Low value, do it last.
 
 ---
 
+## 8 · `tools/link_density_gate.py` — an uncaught `ValueError` on a non-canonical root
+
+**Current:** `census` calls `document.relative_to(root)` on the **raw** root while `documents_of`
+resolves its bases (`(root / name).resolve()`). On macOS, where `/tmp` is a symlink to
+`/private/tmp`, the two disagree and the tool dies with a traceback:
+
+```text
+ValueError: '/private/tmp/dgtest/docs/access-restrictions.md'
+            is not in the subpath of '/tmp/dgtest'
+```
+
+Reproduced 20260731 17:16 on `main` with `cp -R tests/demo-kb /tmp/dgtest && uv run python
+tools/link_density_gate.py /tmp/dgtest`.
+
+**Required:** resolve the root once, at the top of `census` (`root = root.resolve()`), so the
+denominator and the `relative_to` share one base. A test passing a root through a symlinked parent
+pins it.
+
+**Why it matters:** it only bites on an explicit non-canonical root, so the committed corpora are
+fine and CI is green — but this is the tool L7 tells an executor to run *against a copy* when
+comparing the gate's number with doctor's, which is exactly a `/tmp` path on this platform. Found by
+a reviewer doing that comparison.
+
+---
+
 ## Not to be fixed — recorded so nobody tries
 
 - **A sidecar carrying its own `%YAML 1.1` directive** is parsed at 1.1, so `country: NO` becomes
