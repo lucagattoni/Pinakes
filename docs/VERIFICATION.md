@@ -465,7 +465,13 @@ test, or write **none** and say why in the same commit.
 | only a floor is accepted — no ceiling, no bare version | G4 | `tests/test_manifest_compat.py::test_a_floor_that_is_not_a_lower_bound_is_refused` |
 | a version that is not dotted ASCII digits is refused, not compared | G4 | `tests/test_manifest_compat.py::test_a_floor_that_is_not_a_dotted_number_is_refused` |
 | the field does not trip the unknown-key check it exists to explain | G4 | `tests/test_manifest_compat.py::test_the_field_does_not_trip_the_unknown_key_check` |
-| the pre-pass reports one error, never a second one for the same mistake | G4 | `tests/test_manifest_compat.py::test_a_malformed_kb_table_is_left_to_the_strict_validator` |
+| the pre-pass reports one error, never a second one for the same mistake | G4 | `tests/test_manifest_compat.py::test_a_missing_or_non_table_kb_is_left_to_the_strict_validator` — asserts the strict validator's *exact* wording, because a keyword match survived a deliberately duplicated pre-pass error |
+| a version component too long for `int()` is refused, not a traceback | G4 | `tests/test_manifest_compat.py::test_a_version_component_of_absurd_length_is_refused_not_a_traceback` |
+| whitespace around the version is refused, as the digits already were | G4 | `tests/test_manifest_compat.py::test_whitespace_around_the_version_is_refused` |
+| a leading zero compares as the number it is | G4 | `tests/test_manifest_compat.py::test_a_leading_zero_compares_as_the_number_it_is` |
+| a non-string value names the TOML type, never a Python repr | G4 | `tests/test_manifest_compat.py::test_a_non_string_value_names_the_toml_type_not_a_python_repr` |
+| an unparseable `__version__` skips the check instead of crashing every command | G4 | `tests/test_manifest_compat.py::test_an_unparseable_own_version_skips_the_check_rather_than_crashing` |
+| `pnk init` stamps no floor | G4 | `tests/test_manifest_compat.py::test_the_template_does_not_stamp_a_floor` |
 
 ## Release machinery
 

@@ -175,13 +175,116 @@ def test_a_floor_that_is_not_a_dotted_number_is_refused(
     assert "cannot read" in str(exc_info.value) or "only a floor" in exc_info.value.remedy
 
 
-def test_a_malformed_kb_table_is_left_to_the_strict_validator(
-    write_manifest: Callable[[str], Path],
+@pytest.mark.parametrize("body", ['[sources]\nroots = ["docs/"]\n', 'kb = "not a table"\n'])
+def test_a_missing_or_non_table_kb_is_left_to_the_strict_validator(
+    write_manifest: Callable[[str], Path], body: str
 ) -> None:
-    """The pre-pass reports one thing and never a second. `[kb]` missing entirely is the strict
-    validator's error, in its own words — a pre-pass that started duplicating those would give two
-    different messages for one mistake, and they would drift."""
-    root = write_manifest('[sources]\nroots = ["docs/"]\n')
+    """The pre-pass reports one thing and never a second.
+
+    Asserted as **exact equality** against the strict validator's own wording, not as a keyword
+    match. The weaker version passed against a deliberately duplicated pre-pass error as long as the
+    duplicate happened to contain the same two words — verified by mutation, which is how it was
+    caught. Both branches of `isinstance(kb, dict)` are exercised: absent, and present-but-not-a-
+    table.
+    """
+    root = write_manifest(body)
     with pytest.raises(ManifestError) as exc_info:
         load(root)
-    assert "kb" in str(exc_info.value) and "missing" in str(exc_info.value)
+    expected = (
+        f"{root / 'pinakes.toml'} [kb]: is missing"
+        if body.startswith("[sources]")
+        else f"{root / 'pinakes.toml'}: `kb` must be a table"
+    )
+    assert str(exc_info.value) == expected
+
+
+def test_a_version_component_of_absurd_length_is_refused_not_a_traceback(
+    kb: Callable[..., Path],
+) -> None:
+    """`int()` raises above 4300 digits rather than returning a large number (Python 3.11+).
+
+    `"9" * 5000` satisfies `isascii()` and `isdigit()`, so without a length bound it reached `int()`
+    and crashed every command with a `ValueError` traceback — on the one code path this increment
+    exists to make diagnostic. A refusal is the whole product here; a traceback is the failure it
+    was written to remove.
+    """
+    with pytest.raises(ManifestError) as exc_info:
+        load(kb(extra=f'requires_pinakes = ">={"9" * 5000}.0"'))
+    assert "cannot read" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        pytest.param('">= 0.9.0"', id="space-after-op"),
+        pytest.param('">=0.9.0 "', id="trailing-space"),
+        # A TOML escape, not a raw newline: a literal one inside a basic string is a TOML syntax
+        # error, so writing it that way would test the TOML parser instead of this check.
+        pytest.param(r'">=0.5.0\n"', id="trailing-newline"),
+        pytest.param(r'">=\u00a00.9.0"', id="nbsp"),
+        pytest.param(r'">=0.9.0\t"', id="tab"),
+    ],
+)
+def test_whitespace_around_the_version_is_refused(kb: Callable[..., Path], literal: str) -> None:
+    """One rule, not two.
+
+    An earlier version called `.strip()` on the remainder, which accepted all of these — including
+    the non-breaking space, since `str.strip()` is Unicode-aware — while the same function refused
+    non-ASCII *digits* on the grounds that leniency there is a silently wrong comparison. The
+    documented grammar is `>=` followed by the version, and that is now what is accepted.
+    """
+    with pytest.raises(ManifestError) as exc_info:
+        load(kb(extra=f"requires_pinakes = {literal}"))
+    assert "cannot read" in str(exc_info.value)
+
+
+def test_a_leading_zero_compares_as_the_number_it_is(kb: Callable[..., Path]) -> None:
+    """`00.5.0` is `0.5.0`, which is what PEP 440 normalisation does too. Pinned because it is
+    accepted silently, and silent acceptance should be deliberate rather than incidental."""
+    major, minor, patch = __version__.split(".")
+    assert load(kb(extra=f'requires_pinakes = ">=0{major}.{minor}.{patch}"')).kb.name == "research"
+
+
+def test_a_non_string_value_names_the_toml_type_not_a_python_repr(
+    kb: Callable[..., Path],
+) -> None:
+    """A TOML author sees `2026-01-01` in their file; `datetime.date(2026, 1, 1)` describes our
+    runtime, not their mistake."""
+    with pytest.raises(ManifestError) as exc_info:
+        load(kb(extra="requires_pinakes = 2026-01-01"))
+    message = str(exc_info.value)
+    assert "datetime" not in message and "date(" not in message
+    assert "must be a string" in message
+
+
+def test_an_unparseable_own_version_skips_the_check_rather_than_crashing(
+    kb: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `assert` this replaced was stripped by `python -O`, leaving a `None` to reach `len()`.
+
+    A build whose own version string is unparseable cannot honestly refuse anyone's KB — and
+    refusing *every* KB, including ones whose floor it plainly meets, is far worse than leaving an
+    advisory check unenforced. A pre-release version still compares, on its numeric head.
+    """
+    from pinakes import manifest as manifest_module
+
+    monkeypatch.setattr(manifest_module, "__version__", "0.9.0rc1")
+    assert load(kb(extra='requires_pinakes = ">=0.5"')).kb.name == "research"
+    with pytest.raises(ManifestError):
+        load(kb(extra='requires_pinakes = ">=999.0"'))
+
+    monkeypatch.setattr(manifest_module, "__version__", "not-a-version")
+    assert load(kb(extra='requires_pinakes = ">=999.0"')).kb.name == "research"
+
+
+def test_the_template_does_not_stamp_a_floor(tmp_path: Path) -> None:
+    """A decision in three documents and, until now, in no test.
+
+    A fresh KB carries no key an older pinakes would choke on, so stamping a floor would lock out
+    readers for nothing. Nothing else fails if a future template edit adds it, and what it would
+    cause is exactly the lockout the decision exists to prevent.
+    """
+    from pinakes.init import init
+
+    root = init(tmp_path / "fresh", now="20260801 01:30").root
+    assert "requires_pinakes" not in (root / "pinakes.toml").read_text(encoding="utf-8")

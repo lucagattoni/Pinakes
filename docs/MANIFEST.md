@@ -36,29 +36,6 @@ else in the repo, that copy is the stale one.
 | `id` | ✅ | ULID. **Permanent.** The authority in every `pnk://` URI. Never edit, never regenerate |
 | `template` | | The blueprint and its own version, e.g. `notes@1.0` — the *template's* version, not the package's |
 | `created` | | `YYYYMMDD HH:MM` |
-| `requires_pinakes` | | The oldest pinakes that can read this KB, as a **floor only**: `">=0.6"`. Absent means no floor declared, which is not an error — see below |
-
-### `requires_pinakes` — the compatibility floor
-
-A manifest is forward-**incompatible** on purpose: an unknown key is a hard error, because a typo
-that silently left you on defaults is worse than a refusal. The cost is that a KB written by a newer
-pinakes fails on the first key this build has never heard of, and reports it as a spelling mistake
-when the user's real problem is an out-of-date pinakes. This field lets the manifest say so first.
-
-- **Read before every other key**, in a pre-pass over the raw TOML. The ordering is the whole point:
-  after strict validation the parse has already died on the unknown key, so the field would be
-  unreachable in exactly the case it exists for.
-- **A floor only.** `>=` is the sole accepted operator, because a KB is readable by the pinakes that
-  wrote it or any newer one and there is no ceiling to express. `"0.6"`, `"<=0.6"` and `"==0.6"` are
-  each refused by name rather than half-honoured.
-- **Absence means compatible.** Every KB written before this field existed lacks it.
-- **It cannot explain a key retroactively.** A pinakes built before the field existed has no
-  pre-pass and fails on `requires_pinakes` itself. It only ever helps for keys added *after* it
-  shipped — which is also why `pnk init` does **not** stamp it: a fresh KB carries no key an older
-  pinakes would choke on, so a stamped floor would lock out readers for no gain.
-
-Nothing updates the field on a KB whose owner never edits it, so it is a lower bound rather than a
-promise. The wider design note is [KB-UPDATES.md](KB-UPDATES.md).
 
 ## `[sources]`
 

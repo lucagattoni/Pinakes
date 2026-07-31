@@ -126,19 +126,6 @@ hides a mistake until it fails somewhere far away. And `[extraction] backend` is
 the registered extractors (`extract/__init__.py`) **without importing either**, so an unknown name is
 rejected before either extra could matter.
 
-**Rejecting unknown keys makes the manifest forward-incompatible, and one field pays that debt.**
-Strictness is worth its cost against typos, but it means a manifest from a *newer* pinakes fails on
-the first key this build has not heard of — and the refusal, though correct, diagnoses a spelling
-mistake when the real problem is an out-of-date pinakes. `[kb] requires_pinakes` states the oldest
-version that can read the KB, and is read in a **pre-pass over the raw TOML, before any of the above
-runs**. The ordering is not an implementation detail: read afterwards, the parse has already died on
-the unknown key and the field is unreachable in the only situation it exists for. It is a floor
-only — a KB may be opened by the pinakes that wrote it or a newer one, never an older one — so there
-is no specifier grammar to support and no parsing dependency to take on. Its absence means no floor
-declared, never a refusal, because every KB written before it existed lacks it. What it cannot do is
-explain a key retroactively: a build without the pre-pass fails on `requires_pinakes` itself, so the
-field only ever helps for keys added after it shipped ([KB-UPDATES.md](KB-UPDATES.md)).
-
 Cross-key invariants are checked at *read* time, not at use time, because a manifest that parses but
 cannot work is a failure deferred to the least convenient moment: widths must narrow
 (`final_k <= fusion_top_k <= candidates_per_source`), `confirm_above_eur <= per_operation_eur` or the

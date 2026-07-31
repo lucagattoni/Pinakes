@@ -235,7 +235,7 @@ REQUIRES_PREFIX = ">="
 
 
 def _check_required_version(data: dict[str, Any], path: Path) -> None:
-    """`[kb] requires_pinakes = ">=0.6"` — refuse a KB this build is too old to read (G4).
+    """`[kb] requires_pinakes` — refuse a KB this build is too old to read (G4).
 
     Runs over the **raw** parsed TOML, before `Table` validates anything, because the field only
     earns its keep in the case where a later key is one this build has never heard of. Read
@@ -265,7 +265,13 @@ def _check_required_version(data: dict[str, Any], path: Path) -> None:
         raise ManifestError(
             path,
             table="kb",
-            message=(f'`{REQUIRES_PINAKES}` must look like `">={__version__}"`, found {raw!r}'),
+            # The TOML type, never `repr`: a manifest saying `requires_pinakes = 2026-01-01` is
+            # handed to us as a `datetime.date`, and telling its author they wrote
+            # `datetime.date(2026, 1, 1)` describes Python rather than their file.
+            message=(
+                f'`{REQUIRES_PINAKES}` must be a string like `">={__version__}"`, '
+                f"found {_toml_kind(raw)}"
+            ),
             remedy=(
                 "It states the oldest pinakes that can read this KB, and only a floor is "
                 "supported — a KB is readable by the version that wrote it or any newer one. If "
@@ -274,7 +280,10 @@ def _check_required_version(data: dict[str, Any], path: Path) -> None:
             ),
         )
 
-    required = _version_tuple(raw.removeprefix(REQUIRES_PREFIX).strip())
+    # No `.strip()`. It would accept `">= 0.9"`, a trailing newline, and — since `str.strip()`
+    # is Unicode-aware — a non-breaking space, while this same function refuses non-ASCII *digits*
+    # on the grounds that leniency there is a silently wrong comparison. One rule, not two.
+    required = _version_tuple(raw.removeprefix(REQUIRES_PREFIX))
     if required is None:
         raise ManifestError(
             path,
@@ -284,13 +293,22 @@ def _check_required_version(data: dict[str, Any], path: Path) -> None:
                 f"(this build is {__version__})"
             ),
             remedy=(
-                "A version is digits separated by dots, like `0.6` or `0.6.1`. A newer pinakes may "
+                "A version is digits separated by dots, like `0.5` or `0.5.0`. A newer pinakes may "
                 "write a form this one does not understand, in which case upgrading is the fix."
             ),
         )
 
-    running = _version_tuple(__version__)
-    assert running is not None, f"pinakes.__version__ is not a dotted number: {__version__!r}"
+    # **Not an `assert`.** `python -O` strips those, and this one guarded a `None` that reaches
+    # `len()` two lines later — so under `-O` a `__version__` carrying a release-candidate or
+    # `.dev` suffix turned every KB with this field into a `TypeError`, including ones whose floor
+    # the build plainly meets. `tests/test_cli.py::test_version_is_set` pins the release format,
+    # but this module must not fail catastrophically if that pin is ever relaxed.
+    running = _version_tuple(__version__) or _version_tuple(_numeric_prefix(__version__))
+    if running is None:
+        # Nothing to compare against. A build whose own version is unparseable cannot honestly
+        # refuse anyone else's KB, and refusing every KB is a far worse failure than skipping an
+        # advisory check — so the floor goes unenforced rather than unopenable.
+        return
     if _pad(required, len(running)) > _pad(running, len(required)):
         raise ManifestError(
             path,
@@ -304,21 +322,79 @@ def _check_required_version(data: dict[str, Any], path: Path) -> None:
         )
 
 
-def _version_tuple(text: str) -> tuple[int, ...] | None:
-    """`"0.6.1"` -> `(0, 6, 1)`; `None` for anything that is not dotted ASCII digits.
+#: Python refuses `int()` on a decimal string longer than `sys.int_info.default_max_str_digits`
+#: (4300 since 3.11) and raises `ValueError`. A version component is never remotely this long, so
+#: the bound costs nothing — and without it `">=" + "9" * 5000` passed the digit check below and
+#: crashed `pnk doctor` with a traceback, on the code path this whole increment exists to make
+#: diagnostic rather than baffling.
+MAX_VERSION_DIGITS = 32
 
-    `isascii()` as well as `isdigit()`: `"٣".isdigit()` is `True` and `int("٣")` is `3`, so a
-    manifest carrying Eastern Arabic numerals would otherwise compare as a version. Refusing it is
-    not pedantry — it is the difference between a refusal and a silently wrong comparison.
+
+def _version_tuple(text: str) -> tuple[int, ...] | None:
+    """`"1.2.3"` -> `(1, 2, 3)`; `None` for anything that is not a short dotted ASCII number.
+
+    Total by construction: every rejection is a `None`, never an exception. Two guards, each for a
+    case where Python is more permissive than a version format should be — `"٣".isdigit()` is
+    `True` and `int("٣")` is `3`, so Eastern Arabic numerals would otherwise *compare* rather than
+    be refused; and `int()` raises above 4300 digits rather than returning a large number.
     """
     parts = text.split(".")
-    if not parts or not all(part.isascii() and part.isdigit() for part in parts):
-        return None
-    return tuple(int(part) for part in parts)
+    return (
+        tuple(int(part) for part in parts)
+        if parts
+        and all(
+            part.isascii() and part.isdigit() and len(part) <= MAX_VERSION_DIGITS for part in parts
+        )
+        else None
+    )
+
+
+def _numeric_prefix(version: str) -> str:
+    """`"1.2.3rc1"` -> `"1.2.3"` — the dotted-numeric head of a PEP 440 version.
+
+    Only ever applied to `pinakes.__version__`, never to a manifest's floor: a user writing
+    `">=0.6.0rc1"` is told their version is unreadable, which is honest, while a *release candidate
+    of pinakes itself* should still be able to compare against a floor rather than skip the check.
+    """
+    head: list[str] = []
+    for part in version.split("."):
+        digits = ""
+        for character in part:
+            if not (character.isascii() and character.isdigit()):
+                break
+            digits += character
+        if not digits:
+            break
+        head.append(digits)
+        if digits != part:  # `0rc1` — the numeric run ended inside this component
+            break
+    return ".".join(head)
+
+
+#: TOML's own vocabulary for the types `tomllib` produces. `bool` before `int`, because it is a
+#: subclass of it and `isinstance(True, int)` is `True`.
+_TOML_KINDS: tuple[tuple[type, str], ...] = (
+    (bool, "a boolean"),
+    (int, "an integer"),
+    (float, "a float"),
+    (str, "a string"),
+    (list, "an array"),
+    (dict, "a table"),
+)
+
+
+def _toml_kind(value: object) -> str:
+    """What a TOML author would call this, so an error names their file rather than our runtime."""
+    for kind, name in _TOML_KINDS:
+        if isinstance(value, kind):
+            return name
+    # Dates and times, which `tomllib` returns as `datetime` objects. Naming the TOML concept beats
+    # `datetime.date(2026, 1, 1)`, which describes our runtime rather than the line they wrote.
+    return "a date or time"
 
 
 def _pad(version: tuple[int, ...], length: int) -> tuple[int, ...]:
-    """`0.6` and `0.6.0` are the same version, and tuple comparison does not know that."""
+    """`0.5` and `0.5.0` are the same version, and tuple comparison does not know that."""
     return version + (0,) * (length - len(version))
 
 
