@@ -619,9 +619,27 @@ widened acceptance becoming a crash.
    `[dependency-groups] dev`; `ruamel.yaml>=0.19` (a **dot**, not a hyphen) takes its place.
    Regenerate `uv.lock` in the same commit: every gate runs `--frozen`.
 
-2. **The loader** — a module-level private constant in `sidecar.py`, built once. One instance
-   serves both `load` and `dump`, interleaved, verified. Constructing one per call costs 399 µs
-   against 282 µs. Concurrency is not a concern: `lock.py` serialises the writers.
+2. **The loader — a FRESH `YAML()` inside `read()` and `write()`. Never a shared instance.**
+   *(Reversed 20260731 10:50. The earlier instruction — one module-level constant, justified by
+   282 µs against 399 µs — is a **cross-document corruption bug**.)*
+
+   ruamel stores the `%YAML` directive from the last `load()` **on the instance** and applies it to
+   every later load *and* dump. One sidecar carrying `%YAML 1.1` — legal YAML, and the version
+   PyYAML used — flips the whole process to 1.1. Measured through `sync`'s own path:
+
+   ```
+   A: '%YAML 1.1\n---\nid: …\ncountry: NO\n'   read
+   B: 'id: …\ncountry: NO\nshelf: 0755\n'      read + written back as
+      '%YAML 1.1\n---\nid: …\ncountry: false\nshelf: 0755\n'
+   ```
+
+   `country: NO` → `false`, and a directive injected, **into a file that never carried one** — the
+   exact corruption this increment exists to remove, now reachable across documents, and it also
+   contaminates freshly minted sidecars. Measured alternatives: resetting `version` after load still
+   emits a directive; pinning it up-front is overwritten by the next load; `_yaml_version = None`
+   between loads is insufficient. **Only a fresh instance is correct.** 117 µs is not a trade against
+   silent cross-file corruption. The same latency applies to `eval.py` and
+   `tools/link_density_gate.py`.
 
    ```python
    _YAML = YAML()  # round-trip, YAML 1.2
@@ -641,6 +659,15 @@ widened acceptance becoming a crash.
        node that already exists. One level is not enough: `with_extraction_provenance` builds a plain
        `dict` for `extraction`, and ruamel stores a comment as the **preceding key's** trailer, so a
        comment describing a *sibling* of `extraction` lives inside that node and dies with it.
+     - **Guard every branch on the node's actual type.** `links:` with a **null** value reads fine
+       (`_links()` returns `()`, `present` contains `links`), `_unchanged(None, [])` is `False`, and
+       the merge is entered with `existing = None` → `TypeError: object of type 'NoneType' has no
+       len()`, escaping `pnk sync` because `cli.main` catches only `PinakesError`. It **works on
+       `main`**, so this is a regression, and it is exactly what a user writes before adding their
+       first link — i.e. every `pnk link` in L6, and the paid-extraction write today, *after* money
+       is spent. `tags` and `provenance` are guarded; `links` is not. Fall through to a plain
+       assignment when the node is not the expected type.
+       `::test_a_null_links_value_does_not_crash_a_write`.
      - **`links` reconciles on the RESOLVED URI, with multiplicity, and updates in place.** Three
        rules, each of which a shipped implementation got wrong:
        **(a) Resolve before comparing.** `read()` expands `pnk://self/X` to
@@ -656,9 +683,12 @@ widened acceptance becoming a crash.
        `list.remove`, as `_merge_tags` already does correctly.
        **(c) A `rel` edit is an in-place assignment, not delete+append.** Keying on the whole
        `(to, rel)` pair makes every edit a delete and an append, which by the pinned limitation
-       below misattributes one comment and destroys another. Match on resolved `to` plus
-       multiplicity, assign `rel` in place, and use the pair only to disambiguate when one `to`
-       appears more than once.
+       below misattributes one comment and destroys another. **Two passes, not two tiers.** A single reverse pass that
+       tries `(to, rel)` and falls back to `to` lets a *later* entry's fallback consume the exact
+       match an *earlier* entry was entitled to — measured, editing one `rel` where two entries
+       share a `to` swapped **both** rels and left each comment on the wrong one, which is the
+       defect this rule exists to prevent. Pass 1 claims exact `(to, rel)` pairs across all
+       entries; pass 2 claims by `to` alone among those still unmatched.
        *(Superseded: "by `(to, rel)`, never by position and never by `to` alone".)* That pair
        is the index's own identity (`store.py:110`'s
        `PRIMARY KEY (src_kb_id, src_doc_id, dst_kb_id, dst_doc_id, rel)`). Two links may share a
@@ -775,7 +805,11 @@ widened acceptance becoming a crash.
      against the implementation. Catching it is harmless insurance, not a requirement; the earlier
      claim that it was a fifth crash shape was measured on the wrong loader. Do not add
      `allow_nan=False`: the store does not, and a stricter check would refuse what the index would
-     have accepted. The remedy names the key and the offending type, and says the index stores
+     have accepted. **A key-type failure must not be reported as a value failure**, and must name the
+     key: the `next(...)` fallback finds no unencodable *value* for `1: a` and emits a raw
+     comparison error under the words "has a value". Nor may `type(value).__name__` leak a ruamel
+     class (`CommentedMap`) — that is what `_describe` exists to prevent. The remedy names the key
+     and the offending type, and says the index stores
      metadata as JSON.
      **What `sort_keys=True` does and does not catch.** It catches **mixed**-type keys, at any
      depth. A **uniformly** non-string-keyed mapping is accepted and silently coerced — measured,
@@ -892,8 +926,12 @@ widened acceptance becoming a crash.
      has nothing to do with PyYAML, which is a dev-group dependency present on every leg.
      **Mutation target:** add the decorator → the gate must be seen to stop running.
    - `tests/test_packaging.py::test_every_symbol_the_ruamel_stub_declares_matches_inspect_signature`
-     — import each declared symbol from the module the stub declares it in, and compare **callables**
-     against `inspect.signature`. `preserve_quotes` and `width` are *instance* attributes, not class
+     — **parse each `stubs/ruamel/yaml/*.pyi` with `ast`**; do not hand-mirror the symbol list. A
+     hand-written mirror checked with `hasattr` and hardcoded signature supersets is green against a
+     stub declaring `bogus_param` that ruamel does not have — verified, and pyright is green too, so
+     the gate misses the one thing it exists to catch. For every class and function the stub file
+     declares, assert its parameter names are a **subset** of `inspect.signature` of the real symbol
+     imported from that module. `preserve_quotes` and `width` are *instance* attributes, not class
      attributes, so `inspect.signature` does not apply and `getattr(YAML, "width")` raises: assert
      those two by setting them on an instance. A stub that **omits** a real parameter (`output`,
      `plug_ins`, `transform`) is not a mismatch — no minimal stub could pass otherwise; a stub that
@@ -1777,3 +1815,4 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | 20260731 08:32 | **Pass 5 — 7 HIGH, and the calibration point is that a *person* found what five agent passes did not.** The `tags`-comment defect (a comment on a `tags` entry, destroyed by the "replaced wholesale" rule justified with a fabricated claim that such comments do not exist) was found by the user testing, not by any review. Of pass 5's own seven: the pass-4 fix commit **corrupted two rows of the verification table it was editing** — one lost a column, one gained a fifth holding the neighbouring row's test, and `tests/test_verification.py` would have caught only the first; the item renumber left **four dangling `item N` references**, one of them written *by that same commit and wrong on arrival*; two "the only/the last PyYAML site" claims were false (fifteen `safe_dump` sites across eight test files survive, and item 5's own "gate, not a fixture writer" distinction argues the other way); the new runtime gate was placed in a file where **every neighbouring caller carries a `skipif` on `anthropic`**, so an executor copying the convention would disable it on two of three CI legs for an unrelated reason; the 871/872 correction was written into a commit message and a log row and **never landed in the plan body** — recording a finding is not fixing it; the cut procedure instructed the exact 🚫-table churn decision 27 exists to prevent, 685 lines from the amendment forbidding it, while two of L5b's three CLAUDE.md amendments had no landing instruction at all; and *"the check and the thing it protects cannot disagree"* was false — `_metadata()` builds a **union**, so a key-type collision created *by the merge* passes a separate-mapping check and then `TypeError`s. Also measured: an in-place coercion walk **strips the user's anchors out of the file**, and a self-referencing anchor raises `ValueError`, not `TypeError`, making it a fifth crash shape the check must catch |
 | 20260731 08:50 | **Pass 6 — 7 HIGH, five of them inside pass 5's fix, and one repeat offence.** The pass-5 commit's message said *"It now says explicitly: no skipif"*; a grep found the word in the iteration log and **nowhere in the plan body** — the second time an edit of mine silently failed to match, on the very finding that had named *"written into a commit message and a log row and never landed"* as the failure mode. Every edit in this pass was applied through a harness that reports which patterns matched; it caught one immediately. The withdrawn `ValueError` claim was hiding a real regression underneath it: measured, `mine: &x\n  b: *x` round-trips to `mine:\n  b:\n` — anchor and alias destroyed, value nulled — where PyYAML raises `Circular reference detected` out of `pnk sync`. **A loud crash becomes silent corruption**, in the increment whose thesis is behaviour equivalence, and it was in no exclusion list. Three specification defects: `links` keyed on `to` alone is undefined when two links share a `to` with different `rel`s, which `_links()` accepts and the index stores as two rows — reproduced, one link overwrote the other and its comment came with it; the `provenance` delete-what-is-missing rule was unbounded in depth, so it would strip a user's own keys out of `provenance.extraction`, against CLAUDE.md's *"additively … never any other key"*; and "append at the end" misplaces a **document-trailing** comment, which the named test's fixture could not detect. Also: the 🚫-table instruction told the executor to add `pnk links` where both tables already have it while missing the roadmap row that lacks it; the in-place-anchor measurement was wrong in its specifics (only the coerced boolean's *own* anchor vanishes) and unreachable today; verification step 0 had no pass criterion and is now a precondition with one |
 | 20260731 09:10 | **Pass 7 — 7 HIGH, measured against the executor's real implementation rather than a prototype, which is why it found more.** The worst fired **on a no-op write over a committed corpus file**: `read()` expands `pnk://self/X`, so the loaded entry's `to` never equalled the raw node text, the match failed, and the entry was deleted and re-appended — carrying the user's comment onto the *next* link, destroying that link's own comment, and moving the entry to the end. The invariant's exclusion list said *"`pnk://self/…` expansion"*, which reads as *the URI text changes* and was quietly covering a rebuild. Two more were **defects pass 6 introduced**: keying on `(to, rel)` makes every `rel` edit a delete-and-append, replacing the one edit shape that preserved comments with one the plan's own pinned limitation says destroys two; and "positional fallback among equal pairs" was implemented as a **set**, so three links went in and one came out. Also: **every explicit `!!` tag is stripped on round-trip** (`!!int 3` → `3`), so "keep working — verified" was true of loading and false of the byte-identity invariant being written into `CLAUDE.md`; a **duplicate anchor name** is a clean `SidecarError` today and silently accepted after, emitting a `ReusedAnchorWarning` that is not a `YAMLError` and so escapes `read()`'s `except` under `filterwarnings = ["error"]`; and a non-recursive anchor on an **empty** value is destroyed too, which the recursive-only exclusion missed. Two of my own measurements were wrong: the unbounded-delete comment is **misattributed, not deleted**, and the nested-comment fixture's "only position that reproduces it" is any position **but the first**. It also verified the precondition criterion exactly — 1020 passed, 6 skipped, 1 failed, the single failure being the predicted `{id: x, : }` case |
+| 20260731 10:50 | **Adversarial code review — 5 HIGH, and the worst is a rule this plan wrote.** *"One instance, reused rather than reconstructed per call"* — specified in item 2, justified by 282 µs against 399 µs — is a **cross-document corruption bug**. ruamel keeps the `%YAML` directive from the last `load()` on the instance and applies it to every later load *and* dump, so one sidecar carrying `%YAML 1.1` flips the process to 1.1: measured, `country: NO` was written as `false` into a **different file that never carried a directive**, with a `%YAML 1.1` header injected, and freshly minted sidecars contaminated too. That is precisely the corruption the increment exists to remove, reintroduced across documents in exchange for 117 µs. Reversed to a fresh `YAML()` per call; resetting `version`, pinning it up-front and nulling `_yaml_version` were each measured insufficient. Four more: `links:` with a **null** value crashes `write()` with an unhandled `TypeError` that escapes `pnk sync` — and **works on `main`**, so it is a regression, on the shape a user writes before their first link; the `(to, rel)`-then-`to` fallback is a single pass with two tiers, so a later entry consumes the exact match an earlier one was owed — editing one `rel` where two links share a `to` swapped both and misattributed both comments; the stub-signature gate never reads the `.pyi` files, so a stub declaring a parameter ruamel lacks is green under both pytest and pyright — the one thing it exists to catch; and a key-type failure is reported as a value failure, leaking `CommentedMap` into a user-facing remedy. It also confirmed 18 of the plan's own mutation targets kill their tests, that the `4d8994c` multiplicity fix and union check are correct, and that the AST and free-path gates both work |
