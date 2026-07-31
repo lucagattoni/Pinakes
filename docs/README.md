@@ -102,11 +102,44 @@ is what stops the next plan from assuming a number that a parallel session has a
 - **Docs describe what ships.** Anything unbuilt is labelled with the increment or release that will
   bring it. Check by *running the commands a doc shows*, install line included — an audit at 0.1.2
   found four README claims contradicting the code while the CLI and CHANGELOG were correct.
-- **Editing a doc means auditing its neighbourhood, not its diff.** Before landing any docs change,
-  re-read the surrounding claims and ask four questions of each: is it **consistent** with the other
-  docs, does its **logic** still hold, has it been **superseded** by a decision taken since, and is
-  it **outdated** against the code, the index or the clock. Whatever made the line you came to fix
-  go stale almost certainly reached its neighbours too.
+- **Every change and every decision is audited for its neighbourhood, not its diff.** Before landing
+  it, re-read what surrounded or depended on it and ask four questions of each: is it **consistent**
+  with the other docs, does its **logic** still hold, has it been **superseded** by a decision taken
+  since, and is it **outdated** against the code, the index or the clock. Whatever made the line you
+  came to fix go stale almost certainly reached its neighbours too.
+
+  **A decision's neighbourhood is not prose** — it is every table, increment body, release
+  structure, roadmap row and invariant that assumed the decision it replaces. Superseding in the
+  record and leaving the tables is how a plan comes to say two things at once. Measured 20260731:
+  of nine decisions in the `ruamel.yaml` swap, three rippled into tables the deciding pass never
+  opened, and an adversarial pass found them.
+- **Name the audience and the goal before writing a line.** Audience: a **human**, an **agent**, or
+  **both**. Goal: **reference** (answers "why" or "what is true") or **executor** (something acts on
+  it). The two axes decide the form, and getting them wrong is the commonest defect here.
+
+  | Doc | Audience | Goal |
+  |---|---|---|
+  | `README.md`, `GUIDE.md` | human | orientation / executor |
+  | `CLI.md`, `MANIFEST.md`, `STATUS.md`, `VERIFICATION.md` | both | reference |
+  | `DESIGN.md`, `plans/decision-*.md` | both | reference — rationale only |
+  | `CLAUDE.md`, `plans/<plan>.md` | agent | **executor** |
+  | `changelog.d/`, `retro.d/` fragments | agent | executor |
+
+  An **executor** doc is imperative, self-sufficient, and names exact files, symbols and predicates:
+  the agent reading it has no access to whoever wrote it. A **reference** doc may argue, measure and
+  survey. **Rationale in an executor doc is noise; an instruction in a reference doc is a defect** —
+  compacting L5b on 20260731 moved decision 23's resolver predicate into the decision record and
+  left the increment unbuildable from its own text.
+- **Rewrite to the current state; do not layer corrections.** A doc that grows by appending
+  "actually, that was wrong" makes every reader traverse the archaeology to learn what is true now.
+  State each claim correctly once and delete what it replaced — git holds the history. Measured
+  20260731: `plans/decision-ruamel-yaml.md` reached 297 lines, 156 of them three layers of
+  correction, and collapsed to 110 with nothing load-bearing lost.
+- **Compact on a schedule, not when it hurts.** Review every doc against these conventions monthly,
+  alongside the `CLAUDE.md` hygiene pass. Cut recaps, summaries of other sections, superseded
+  reasoning, and any sentence that re-argues what another file owns. Keep what a future
+  implementation needs: decisions, measured numbers, and instructions. A section far larger than its
+  siblings is the signal — L5b hit 247 lines against a 52-line median for other increments.
 
   The cost of skipping it, measured 20260729: a one-line PyPI correction was asked for, and the
   same sweep found five more — a release still listed as unbuilt in two tables, an install block
