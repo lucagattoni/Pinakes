@@ -174,7 +174,7 @@ earlier.
 | 12 | The multi-hop class is majority single-KB | 04:00–04:05 | G2 — **superseded by 14** |
 | 13 | **The edge weights** are frozen at APPROACH §3's priors, committed before G2's questions are authored | 04:00–04:05 | G3, G5 |
 | 14 | **The golden set gains no cross-KB questions at all.** The multi-hop class stays single-KB, and cross-KB behaviour is verified by direct traversal tests instead | 04:27 (pass 3) | L1–L7, G2. `eval.py` is single-KB in its bones — one connection, one backend, `retrieved` as local paths. A cross-KB question scored through it is 0.00 by construction (the hop can never be followed) or 1.00 by construction (it merely confirms a link L1 hand-authored). Neither can decide anything, and pass 2 already established such questions cannot respond to `graph_channel` |
-| 15 | **Ordering reproducibility is measured before anything is changed.** No tiebreak is specified in advance | 04:27 (pass 3) | G1. The previous revision's three tiebreaks would have changed nothing observable: cross-document ties are already totalised by `documents.path`, and within a document rowid order *is* ordinal order in every write path that exists (`store.replace_chunks` enumerates; the rebuild carry-over in `sync.py` selects `ORDER BY ordinal`). **That is a fact about writes, and it reaches the output only through `_hydrate`'s unordered `WHERE c.id IN (…)` — an undocumented SQLite behaviour the tiebreak would have removed the dependency on.** So: measure first, and let the measurement scope the fix |
+| 15 | **Ordering reproducibility is measured before anything is changed.** No tiebreak is specified in advance | 04:27 (pass 3) | G1 — **built 20260801; the measurement refuted the prediction in this cell and the tiebreaks landed.** One question in 41 changed answer between an incremental sync and a `--rebuild` under ties. Read the G1 section, not this cell, before reasoning about ordering. *Superseded text:* the previous revision's three tiebreaks would have changed nothing observable: cross-document ties are already totalised by `documents.path`, and within a document rowid order *is* ordinal order in every write path that exists (`store.replace_chunks` enumerates; the rebuild carry-over in `sync.py` selects `ORDER BY ordinal`). **That is a fact about writes, and it reaches the output only through `_hydrate`'s unordered `WHERE c.id IN (…)` — an undocumented SQLite behaviour the tiebreak would have removed the dependency on.** So: measure first, and let the measurement scope the fix |
 | 16 | **The traversal surface serves document-level neighbours only, and a cross-KB neighbour is terminal at any depth** | 04:46 (pass 4) | L3–L5, G3, G5. Two findings collapse into this. First, terminality is **a policy, and needs an explicit suppression in the core** — an earlier draft of this row claimed K's index has "nothing to walk" past a cross-KB neighbour, which is false: `store.py` states that *"a reverse link's source lives in another KB"*, so a reverse-scanned row is keyed on the **foreign** document and a depth-2 query from one returns K documents. The reason to stop is not emptiness but **partiality**: K only ever holds the partner's links that point *back at* K, never the partner's internal links, so expanding through a foreign document would show a systematically incomplete slice of its graph that no caller could distinguish from the whole. Second, structural nodes (tag, directory, heading, chunk) have **no `doc_id`**, so serving them would break the neighbour shape L4 pins with a test. Keeping the tool document-level means **G3 changes no released surface at all** and G5 flips no filter: the structural graph is internal to the expansion channel, permanently, and the authored graph is what `pnk links` shows |
 | 17 | **Traversal `confidence` is always `unknown`** in both releases | 04:46 (pass 4) | L5, amending APPROACH §5. The calibrated thresholds are fitted per KB on the reranker score of the *top retrieved passage* for a golden-set query (`calibrate.py`). A traversal neighbour is not a retrieved passage, a cross-KB neighbour list has no single manifest whose thresholds apply, and no fitted data for a traversal signal exists. DESIGN §4.2's rule is that an absent signal is `unknown`, never invented |
 
@@ -581,28 +581,20 @@ agent may cut again before L8 lands.
 
 ## Increments — the graph release
 
-### G1 — Is the eval reproducible? (measure, then decide)
+### G1 — Is the eval reproducible? ✅ built 20260801, on `main`, unreleased
 
-**Measure before fixing** — decision 15. The previous revision specified tiebreaks at three sites
-and pass 3 showed they were a provable no-op: cross-document ties are already totalised by
-`documents.path` (`UNIQUE`), and within a document rowid order *is* ordinal order in every write
-path that exists (`replace_chunks` enumerates; the rebuild carry-over selects `ORDER BY ordinal`).
-The instability a rebuild *could* introduce is upstream — in `_lexical`'s `ORDER BY score` and
-`_vector`'s unstable `argsort`, which set the RRF ranks that determine the fused scores. A final
-tiebreak cannot reach it.
+**The answer was no, and only luck hid it.** Under ties, one question in 41 changed answer between
+an incremental sync and a `--rebuild`: every tiebreak in the pipeline resolved to `chunks.id`, the
+rowid, which `store.py` says has no identity across rebuilds. Real 384-dimensional cosines almost
+never tie, so the property held because the corpus never exercised it. Ordering is now total on
+`(documents.path, chunks.ordinal)` at the three sites that decide it, plus a stable `argsort`.
+**No number moved** — the golden set scores byte-identically to the committed baseline.
 
-**What lands.** A test that runs the golden set, edits a document, re-syncs, `--rebuild`s, and
-compares **per-question outcomes** (not just aggregates), plus the same across two machines' CI legs.
-If it is already reproducible, that is the finding and nothing else changes. If it is not, the fix
-is scoped by what the measurement shows and lands here with per-class numbers.
-
-**Tests.** `tests/test_search_reproducibility.py::test_outcomes_survive_an_incremental_sync_and_rebuild`;
-`::test_outcomes_are_identical_across_repeated_runs`.
-
-**Exit criteria.** The reproducibility gate in `check.sh` **and** its own CI job. A written statement
-of what was measured, in `docs/STATUS.md`.
-**Docs:** `docs/STATUS.md`, a `changelog.d/` fragment, and a `retro.d/` fragment if the measurement
-contradicts the previous revision's assumptions.
+Held by `tests/test_search_reproducibility.py`, `tools/eval_reproducibility_gate.py` (a `check.sh`
+gate with its own CI job) and a two-OS per-question diff. Measurement and numbers:
+[`docs/STATUS.md`](../docs/STATUS.md#is-the-evaluation-reproducible--measured-20260801-0035);
+lessons: `retro.d/g1-eval-reproducibility.md`. Spec compacted 202 words on 20260801 02:00 — full text
+in git history.
 
 ---
 
@@ -800,28 +792,17 @@ soft-delete removal; the `schema_version` refusal.
 
 ---
 
-### G4 — `requires_pinakes`
+### G4 — `requires_pinakes` ✅ built 20260801, on `main`, unreleased
 
-**What lands.** `[kb] requires_pinakes`, read in a **pre-pass before strict manifest validation**, so
-a manifest from a newer pinakes can say so before the strict validator rejects its unknown keys.
+`[kb] requires_pinakes` — a compatibility floor read in a **pre-pass before strict validation**, so a
+manifest written by a newer pinakes names the version it needs instead of failing as a typo. The
+ordering is the feature: read after strict validation, the field is unreachable in the only case it
+exists for. A floor only — no ceiling, no bare version — and an absent one is not an error.
 
-**What it does not do.** It cannot explain a key retroactively: a pinakes built before this
-increment has no pre-pass and fails on `requires_pinakes` itself. It only ever helps for keys added
-*after* it ships — which is why `adjacent_k` and `graph_channel` stay out of the template in both
-releases (L3), rather than being deferred to this increment as if it licensed them.
-
-**Tests.** `tests/test_manifest_compat.py::test_a_manifest_requiring_a_newer_pinakes_names_the_version`;
-`::test_the_pre_pass_runs_before_strict_validation`;
-`::test_an_absent_requires_pinakes_is_not_an_error`.
-
-**Exit criteria.** The floor is read from `pinakes.__version__`, and **the shipped message naming the
-released number is verified at whichever cut ships this increment** — G6 normally, the fallback
-release if G3/G5 do not run. Naming only G6 would leave it unverified on the path where G6 never
-happens.
-**Docs:** `docs/MANIFEST.md`, `docs/DESIGN.md` §2.1, `docs/KB-UPDATES.md`, `docs/STATUS.md`, a
-`changelog.d/` fragment.
-
-**Mutation target.** The pre-pass ordering.
+**Its exit criterion is not discharged by any test** and needs a home at the cut: the shipped message
+names `pinakes.__version__`, so *the released number appearing in it* is verified at whichever
+release ships this increment. Spec compacted 165 words on 20260801 02:00 — full text in git history;
+rows in [`docs/VERIFICATION.md`](../docs/VERIFICATION.md).
 
 ---
 

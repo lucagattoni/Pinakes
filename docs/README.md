@@ -14,6 +14,16 @@
 | [**graph/**](graph/) | Graph-retrieval research shaping the links and graph releases — thirteen investigations plus the synthesis |
 
 Build plans live in [`plans/`](../plans/); the release history is [`CHANGELOG.md`](../CHANGELOG.md).
+`plans/` holds more than one kind of file, and only the first is a build order:
+
+| File | What it is |
+|---|---|
+| [`links-and-graph.md`](../plans/links-and-graph.md) | **The current build order** — the links release (L*) and the graph release (G*) |
+| [`links-and-graph-log.md`](../plans/links-and-graph-log.md) | That plan's iteration log: how it was reached, never what to do |
+| [`source-walk-containment.md`](../plans/source-walk-containment.md) | A standalone increment and PATCH release, outside both releases above |
+| [`open-corrections.md`](../plans/open-corrections.md) | Numbered corrections for the implementing agent; items are closed in place, never deleted |
+| [`decision-*.md`](../plans/) | A decision record — rationale, not instructions |
+| `v0.1.md`, `v0.2.md` | **Shipped.** Historical build orders, still cited by `check.sh` and `tools/paid_path_gate.py` |
 
 **Two of these documents are written to indirectly.** `CHANGELOG.md` and `RETROSPECTIVES.md` are the
 files every piece of work touches, so a change adds a fragment to
