@@ -1,8 +1,9 @@
-## L6 — `pnk link` (20260731 17:09)
+## L6 — `pnk link` (20260731 17:35)
 
-Seven adversarial rounds, and every one found defects in the round before it. What follows is the
-state after all of them, not a log: the rule is to rewrite to the current state rather than layer
-corrections, and earlier drafts of this fragment broke it four times — describing a concurrency
+Eight adversarial rounds, and every one found defects in the round before it — twice the *fix's own*
+defect rather than something it had missed. What follows is the state after all of them, not a log:
+the rule is to rewrite to the current state rather than layer corrections, and earlier drafts of
+this fragment broke it four times — describing a concurrency
 scenario a later round had disproved, calling every self-link a typo after the fix for the other
 case existed, counting the rounds that had happened when it was written rather than the ones that
 had, and asserting a safety property (*"`Path.resolve()` is safe at both call sites"*) that was
@@ -33,23 +34,46 @@ else:
    a partner path that stopped resolving crashed every `git commit` inside the TTL. The branch had
    no test at all.
 
-Fixes 1–5 each wrapped the instance in front of them and stopped. What closed the class was making
-`resolve_path` **total** — it returns the declared text unresolved rather than raising — and the
-same reasoning then *removed* the wrappers fixes 4 and 5 had added, because a guarantee three call
-sites each have to remember is a function with the wrong contract. The message those wrappers were
-built to get right (name the path the author wrote, not the local KB root) comes from the fallback
-now, and both tests written for them still fail when the totality is removed. **A defect class is not closed until
-it has been searched for**, and the search is mechanical: list every call in the module that
-touches the filesystem and ask of each which errno it swallows.
+Fixes 1–5 each wrapped the instance in front of them and stopped. What closed the class was moving
+the guarantee into `resolve_path` itself — a guarantee three call sites each have to remember is a
+function with the wrong contract — which then *removed* the wrappers fixes 4 and 5 had added.
+
+**The first version of that fix introduced a worse defect than the one it closed**, and this is the
+part worth keeping. `resolve_path` was made *total*: on text no filesystem call accepts it returned
+`Path(raw)`, the declared text, so an error could still name what the author wrote. That value is
+**relative**, and five consumers use it as a filesystem base — `(path / MANIFEST_NAME).is_file()`,
+`why_not_a_kb`, `partner_sources`, `sidecars_under`, `_doc_id_of`. So the walk silently re-anchored
+on the process's **working directory**: the precise thing `resolve_path`'s own first paragraph says
+it exists to prevent, reintroduced four paragraphs below by the round that wrote it.
+
+Round 8 measured both halves. With a directory of that literal name in the CWD holding a readable
+`pinakes.toml`, `pnk sync` walked the decoy, found nothing, stamped the scan `complete` — and
+`replace_reverse_links` deleted every inbound row the real partner had, with `report.ok` true and
+no issue raised. On the same input `pnk link partner:docs/one.md` read the decoy's sidecar and
+would have written **its** ULID into the real document's `links[]`, permanently.
+
+The answer is `None`, not a fallback value: text that names no path yields no path, and pyright
+makes every caller say what it does instead — a type-checked obligation rather than a remembered
+one, which is the same lesson one level up. The declared text is still what the message names; it
+was always available as `linked.path`, which every caller already held. **A total function is not
+automatically a safe one** — totality only moves the failure from a raise to a return value, and a
+return value that is the wrong *kind* of thing is harder to notice than an exception.
+
+Both regression tests fail against the round-7 shape, verified by mutation.
+
+**A defect class is not closed until it has been searched for**, and the search is mechanical: list
+every call in the module that touches the filesystem and ask of each which errno it swallows.
 
 `Path.resolve()` belongs on that list and was wrongly excused twice. `strict=False` suppresses
 `OSError`; it does not suppress the `ValueError` raised for an embedded NUL, which `tomllib`
 accepts in a manifest and `pathlib` will not open. Enumerated rather than excused, there are four
 sites: `_document_in` resolves a path built from user text and is now guarded and tested;
-`resolve_path` is the totality fix above; the two in `sidecars_under` take partner-manifest text
-and were already inside the caller's `except (OSError, ValueError, NotImplementedError,
-PinakesError)`. The enumeration is the point — *"safe at both call sites"* named neither the
-number nor the reason, so it could not be checked without redoing the work.
+`resolve_path` is the fix above; and `sidecars_under` has two — one on a partner-declared `roots`
+entry, one on the local `ScannedKb.path` — both already inside the caller's `except (OSError,
+ValueError, NotImplementedError, PinakesError)`. The enumeration is the point: *"safe at both call
+sites"* named neither the number nor the reason, so it could not be checked without redoing the
+work. (Round 8 corrected this paragraph too — an earlier version of it called both `sidecars_under`
+sites partner-controlled, and one is not.)
 
 ### The containment check took three spellings, and the first two were each wrong in one direction
 

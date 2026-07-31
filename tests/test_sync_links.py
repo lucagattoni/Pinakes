@@ -8,6 +8,7 @@ half-read walk — only exist when there is a second manifest to disagree with.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +22,7 @@ from pinakes import store
 from pinakes.embed import EmbeddingBackend, ModelInfo, Vectors
 from pinakes.errors import SyncError
 from pinakes.ids import DocId, KbId, mint_doc_id, mint_kb_id
-from pinakes.linkscan import TTL_MINUTES, is_stale, resolve_path
+from pinakes.linkscan import TTL_MINUTES, is_stale, resolve_path, why_unresolvable
 from pinakes.manifest import load
 from pinakes.sidecar import SIDECAR_SUFFIX
 from pinakes.sync import SyncOptions, SyncReport, sync
@@ -553,10 +554,21 @@ def test_resolve_path_never_raises_whatever_the_manifest_says() -> None:
     Pinned on the function rather than on its callers **because fixing it at call sites is what
     produced six instances of it**: L6 wrapped this call in `_via_alias`, then in `scan_one`, and a
     review pass still found it bare in `scan()`'s freshness branch.
+
+    **The answer is an *absolute* path or `None` — never a relative one.** An earlier version of
+    this test asserted only `isinstance(…, Path)`, which the declared-text fallback satisfied while
+    handing five filesystem call sites a path anchored on the working directory. The type was never
+    the property worth pinning; where the path points is.
     """
     root = Path("/tmp/somewhere")
-    for raw in ("~nosuchuser12345/kb", "a\x00b", "~zzzznosuchuser/x", "../partner", "/abs/kb"):
-        assert isinstance(resolve_path(root, raw), Path), raw
+    unresolvable = ("~nosuchuser12345/kb", "a\x00b", "~zzzznosuchuser/x", "kb\x00/x")
+    for raw in unresolvable:
+        assert resolve_path(root, raw) is None, raw
+        assert repr(raw) in why_unresolvable(root, raw)
+
+    for raw in ("../partner", "/abs/kb", "sub/kb", "~"):
+        answer = resolve_path(root, raw)
+        assert answer is not None and answer.is_absolute(), raw
 
 
 def test_a_fresh_partner_with_an_unresolvable_path_does_not_crash_the_sync(
@@ -580,6 +592,59 @@ def test_a_fresh_partner_with_an_unresolvable_path_does_not_crash_the_sync(
 
     report = run(local, now="20260730 12:30")  # inside the TTL: the fresh branch, no force
     assert report.ok
+    # And it is **not** silently fresh-skipped: a path naming nothing is a broken manifest, and the
+    # TTL exists to skip re-reading a partner that was fine an hour ago — not to withhold the reason
+    # for the rest of the hour.
+    assert len(report.link_scan) == 1
+    _alias, message, _remedy = report.link_scan[0]
+    assert "~nosuchuser12345/kb" in message
+
+
+def test_an_unresolvable_path_is_never_walked_from_the_working_directory(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """The declared-text fallback review 7 added was a **relative** path, and five call sites use
+    `ScannedKb.path` as a filesystem base — so the walk re-anchored on the process's working
+    directory, the one thing `resolve_path`'s first paragraph says it exists to prevent.
+
+    The consequence is not a crash but silent data loss, which is why it survived a round: with a
+    directory of that literal name in the CWD holding a readable `pinakes.toml`, the walk succeeds,
+    finds no sidecars, stamps itself `complete` — and `replace_reverse_links` then deletes every
+    inbound row the real partner had, with `report.ok` true and no issue raised.
+
+    The decoy carries the *partner's own* `[kb] id`, because the id-mismatch refusal would
+    otherwise catch it first and hide the defect behind the wrong guard.
+    """
+    local, partner = pair
+    run(local, now="20260730 12:00")
+    assert len(links_in(local, origin="reverse-scan")) == 1
+
+    manifest = local.root / "pinakes.toml"
+    text = manifest.read_text(encoding="utf-8")
+    path_line = next(line for line in text.splitlines() if line.startswith("path = "))
+    manifest.write_text(text.replace(path_line, 'path = "~nosuchuser12345/kb"'), encoding="utf-8")
+
+    workdir = tmp_path / "workdir"
+    decoy = workdir / "~nosuchuser12345" / "kb"
+    (decoy / "docs").mkdir(parents=True)
+    (decoy / "pinakes.toml").write_text(
+        (partner.root / "pinakes.toml").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    here = os.getcwd()
+    os.chdir(workdir)
+    try:
+        report = run(local, now="20260730 14:00", scan_links=True)
+    finally:
+        os.chdir(here)
+
+    assert len(links_in(local, origin="reverse-scan")) == 1, "the decoy's empty walk deleted rows"
+    assert len(report.link_scan) == 1
+    _alias, message, _remedy = report.link_scan[0]
+    assert "cannot be resolved" in message
+    assert str(local.root) not in message  # names the declared text, not the local KB root
+    # `last_scan` is not stamped either: an unreachable partner must not suppress the retry.
+    assert "partner" not in {alias for alias, *_ in report.links_scanned}
 
 
 # --- The TTL --------------------------------------------------------------------------------------

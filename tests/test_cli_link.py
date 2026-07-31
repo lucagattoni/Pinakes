@@ -268,6 +268,47 @@ def test_a_linked_kb_path_that_will_not_expand_is_unreachable_not_a_traceback(
     assert not caught.value.message.endswith("..")
 
 
+def test_an_unresolvable_linked_kb_path_is_never_resolved_through_the_working_directory(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """The severe half of the same defect, because `pnk link` **writes a permanent ULID**.
+
+    Review 7 made `resolve_path` answer the declared text when it cannot resolve. That text is
+    *relative*, and `_via_alias` uses it as the base it reads the partner's `pinakes.toml` and
+    documents from — so with a directory of that literal name in the working directory,
+    `pnk link partner:docs/one.md` reads a **decoy** KB's sidecar and writes its ULID into the real
+    sidecar, permanently, reporting success. There is no migration machinery to repair that.
+
+    The decoy carries the partner's own `[kb] id`, so the id-mismatch refusal cannot be what
+    catches it, and a `docs/one.md` whose ULID differs from the real partner's, so the wrong answer
+    is distinguishable from the right one.
+    """
+    local, partner = pair
+    manifest = local.root / "pinakes.toml"
+    text = manifest.read_text(encoding="utf-8")
+    manifest.write_text(
+        text.replace(f'path = "{_declared_path(text)}"', 'path = "~nosuchuser12345/kb"'),
+        encoding="utf-8",
+    )
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    decoy = make_kb(workdir / "~nosuchuser12345" / "kb", "decoy", ["one"], kb_id=str(partner.kb_id))
+    assert decoy.docs["one"] != partner.docs["one"]
+
+    here = os.getcwd()
+    os.chdir(workdir)
+    try:
+        with pytest.raises(PinakesError) as caught:
+            add(load(local.root), source="docs/alpha.md", target="partner:docs/one.md", rel="cites")
+    finally:
+        os.chdir(here)
+
+    assert "~nosuchuser12345/kb" in caught.value.message
+    assert str(decoy.docs["one"]) not in caught.value.message
+    assert read(local.sidecar("alpha"), owner=local.kb_id).links == ()
+
+
 def _declared_path(manifest_text: str) -> str:
     """The `[[links.kb]] path` value, read back rather than assumed — `make_kb` computes it with
     `os.path.relpath`, so hard-coding it here would break the day the fixture layout moves."""

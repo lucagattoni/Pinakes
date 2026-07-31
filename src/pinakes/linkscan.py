@@ -88,14 +88,21 @@ class ScannedKb:
     path: Path
     """Resolved against the local KB root — what `kb_refs.path` records.
 
-    Except on text no filesystem call will accept (`~someone/kb`, an embedded NUL), where
-    `resolve_path` hands back the declared string so the error names what the author wrote. Such a
-    row is never persisted: it always carries an issue and never `complete`, which is what `sync`
-    gates `record_kb_ref` on.
+    **Always absolute, on every row.** The one exception is the row `scan_one` returns when
+    `resolve_path` answers `None`: there this is the declared text, for the message alone, and that
+    row carries an issue and never `complete`, so `sync` cannot persist it. Review 7 made that the
+    *general* fallback and review 8 measured the consequence — a relative path walked from the
+    working directory. Keep it absolute: five call sites use it as a filesystem base.
     """
 
     kb_id: KbId | None = None
-    """The partner's *own* `[kb] id`. `None` when it could not be established."""
+    """The partner's *own* `[kb] id` — except on a `skipped_fresh` row, where nothing was read and
+    this is the locally declared `[[links.kb]] id`. `None` when it could not be established.
+
+    The exception is safe only because `sync` `continue`s on `skipped_fresh` before reading it. A
+    reader that does not (L7's `pnk doctor` is the obvious next one) would be taking the local
+    declaration for the partner's own — the confusion rule 1 of the module docstring exists to
+    prevent."""
 
     rows: tuple[ReverseRow, ...] = ()
     issues: tuple[LinkScanError, ...] = ()
@@ -126,38 +133,62 @@ class ScanResult:
         return tuple(issue for kb in self.scanned for issue in kb.issues)
 
 
-def resolve_path(root: Path, raw: str) -> Path:
-    """`[[links.kb]] path` → an absolute path. Relative to the *KB root*, with `~` expanded.
+def resolve_path(root: Path, raw: str) -> Path | None:
+    """`[[links.kb]] path` → an absolute path, or `None` when the text names no path at all.
 
     Relative to the KB root rather than the process's working directory, because a manifest is
     committed and shared: `../partner-kb` has to mean the same thing whatever directory `pnk` was
     invoked from. An absolute path is honoured as given — and warned about by `pnk doctor` (L7),
     since a committed absolute path publishes a filesystem layout.
 
-    **Total: it never raises, whatever the manifest says.** `raw` is user-written text from a
-    committed file, and both calls below reject some of it — `expanduser()` raises `RuntimeError`
-    for an unknown user (`~someone/kb`), `resolve()` raises `ValueError` for an embedded NUL, which
+    **It never raises, whatever the manifest says.** `raw` is user-written text from a committed
+    file, and both calls below reject some of it — `expanduser()` raises `RuntimeError` for an
+    unknown user (`~someone/kb`), `resolve()` raises `ValueError` for an embedded NUL, which
     `tomllib` accepts and `manifest.py` does not filter. Neither is a `PinakesError`, so both
     reached `cli.main` as a traceback.
 
-    **Fixed here rather than at the call sites, because fixing it at call sites is what produced
+    **Handled here rather than at the call sites, because fixing it at call sites is what produced
     six instances of it.** L6 wrapped this call in `_via_alias`, then in `scan_one`, and the seventh
     review pass still found it bare in `scan()`'s freshness branch — which plain `pnk sync` takes,
     so a `~` path that stops resolving turned every `git commit` inside the TTL into a traceback.
     A function that three call sites each had to remember to guard is a function with the wrong
     contract.
 
-    The fallback is the declared text, unresolved: downstream that fails the `pinakes.toml` probe
-    and is reported as *"no such directory: ~someone/kb"*, naming what the author actually wrote.
-    Callers keep their own handlers for the *probes* (`is_file`, `is_dir`), which still raise.
+    **`None`, never the declared text as a fallback.** The seventh round returned `Path(raw)` so an
+    error could name what the author wrote, and that value is *relative* — every consumer uses it
+    as a filesystem base (`(path / MANIFEST_NAME).is_file()`, `why_not_a_kb`, `partner_sources`,
+    `sidecars_under`, `_doc_id_of`), so the walk silently re-anchored on the **working directory**:
+    the one thing the paragraph above says this function exists to prevent. Measured in review 8 —
+    with a directory of that literal name in the CWD holding a `pinakes.toml`, `pnk sync` walked
+    it, found nothing, stamped the scan `complete` and deleted every inbound row the real partner
+    had. `None` cannot be walked, and pyright makes each caller say what it does instead. The
+    declared text stays available for the *message* — it is `linked.path`, which every caller
+    already holds.
     """
     try:
-        expanded = Path(raw).expanduser()
-        # `.resolve()` on both branches: `kb_refs.path` is shown to a person and compared by later
-        # increments, and `/a/b/../c` is the same place as `/a/c` written two ways.
-        return (expanded if expanded.is_absolute() else root / expanded).resolve()
+        return _resolve(root, raw)
     except (RuntimeError, ValueError, OSError):
-        return Path(raw)
+        return None
+
+
+def _resolve(root: Path, raw: str) -> Path:
+    expanded = Path(raw).expanduser()
+    # `.resolve()` on both branches: `kb_refs.path` is shown to a person and compared by later
+    # increments, and `/a/b/../c` is the same place as `/a/c` written two ways.
+    return (expanded if expanded.is_absolute() else root / expanded).resolve()
+
+
+def why_unresolvable(root: Path, raw: str) -> str:
+    """Why `resolve_path` returned `None`, naming the actual fault rather than the category.
+
+    Shares `_resolve` with `resolve_path` rather than repeating its two lines, so the reason cannot
+    drift from the rule it explains. Called only once the answer is already known to be `None`.
+    """
+    try:
+        _resolve(root, raw)
+    except (RuntimeError, ValueError, OSError) as exc:
+        return f"{raw!r} cannot be resolved to a path: {exc}"
+    return f"{raw!r} cannot be resolved to a path"
 
 
 def why_not_a_kb(path: Path) -> str:
@@ -283,12 +314,24 @@ def scan_one(
     # exact failure this module's promise exists to prevent, from the lines that ran before any of
     # the handling did. Found by grepping the module for calls that touch the filesystem, after the
     # same class had been fixed four times one instance at a time in `link.py` (L6).
-    # `resolve_path` sits *outside* the `try` because it is total (see its docstring): the earlier
-    # fix wrapped it here and pre-bound a declared-text fallback, which the class's sixth instance
-    # showed to be the wrong shape — the guarantee belongs to the function, not to each caller. On
-    # a path it cannot resolve it hands back the declared text, so the failure below names what the
-    # author wrote rather than the local KB root.
-    path = resolve_path(local_root, linked.path)
+    # `resolve_path` sits *outside* the `try` because it does not raise (see its docstring): the
+    # earlier fix wrapped it here, which the class's sixth instance showed to be the wrong shape —
+    # the guarantee belongs to the function, not to each caller. It answers `None` for text that
+    # names no path, and that is returned here rather than walked: review 8 measured the previous
+    # declared-text fallback re-anchoring the whole walk on the working directory.
+    resolved = resolve_path(local_root, linked.path)
+    if resolved is None:
+        declared = Path(linked.path)
+        return _with(
+            ScannedKb(alias=linked.name, declared_id=linked.id, path=declared),
+            issues=(
+                LinkedKbUnreachableError(
+                    linked.name, declared, reason=why_unresolvable(local_root, linked.path)
+                ),
+            ),
+        )
+
+    path = resolved
     base = ScannedKb(alias=linked.name, declared_id=linked.id, path=path)
     try:
         if not (path / MANIFEST_NAME).is_file():
@@ -451,12 +494,19 @@ def scan(
     """
     scanned: list[ScannedKb] = []
     for linked in manifest.links:
-        if not force and not is_stale(last_scans.get(str(linked.id)), now):
+        resolved = None if force else resolve_path(manifest.root, linked.path)
+        # `resolve_path(...) is None` **falls through to the walk** rather than being fresh-skipped.
+        # A path that names nothing is a broken manifest, and the TTL exists to skip re-reading a
+        # partner that was fine an hour ago — not to withhold the reason a partner is unreachable
+        # for the rest of the hour. `scan_one` reports it and returns immediately, so the
+        # fall-through costs nothing. It also keeps `ScannedKb.path` a real `Path`: the alternative
+        # was a nullable field on a row `sync` stringifies.
+        if resolved is not None and not is_stale(last_scans.get(str(linked.id)), now):
             scanned.append(
                 ScannedKb(
                     alias=linked.name,
                     declared_id=linked.id,
-                    path=resolve_path(manifest.root, linked.path),
+                    path=resolved,
                     kb_id=linked.id,
                     skipped_fresh=True,
                 )

@@ -28,7 +28,13 @@ from pinakes.errors import (
     SidecarError,
 )
 from pinakes.ids import DocId, KbId
-from pinakes.linkscan import MANIFEST_NAME, partner_sources, resolve_path, why_not_a_kb
+from pinakes.linkscan import (
+    MANIFEST_NAME,
+    partner_sources,
+    resolve_path,
+    why_not_a_kb,
+    why_unresolvable,
+)
 from pinakes.manifest import LinkedKb, Manifest
 from pinakes.sidecar import Link
 from pinakes.uri import PnkUri
@@ -170,13 +176,22 @@ def _via_alias(linked: LinkedKb, relative: str, *, local_root: Path) -> PnkUri:
     # Against the *local KB root*, never the working directory: a manifest is committed and shared,
     # so `../partner-kb` has to mean the same place whatever directory `pnk` ran from.
     #
-    # **`resolve_path` is outside the `try`, because it is total** — see its docstring. An earlier
-    # fix put it inside, with `linked.path` pre-bound as a fallback so a `~` that would not expand
-    # named the text the user wrote rather than the local KB root; that shape was right about the
-    # message and wrong about where the guarantee belongs, and it was the fourth of six instances
-    # of one class fixed one call site at a time. `resolve_path` now hands back the declared text
-    # itself, so the message is the same and no caller has to remember.
-    root = resolve_path(local_root, linked.path)
+    # **`resolve_path` is outside the `try`, because it does not raise** — see its docstring. An
+    # earlier fix put it inside, which was the fourth of six instances of one class fixed one call
+    # site at a time; the guarantee belongs to the function, not to each caller.
+    #
+    # It answers `None` for text that names no path, and that is refused here rather than probed.
+    # Probing it meant probing a *relative* path — so `pnk link partner:docs/one.md` against an
+    # unexpandable `[[links.kb]] path` reported `'docs/one.md' is outside \`partner\`` and told the
+    # user to give a path relative to the KB root, when the path they typed was correct and the
+    # fault was in the manifest they were not looking at.
+    resolved = resolve_path(local_root, linked.path)
+    if resolved is None:
+        raise LinkedKbUnreachableError(
+            linked.name, Path(linked.path), reason=why_unresolvable(local_root, linked.path)
+        )
+
+    root = resolved
     try:
         # `is_file()` swallows a missing path and nothing else, so a partner directory this user
         # cannot read raises `PermissionError` here. `LinkedKbUnreachableError` is the right answer
