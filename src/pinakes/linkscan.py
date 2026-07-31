@@ -208,6 +208,14 @@ def why_not_a_kb(path: Path) -> str:
     caller's probe is `is_file()`, so a `pinakes.toml` that exists but is a directory, or is a
     symlink to nothing, was reported as "no pinakes.toml there" — with the file visible in `ls`.
     Found in review 9 by reading this docstring's own justification against its code.
+
+    **Unlike `resolve_path`, this one may raise, and the callers guard it.** `exists()`,
+    `is_symlink()` and `is_dir()` raise on an unreadable parent (`~root` on macOS is mode 0700) and
+    on `ENAMETOOLONG`. Both call sites place it inside their `except OSError`, verified. Stated
+    rather than fixed: the totality argument that applies to `resolve_path` does not, because there
+    is no answer this function could return for "I could not tell" that a caller would not have to
+    branch on anyway — and every caller is already branching. L7's `pnk doctor` will be the third
+    caller; it needs the same `try`.
     """
     if not path.exists():
         return "no such directory"
@@ -286,27 +294,50 @@ def sidecars_under(
       yielded zero sidecars, which reads as "this partner has no inbound links" — and the caller
       then deletes every row it had. A partner renaming its own `docs/` silently destroyed the
       whole inbound picture and stamped the scan as fresh.
+    * **an `include` pattern that escapes the KB is refused too.** `include` is exactly as
+      partner-controlled as `roots`, and the check above was implemented for `roots` alone — so
+      `include = ["../../outside/*.md"]` walked out of the partner KB and this one recorded inbound
+      links from files the partner does not own. `candidate.relative_to(root)` did not catch it:
+      `relative_to` is purely lexical, so `docs/../../outside/planted.md` *is* relative to the root
+      as a string. The containment test has to resolve, and it is spelled exactly as
+      `link._document_in` spells it — parent resolved, final component not — so a symlinked
+      *document* inside the KB stays readable while a symlinked *directory* cannot carry the walk
+      out. Found in review 10 by testing this docstring's own argument against the code below it.
     """
     found: set[Path] = set()
     problems: list[str] = []
+    anchor = root.resolve()
     for name in roots:
         base = (root / name).resolve()
-        if not base.is_relative_to(root.resolve()):
+        if not base.is_relative_to(anchor):
             problems.append(f"[sources] roots entry {name!r} points outside the KB")
             continue
         if not base.is_dir():
             problems.append(f"[sources] roots entry {name!r} is not a directory")
             continue
         for pattern in include:
+            escaped = False
             for candidate in base.glob(pattern):
                 if not candidate.is_file() or candidate.name.endswith(SIDECAR_SUFFIX):
                     continue
-                relative = candidate.relative_to(root).as_posix()
+                inside = candidate.parent.resolve() / candidate.name
+                if not inside.is_relative_to(anchor):
+                    escaped = True
+                    continue
+                relative = inside.relative_to(anchor).as_posix()
                 if any(candidate.match(rule) or Path(relative).match(rule) for rule in exclude):
                     continue
-                sidecar = candidate.with_name(candidate.name + SIDECAR_SUFFIX)
+                sidecar = inside.with_name(inside.name + SIDECAR_SUFFIX)
                 if sidecar.is_file():
                     found.add(sidecar)
+            if escaped:
+                # One problem per *pattern*, not per file: a hostile `../**` matches thousands, and
+                # a `LinkScanError` per match would bury every other issue in the report. Recorded
+                # as a problem, so `complete` is false and the caller keeps the rows it already
+                # has — a manifest that reaches outside is not evidence about what is inside it.
+                problems.append(
+                    f"[sources] include pattern {pattern!r} matches files outside the KB"
+                )
     return sorted(found), problems
 
 

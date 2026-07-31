@@ -1,14 +1,14 @@
-## L6 — `pnk link` (20260731 20:48)
+## L6 — `pnk link` (20260731 21:34)
 
-Nine adversarial rounds, and every one found defects in the round before it — three times the
-*fix's own* defect rather than something it had missed. What follows is the state after all of them, not a log:
+Ten adversarial rounds, and every one found defects in the round before it — **four times the
+previous round's own fix or claim** (rounds 2, 8, 9b and 10) rather than something it had missed. What follows is the state after all of them, not a log:
 the rule is to rewrite to the current state rather than layer corrections, and earlier drafts of
 this fragment broke it four times — describing a concurrency
 scenario a later round had disproved, calling every self-link a typo after the fix for the other
 case existed, counting the rounds that had happened when it was written rather than the ones that
 had, and asserting a safety property (*"`Path.resolve()` is safe at both call sites"*) that was
 wrong twice over: `strict=False` suppresses `OSError`, not the `ValueError` an embedded NUL raises,
-and there are four `Path.resolve()` sites across the two modules rather than two.
+and there are five `Path.resolve()` sites across the two modules rather than two.
 
 ### One defect class, six instances, and why fixing it at the call site produced them
 
@@ -83,14 +83,17 @@ every call in the module that touches the filesystem and ask of each which errno
 
 `Path.resolve()` belongs on that list and was wrongly excused twice. `strict=False` suppresses
 `OSError`; it does not suppress the `ValueError` raised for an embedded NUL, which `tomllib`
-accepts in a manifest and `pathlib` will not open. Enumerated rather than excused, there are four
-sites: `_document_in` resolves a path built from user text and is now guarded and tested;
-`resolve_path` is the fix above; and `sidecars_under` has two — one on a partner-declared `roots`
-entry, one on the local `ScannedKb.path` — both already inside the caller's `except (OSError,
-ValueError, NotImplementedError, PinakesError)`. The enumeration is the point: *"safe at both call
-sites"* named neither the number nor the reason, so it could not be checked without redoing the
-work. (Round 8 corrected this paragraph too — an earlier version of it called both `sidecars_under`
-sites partner-controlled, and one is not.)
+accepts in a manifest and `pathlib` will not open. Enumerated rather than excused, there are five
+sites: `_document_in` (`link.py:298`) resolves a path built from user text and is now guarded and
+tested; `resolve_path` (`linkscan.py:178`) is the fix above; and `sidecars_under` has three —
+`anchor`, the `roots` entry, and the per-candidate containment check review 10 added — all inside
+the caller's `except (OSError, ValueError, NotImplementedError, PinakesError)`.
+
+The enumeration is the point: *"safe at both call sites"* named neither the number nor the reason,
+so it could not be checked without redoing the work — whereas a count with line numbers is wrong
+the moment it drifts, and says so. It has drifted twice already: round 8 corrected an earlier
+version that called two of the `sidecars_under` sites partner-controlled when one is not, and round
+10's own fix added the fifth site, making "four" stale in the same commit that relied on it.
 
 ### The containment check took three spellings, and the first two were each wrong in one direction
 
@@ -215,6 +218,32 @@ the increment's own verification stopped at gate two, unnoticed, because the ear
 still in mind. The rule already says green-before-review; what this adds is that the run has to be the
 *last* thing before the commit, including after an edit to a comment.
 
+### A containment rule argued in prose and implemented for half its inputs
+
+**HIGH.** `sidecars_under` reads a *partner's* `[sources]`, and its docstring says why that input is
+untrusted: *"without the same check here, a partner manifest could point the walk at any directory
+on this machine, and `roots = ["/"]` would be an unbounded walk on a `post-commit` hook."* The check
+existed for `roots`. `include` is exactly as partner-controlled and had none, so
+`include = ["../../outside/*.md"]` walked out of the partner KB and this one recorded inbound links
+from files the partner does not own — `complete` true, so `sync` persisted them.
+
+**The line that looks like the guard is not one.** `candidate.relative_to(root)` ran on every match,
+and `relative_to` is *purely lexical*: `docs/../../outside/planted.md` is relative to the root as a
+string, returning `docs/../../outside/planted.md` rather than raising. A `..` is only collapsed by
+resolving, which is what the `roots` branch does one block above and this one did not. Two spellings
+of the same rule, ten lines apart, one of them not implementing it.
+
+The fix resolves the parent and leaves the final component — `link._document_in`'s spelling, for
+`_document_in`'s reason — so a symlinked *document* inside the partner KB is still read while a
+symlinked *directory* cannot carry the walk out. Both directions are tested, because tightening this
+into "resolve the whole path" would silently drop legitimate documents, and a dropped document is a
+deleted inbound row.
+
+**`sync.walk_sources` has the identical shape for the *local* manifest** and is not fixed here: it
+is the user's own configuration rather than a partner's, and changing the engine's document walk is
+not this increment's to do. Reported instead — it wants its own increment, since `pnk sync` mints
+sidecars for what it ingests, so a stray `../` in a local `include` writes files outside the KB.
+
 ### Smaller things
 
 - **`pnk link A A` wrote a self-loop**, which says nothing and would return the document as its own
@@ -239,6 +268,6 @@ still in mind. The rule already says green-before-review; what this adds is that
   running on any function whose comment argues for its shape.
 - **`pnk link` takes no lock**, so a concurrent write to the same sidecar can lose one side's change.
   Rename-atomicity prevents a torn file, not a lost update, and DESIGN §2.2 now says which.
-- **STATUS's *surface you can use today* table had no `pnk links` row at all**, six hours after it
-  shipped in 0.5.0 (`20260731 11:27`) — found while writing the increment by reading the neighbourhood rather than the
+- **STATUS's *surface you can use today* table had no `pnk links` row at all**, an hour and a
+  quarter after it shipped in 0.5.0 (`20260731 11:27`; the row landed in `b96d247`, 12:44) — found while writing the increment by reading the neighbourhood rather than the
   diff.

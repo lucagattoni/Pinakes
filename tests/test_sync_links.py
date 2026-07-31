@@ -889,6 +889,89 @@ def test_a_partner_root_outside_its_own_kb_is_refused(pair: tuple[Kb, Kb], tmp_p
     assert any("outside the KB" in message for _, message, _ in report.link_scan)
 
 
+@pytest.mark.parametrize(
+    ("pattern", "via_symlink"),
+    [
+        ("../../outside/docs/*.md", False),
+        ("../../**/*.md", False),
+        # A symlinked *directory* under the partner's own root, which plain `**/*.md` does not
+        # reach — `Path.glob` does not recurse one — so it needs a pattern that names it.
+        ("sneak/*.md", True),
+    ],
+)
+def test_a_partner_include_pattern_outside_its_own_kb_is_refused(
+    pair: tuple[Kb, Kb], tmp_path: Path, pattern: str, via_symlink: bool
+) -> None:
+    """The same containment rule as the test above, for the input it was never applied to.
+
+    `include` is exactly as partner-controlled as `roots`, and the check existed for `roots` alone
+    — so a pattern reaching out of the KB walked wherever it pointed and this KB recorded inbound
+    links from files the partner does not own, with `complete` true so they were persisted.
+
+    **`candidate.relative_to(root)` did not catch it.** `relative_to` is purely lexical, so
+    `docs/../../outside/smuggled.md` *is* relative to the root as a string — measured, it returns
+    `docs/../../outside/smuggled.md` rather than raising. Containment has to resolve.
+    """
+    local, partner = pair
+    outside = partner.root.parent / "outside" / "docs"
+    outside.mkdir(parents=True)
+    (outside / "smuggled.md").write_text("# s\n\nText.\n", encoding="utf-8")
+    (outside / f"smuggled.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump(
+            {"id": str(mint_doc_id()), "links": [{"to": local.uri("beta"), "rel": "smuggled"}]},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    if via_symlink:
+        (partner.root / partner.docs_dir / "sneak").symlink_to(outside)
+    manifest = partner.root / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]', f'include = ["**/*.md", "{pattern}"]'
+        ),
+        encoding="utf-8",
+    )
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    rels = {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
+    assert "smuggled" not in rels
+    assert any("outside the KB" in message for _, message, _ in report.link_scan)
+
+
+def test_a_symlinked_document_inside_a_partner_kb_is_still_read(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """The other direction of the containment fix, so it cannot be tightened into a refusal.
+
+    The check resolves the *parent* and leaves the final component alone — `link._document_in`'s
+    spelling — because `Path.glob` does yield a symlinked file, and the partner's own `pnk sync`
+    indexes one. Resolving the whole path would drop a legitimate document from the walk, and a
+    dropped document is a deleted inbound row.
+    """
+    local, partner = pair
+    real = tmp_path / "elsewhere"
+    real.mkdir()
+    (real / "linked.md").write_text("# linked\n\nText.\n", encoding="utf-8")
+    (real / f"linked.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump(
+            {"id": str(mint_doc_id()), "links": [{"to": local.uri("beta"), "rel": "via-symlink"}]},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    docs = partner.root / partner.docs_dir
+    (docs / "linked.md").symlink_to(real / "linked.md")
+    (docs / f"linked.md{SIDECAR_SUFFIX}").symlink_to(real / f"linked.md{SIDECAR_SUFFIX}")
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    rels = {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
+    assert "via-symlink" in rels, "a symlinked document inside the KB was dropped from the walk"
+    assert not any("outside the KB" in message for _, message, _ in report.link_scan)
+
+
 def test_a_failed_local_run_does_not_blame_the_partner(pair: tuple[Kb, Kb]) -> None:
     """`known_documents` comes from the index, so a document that failed *this run* is absent from
     it — and a true inbound link would be reported as pointing at a document we do not have. We do
