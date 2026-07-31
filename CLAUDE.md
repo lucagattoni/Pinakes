@@ -197,6 +197,9 @@ only when the *reasoning* changes, never for a new flag or field alone.
   came to fix rarely stopped there. A decision's neighbourhood is every table, increment, release
   structure and invariant that assumed the one it replaces, not only prose. Full rule and the
   20260729 / 20260731 measurements: [`docs/README.md` § Conventions](docs/README.md#conventions).
+- **Rewrite to the current state; never layer corrections**, and **compact monthly** — cut recaps,
+  superseded reasoning, and anything re-arguing what another file owns; keep decisions, measured
+  numbers and instructions. A section far larger than its siblings is the signal.
 - **Every date carries a time** — `YYYYMMDD HH:MM`, local 24h — in the CHANGELOG, `docs/STATUS.md`,
   `docs/RETROSPECTIVES.md`, and any "verified on" claim.
 - **Read the clock; never compose a timestamp.** Run `date "+%Y%m%d %H:%M"` and paste the result —

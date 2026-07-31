@@ -108,17 +108,21 @@ is what stops the next plan from assuming a number that a parallel session has a
   since, and is it **outdated** against the code, the index or the clock. Whatever made the line you
   came to fix go stale almost certainly reached its neighbours too.
 
-  **A decision's neighbourhood is not prose.** It is every place that assumed the decision it
-  replaces: `plans/` decision tables, increment bodies, amendment tables, verification tables,
-  release structures, roadmap rows, `CLAUDE.md` invariants. A decision that supersedes another is
-  not landed until each is reconciled or explicitly recorded as unchanged. Superseding in the
-  record and leaving the tables is how a plan comes to say two things at once.
-
-  Worked example, 20260731 — the `ruamel.yaml` swap
-  ([`plans/decision-ruamel-yaml.md`](../plans/decision-ruamel-yaml.md)). Nine decisions across three
-  review layers; two of them (24, 25) were themselves superseded a pass later, and three rippled
-  into tables the deciding pass never opened — the release structure, the breaking-change count, and
-  the increment that owns the cut. An adversarial pass found them, not the pass that decided them.
+  **A decision's neighbourhood is not prose** — it is every table, increment body, release
+  structure, roadmap row and invariant that assumed the decision it replaces. Superseding in the
+  record and leaving the tables is how a plan comes to say two things at once. Measured 20260731:
+  of nine decisions in the `ruamel.yaml` swap, three rippled into tables the deciding pass never
+  opened, and an adversarial pass found them.
+- **Rewrite to the current state; do not layer corrections.** A doc that grows by appending
+  "actually, that was wrong" makes every reader traverse the archaeology to learn what is true now.
+  State each claim correctly once and delete what it replaced — git holds the history. Measured
+  20260731: `plans/decision-ruamel-yaml.md` reached 297 lines, 156 of them three layers of
+  correction, and collapsed to 110 with nothing load-bearing lost.
+- **Compact on a schedule, not when it hurts.** Review every doc against these conventions monthly,
+  alongside the `CLAUDE.md` hygiene pass. Cut recaps, summaries of other sections, superseded
+  reasoning, and any sentence that re-argues what another file owns. Keep what a future
+  implementation needs: decisions, measured numbers, and instructions. A section far larger than its
+  siblings is the signal — L5b hit 247 lines against a 52-line median for other increments.
 
   The cost of skipping it, measured 20260729: a one-line PyPI correction was asked for, and the
   same sweep found five more — a release still listed as unbuilt in two tables, an install block
