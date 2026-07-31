@@ -44,7 +44,8 @@ the paid-extraction rewrite — **L6 is what would make it routine**.
 ## Measurements
 
 `ruamel.yaml` 0.19.1 against the committed corpora, plus a prototype of the full swap: **871 of 872
-tests pass**.
+tests passed** — a figure taken **before L5**, on a tree 155 tests smaller than today's 1027.
+Re-measure before building.
 
 | | Result |
 |---|---|
@@ -63,8 +64,9 @@ carrying an anchor returns `ScalarBoolean`, an `int` subclass, which encodes as 
 wrote `true` — hence the coercion in L5b item 3. `isinstance(doc, dict)` and the `str` checks hold
 against `CommentedMap`.
 
-**Four breaking changes** (three in L5b, one in L5c), and separately **four crashes that become
-named errors** — `!!binary`,
+**Four breaking changes** (three in L5b, one in L5c), and separately **five crashes that become named
+errors** — the fifth being a self-referencing anchor, which raises `ValueError: Circular reference
+detected` rather than `TypeError`, so the check must catch both — `!!binary`,
 `!!set`, `!!timestamp` and a bare date all raise an unhandled `TypeError` from `json.dumps` today.
 
 | Breaking | Was |
