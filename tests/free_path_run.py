@@ -163,15 +163,37 @@ def _run_free_surfaces(root: Path) -> None:
 
 
 def _mcp_handshake(root: Path) -> None:
-    """Build the MCP server and list its tools — `pnk serve`'s import graph without a stdio loop."""
+    """Build the MCP server, list its tools, and **call** one — `pnk serve`'s import graph.
+
+    Listing alone was never enough: `list_tools` walks signatures and docstrings, so a tool whose
+    *body* imports a paid client would list perfectly and never be seen by this gate. Calling one
+    is what makes the import graph include what the tool actually does.
+
+    `pinakes_links` is the one called because it is the newest, and because a traversal touches the
+    graph core and its provider — territory the gate had no coverage of at all before L3 and L4.
+    """
     import asyncio
 
+    from pinakes.graph import provider as provider_module
     from pinakes.serve import build
 
-    mcp, _server = build([root])
-    tools = asyncio.run(mcp.list_tools())
-    if not tools:
-        raise SystemExit("free-path run: the MCP server listed no tools")
+    mcp, server = build([root])
+    try:
+        tools = asyncio.run(mcp.list_tools())
+        if not tools:
+            raise SystemExit("free-path run: the MCP server listed no tools")
+        if "pinakes_links" not in {tool.name for tool in tools}:
+            raise SystemExit("free-path run: the MCP server does not expose pinakes_links")
+
+        served = server.resolve(None)
+        document = provider_module.resolve_document(served.connection(), "docs/a.md")
+        if document is None:
+            raise SystemExit("free-path run: the fixture KB has no docs/a.md to traverse from")
+        payload = server.links(str(document))
+        if "frontier" not in payload or payload.get("confidence") != "unknown":
+            raise SystemExit(f"free-path run: pinakes_links returned {sorted(payload)}")
+    finally:
+        server.close()
 
 
 def main_script(output: Path) -> None:

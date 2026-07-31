@@ -138,6 +138,16 @@ test, or write **none** and say why in the same commit.
 | the row cap keeps the highest-ranked across the whole hop | L3 | `tests/test_traverse.py::test_the_row_cap_keeps_the_highest_ranked_across_the_whole_hop` |
 | a score says whether it came from the query | L3 | `tests/test_traverse.py::test_a_score_says_whether_it_came_from_the_query` |
 | `adjacent_k` defaults to 8 | L3 | `tests/test_manifest.py::test_adjacent_k_defaults_to_eight` |
+| `pinakes_links` returns `score` and `frontier` on every return | L5 | `tests/test_serve.py::test_pinakes_links_returns_score_and_frontier_on_every_return` |
+| ...and `confidence: unknown` with a query and without | L5 | `tests/test_serve.py::test_pinakes_links_reports_unknown_confidence_with_and_without_a_query` |
+| a neighbour outside the served KBs carries its `kb_id` and a reason | L5 | `tests/test_serve.py::test_a_neighbour_outside_the_served_kbs_returns_its_kb_id_and_a_reason` |
+| a neighbour it returns is fetchable by `pinakes_get` | L5 | `tests/test_serve.py::test_pinakes_get_resolves_a_neighbour_returned_by_pinakes_links` |
+| depth is capped at the documented 3 over MCP too | L5 | `tests/test_serve.py::test_depth_is_capped_server_side` |
+| a cross-KB neighbour is terminal over MCP too | L5 | `tests/test_serve.py::test_a_cross_kb_neighbour_is_terminal_over_mcp_too` |
+| an unknown document is refused with a remedy | L5 | `tests/test_serve.py::test_an_unknown_document_is_refused_with_a_remedy` |
+| the `pinakes_search` and `pinakes_get` payloads are unchanged | L5 | `tests/test_serve.py::test_pinakes_search_and_get_payloads_are_unchanged` |
+| the tool is namespaced alongside the other three | L5 | `tests/test_serve.py::test_the_tools_are_namespaced` |
+| the free-path gate **invokes** it, never only lists it | L5 | `tests/test_paid_path.py::test_the_free_path_never_imports_the_paid_client` (through `tests/free_path_run.py`) |
 | ...and above the cap is refused, not clamped | L3 | `tests/test_manifest.py::test_adjacent_k_above_the_server_cap_is_refused_not_clamped` |
 
 ## The PDF corpus

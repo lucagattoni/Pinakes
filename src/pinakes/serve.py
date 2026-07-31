@@ -30,6 +30,7 @@ from pinakes.embed import EmbeddingBackend, Reranker, load_backend, load_reranke
 from pinakes.errors import PinakesError, ServeError
 from pinakes.extract import ExtractedText
 from pinakes.extract import cache as extract_cache
+from pinakes.graph.traverse import Result as TraverseResult
 from pinakes.manifest import Manifest
 from pinakes.search import Filters, SearchResult, search
 
@@ -194,6 +195,114 @@ class Server:
             )
         return self._rerankers[kb.kb_id]
 
+    def links(
+        self,
+        doc_id: str,
+        *,
+        kb: str | None = None,
+        rel: str | None = None,
+        direction: str = "both",
+        depth: int = 1,
+        query: str | None = None,
+    ) -> dict[str, Any]:
+        """What this document connects to, and what connects to it (§6.2).
+
+        **Confidence is always `unknown`, unconditionally.** The thresholds `pinakes_search`
+        reports against are fitted *per KB* on the reranker score of the top retrieved passage for
+        a golden-set query. A traversal neighbour is not a retrieved passage; a list spanning two
+        KBs has no single manifest whose thresholds would even apply; and no fitted data for a
+        traversal signal exists at all. Reporting `low`/`medium`/`high` here would be precisely the
+        invented signal §4.2 forbids — the honest answer is that this signal has not been
+        calibrated, and saying so is what `unknown` is for.
+        """
+        from pinakes.graph import provider as provider_module
+        from pinakes.graph.traverse import traverse
+
+        served = self.resolve(kb)
+        connection = served.connection()
+        start = provider_module.resolve_document(connection, doc_id)
+        if start is None:
+            raise ServeError(
+                f"{served.name} has no active document {doc_id!r}.",
+                remedy="Use an id returned by pinakes_search.",
+            )
+
+        scores: dict[str, float] = {}
+        if query is not None:
+            scores = provider_module.score_documents(
+                connection, self.backend(served), query, dim=served.manifest.embedding.dim
+            )
+
+        edges = provider_module.DocumentProvider(
+            connection,
+            local_kb=served.manifest.kb.id,
+            direction=direction,
+            rel=rel,
+            scores=scores,
+        )
+        result = traverse(
+            edges,
+            provider_module.document_key(served.kb_id, str(start)),
+            depth=depth,
+            adjacent_k=served.manifest.retrieval.adjacent_k,
+            query=query,
+        )
+
+        # Reachability is a property of **this server invocation**, not of any manifest: a
+        # neighbour is reachable iff its KB is one the server was actually pointed at. A KB listed
+        # in `[[links.kb]]` but not served is a KB this process cannot answer questions about, and
+        # saying otherwise would send an agent to a tool call that must fail.
+        served_ids = {kb.kb_id for kb in self._kbs}
+        neighbours: list[dict[str, Any]] = []
+        for neighbour in result.neighbours:
+            neighbour_kb, neighbour_doc = neighbour.node_key
+            reachable = neighbour_kb in served_ids
+            row: dict[str, Any] = {
+                "kb_id": neighbour_kb,
+                "doc_id": neighbour_doc,
+                "rel": neighbour.rel,
+                "direction": edges.directions.get(neighbour.node_key, direction),
+                "distance": neighbour.distance,
+                "score": round(neighbour.score, 4),
+                "scored_by_query": neighbour.scored_by_query,
+                "terminal": neighbour.terminal,
+                "reachable": reachable,
+            }
+            title = edges.title(neighbour_kb, neighbour_doc)
+            if title is not None:
+                row["title"] = title
+            if not reachable:
+                # Still identified, never merely omitted: the agent can act on the fact that this
+                # link exists and this server cannot follow it.
+                row["reason"] = (
+                    "this server was not pointed at that KB — pinakes_list_kbs shows which it was"
+                )
+            neighbours.append(row)
+
+        return {
+            "kb": served.name,
+            "kb_id": served.kb_id,
+            "document": str(start),
+            "neighbours": neighbours,
+            "frontier": [
+                {
+                    "kb_id": entry.node_key[0],
+                    "doc_id": entry.node_key[1],
+                    "rel": entry.rel,
+                    "reason": entry.reason,
+                    "distance": entry.distance,
+                }
+                for entry in result.frontier
+            ],
+            "unresolved": [
+                {"doc_id": entry.node_key[1], "rel": entry.rel, "reason": entry.reason}
+                for entry in result.unresolved
+            ],
+            "truncated": sorted(result.truncated),
+            "confidence": "unknown",
+            "suggested_next": _links_suggestion(result, neighbours),
+        }
+
     def search(
         self, query: str, *, kb: str | None = None, filters: Filters | None = None, k: int | None
     ) -> tuple[ServedKb, SearchResult]:
@@ -357,6 +466,28 @@ def _suggestion(result: SearchResult) -> str:
     return "Follow up with pinakes_get on a cited document to read it in full."
 
 
+def _links_suggestion(result: "TraverseResult", neighbours: list[dict[str, Any]]) -> str:
+    """The loop hint, labelled by where its advice comes from.
+
+    An agent reads this to decide what to do next, so it says which *mechanism* produced the
+    situation rather than offering generic encouragement.
+    """
+    if not neighbours:
+        return "No links from here. pinakes_search finds documents by content instead."
+    if any(entry.reason == "terminal" for entry in result.frontier):
+        return (
+            "A neighbour in another KB is terminal: this KB holds that KB's links pointing here, "
+            "never its own, so following it from here would show a partial graph. Open that KB to "
+            "go further. Read any neighbour in full with pinakes_get."
+        )
+    if result.truncated:
+        return (
+            f"Truncated ({', '.join(sorted(result.truncated))}). Ask again with a lower depth or "
+            "a narrower rel; `frontier` lists what was left out and why."
+        )
+    return "Read a neighbour in full with pinakes_get, or widen the walk with depth=2."
+
+
 def build(roots: list[Path], *, offline: bool = False) -> tuple[FastMCP, Server]:
     server = Server(roots, offline=offline)
     mcp = FastMCP("pinakes")
@@ -399,13 +530,39 @@ def build(roots: list[Path], *, offline: bool = False) -> tuple[FastMCP, Server]
         """
         return server.document(doc_id, kb=kb, page_start=page_start, page_end=page_end)
 
+    def pinakes_links(
+        doc_id: str,
+        kb: str | None = None,
+        rel: str | None = None,
+        direction: str = "both",
+        depth: int = 1,
+        query: str | None = None,
+    ) -> dict[str, Any]:
+        """What a document connects to, and what connects to it — the authored link graph.
+
+        `direction` is `out` (links written in this document), `in` (links pointing at it, learned
+        by scanning the other KB's committed sidecars), or `both`. `depth` follows further hops and
+        is **capped at 3 server-side**; there is no query language and never will be.
+
+        A neighbour in **another KB is terminal**: returned, and never expanded, at any depth. Not
+        because nothing is there, but because this KB holds only that KB's links pointing *here* —
+        expanding would show a partial slice of its graph you could not tell apart from the whole.
+        Open that KB to go further.
+
+        `frontier` lists neighbours found and not expanded, each with the reason (`terminal`,
+        `depth`, `fanout`, `rows`, `tokens`); `unresolved` lists links whose target is missing.
+        `confidence` is always `unknown` here — the confidence signal is calibrated for retrieved
+        passages, and a traversal neighbour is not one.
+        """
+        return server.links(doc_id, kb=kb, rel=rel, direction=direction, depth=depth, query=query)
+
     def pinakes_list_kbs() -> list[dict[str, Any]]:
         """List the knowledge bases this server was pointed at."""
         return server.list_kbs()
 
-    # Registered explicitly rather than by decorator: the three names are then visibly *used*, and
-    # the set of tools this server exposes is one readable line instead of three annotations.
-    for tool in (pinakes_search, pinakes_get, pinakes_list_kbs):
+    # Registered explicitly rather than by decorator: the four names are then visibly *used*, and
+    # the set of tools this server exposes is one readable line instead of four annotations.
+    for tool in (pinakes_search, pinakes_get, pinakes_links, pinakes_list_kbs):
         mcp.tool()(tool)
 
     return mcp, server

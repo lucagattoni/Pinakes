@@ -998,6 +998,13 @@ scheduled ahead of `--deep` — the design's own rule applied to a product decis
 once, and a tool called `kb_search` is a collision waiting to happen. Every tool takes an explicit
 `kb` argument (alias or ULID) defaulting to the server's configured KB.
 
+`pinakes_links` traverses the authored link graph and returns a `frontier` and a `score` on every
+call. Its `confidence` is **always `unknown`**: the signal §4.2 defines is calibrated per KB on the
+reranker score of a retrieved *passage*, and a traversal neighbour is not one — a list spanning two
+KBs has no single manifest whose thresholds even apply. Reachability there is a property of *this
+server invocation* rather than of a manifest: a neighbour in a KB the server was not pointed at is
+returned, identified, and marked unreachable, because omitting it would hide a link that exists.
+
 ---
 
 ## 9. Known risks

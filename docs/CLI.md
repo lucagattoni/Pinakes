@@ -237,7 +237,28 @@ says so rather than leaving a reader to assume one.
 pnk serve [--offline] [KB ...]
 ```
 
-Runs the MCP server over stdio, exposing `pinakes_search`, `pinakes_get` and `pinakes_list_kbs`.
+Runs the MCP server over stdio, exposing four tools:
+
+| Tool | Arguments | Returns |
+|---|---|---|
+| `pinakes_search` | `query`, `kb?`, `tags?`, `path_prefix?`, `source_type?`, `k?` | Cited passages, a confidence signal, a suggested next step |
+| `pinakes_get` | `doc_id`, `kb?`, `page_start?`, `page_end?` | One document, optionally one page range |
+| `pinakes_links` | `doc_id`, `kb?`, `rel?`, `direction?`, `depth?`, `query?` | Neighbours, `frontier`, `unresolved`, `truncated` — and `confidence` always `unknown` |
+| `pinakes_list_kbs` | — | The KBs this server was pointed at |
+
+**Every tool takes an explicit `kb`**, defaulting to the first one served. `pinakes_links` caps
+`depth` at 3 server-side and has no query language, ever.
+
+Its `confidence` is `unknown` on **every** return, with or without a `query`. The thresholds
+`pinakes_search` reports against are fitted per KB on the reranker score of the top retrieved
+passage; a traversal neighbour is not a retrieved passage, and a neighbour list spanning two KBs has
+no single manifest whose thresholds would apply. Reporting anything else would be an invented
+signal.
+
+A neighbour whose KB **this server was not pointed at** comes back with `reachable: false`, its
+`kb_id`, its `doc_id` and a reason — identified rather than omitted, so an agent can act on the fact
+that the link exists and this process cannot follow it. Reachability is a property of the server
+invocation, not of any manifest.
 
 `KB` is one or more KB directories; with none, the nearest one. **The server answers only about the
 KBs named here** — no tool argument accepts a filesystem path, and `pinakes_get` resolves a document
