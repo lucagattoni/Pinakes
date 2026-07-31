@@ -1,12 +1,12 @@
-## L6 — `pnk link` (20260801 00:10)
+## L6 — `pnk link` (20260801 00:28)
 
 **Every review commit on this increment found defects in the one before it, and most of them found
-the previous commit's own fix or claim** rather than something it had missed — `986faf3` (round 2's
-containment fix was right; its stated justification was not), `3ce150e` (that fix had traded one
-defect for two), `7b3f0a3` (the escaping-error class sat one line above the `try` added for it),
+the previous commit's own fix or claim** rather than something it had missed — `3ce150e` (review 1's
+containment fix had traded one defect for two), `986faf3` (review 2's fix was right; its stated
+justification was not), `7b3f0a3` (the escaping-error class sat one line above the `try` added for it),
 `9c8f667` (the totality fix re-anchored the walk on the working directory), `cdee8d8` (the test for
 an untested branch entered it, but its assertion held either way), `dbebd8b` (a severity asserted,
-not measured), and the last two, which took three goes at one containment rule.
+not measured), and the last three, which took four goes at one containment rule.
 
 No total is given, deliberately. Three drafts stated one and all three were wrong, because it
 changes depending on whether `8b` and `9b` count as rounds of their own — and the last wrong figure
@@ -18,7 +18,7 @@ scenario a later round had disproved, calling every self-link a typo after the f
 case existed, counting the rounds that had happened when it was written rather than the ones that
 had, and asserting a safety property (*"`Path.resolve()` is safe at both call sites"*) that was
 wrong twice over: `strict=False` suppresses `OSError`, not the `ValueError` an embedded NUL raises,
-and there are five `Path.resolve()` sites across the two modules rather than two.
+and there are six `Path.resolve()` sites across the two modules rather than two.
 
 ### One defect class, six instances, and why fixing it at the call site produced them
 
@@ -93,17 +93,18 @@ every call in the module that touches the filesystem and ask of each which errno
 
 `Path.resolve()` belongs on that list and was wrongly excused twice. `strict=False` suppresses
 `OSError`; it does not suppress the `ValueError` raised for an embedded NUL, which `tomllib`
-accepts in a manifest and `pathlib` will not open. Enumerated rather than excused, there are five
+accepts in a manifest and `pathlib` will not open. Enumerated rather than excused, there are six
 sites: `_document_in` (`link.py:298`) resolves a path built from user text and is now guarded and
-tested; `resolve_path` (`linkscan.py:178`) is the fix above; and `sidecars_under` has three —
-`anchor`, the `roots` entry, and the per-candidate containment check review 10 added — all inside
-the caller's `except (OSError, ValueError, NotImplementedError, PinakesError)`.
+tested; `resolve_path` (`linkscan.py:178`) is the fix above; and `sidecars_under` has four —
+`anchor`, the `roots` entry, the pattern probe and the per-candidate check — all inside the
+caller's `except (OSError, ValueError, NotImplementedError, PinakesError)`.
 
 The enumeration is the point: *"safe at both call sites"* named neither the number nor the reason,
 so it could not be checked without redoing the work — whereas a count with line numbers is wrong
 the moment it drifts, and says so. It has drifted twice already: round 8 corrected an earlier
-version that called two of the `sidecars_under` sites partner-controlled when one is not, and round
-10's own fix added the fifth site, making "four" stale in the same commit that relied on it.
+version that called two of the `sidecars_under` sites partner-controlled when one is not, round
+10's own fix added the fifth site, making "four" stale in the same commit that relied on it; and
+round 13's added the sixth the same way.
 
 ### The containment check took three spellings, and the first two were each wrong in one direction
 
@@ -249,32 +250,47 @@ string, returning `docs/../../outside/planted.md` rather than raising. A `..` is
 resolving, which is what the `roots` branch does one block above and this one did not. Two spellings
 of the same rule, ten lines apart, one of them not implementing it.
 
-**The fix then took three goes, and each one is the same lesson at a different aim.** Resolving
-each candidate — parent resolved, final component left alone, `link._document_in`'s spelling for
-`_document_in`'s reason — refuses the escape while keeping a symlinked *document* readable. But it
-refused only the **results**: `glob` has already enumerated and stat'd the whole tree by the time
-the first match is inspected, so `include = ["../../../../**/*.md"]` still walked the machine on
-every `post-commit`, and since an escape sets `complete` false, no `last_scan` was written and the
-TTL could not suppress the retry either. The `roots` branch had always got this right by refusing
-*before* it walked; presenting `include` as the same rule while checking it a step later delivered
-the refusal without the bound.
+**The fix then took four goes, and every wrong one came from spelling the rule differently from
+the place that already had it right.** `link._document_in` resolves the *parent* and leaves the
+final component: the directory chain is followed, so `..` collapses and an escape through a
+symlinked ancestor is caught, while the document's own symlink is irrelevant. That is the rule.
+Each attempt reinvented it:
 
-Adding a static pre-glob refusal fixed the bound and broke the *other* direction: refusing any
-pattern containing `..` refuses `../notes/*.md`, which stays inside the KB and which the partner's
-own `walk_sources` ingests — so this KB called a legitimate manifest an escape, and `complete` false
-meant it re-read, re-refused and never refreshed that partner on every sync, permanently. Refusing a
-partner's valid configuration is the same defect as accepting an invalid one; both are this KB
-disagreeing with the partner about the partner's own KB, which is the rule the `exclude` finding
-below states and the branch above it broke.
+1. **Per candidate, after globbing.** Correct about what to refuse, but it refuses the *results*:
+   `glob` has already enumerated and stat'd the whole tree by the time the first match is
+   inspected, so `include = ["../../../../**/*.md"]` still walked the machine on every
+   `post-commit`. And an escape sets `complete` false, so no `last_scan` is written and the TTL
+   cannot suppress the retry either — unbounded, forever.
+2. **Refuse any pattern containing `..`, before globbing.** Bounded, and wrong in the other
+   direction: `../notes/*.md` stays inside the KB and the partner's own `walk_sources` ingests it.
+   This KB called a legitimate manifest an escape and then never refreshed that partner again.
+   Refusing a partner's valid configuration is the same defect as accepting an invalid one.
+3. **Resolve the prefix before the first glob component.** Defeated by a pattern that *starts* with
+   one: `*/../../../outside/**/*.md` has an empty prefix, so the check passed unconditionally and
+   the `..` ran inside `glob` — attempt 1's defect, reachable again. It also refused a *fixed*
+   pattern naming a symlinked document, because with no glob component the "prefix" is the whole
+   path and resolving it whole follows the final symlink: `include = ["alpha.md"]` refused while
+   `include = ["*.md"]`, reaching the same file, was accepted.
+4. **Join the whole pattern and apply `_document_in`'s spelling to it.** A glob component is just a
+   name that does not exist, which `resolve()` collapses lexically, so one `resolve()` answers it
+   with no enumeration. Ten patterns measured — a `..` staying inside, a directory genuinely named
+   `a..b`, a literal bracket, two escapes, one behind a leading glob, a symlinked directory under a
+   glob, a symlinked document by both spellings, and an absolute — all correct, escapes refused in
+   0.12ms without touching a 3000-file tree.
 
-What is checked is **where the pattern's fixed prefix lands** — one `resolve()`, no enumeration, so
-the bound survives and `../notes/*.md` passes. A symlinked directory named under a *glob* component
-is invisible to any static check, so the per-candidate test stays, and it `break`s.
+An absolute pattern is refused separately, because `glob` cannot walk one *wherever it points* —
+including at this KB's own `docs/`. It had been folded into the escape message, which was simply
+false for that case.
 
-Three tests, because the three cases are independent and each was found by mutating the fix that
-came before: the escape is refused; a `..` that stays inside is not; and the dynamic half stops at
-the first match. That last one cannot be observed by counting `resolve()` calls — the parent cache
-collapses it either way — so it counts entries pulled from the generator instead.
+The lesson is not about paths. **Three of the four attempts were written by reasoning about the
+problem afresh instead of copying the spelling from the function twenty lines away that had solved
+it.** A rule implemented twice is a rule with two behaviours; the fix was to make the third
+implementation textually identical to the first two and say so in all three.
+
+Each attempt was found by mutating its predecessor, and two of them had *disarmed an existing
+test*: a fix that catches its input earlier leaves the older test green with its guard unexercised.
+That is now its own note under the fixture section, and the rule it earns is to re-run the whole
+mutation battery after every fix, not just a mutant for the fix itself.
 
 **`sync.walk_sources` has the identical shape for the *local* manifest** and is not fixed here: it
 is the user's own configuration rather than a partner's, and changing the engine's document walk is

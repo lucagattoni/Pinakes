@@ -301,23 +301,27 @@ def sidecars_under(
       not catch it: `relative_to` is purely lexical, so `docs/../../outside/planted.md` *is*
       relative to the root as a string. Containment has to resolve.
 
-      A `..` or absolute pattern is refused **before** globbing, because that is what bounds the
-      walk — checking each candidate afterwards refuses the results while still paying for the
-      enumeration, which was the whole point of the `roots` rule. What no static check can see is a
-      **symlinked directory**, so the per-candidate test remains, spelled as `link._document_in`
-      spells it (parent resolved, final component not) so a symlinked *document* inside the KB
-      stays readable — and it `break`s, which bounds that half.
+      The pattern is joined onto the root and tested **before** globbing, because that is what
+      bounds the walk — checking each candidate afterwards refuses the results while still paying
+      for the enumeration, which was the whole point of the `roots` rule. What that cannot see is a
+      **symlinked directory** reached under a glob component, so the per-candidate test remains,
+      and it `break`s, which bounds that half. An absolute pattern is refused separately, because
+      `glob` cannot walk one wherever it points.
 
-      Found in review 10 by testing this docstring's own argument against the code below it, and
-      completed in review 11 by testing the *fix's* argument the same way.
+      Found in review 10 by testing this docstring's own argument against the code below it. The
+      rule then took three more attempts, each wrong in a different way, and every one of them came
+      from spelling it differently from `link._document_in` — which had it right the whole time.
+      Retrospective: *A containment rule argued in prose and implemented for half its inputs*.
     """
     found: set[Path] = set()
     problems: list[str] = []
     anchor = root.resolve()
     # One entry per *pattern*, collected across every root and reported once at the end: a partner
-    # with two roots reported the same escape twice. Not "per match" — the `break` below already
-    # yields at most one per (root, pattern), and a `..` pattern never reaches it at all.
+    # with two roots reported the same escape twice. Sets, plus the end-of-loop emission, are what
+    # collapse it — the `pattern in escaping` skip below is an optimisation that happens to do the
+    # same thing, and removing either alone leaves the count right.
     escaping: set[str] = set()
+    absolute: set[str] = set()
     # `parent.resolve()` is a syscall chain per candidate, and a large KB globs thousands of files
     # out of a handful of directories.
     resolved: dict[Path, Path] = {}
@@ -330,35 +334,43 @@ def sidecars_under(
             problems.append(f"[sources] roots entry {name!r} is not a directory")
             continue
         for pattern in include:
-            if pattern in escaping:
-                continue  # an optimisation only — `escaping` is a set, which is what dedupes
+            if pattern in escaping or pattern in absolute:
+                continue  # already answered under an earlier root; skip the work, not the report
+            if Path(pattern).is_absolute():
+                # Refused for being absolute, not for where it points: `glob` raises
+                # `NotImplementedError` on any absolute pattern, so even one naming this KB's own
+                # `docs/` cannot be walked. Its own message, because "reaches outside the KB" is
+                # false for that one and was what this branch used to say.
+                absolute.add(pattern)
+                continue
             # **Refused before globbing, which is what bounds the walk.** The per-candidate check
             # below cannot: `glob` has already enumerated and stat'd the whole tree by the time the
-            # first match is inspected, so `include = ["../../../../**/*.md"]` walked the machine
-            # on every `post-commit` even though nothing was collected. The `roots` branch above
-            # gets this right by `continue`ing before it walks.
+            # first match is inspected, so `include = ["../../../../**/*.md"]` walked the machine on
+            # every `post-commit` even though nothing was collected. The `roots` branch above gets
+            # this right by `continue`ing before it walks.
             #
-            # **What is tested is where the pattern's fixed prefix lands, not whether it contains
-            # `..`.** A first version refused any `..`, which refuses `../notes/*.md` — a pattern
-            # that stays *inside* the KB and that the partner's own `walk_sources` ingests. This KB
-            # then called a legitimate manifest an escape, and because that sets `complete` false
-            # it never wrote `last_scan`, so the partner was re-read, re-refused and never
-            # refreshed on every sync forever. Disagreeing with the partner about its own KB is
-            # wrong in this direction too — the rule review 11 stated for `exclude` and broke one
-            # branch above it.
+            # **The whole pattern is joined and the rule is spelled once.** Three attempts got this
+            # wrong in three different ways, each by spelling the rule differently from the two
+            # places that already had it right:
             #
-            # Resolving the prefix costs one `resolve()` and no enumeration, so the bound survives.
-            if Path(pattern).is_absolute():
-                # `glob` raises `NotImplementedError` on this anyway, and `scan_one` catches it —
-                # named here only so the report says which pattern rather than which exception.
-                escaping.add(pattern)
-                continue
-            fixed: list[str] = []
-            for part in Path(pattern).parts:
-                if any(char in part for char in "*?["):
-                    break
-                fixed.append(part)
-            if not base.joinpath(*fixed).resolve().is_relative_to(anchor):
+            # * refusing any `..` also refuses `../notes/*.md`, which stays inside the KB and which
+            #   the partner's own `walk_sources` ingests — and an escape sets `complete` false, so
+            #   that partner was re-read, re-refused and never refreshed, on every sync, forever;
+            # * testing only the prefix *before the first glob component* is defeated by a pattern
+            #   that starts with one: `*/../../../outside/**/*.md` has an empty prefix, so the
+            #   check passed unconditionally and the `..` ran inside `glob`;
+            # * resolving the joined path *whole* follows a final symlink, so a fixed pattern naming
+            #   a symlinked document (`include = ["alpha.md"]`) was refused while `*.md` — the same
+            #   file — was accepted.
+            #
+            # `parent.resolve() / name` is the spelling `link._document_in` uses and the candidate
+            # loop below uses, for the same reason in all three: the directory chain is followed, so
+            # `..` collapses and an escape through a symlinked ancestor is caught, while the final
+            # component is left alone, so a symlinked *document* stays readable. A glob component is
+            # just a name that does not exist, which `resolve()` handles lexically — so one
+            # `resolve()`, no enumeration, and the bound survives.
+            probe = base.joinpath(*Path(pattern).parts)
+            if not (probe.parent.resolve() / probe.name).is_relative_to(anchor):
                 escaping.add(pattern)
                 continue
             for candidate in base.glob(pattern):
@@ -391,6 +403,10 @@ def sidecars_under(
     problems.extend(
         f"[sources] include pattern {pattern!r} reaches outside the KB"
         for pattern in sorted(escaping)
+    )
+    problems.extend(
+        f"[sources] include pattern {pattern!r} is absolute; patterns are relative to a root"
+        for pattern in sorted(absolute)
     )
     return sorted(found), problems
 

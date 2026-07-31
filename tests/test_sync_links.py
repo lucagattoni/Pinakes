@@ -1011,6 +1011,85 @@ def test_a_dot_dot_pattern_that_stays_inside_the_kb_is_not_refused(pair: tuple[K
     assert "from-notes" in rels
 
 
+def test_a_leading_glob_does_not_defeat_the_static_refusal(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """`*/../../outside/*.md` — the escape sits behind a glob component.
+
+    A version that tested only the prefix *before the first glob component* had an empty prefix
+    here, so it passed unconditionally and the `..` ran inside `glob`: unbounded again, and
+    reporting nothing when the outside tree held no match. The whole pattern is joined instead, and
+    a glob component is simply a name that does not exist, which `resolve()` collapses lexically.
+    """
+    local, partner = pair
+    outside = partner.root.parent / "outside"
+    outside.mkdir()
+    (outside / "smuggled.md").write_text("# s\n\nText.\n", encoding="utf-8")
+    (outside / f"smuggled.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump(
+            {"id": str(mint_doc_id()), "links": [{"to": local.uri("beta"), "rel": "smuggled"}]},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    manifest = partner.root / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]', 'include = ["**/*.md", "*/../../../outside/*.md"]'
+        ),
+        encoding="utf-8",
+    )
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    assert "smuggled" not in {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
+    assert any("outside the KB" in message for _, message, _ in report.link_scan)
+
+
+def test_a_fixed_include_naming_a_symlinked_document_agrees_with_the_glob_spelling(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """One file, two spellings of the include that names it, and they must answer the same.
+
+    Joining the pattern and resolving it *whole* follows the final symlink, so
+    `include = ["linked.md"]` was refused as an escape while `include = ["*.md"]` — reaching the
+    same document — was accepted. The containment rule is `parent.resolve() / name` in all three
+    places that implement it (`link._document_in`, the candidate loop, and here); writing it a
+    fourth way is what produced three wrong versions in three rounds.
+    """
+    _local, partner = pair
+    real = tmp_path / "elsewhere"
+    real.mkdir()
+    (real / "linked.md").write_text("# linked\n\nText.\n", encoding="utf-8")
+    (real / f"linked.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump({"id": str(mint_doc_id())}, sort_keys=False), encoding="utf-8"
+    )
+    docs = partner.root / partner.docs_dir
+    (docs / "linked.md").symlink_to(real / "linked.md")
+    (docs / f"linked.md{SIDECAR_SUFFIX}").symlink_to(real / f"linked.md{SIDECAR_SUFFIX}")
+
+    # Not a count — `*.md` legitimately reaches the fixture's other documents too. What has to
+    # agree is whether *this* document is reached, and whether either spelling is refused.
+    for spelling in ("linked.md", "*.md"):
+        found, problems = sidecars_under(partner.root, ["docs/"], [spelling], [])
+        assert problems == [], f"{spelling!r} was refused: {problems}"
+        assert {path.name for path in found} >= {f"linked.md{SIDECAR_SUFFIX}"}, (
+            f"{spelling!r} did not reach the symlinked document"
+        )
+
+
+def test_an_absolute_include_says_it_is_absolute_not_that_it_escapes(pair: tuple[Kb, Kb]) -> None:
+    """An absolute pattern cannot be walked at all — `glob` raises `NotImplementedError` on one
+    even when it names this KB's own `docs/`. It gets its own message, because the escape wording
+    is simply false for that case, and that is what the branch used to say."""
+    _local, partner = pair
+    inside = partner.root / partner.docs_dir
+    _found, problems = sidecars_under(partner.root, ["docs/"], [f"{inside}/*.md"], [])
+    assert problems == [
+        f"[sources] include pattern '{inside}/*.md' is absolute; patterns are relative to a root"
+    ]
+
+
 def test_a_symlinked_escape_stops_at_the_first_match(
     pair: tuple[Kb, Kb], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
