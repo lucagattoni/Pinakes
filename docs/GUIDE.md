@@ -451,7 +451,7 @@ Then ask what a document connects to:
 $ pnk links docs/loans-outward.md
 -> related: conservation assessment  [hop 1]
 <- governs: 01KYP88789WHHN93TW49AX096C (other KB)  [hop 1]
--> counterpart: 01KYP8878AZWS2ZWEBD0KQYTXE (other KB)  [hop 1]
+<-> counterpart: 01KYP8878AZWS2ZWEBD0KQYTXE (other KB)  [hop 1]
 ```
 
 `->` is a link written by the document the row hangs off — the one you asked about at hop 1,
@@ -466,7 +466,7 @@ Going deeper follows same-KB links only:
 $ pnk links docs/loans-outward.md --depth 2
 -> related: conservation assessment  [hop 1]
 <- governs: 01KYP88789WHHN93TW49AX096C (other KB)  [hop 1]
--> counterpart: 01KYP8878AZWS2ZWEBD0KQYTXE (other KB)  [hop 1]
+<-> counterpart: 01KYP8878AZWS2ZWEBD0KQYTXE (other KB)  [hop 1]
 -> related: pest management  [hop 2]
 -> related: storage environment  [hop 2]
 ```
