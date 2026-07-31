@@ -17,7 +17,7 @@
 | Command | State | Notes |
 |---|---|---|
 | `pnk init` | shipped | one template (`notes`); `--ci` writes the workflow (0.3.0) |
-| `pnk sync` | shipped | `--rebuild`, `--sidecars-only`, `--index-only`, `--extract`, `--force`, `--clear-cache[=paid]` |
+| `pnk sync` | shipped | `--rebuild`, `--scan-links`, `--sidecars-only`, `--index-only`, `--extract`, `--force`, `--clear-cache[=paid]` |
 | `pnk search` | shipped | BM25 + vector + rerank, metadata filters, `--json` |
 | `pnk doctor` | shipped | environment, coherence, orphans, links, hooks, cache |
 | `pnk install-hooks` | shipped | the three-hook split; all three force `--extract=pypdfium2` (0.3.0) |

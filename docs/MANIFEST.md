@@ -208,12 +208,12 @@ away would be data loss. Comments, quoting style, block scalars, blank lines and
 all survive a rewrite, and a value is stored exactly as you wrote it — `country: NO` stays `NO`
 rather than becoming `false`.
 
-Four bounds on that, all of them things pinakes or YAML does rather than choices about your keys:
+Bounds on that, all of them things pinakes or YAML does rather than choices about your keys:
 
 | Bound | What happens |
 |---|---|
 | **Values must be JSON-encodable** | The index stores metadata as JSON. A tag on a *scalar* (`!!binary`, `!!set`, `!!timestamp`, `!!str`, or one of your own), a bare date, or a mapping mixing string and non-string keys is refused at read with a remedy — rather than crashing `pnk sync` later, which is what used to happen. A custom tag on a *mapping* or a *sequence* is fine: it serialises |
-| **Indentation follows the writer** | A block sequence written `  - item` comes back `- item`. Nothing is lost; the bytes differ |
+| **Indentation follows the writer** | A block sequence **and nested mapping** written `  - item` comes back `- item`. Nothing is lost; the bytes differ |
 | **Deleting loses one comment and moves another** | A comment belongs to the construct *before* it, so removing a key or a list entry leaves that comment on whatever replaces it and drops the last one in the block |
 | **What YAML does not carry** | CRLF line endings, a byte-order mark, `---`/`...` document markers — and a missing final newline, which is added |
 | **An explicit `!!` tag is dropped** | `!!int 3` comes back as `3`. The *value* is unchanged; the tag is not kept |

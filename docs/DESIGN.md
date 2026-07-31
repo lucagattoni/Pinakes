@@ -176,8 +176,9 @@ scalars, blank lines and the author's own key order all survive.
 question and is really a data-integrity one. `extra` promises above that unknown keys are preserved,
 and under YAML 1.1 that promise was false in a way nobody would notice: `country: NO` was read as
 `False` and written back as `false`, `shelf: 0755` as `493`, `duration: 1:30` as `90`. The values
-changed, the file still parsed, and nothing failed. YAML 1.2 reads them as the strings they visibly
-are. The same reasoning already argued for `tomlkit` over a plain TOML writer in
+changed, the file still parsed, and nothing failed. YAML 1.2 reads three of them as the strings they visibly
+are; `0755` becomes int **755** — not the string, and not PyYAML's octal 493 — and survives on
+disk because ruamel preserves the source form. Corruption reduced, not eliminated.
 [KB-UPDATES.md](KB-UPDATES.md) §5 — a file a person edits needs a parser that can put it back.
 
 The promise is now **byte-identical**, which is testable in a way "untouched" was not, and it is
