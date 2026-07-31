@@ -298,11 +298,14 @@ Without `--json` each neighbour is one line, and the arrow says who wrote the li
 
 | Glyph | Means |
 |---|---|
-| `->` | written **here** — this document's own sidecar carries it |
-| `<-` | written **there**, pointing here; from the other KB's sidecars when it lives in one |
+| `->` | written **by the document it hangs off** — the one you asked about at hop 1, its parent beyond that |
+| `<-` | written at the other end, pointing back; from the other KB's sidecars when it lives in one |
 | `<->` | the **same relation written from both ends** — two people, one pair |
+| `?` | no direction was established. Unreachable through the shipped provider; it exists so an unestablished direction cannot render as `<->` |
 
-A row also reports `direction` under `--json`, carrying those same three values. Rows come back in
+A row also reports `direction` under `--json`, carrying `out`, `in` or `both` — and `unknown` for
+the `?` case. Beyond hop 1 the direction is relative to the **parent** that reached the row, not to
+the document you asked about, because a row does not carry which parent that was. Rows come back in
 rank order; `score` is comparable only among rows sharing a `scored_by_query`, because a neighbour
 with no local chunks to embed falls back to its edge weight, which is not a cosine.
 
@@ -318,9 +321,11 @@ cross-KB one, for the same reason: this index has the partner's links, not its d
 Neighbours found but **not** expanded come back on `frontier` with one of five reasons —
 `terminal`, `depth`, `fanout`, `rows`, `tokens`. Links whose target this KB does not have come back
 under `unresolved` rather than being dropped, and never appear as neighbours: there is no document
-there to be one. When *every* link resolves to nothing, the human output says so rather than
-printing `no links` — a document whose links dangle is not an unlinked document, and stdout must
-not claim it is while stderr lists them.
+there to be one. When a walk returns nothing the human output says **why**, in the same precedence
+`pinakes_links` uses: your `--rel`/`--direction` excluded everything, or the links resolve to
+nothing, or there genuinely are none. The narrowing is reported first because a live neighbour may
+sit one dropped argument away — and stdout must never print `no links` for a document whose links
+stderr is listing.
 
 ---
 

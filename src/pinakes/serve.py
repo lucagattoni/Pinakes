@@ -475,9 +475,14 @@ def _links_suggestion(result: "TraverseResult", *, filtered: bool) -> str:
             # would assert that this document wrote a link when the other one did.
             return (
                 "Some links touching this document resolve to documents this KB no longer has — "
-                "`unresolved` lists them. `pnk doctor` names dangling targets; pinakes_search "
-                "finds documents by content in the meantime."
+                "`unresolved` names each one. pinakes_search finds documents by content in the "
+                "meantime."
             )
+            # No `pnk doctor` clause: `doctor._links` inspects only the *destination* side of local
+            # sidecar rows, so when the missing endpoint is the link's **source** — a deleted
+            # document whose outbound rows survive the soft delete — it reports `links: OK` and
+            # contradicts this message. Extending that check belongs to L7, which owns doctor's
+            # link coverage.
         return "No links from here. pinakes_search finds documents by content instead."
     if any(entry.reason == "terminal" for entry in result.frontier):
         return (

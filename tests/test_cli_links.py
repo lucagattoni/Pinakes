@@ -386,3 +386,11 @@ def test_the_cli_says_so_when_every_link_dangles(tmp_path: Path) -> None:
     dangling = human_output(kb, "docs/stale.md")
     assert "no links" not in dangling, "its links exist — they resolve to nothing"
     assert "resolve to nothing" in dangling
+
+    # ...but not when the caller's own filter is what emptied it. `alpha` has a live link; asking
+    # for a relation it does not carry must not report that its links resolve to nothing.
+    kb.set_links("alpha", [(kb.uri("stale"), "related")])
+    run(kb)
+    filtered = human_output(kb, "docs/alpha.md", rel="nosuchrel")
+    assert "resolve to nothing" not in filtered, "one dropped argument away from a live neighbour"
+    assert "no links match these arguments" in filtered

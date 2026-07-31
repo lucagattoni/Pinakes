@@ -698,16 +698,18 @@ def run_links(args: argparse.Namespace) -> int:
         return EXIT_OK
 
     if not rows:
-        # ...unless links exist and dangle: the `!` lines below list them on stderr, and a user
-        # piping stdout would otherwise read "no links" for a document that plainly has some.
-        print(
-            "links exist but resolve to nothing — see stderr" if result.unresolved else "no links"
-        )
+        # The same precedence `pinakes_links` uses, for the same reason: when the caller narrowed
+        # the walk, that is what changes their next move — a live neighbour may sit one dropped
+        # argument away, and "your links resolve to nothing" would be false about the one they
+        # filtered out. Only then does the dangling case get to speak.
+        if present.is_filtered(rel=args.rel, direction=args.direction, depth=args.depth):
+            print("no links match these arguments — retry without --rel/--direction")
+        elif result.unresolved:
+            print("links exist but resolve to nothing — see stderr")
+        else:
+            print("no links")
     for row in rows:
-        # Every direction the provider can emit, named explicitly. A `.get` default of `<->`
-        # would render the `unknown` fallback as "written from both ends" — the strongest claim
-        # the output can make, from the one value that means the opposite.
-        arrow = {"out": "->", "in": "<-", "both": "<->"}.get(row["direction"], "?")
+        arrow = present.arrow(row["direction"])
         label = row.get("title") or row["doc_id"]
         marker = " (other KB)" if row["terminal"] else ""
         print(f"{arrow} {row['rel']}: {label}{marker}  [hop {row['distance']}]")

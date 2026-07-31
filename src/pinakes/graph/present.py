@@ -25,6 +25,21 @@ absent rather than null, because a cross-KB title is not something this index co
 FRONTIER_KEYS = frozenset({"kb_id", "doc_id", "rel", "reason", "distance"})
 UNRESOLVED_KEYS = frozenset({"kb_id", "doc_id", "rel", "reason"})
 
+ARROWS = {"out": "->", "in": "<-", "both": "<->"}
+UNKNOWN_ARROW = "?"
+"""How a direction renders for a person.
+
+Every value the provider can emit is named, and the fallback is deliberately *not* `<->`: an
+`unknown` direction rendered as "written from both ends" would be the strongest claim the output can
+make, produced by the one value that means nothing was established. Lives here rather than inline in
+`run_links` so the mapping — including the fallback, which no fixture can reach through a real
+provider — can be asserted directly.
+"""
+
+
+def arrow(direction: str) -> str:
+    return ARROWS.get(direction, UNKNOWN_ARROW)
+
 
 def neighbour_row(neighbour: Neighbour, *, provider: DocumentProvider) -> dict[str, Any]:
     """One neighbour, as both surfaces return it.

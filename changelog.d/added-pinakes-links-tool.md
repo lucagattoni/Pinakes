@@ -34,4 +34,5 @@
   deleted document keeps its outbound `links` rows and "this document's links point at…" would
   then credit a link to whichever end did not write it. When the caller also narrowed the walk,
   the narrowing is reported first: a live neighbour may sit one dropped argument away, and sending
-  them to full-text search instead is the worse of the two wrong answers.
+  them to full-text search instead is the worse of the two wrong answers. `pnk links` says the same
+  three things in the same order, so a person and an agent get the same account of an empty walk.

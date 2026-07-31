@@ -432,3 +432,16 @@ def test_a_query_reaches_the_ranking_on_both_surfaces(tmp_path: Path) -> None:
     through_cli = json.loads(buffer.getvalue())["neighbours"]
     assert [row["scored_by_query"] for row in through_cli] == [True, True]
     assert through_cli[0]["doc_id"] == wanted
+
+
+def test_every_direction_has_its_own_arrow_including_the_one_no_fixture_can_reach() -> None:
+    """The `unknown` fallback cannot be produced through a real provider, so no KB-backed test can
+    pin it — and it was mutable back to `<->`, "written from both ends", which is exactly the claim
+    an unestablished direction must not make."""
+    assert present.arrow("out") == "->"
+    assert present.arrow("in") == "<-"
+    assert present.arrow("both") == "<->"
+    assert present.arrow("unknown") == "?"
+    assert present.arrow("anything else") == "?"
+    assert len(set(present.ARROWS.values())) == len(present.ARROWS), "each direction reads distinct"
+    assert present.UNKNOWN_ARROW not in present.ARROWS.values()

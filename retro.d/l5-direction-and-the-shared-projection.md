@@ -69,3 +69,23 @@ Two of those are worth naming as patterns:
 dropped by fan-out at hop 1 and re-reached at hop 2 is emitted with `distance: 2` although it is one
 authored hop from the start; and a self-loop (`a --sameas--> a`) is dropped entirely — not a
 neighbour, not unresolved, not on the frontier.
+
+**A fix applied to one surface is half a fix.** Round 3 gave `pinakes_links` the rule that a
+narrowed walk reports the narrowing before it reports dangling links — and left `pnk links` branching
+on `unresolved` alone, in the same commit, so the CLI told a user their links "resolve to nothing"
+about a document with a live neighbour one dropped `--rel` away. Both the docs and the changelog
+described the MCP behaviour as though it were both. The two surfaces now share
+`present.is_filtered` and `present.arrow`, which is the only way this stops recurring: the rule has
+to live in one place, not be applied twice.
+
+**A remedy in an error message is a claim, and it was false.** The dangling-links hint sent the
+caller to `pnk doctor` — but `doctor._links` inspects only the *destination* side of local sidecar
+rows, so when the missing endpoint is the link's **source** (a deleted document whose outbound rows
+survive the soft delete) doctor reports `links: OK` and contradicts the message that sent you there.
+Dropped the clause; extending that check belongs to L7, which owns doctor's link coverage.
+
+Four review rounds, each finding real defects in the previous round's fix, then converging: 11
+findings, then 11 with one HIGH, then 7 with none, then 5 with none. What the last two rounds found
+was never the traversal — it was the layer around it: an assignment nobody asserted, an assertion
+satisfied by a substring, a message worded from the wrong end, a branch ordered ahead of a better
+one, and a rule applied to one of two surfaces.

@@ -485,7 +485,9 @@ def test_a_neighbour_in_a_second_served_kb_says_which_kb_to_fetch_it_from(tmp_pa
     Only this two-KB shape reaches it — the single-KB fixture above always picks a same-KB row.
     """
     alpha = make_kb(
-        tmp_path / "alpha", name="alpha", documents={"a.md": "# Retrieval\n\nRetrieval.\n"}
+        tmp_path / "alpha",
+        name="alpha",
+        documents={"a.md": "# Retrieval\n\nRetrieval.\n", "a2.md": "# Sibling\n\nRanking.\n"},
     )
     beta = make_kb(tmp_path / "beta", name="beta", documents={"b.md": "# Ranking\n\nRanking.\n"})
     author_link(alpha, "a.md", f"pnk://{load(beta).kb.id}/{doc_id_of(beta, 'b.md')}", "partner")
@@ -498,6 +500,20 @@ def test_a_neighbour_in_a_second_served_kb_says_which_kb_to_fetch_it_from(tmp_pa
         with pytest.raises(ServeError):
             made.document(row["doc_id"])  # the trap: right id, wrong KB
         assert made.document(**row["fetch_with"])["text"], "the row must carry what makes it work"
+
+        # ...and only there. A same-KB neighbour resolves without a `kb`, so a `fetch_with` on it
+        # would be noise the docs explicitly deny — nothing pinned the negative half.
+        alone = Server([alpha])
+        try:
+            author_link(
+                alpha, "a.md", f"pnk://{load(alpha).kb.id}/{doc_id_of(alpha, 'a2.md')}", "sib"
+            )
+            local = next(
+                r for r in alone.links(doc_id_of(alpha, "a.md"))["neighbours"] if r["rel"] == "sib"
+            )
+            assert "fetch_with" not in local
+        finally:
+            alone.close()
     finally:
         made.close()
 
