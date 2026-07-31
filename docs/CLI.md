@@ -325,11 +325,16 @@ command: appending to an **indented** `links:` block re-indents that block, and 
 for the first time to a file whose last line is a comment leaves that comment reading as the
 block's introduction. [MANIFEST](MANIFEST.md#the-sidecar--filepnkyaml) lists the full set.
 
-**It takes no lock.** `pnk sync` holds one; this does not, so a sync running concurrently — from a
-`post-commit` hook, say — can read the same sidecar, and whichever writes last wins. The write
-being rename-atomic prevents a *torn* file, not a lost update. In practice you are typing this and
-the window is milliseconds; if a hook fires a paid extraction at the same moment, re-run the one
-whose change went missing.
+**It takes no lock.** `pnk sync` holds one; this does not, so a sync writing the same sidecar at the
+same moment can lose one side's change — whichever writes last wins. Rename-atomicity prevents a
+*torn* file, not a lost update.
+
+Only one thing can actually collide with it: a **paid** extraction you started yourself, which is
+the one sync that rewrites an existing sidecar. The git hooks cannot — `post-commit` and
+`post-merge` run `--index-only` and never write into `docs/` at all, `pre-commit` only *mints*
+sidecars for documents that have none, and all three force the free extractor. So the window is a
+`pnk link` typed while your own `pnk sync` is paying to extract that same document; if it happens,
+re-run whichever change went missing.
 
 ---
 

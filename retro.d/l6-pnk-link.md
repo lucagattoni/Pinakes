@@ -117,4 +117,29 @@ proven by rewording the error and watching all 29 pass. Renamed the fixture and 
   the interactive command for as long as the money takes; the exposure is a person typing against a
   hook firing in the same second.
 - STATUS's *surface you can use today* table had no `pnk links` row at all, three weeks after it
-  shipped in 0.5.0. Found by reading the neighbourhood rather than the diff.
+  shipped in 0.5.0 — found while writing the increment, by reading the neighbourhood rather than
+  the diff, and fixed there rather than by a review.
+
+### The fix for a finding is a diff, and gets the same treatment
+
+**HIGH.** A second adversarial pass over the fixes found that the containment rework had traded one
+defect for two. Replacing `resolve()` with a purely lexical `normpath` admitted the symlinked
+*document* it was meant to (correct), and also admitted a symlinked **directory** — through which
+`pnk link` wrote a sidecar outside the KB root, and, in the other direction, wrote a *permanent*
+`pnk://` to a ULID this KB will never index, because `Path.glob` does not recurse a symlinked
+directory. It simultaneously refused a legitimate *absolute* path whose ancestor is a symlink, which
+is the ordinary shape on macOS (`/tmp` → `/private/tmp`) and behind any symlinked checkout, since
+`manifest.load` resolves the root and a verbatim comparison could never match it.
+
+Both spellings are wrong in one direction; resolving **the parent alone** is right in both, and the
+justification written for the lexical version — "what decides membership is the path under
+`[sources]`" — was true for a symlinked file and false for a symlinked directory, so the docstring
+had been arguing for a rule the code did not implement. `normpath` must also *not* run first: it
+collapses `docs/link-to-elsewhere/../x.md` to `docs/x.md` textually, turning an escaping path into
+one that looks contained.
+
+The same pass also caught the concurrency paragraph these fixes had just added, which illustrated
+the lock's absence with a `post-commit` hook firing a paid extraction — a scenario the product
+structurally prevents (`hooks.py`: the two unattended hooks are `--index-only` and never enter
+`docs/`, and all three force the free extractor). One unverified reassurance had been replaced by an
+unverified illustration, in the commit whose subject was unverified claims.

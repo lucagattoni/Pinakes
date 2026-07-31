@@ -210,11 +210,15 @@ end of a link: a link is authored forward, and the KB it points at learns of it 
 sidecars (§6.2) — never by having its files edited by a machine it does not run.
 
 Both writes are rename-atomic, which is a claim about *this* write and not about two of them:
-`pnk link` takes no lock, so a sync running concurrently can lose one side's change. Atomicity
-prevents a torn file holding a permanent ULID; it does not order two writers. The exposure is a
-person typing a command against a hook firing in the same second, and the answer is to re-run the
-one that went missing — a lock around a `docs/` write, held while a paid extraction runs, would
-block the interactive command for as long as the money takes.
+`pnk link` takes no lock, so a concurrent write to the same sidecar can lose one side's change.
+Atomicity prevents a torn file holding a permanent ULID; it does not order two writers.
+
+The exposure is narrow by construction rather than by luck. The only sync that rewrites an existing
+sidecar is a paid extraction, and a paid extraction is never automatic (§1): the git hooks force the
+free backend, and the two that run unattended are `--index-only` and do not enter `docs/` at all. So
+the collision needs one person running both halves at once, and the answer is to re-run the change
+that went missing. Taking the sync lock here would trade that for an interactive command blocked for
+as long as someone else's extraction takes to bill.
 
 ---
 

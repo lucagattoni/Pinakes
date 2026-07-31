@@ -15,7 +15,6 @@ as it is, for the same reason.
 already on disk. `sidecar.write()` matches entries on the *resolved* URI. Only the first is here.
 """
 
-import os
 import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -63,12 +62,22 @@ def add(manifest: Manifest, *, source: str, target: str, rel: str) -> LinkOutcom
     existing = sidecar_module.read(path, owner=manifest.kb.id)
 
     if to.kb == manifest.kb.id and to.doc == existing.id:
-        # Refused rather than written. A document related to itself says nothing, would come back
-        # as its own neighbour from `pnk links`, and every way of reaching this is a typo — the
-        # same path twice, or a `pnk://` URI copied from the file being edited.
+        # Refused rather than written. A document related to itself says nothing and would come
+        # back as its own neighbour from `pnk links`.
+        #
+        # **Worded for both ways of arriving here**, because only the ULID is known: the target
+        # really is this document (a typo — the same path twice, or a `pnk://` copied out of the
+        # file being edited), or it is a *different* file carrying the same id, which is a KB fault
+        # in its own right. "would link to itself" alone told someone who had named two different
+        # documents that one of them was itself, and pointed at neither the duplicate nor the tool
+        # that finds it.
         raise PinakesError(
-            f"{source} would link to itself.",
-            remedy="A link goes between two documents. Check the target.",
+            f"{source} and the target are the same document ({existing.id}).",
+            remedy=(
+                "A link goes between two documents. If you meant two different files, they are "
+                "sharing a ULID — `pnk doctor` names duplicate ids, and one of them has to be "
+                "corrected before either can be linked."
+            ),
         )
 
     link = Link(to=to, rel=relation)
@@ -201,13 +210,31 @@ def _document_in(root: Path, raw: str, *, kb: str) -> Path:
     does not: a link is a fact about a KB's own documents, and `../../elsewhere/notes.md` has no
     ULID this KB may write down.
 
-    **Normalised lexically, never through `resolve()`.** `resolve()` follows the final symlink
-    before the containment check, so a *symlinked document* — which `pnk sync` indexes, `pnk doctor`
-    calls a readable sidecar, and `pnk links` traverses — was refused as "outside this KB", with a
-    remedy repeating the path the user had just typed correctly. Nothing could then link it, in
-    either direction. What decides membership is the path under the KB's `[sources]`, which is what
-    every other command uses; where the inode lives is not this command's business. `..` is still
-    collapsed, so the escape the check exists for is still refused.
+    **Everything above the final component is resolved; the component itself never is.** The two
+    obvious spellings are each wrong in one direction, and this increment shipped both before
+    arriving here:
+
+    * `joined.resolve()` follows the final symlink too, so a *symlinked document* — which
+      `pnk sync` indexes, `pnk doctor` calls a readable sidecar, and `pnk links` traverses — was
+      refused as "outside this KB", with a remedy repeating the path the user had just typed
+      correctly. Nothing could link it, in either direction.
+    * a purely lexical `os.path.normpath` follows nothing, so a symlinked **directory** under
+      `docs/` passed containment and the write went out of the KB through it — and, in the other
+      direction, wrote a *permanent* `pnk://` to a ULID this KB will never index, because
+      `Path.glob` does not recurse a symlinked directory. It also refused a legitimate absolute
+      path whose *ancestor* is a symlink, which is the ordinary shape on macOS (`/tmp` →
+      `/private/tmp`) and for any checkout behind one — `manifest.load` resolves the root, so a
+      verbatim comparison could never match.
+
+    Resolving the parent alone gets both: the directory chain is followed, so an escape through it
+    is caught and a symlinked ancestor lands inside; the final component is left alone, so the
+    document's own symlink is irrelevant — which is right, because what decides membership is the
+    path under `[sources]`, and `Path.glob` does yield a symlinked *file*.
+
+    **`normpath` is not applied first, deliberately.** It would collapse
+    `docs/link-to-elsewhere/../x.md` to `docs/x.md` textually, turning an escaping path into one
+    that looks contained — the opposite of what the check is for. `resolve()` on the parent
+    collapses `..` correctly, after following the links it sits behind.
 
     No `expanduser()` either: this argument is documented as KB-root-relative, so a successfully
     expanded `~` lands in `$HOME` and is refused by the very next line — it bought nothing and
@@ -216,7 +243,7 @@ def _document_in(root: Path, raw: str, *, kb: str) -> Path:
     """
     given = Path(raw)
     joined = given if given.is_absolute() else root / given
-    document = Path(os.path.normpath(joined))
+    document = joined.parent.resolve() / joined.name
     if not document.is_relative_to(root):
         raise PinakesError(
             f"{raw!r} is outside {kb}.",

@@ -584,6 +584,13 @@ def write(path: Path, sidecar: Sidecar) -> None:
                 # common path only from L6: before `pnk link`, `write()` over an existing file ran
                 # on the paid-PDF path alone. Guarded on `not value` so a *first* link into a null
                 # `links:` still writes; that case has something to say.
+                #
+                # `if key not in document` runs first, so this only ever sees a key that is
+                # **present and null** — never an absent one. One latent case, reachable by no
+                # caller today: a null `title:` on disk with `title=""` supplied would be skipped
+                # rather than written. `read()` returns `""` only from a non-null node, which this
+                # branch does not match, so it stays latent until something constructs a `Sidecar`
+                # with an empty-string field by hand.
                 continue
             elif key == "links" and isinstance(document.get(key), list):
                 _merge_links(document[key], sidecar.links, owner=sidecar.owner)

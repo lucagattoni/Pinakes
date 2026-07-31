@@ -273,8 +273,8 @@ def test_a_source_outside_the_kb_is_refused(pair: tuple[Kb, Kb], tmp_path: Path)
     assert "is outside this KB" in caught.value.message
 
 
-def test_a_dot_dot_escape_is_still_refused_after_normalisation(pair: tuple[Kb, Kb]) -> None:
-    """Containment is decided lexically now, so `..` has to be collapsed before it is checked."""
+def test_a_dot_dot_escape_is_still_refused(pair: tuple[Kb, Kb]) -> None:
+    """The escape the containment check exists for, and the one a looser check stops catching."""
     local, _partner = pair
     with pytest.raises(PinakesError) as caught:
         add(
@@ -286,6 +286,48 @@ def test_a_dot_dot_escape_is_still_refused_after_normalisation(pair: tuple[Kb, K
     assert "is outside this KB" in caught.value.message
 
 
+def test_a_symlinked_directory_cannot_carry_a_link_out_of_the_kb(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """The regression a purely lexical check introduced, in both directions.
+
+    `os.path.normpath` collapses `..` but follows nothing, so `docs/ext/` symlinked outside passed
+    containment — and the write went out of the KB through it. In the other direction it minted a
+    **permanent** `pnk://` to a ULID this KB will never index, because `Path.glob` does not recurse
+    a symlinked directory, so `pnk sync` never sees the document at all.
+    """
+    local, _partner = pair
+    outside = tmp_path / "outside"
+    (outside).mkdir()
+    (outside / "notes.md").write_text("# notes\n", encoding="utf-8")
+    (outside / f"notes.md{SIDECAR_SUFFIX}").write_text(f"id: {mint_doc_id()}\n", encoding="utf-8")
+    (local.root / "docs" / "ext").symlink_to(outside)
+
+    for source, target in (
+        ("docs/ext/notes.md", "docs/beta.md"),  # writing a sidecar outside the KB
+        ("docs/alpha.md", "docs/ext/notes.md"),  # linking a ULID the KB will never hold
+    ):
+        with pytest.raises(PinakesError) as caught:
+            add(load(local.root), source=source, target=target, rel="cites")
+        assert "is outside this KB" in caught.value.message
+    assert links_of(local, "alpha") == []
+
+
+def test_an_absolute_source_behind_a_symlinked_ancestor_is_accepted(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """`manifest.load` resolves the KB root, so comparing an unresolved path against it could never
+    match — and this is the *ordinary* shape: macOS `/tmp` is a symlink to `/private/tmp`, and any
+    checkout behind a symlink produces it from shell completion and `$PWD` alike. The user names the
+    KB by that very path and was told the document inside it was outside it."""
+    local, _partner = pair
+    alias = tmp_path / "via-symlink"
+    alias.symlink_to(local.root)
+
+    assert link(local, str(alias / "docs" / "alpha.md"), "docs/beta.md", "cites")[0] == EXIT_OK
+    assert links_of(local, "alpha") == [(local.uri("beta"), "cites")]
+
+
 def test_a_symlinked_document_inside_the_kb_can_be_linked(
     pair: tuple[Kb, Kb], tmp_path: Path
 ) -> None:
@@ -294,7 +336,8 @@ def test_a_symlinked_document_inside_the_kb_can_be_linked(
     either direction, with a remedy that repeated the path the user had typed correctly.
 
     Refused because `resolve()` followed the final symlink *before* asking whether the result was
-    inside the KB. What decides membership is the path under `[sources]`, not where the inode is.
+    inside the KB. Membership is decided by the path under `[sources]`, and `Path.glob` does yield
+    a symlinked **file** — unlike a symlinked directory, which the test above keeps refused.
     """
     local, _partner = pair
     real = tmp_path / "kept-elsewhere.md"
@@ -590,7 +633,11 @@ def test_a_document_cannot_link_to_itself(pair: tuple[Kb, Kb]) -> None:
     for target in ("docs/alpha.md", local.uri("alpha"), f"pnk://self/{local.docs['alpha']}"):
         with pytest.raises(PinakesError) as caught:
             add(load(local.root), source="docs/alpha.md", target=target, rel="cites")
-        assert "link to itself" in caught.value.message
+        assert "are the same document" in caught.value.message
+        # Worded for the duplicate-id case too, and pointing at the tool that finds one: only the
+        # ULID is known here, so "would link to itself" told anyone who had named two different
+        # files that one of them was itself.
+        assert "pnk doctor" in caught.value.remedy
     assert links_of(local, "alpha") == []
 
 

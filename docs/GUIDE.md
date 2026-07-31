@@ -421,14 +421,7 @@ id   = "01KYP11WY2ZGX9B2Q5V7PJ8DW1"    # the KB's ULID — this is what travels
 path = "../museum"                     # where it lives here
 ```
 
-```yaml
-# archive/docs/loans-outward.md.pnk.yaml
-links:
-  - to: pnk://01KYP11WY2ZGX9B2Q5V7PJ8DW1/01KYP8878AZWS2ZWEBD0KQYTXE
-    rel: counterpart
-```
-
-`pnk link` writes that entry for you, and is the only thing that ever needs to know the alias:
+`pnk link` writes the entry, and is the only thing that ever needs to know the alias:
 
 ```console
 $ pnk link docs/loans-outward.md museum:docs/incoming-loans.md --rel counterpart
@@ -436,22 +429,34 @@ docs/loans-outward.md.pnk.yaml: counterpart -> pnk://01KYP11WY2ZGX9B2Q5V7PJ8DW1/
 `pnk sync` to index it, then commit the sidecar.
 ```
 
+which leaves:
+
+```yaml
+# archive/docs/loans-outward.md.pnk.yaml
+links:
+  - to: pnk://01KYP11WY2ZGX9B2Q5V7PJ8DW1/01KYP8878AZWS2ZWEBD0KQYTXE
+    rel: counterpart
+```
+
 `museum:` is looked up in *this* manifest and never written down — what lands on disk is the pair of
 ULIDs, which is what makes the link mean the same thing on someone else's machine. A path in this KB
-(`docs/pest-management.md`) or a `pnk://` URI work as the target too. Run the same command twice and
-the second run writes nothing:
+(`docs/pest-management.md`) or a `pnk://` URI work as the target too. Run the same command again and
+it writes nothing:
 
 ```console
 $ pnk link docs/loans-outward.md museum:docs/incoming-loans.md --rel counterpart
 docs/loans-outward.md.pnk.yaml already carries counterpart -> pnk://01KYP11WY2ZGX9B2Q5V7PJ8DW1/01KYP8878AZWS2ZWEBD0KQYTXE; nothing written.
 ```
 
+(That is the state `tests/demo-kb` ships in, if you are following along against it — the link is
+already there, so the first command prints the second line.)
+
 It writes into the **source** document's sidecar and nothing else — the museum's files are never
 touched — and it refuses a document that has no sidecar yet, because the ULID a link needs is minted
 by `pnk sync`. [CLI](CLI.md#pnk-link) has the full grammar and the refusals.
 
-Write it by hand instead if you prefer — including the indented style above. Your comments, your
-quoting, your blank lines and your own key order all survive a rewrite, and values are never
+Write it by hand instead if you prefer — including the indented style shown above. Your comments,
+your quoting, your blank lines and your own key order all survive a rewrite, and values are never
 reinterpreted: `country: NO` stays the string `NO` rather than turning into `false`.
 
 The one thing that changes about *layout* is exactly this indentation — pinakes re-emits a block
