@@ -228,6 +228,7 @@ test, or write **none** and say why in the same commit.
 | a trailing `..` in an include is refused | L6 review 15 | `tests/test_sync_links.py::test_a_trailing_dot_dot_include_is_refused` |
 | only `**` is dropped from the containment probe | L6 review 15 | `tests/test_sync_links.py::test_only_double_star_is_dropped_from_the_probe` |
 | a partner document with no sidecar contributes nothing | L6 review 15 | `tests/test_sync_links.py::test_a_partner_document_without_a_sidecar_contributes_nothing` |
+| a pattern escaping under one root collects under none | L6 review 16 | `tests/test_sync_links.py::test_a_pattern_that_escapes_under_one_root_collects_under_none` |
 | ...and an escape matching only sidecars is still reported | L6 review 11 | `tests/test_sync_links.py::test_an_escape_matching_only_sidecars_is_still_reported` |
 | one escaping pattern is one problem, however many roots | L6 review 11 | `tests/test_sync_links.py::test_one_escaping_pattern_is_one_problem_however_many_roots` |
 | `exclude` matches the path the partner wrote, not the resolved one | L6 review 11 | `tests/test_sync_links.py::test_an_exclude_rule_matches_the_path_the_partner_wrote_not_the_resolved_one` |

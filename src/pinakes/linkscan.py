@@ -353,8 +353,14 @@ def sidecars_under(
             problems.append(f"[sources] roots entry {name!r} is not a directory")
             continue
         for pattern in include:
+            # **Not an optimisation — this decides what is collected.** A pattern can escape under
+            # one root and be legal under another (`roots = ["docs/", "docs/sub/"]` with
+            # `include = ["../../x/*.md"]`), and without this skip the second root collects from it
+            # while the first reports it as an escape. Once a pattern is known to reach outside the
+            # KB, it contributes nothing anywhere: a partner's `[sources]` is one statement about
+            # one KB, not a per-root negotiation.
             if pattern in escaping or pattern in absolute:
-                continue  # already answered under an earlier root; skip the work, not the report
+                continue
             if Path(pattern).is_absolute():
                 # Refused for being absolute, not for where it points: `glob` raises
                 # `NotImplementedError` on any absolute pattern, so even one naming this KB's own

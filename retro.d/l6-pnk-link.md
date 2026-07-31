@@ -1,4 +1,4 @@
-## L6 — `pnk link` (20260801 01:20)
+## L6 — `pnk link` (20260801 01:41)
 
 **Every review commit on this increment found defects in the one before it, and most of them found
 the previous commit's own fix or claim** rather than something it had missed — `3ce150e` (review 1's
@@ -224,9 +224,19 @@ written for it raise at the `glob()` *call*, not at the step, so the guard one l
 executed — which review 14's own commit message called "eleven mutants, each killed by the right
 test", and this paragraph called "all but one".
 
-(No total is given for the battery either. An early draft gave one; it was stale within a round and
-is unverifiable afterwards, since the runs leave no artefact. The method is the durable part, and
-the method is now: mutate every behaviour in the function, not the ones the diff touched.)
+The method is now: mutate every behaviour in the function, not the ones the diff touched. **That
+standard was stated before it was met.** The sweep that first claimed it covered three behaviours;
+an independent 47-mutant pass over the whole of `sidecars_under` and `scan_one` killed 33 and left
+14 alive — 2 provably equivalent, 12 unpinned. Every one of the 12 was checked and the code is
+right in each, so they are coverage rather than defects, and they are listed rather than closed:
+the two halves of the `exclude` disjunction (a deliberate mirror of `sync._excluded`), the
+`continue` that bounds a pre-walk escape, `.resolve()` on `anchor` and on `base`, the `is_file()`
+and sidecar-suffix skips, the two `sorted()` calls, `partner_sources` raising, and
+`LinkTargetMissingError`'s count.
+
+Naming them is the point. A number for the battery is unverifiable afterwards — the runs leave no
+artefact — but *which* behaviours are unpinned is checkable by anyone who repeats the sweep, and
+that is what a later reader needs.
 
 One mutant is genuinely equivalent: substituting the locally declared `[[links.kb]] id` for the
 partner's own when writing an alias target changes nothing, because the refusal above has already
@@ -317,8 +327,11 @@ mutating behaviours *this increment never touched*.
 So the rule is stronger than "re-run the battery after every fix": **the battery is over the whole
 function, not the diff** — and a promise worth a guard is pinned directly (here, by making the walk
 raise) rather than through an input that some later fix can intercept. Running it that way in the
-next round found three more unpinned behaviours in code this increment never wrote: the sidecar
-existence check, the `*`/`**` boundary in the probe, and the `next()` guard added the round before.
+next round found three more unpinned behaviours: the sidecar existence check, which predates L6
+(`7570a69`), and the `*`/`**` boundary and the `next()` guard, **both written two rounds earlier by
+this increment** (`425d106`). The sharper reading is the second one — the code least likely to be
+pinned is not the oldest, it is what a recent fix added while attention was on the defect it
+closed.
 
 **The fix for "one bad entry is not the end of the partner" was itself incomplete, one line either
 side of where it landed.** `probe.parent.resolve()` sat above it unguarded, so an embedded NUL in

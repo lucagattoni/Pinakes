@@ -1194,6 +1194,30 @@ def test_one_bad_sources_entry_is_one_problem_not_the_end_of_the_partner(
     assert problems[0].startswith(f"[sources] {expected}: "), problems[0]
 
 
+def test_a_pattern_that_escapes_under_one_root_collects_under_none(pair: tuple[Kb, Kb]) -> None:
+    """A pattern can escape under one root and be legal under another — `roots = ["docs/",
+    "docs/sub/"]` with `include = ["../../x/*.md"]`, where `x/` is inside the KB.
+
+    The `pattern in escaping` skip is what stops the second root collecting from a pattern the
+    first reported as an escape, and its comment called it "an optimisation". Removing it collects
+    the document *and* reports the escape, in one report. A partner's `[sources]` is one statement
+    about one KB, not a per-root negotiation.
+    """
+    _local, partner = pair
+    (partner.root / partner.docs_dir / "sub").mkdir()
+    inside = partner.root / "x"
+    inside.mkdir()
+    (inside / "in.md").write_text("# in\n\nText.\n", encoding="utf-8")
+    (inside / f"in.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump({"id": str(mint_doc_id())}, sort_keys=False), encoding="utf-8"
+    )
+
+    found, problems = sidecars_under(partner.root, ["docs/", "docs/sub/"], ["../../x/*.md"], [])
+
+    assert found == [], "a pattern refused under one root was collected under another"
+    assert problems == ["[sources] include pattern '../../x/*.md' reaches outside the KB"]
+
+
 def test_a_trailing_dot_dot_include_is_refused(pair: tuple[Kb, Kb]) -> None:
     """`Path("/kb/..").is_relative_to("/kb")` is **true** lexically, so leaving the final component
     unresolved let `include = ["../.."]` name the KB's parent unreported. That exemption exists so a
