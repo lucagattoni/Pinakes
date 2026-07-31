@@ -46,7 +46,7 @@ _YAML = YAML(typ="safe")
 count sidecars the product now refuses. `typ="safe"` closes the scalar-resolution and duplicate-key
 divergence, which is what matters for counting links — it does not close all of it. **After L5b**
 this loader refuses the custom-tagged mappings and sequences the product accepts, and accepts the
-JSON-unencodable shapes the product refuses; **after L5c** it also accepts the non-string top-level
+JSON-unencodable shapes the product refuses; **after 0.5.0** it also accepts the non-string top-level
 keys the product refuses. None of those shapes appears in the committed corpora, which is why the
 divergence is stated here rather than engineered away.
 """
