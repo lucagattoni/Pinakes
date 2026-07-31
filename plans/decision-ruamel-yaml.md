@@ -3,7 +3,9 @@
 **Decided 20260731 06:00 (the user), after measurement. Supersedes
 [`links-and-graph.md`](links-and-graph.md) decision 18.** Revised 06:25, 07:10 and 07:45 as
 measurement and two adversarial passes corrected it; this file states the current position only.
-Built by **L5b**.
+**Built by L5b and L5c** — split 20260731 07:52 (decision 28) after three passes returned 8, 8 and 7
+HIGH on one section. **L5b** is the swap and what keeps behaviour equivalent; **L5c** is the
+refusals pinakes chooses (decisions 19 and 26) and takes the interim cut.
 
 ## The decision
 
@@ -73,13 +75,14 @@ against `CommentedMap`.
 
 | # | Decision |
 |---|---|
-| 19 | **Non-string top-level keys refused at `read()`**, with a remedy. Top level only — that is the mapping pinakes partitions into `KNOWN_KEYS`/`extra`. It makes `extra: dict[str, Any]` honest and closes a `TypeError` live on `main` today. `test_malformed_sidecars_are_rejected`'s `{id: x, : }` fixture becomes `{id: x`, which both libraries reject, so the parse-error branch stays covered |
+| 19 | *(L5c)* **Non-string top-level keys refused at `read()`**, with a remedy. Top level only — that is the mapping pinakes partitions into `KNOWN_KEYS`/`extra`. It makes `extra: dict[str, Any]` honest and closes a `TypeError` live on `main` today. `test_malformed_sidecars_are_rejected`'s `{id: x, : }` fixture becomes `{id: x`, which both libraries reject, so the parse-error branch stays covered |
 | 20 | **A local stub under `stubs/`, plus a signature-comparison test.** `py.typed` does not satisfy pyright strict here: `load`/`dump` carry an untyped `stream`. `cast(Any, _yaml()).load(...)` also reaches zero errors but erases the whole surface. An *import*-only check is insufficient — a stub declaring a parameter ruamel lacks is pyright-green and `TypeError`s at runtime |
 | 21 | **An AST scan over `src/pinakes` proves `pyyaml` never returns**, paired with the existing runtime check. An import walk was specified first and is wrong twice: it loads `pypdfium2` (absent on the `[light]` leg, and probing a backend by loading it is forbidden), and it executes module scope only, so the lazy import it exists to catch is invisible to it |
 | 22 | **MINOR, at whatever number is next when cut.** No number is written here — CLAUDE.md forbids numbering unbuilt work |
 | 23 | **Every scalar pinakes writes is single-quoted when ambiguous** — minted or newly assigned into an existing document, keyed on *the value being assigned*, never on `original is None`. `skeleton()` derives the title from the filename stem, so `NO.md` otherwise mints a bare `title: NO` that a 1.1 reader takes as `False`; `pnk link --rel no` is the same hazard on an existing file. Predicate: the union of `yaml.resolver.Resolver` and `VersionedResolver` at `(1,1)` and `(1,2)` — anything not resolving to `…:str` in all three. Scalars pinakes did not author are left as the user wrote them |
-| 26 | **Every value under `extra` and `provenance` must be JSON-encodable**, else `SidecarError`. This is the constraint the index imposes (`store.dumps_metadata` → `json.dumps`), so it tests the real thing rather than a tag taxonomy, and reaches tagged **keys** at any depth. Documented widening: a tagged *mapping* or *sequence* serialises and is now accepted where PyYAML refused it |
-| 27 | **The links release cuts twice** — an interim MINOR at L5b carrying L1–L5b, and the final cut at L8. A tag is a point on `main`, so a cut at L5b ships everything merged before it; naming it after one increment would have been false |
+| 26 | *(L5c)* **Every value under `extra` and `provenance` must be JSON-encodable**, else `SidecarError`. This is the constraint the index imposes (`store.dumps_metadata` → `json.dumps`), so it tests the real thing rather than a tag taxonomy, and reaches tagged **keys** at any depth. Documented widening: a tagged *mapping* or *sequence* serialises and is now accepted where PyYAML refused it |
+| 28 | **L5b splits into L5b and L5c.** The seam is what the library does versus what pinakes chooses to reject. All the churn across three passes was at the interfaces inside one oversized increment; L5c is independently revertible |
+| 27 | **The links release cuts twice** — an interim MINOR at L5c carrying L1–L5c, and the final cut at L8. A tag is a point on `main`, so a cut at L5b ships everything merged before it; naming it after one increment would have been false |
 
 *(24 and 25 were taken and superseded the same day — by 26 and 27 respectively. A tag detector was
 both over- and under-inclusive; a third named release was impossible, since a tag cut at L5b ships
