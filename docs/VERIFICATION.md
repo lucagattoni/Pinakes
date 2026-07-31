@@ -201,6 +201,14 @@ test, or write **none** and say why in the same commit.
 | ...while a second relation to one target is a second entry | L6 | `tests/test_cli_link.py::test_a_second_relation_to_the_same_target_is_a_second_entry` |
 | what `pnk link` writes reaches the `links` table | L6 | `tests/test_cli_link.py::test_a_link_round_trips_through_sync_into_the_links_table` |
 | the grammar is reachable without the CLI | L6 | `tests/test_cli_link.py::test_resolve_target_is_reachable_without_the_cli` |
+| a document cannot link to itself | L6 review | `tests/test_cli_link.py::test_a_document_cannot_link_to_itself` |
+| a symlinked document inside the KB can be linked | L6 review | `tests/test_cli_link.py::test_a_symlinked_document_inside_the_kb_can_be_linked` |
+| ...while `..` is still refused after normalisation | L6 review | `tests/test_cli_link.py::test_a_dot_dot_escape_is_still_refused_after_normalisation` |
+| a `~` path is refused, not a `RuntimeError` traceback | L6 review | `tests/test_cli_link.py::test_a_home_relative_path_is_refused_rather_than_crashing` |
+| an empty `tags:`/`provenance:` is not normalised by a link | L6 review | `tests/test_cli_link.py::test_an_empty_tags_or_provenance_is_not_normalised_by_adding_a_link` |
+| a symlinked sidecar is written through, not replaced | L6 review | `tests/test_cli_link.py::test_a_symlinked_sidecar_is_written_through_not_replaced` |
+| `<alias>:` naming no document says so | L6 review | `tests/test_cli_link.py::test_an_alias_naming_no_document_says_so` |
+| ...and a manifest declaring no linked KBs says that | L6 review | `tests/test_cli_link.py::test_a_kb_declaring_no_linked_kbs_says_that_rather_than_listing_none` |
 
 ## The sidecar round-trip (L5b)
 

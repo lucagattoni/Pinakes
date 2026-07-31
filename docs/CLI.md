@@ -307,8 +307,10 @@ the alias form bites **only** on a declared name — a POSIX path may legitimate
 
 **What is refused, and what is not.** A well-formed `pnk://` URI whose target is not on this
 machine **is written**: both ULIDs are already in it, and refusing would make authoring depend on
-which KBs happen to be checked out (`pnk doctor` reports a dangling target; `pnk links` lists it
-under `unresolved`). An **alias** that cannot be turned into a ULID pair is refused, because
+which KBs happen to be checked out. Nothing checks that target afterwards, either — `pnk doctor`'s
+cross-KB check is not built yet, and `pnk links` reports only *local* targets under `unresolved`,
+because a cross-KB one cannot be verified from here without the other KB. An **alias** that cannot
+be turned into a ULID pair is refused, because
 resolving one means reading that KB. So is an alias whose partner declares a different `[kb] id`
 than `[[links.kb]]` does — one of the two names the wrong KB, and what would be written is
 permanent.
@@ -321,7 +323,13 @@ key order and any key pinakes does not know all survive — including a key of y
 `links[]` entry. Two documented exceptions, both from the YAML writer rather than from this
 command: appending to an **indented** `links:` block re-indents that block, and appending `links:`
 for the first time to a file whose last line is a comment leaves that comment reading as the
-block's introduction.
+block's introduction. [MANIFEST](MANIFEST.md#the-sidecar--filepnkyaml) lists the full set.
+
+**It takes no lock.** `pnk sync` holds one; this does not, so a sync running concurrently — from a
+`post-commit` hook, say — can read the same sidecar, and whichever writes last wins. The write
+being rename-atomic prevents a *torn* file, not a lost update. In practice you are typing this and
+the window is milliseconds; if a hook fires a paid extraction at the same moment, re-run the one
+whose change went missing.
 
 ---
 

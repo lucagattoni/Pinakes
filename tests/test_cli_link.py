@@ -192,7 +192,32 @@ def test_an_alias_pointing_at_a_kb_that_is_not_here_is_refused(pair: tuple[Kb, K
 
     with pytest.raises(PinakesError) as caught:
         add(load(local.root), source="docs/alpha.md", target="partner:docs/one.md", rel="cites")
-    assert "partner" in caught.value.message
+    # The *alias*, not a bare `"partner" in message` — the tmp_path in that message ends in
+    # `/partner` too, so the loose form was satisfied by the path and would survive the alias being
+    # dropped from the wording entirely.
+    assert caught.value.message.startswith("linked KB `partner` ")
+
+
+def test_an_alias_naming_no_document_says_so(pair: tuple[Kb, Kb]) -> None:
+    """`partner:` with nothing after it. Without this refusal it falls through to "'' is not a
+    document in `partner`", which describes the empty string rather than the mistake."""
+    local, _partner = pair
+    with pytest.raises(PinakesError) as caught:
+        add(load(local.root), source="docs/alpha.md", target="partner:", rel="cites")
+    assert "names no document" in caught.value.message
+    assert "partner:docs/" in caught.value.remedy
+
+
+def test_a_kb_declaring_no_linked_kbs_says_that_rather_than_listing_none(
+    pair: tuple[Kb, Kb],
+) -> None:
+    """The other branch of the same remedy. With no `[[links.kb]]` at all, "this manifest declares
+    " followed by nothing is a sentence that stops mid-thought."""
+    local, _partner = pair
+    local.disconnect_all()
+    with pytest.raises(PinakesError) as caught:
+        add(load(local.root), source="docs/alpha.md", target="partner:docs/one.md", rel="cites")
+    assert "declares no `[[links.kb]]` at all" in caught.value.remedy
 
 
 def test_an_alias_whose_partner_declares_a_different_id_is_refused(pair: tuple[Kb, Kb]) -> None:
@@ -233,16 +258,68 @@ def test_an_unreadable_source_sidecar_is_never_overwritten(pair: tuple[Kb, Kb]) 
 
 
 def test_a_source_outside_the_kb_is_refused(pair: tuple[Kb, Kb], tmp_path: Path) -> None:
+    """Named `elsewhere.md`, deliberately: the first version of this called it `outside.md` and
+    asserted `"outside" in message`, which the interpolated *path* satisfied on its own — the
+    reason could have vanished from the wording with the test still green."""
     local, _partner = pair
-    outside = tmp_path / "outside.md"
-    outside.write_text("# outside\n", encoding="utf-8")
-    outside.with_name(f"outside.md{SIDECAR_SUFFIX}").write_text(
+    elsewhere = tmp_path / "elsewhere.md"
+    elsewhere.write_text("# elsewhere\n", encoding="utf-8")
+    elsewhere.with_name(f"elsewhere.md{SIDECAR_SUFFIX}").write_text(
         f"id: {mint_doc_id()}\n", encoding="utf-8"
     )
 
     with pytest.raises(PinakesError) as caught:
-        add(load(local.root), source=str(outside), target="docs/beta.md", rel="cites")
-    assert "outside" in caught.value.message
+        add(load(local.root), source=str(elsewhere), target="docs/beta.md", rel="cites")
+    assert "is outside this KB" in caught.value.message
+
+
+def test_a_dot_dot_escape_is_still_refused_after_normalisation(pair: tuple[Kb, Kb]) -> None:
+    """Containment is decided lexically now, so `..` has to be collapsed before it is checked."""
+    local, _partner = pair
+    with pytest.raises(PinakesError) as caught:
+        add(
+            load(local.root),
+            source="docs/../../partner/docs/one.md",
+            target="docs/beta.md",
+            rel="cites",
+        )
+    assert "is outside this KB" in caught.value.message
+
+
+def test_a_symlinked_document_inside_the_kb_can_be_linked(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """`pnk sync` indexes it, `pnk doctor` calls its sidecar readable and `pnk links` traverses it —
+    so refusing it here made a document that this KB demonstrably contains impossible to link, in
+    either direction, with a remedy that repeated the path the user had typed correctly.
+
+    Refused because `resolve()` followed the final symlink *before* asking whether the result was
+    inside the KB. What decides membership is the path under `[sources]`, not where the inode is.
+    """
+    local, _partner = pair
+    real = tmp_path / "kept-elsewhere.md"
+    real.write_text("# kept elsewhere\n", encoding="utf-8")
+    (local.root / "docs" / "linked.md").symlink_to(real)
+    doc_id = mint_doc_id()
+    (local.root / "docs" / f"linked.md{SIDECAR_SUFFIX}").write_text(
+        f"id: {doc_id}\n", encoding="utf-8"
+    )
+
+    assert link(local, "docs/linked.md", "docs/beta.md", "cites")[0] == EXIT_OK
+    assert links_of(local, "linked") == [(local.uri("beta"), "cites")]
+    # ...and as a target, which is the other half of "in either direction".
+    assert link(local, "docs/alpha.md", "docs/linked.md", "cites")[0] == EXIT_OK
+    assert links_of(local, "alpha") == [(f"pnk://{local.kb_id}/{doc_id}", "cites")]
+
+
+def test_a_home_relative_path_is_refused_rather_than_crashing(pair: tuple[Kb, Kb]) -> None:
+    """`Path.expanduser()` raises `RuntimeError` on an unknown user, which is not a `PinakesError`
+    and left `cli.main` printing a traceback. It bought nothing: this argument is KB-root-relative,
+    so anything a `~` expanded to was refused by the containment check on the next line anyway."""
+    local, _partner = pair
+    with pytest.raises(PinakesError) as caught:
+        add(load(local.root), source="~nosuchuser1234/x.md", target="docs/beta.md", rel="cites")
+    assert "is not a document in this KB" in caught.value.message
 
 
 def test_a_sidecar_named_as_the_source_is_refused(pair: tuple[Kb, Kb]) -> None:
@@ -305,6 +382,35 @@ def test_unknown_keys_inside_a_link_entry_survive_through_pnk_link(pair: tuple[K
     entries = yaml.safe_load(local.sidecar("alpha").read_text(encoding="utf-8"))["links"]
     assert entries[0]["note"] == "mine to keep"
     assert len(entries) == 2
+
+
+def test_an_empty_tags_or_provenance_is_not_normalised_by_adding_a_link(
+    pair: tuple[Kb, Kb],
+) -> None:
+    """A discriminating fixture for the test below, which its own could not be.
+
+    `tags:` and `provenance:` with nothing under them were rewritten to `tags: []` and
+    `provenance: {}` on every `pnk link` — two lines changed *outside* the `links` block, in the
+    increment whose test says none are. The fixture that missed it used a **populated** `tags:`
+    list, which `write()` short-circuits as unchanged and so never touches: representative of a
+    sidecar, not discriminating for this. Before L6 the path was unreachable outside a paid PDF
+    extraction; `pnk link` reaches it on a first link, which is the common case.
+    """
+    local, _partner = pair
+    path = handwrite(
+        local, "alpha", f"id: {local.docs['alpha']}\ntitle: Alpha\ntags:\nprovenance:\n"
+    )
+    assert link(local, "docs/alpha.md", "docs/beta.md", "cites")[0] == EXIT_OK
+
+    text = path.read_text(encoding="utf-8")
+    assert "tags: []" not in text
+    assert "provenance: {}" not in text
+    assert _outside_links(text) == [
+        "id: " + str(local.docs["alpha"]),
+        "title: Alpha",
+        "tags:",
+        "provenance:",
+    ]
 
 
 def test_no_line_outside_the_links_block_changes_when_a_link_is_added(pair: tuple[Kb, Kb]) -> None:
@@ -412,6 +518,24 @@ def test_a_rel_that_looks_like_a_boolean_is_quoted_on_a_first_link_too(pair: tup
     ] == ("no")
 
 
+def test_a_symlinked_sidecar_is_written_through_not_replaced(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """`os.replace` onto a symlink destroys the link and leaves a regular file, with the real
+    sidecar untouched elsewhere still holding the old text. `create()` refuses that case outright;
+    a rewrite has no reason to and simply follows it. `pnk link` is the first command a person
+    points at a file of their own choosing, so it is the first to reach this routinely."""
+    local, _partner = pair
+    real = tmp_path / "kept-elsewhere.pnk.yaml"
+    real.write_text(f"id: {local.docs['alpha']}\n", encoding="utf-8")
+    local.sidecar("alpha").unlink()
+    local.sidecar("alpha").symlink_to(real)
+
+    assert link(local, "docs/alpha.md", "docs/beta.md", "cites")[0] == EXIT_OK
+    assert local.sidecar("alpha").is_symlink()
+    assert "rel: cites" in real.read_text(encoding="utf-8")
+
+
 def test_the_source_document_is_byte_identical_afterwards(pair: tuple[Kb, Kb]) -> None:
     """`docs/` belongs to the user. The sidecar is the one file this command may write."""
     local, _partner = pair
@@ -457,6 +581,17 @@ def test_the_same_link_twice_writes_nothing_the_second_time(pair: tuple[Kb, Kb])
     assert code == EXIT_OK
     assert "already carries" in out
     assert local.sidecar("alpha").read_bytes() == after_first
+
+
+def test_a_document_cannot_link_to_itself(pair: tuple[Kb, Kb]) -> None:
+    """A self-loop says nothing, and would come back as the document's own neighbour. Both ways of
+    reaching it — the same path twice, and a `pnk://` URI copied out of the file being edited."""
+    local, _partner = pair
+    for target in ("docs/alpha.md", local.uri("alpha"), f"pnk://self/{local.docs['alpha']}"):
+        with pytest.raises(PinakesError) as caught:
+            add(load(local.root), source="docs/alpha.md", target=target, rel="cites")
+        assert "link to itself" in caught.value.message
+    assert links_of(local, "alpha") == []
 
 
 def test_a_second_relation_to_the_same_target_is_a_second_entry(pair: tuple[Kb, Kb]) -> None:

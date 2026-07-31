@@ -205,10 +205,16 @@ That authoring command is the **second** exception to "originals are the truth",
 narrower one than the paid extraction above rather than a widening of it. Sync's write is
 unattended — it happens on a git hook, so what it may touch is one key of one block. `pnk link`'s is
 the opposite: a person naming the file they mean, in the command they typed. Both write only a
-sidecar, only the one belonging to the document named, and both are rename-atomic. What neither may
-do is write into the *other* end of a link: a link is authored forward, and the KB it points at
-learns of it by reading committed sidecars (§6.2) — never by having its files edited by a machine it
-does not run.
+sidecar, only the one belonging to the document named. What neither may do is write into the *other*
+end of a link: a link is authored forward, and the KB it points at learns of it by reading committed
+sidecars (§6.2) — never by having its files edited by a machine it does not run.
+
+Both writes are rename-atomic, which is a claim about *this* write and not about two of them:
+`pnk link` takes no lock, so a sync running concurrently can lose one side's change. Atomicity
+prevents a torn file holding a permanent ULID; it does not order two writers. The exposure is a
+person typing a command against a hook firing in the same second, and the answer is to re-run the
+one that went missing — a lock around a `docs/` write, held while a paid extraction runs, would
+block the interactive command for as long as the money takes.
 
 ---
 

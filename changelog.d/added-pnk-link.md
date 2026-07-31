@@ -14,4 +14,10 @@
   would be written is permanent. A well-formed `pnk://` URI whose target is *not* on this machine is
   written, because both ULIDs are already in it.
 - **Running the same `pnk link` twice writes nothing the second time** and says so. Two different
-  relations to one target remain two entries.
+  relations to one target remain two entries; a document linking to *itself* is refused.
+- **A symlinked document can be linked, and a symlinked sidecar is written through** rather than
+  replaced by a regular file. Membership of a KB is decided by the path under `[sources]` — the
+  same rule `pnk sync` uses — not by where the inode happens to live.
+- **Fixed: `tags:` or `provenance:` written with nothing under them** were rewritten to `tags: []`
+  and `provenance: {}` on any sidecar rewrite, against the byte-identity promise. Reachable before
+  now only from a paid PDF extraction; `pnk link` would have reached it on a first link.

@@ -221,6 +221,7 @@ Bounds on that, all of them things pinakes or YAML does rather than choices abou
 | **`pnk://self/…` is expanded** | A `self` link is rewritten to the full `pnk://<kb-ulid>/…` form in place — the entry keeps its position, its comment and any keys of your own |
 | **A self-referential anchor is not preserved** | `mine: &x` containing `b: *x` reads as `null` and loses its anchor. It used to crash `pnk sync` instead |
 | **A reused anchor name is refused** | Every alias to a repeated name would resolve to the last one, so which value it meant is not recoverable |
+| **A symlinked sidecar is written through** | The link is kept and its target rewritten, rather than replaced by a regular file. Minting is the exception: it refuses outright |
 
 A **duplicate key is an error**, not a silent last-wins: which of the two values you meant is not
 something any tool can recover.

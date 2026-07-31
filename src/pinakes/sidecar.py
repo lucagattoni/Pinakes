@@ -576,6 +576,15 @@ def write(path: Path, sidecar: Sidecar) -> None:
                 document[key] = value
             elif _unchanged(document.get(key), value):
                 continue  # the node already says this; touching it can only lose a comment
+            elif document.get(key) is None and not value:
+                # **An empty known key stays as the user wrote it.** `tags:` and `provenance:` with
+                # nothing under them read back as `()` and `{}` — identical to `tags: []` and
+                # `provenance: {}` in every way pinakes can observe — so rewriting them changes
+                # bytes for no meaning, against a promise stated as byte-identity. Reached on the
+                # common path only from L6: before `pnk link`, `write()` over an existing file ran
+                # on the paid-PDF path alone. Guarded on `not value` so a *first* link into a null
+                # `links:` still writes; that case has something to say.
+                continue
             elif key == "links" and isinstance(document.get(key), list):
                 _merge_links(document[key], sidecar.links, owner=sidecar.owner)
             elif key == "tags" and isinstance(document.get(key), list):
@@ -592,13 +601,21 @@ def write(path: Path, sidecar: Sidecar) -> None:
     _yaml().dump(document, stream)
     rendered = stream.getvalue()
 
+    # **Written through a symlink, not over it.** `os.replace` onto a symlink destroys the link and
+    # leaves a regular file, with the real sidecar untouched somewhere else still holding the old
+    # text — the user's own arrangement dismantled silently. `create()` refuses this case outright
+    # because minting over *anything* already there is unrecoverable; a rewrite has no such problem
+    # and simply follows it. Reached routinely only from L6: `pnk link` is the first command a
+    # person points at a file of their choosing.
+    target = path.resolve() if path.is_symlink() else path
+
     # Atomically: write beside the target, then rename over it. A truncated sidecar would lose the
     # document's permanent ULID, and every inbound pnk:// link with it — the one failure in this
     # module that no later command could repair.
-    temporary = path.with_name(f"{path.name}.new")
+    temporary = target.with_name(f"{target.name}.new")
     try:
         temporary.write_text(rendered, encoding="utf-8")
-        os.replace(temporary, path)
+        os.replace(temporary, target)
     except OSError:
         temporary.unlink(missing_ok=True)
         raise

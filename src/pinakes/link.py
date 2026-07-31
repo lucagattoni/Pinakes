@@ -15,6 +15,7 @@ as it is, for the same reason.
 already on disk. `sidecar.write()` matches entries on the *resolved* URI. Only the first is here.
 """
 
+import os
 import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -60,6 +61,15 @@ def add(manifest: Manifest, *, source: str, target: str, rel: str) -> LinkOutcom
     path = source_sidecar(manifest, source)
     to = resolve_target(manifest, target)
     existing = sidecar_module.read(path, owner=manifest.kb.id)
+
+    if to.kb == manifest.kb.id and to.doc == existing.id:
+        # Refused rather than written. A document related to itself says nothing, would come back
+        # as its own neighbour from `pnk links`, and every way of reaching this is a typo — the
+        # same path twice, or a `pnk://` URI copied from the file being edited.
+        raise PinakesError(
+            f"{source} would link to itself.",
+            remedy="A link goes between two documents. Check the target.",
+        )
 
     link = Link(to=to, rel=relation)
     if link in existing.links:
@@ -137,10 +147,10 @@ def _via_alias(linked: LinkedKb, relative: str, *, local_root: Path) -> PnkUri:
     Here it is sharper still: a link written from a stale `[[links.kb]] id` is *permanent* and
     points at a KB that does not exist, and there is no migration machinery to repair it.
 
-    **The refusal is what enforces that, not the choice of variable.** Past it the two ids are equal
-    by construction, so substituting `linked.id` at the return changes nothing observable — measured:
-    that mutation is caught by no test, while deleting the refusal is caught at once. `partner_id`
-    stays because it is the source that remains correct if the refusal is ever narrowed.
+    **The refusal is what enforces that, not the choice of variable.** Past it the two ids are
+    equal by construction, so substituting `linked.id` at the return changes nothing observable —
+    measured: that mutation is caught by no test, while deleting the refusal is caught at once.
+    `partner_id` stays because it remains the correct source if the refusal is ever narrowed.
     """
     if not relative.strip():
         raise PinakesError(
@@ -169,9 +179,13 @@ def _via_alias(linked: LinkedKb, relative: str, *, local_root: Path) -> PnkUri:
 def _doc_id_of(root: Path, raw: str, owner: KbId, kb: str) -> DocId:
     """The permanent ULID of the document at `raw`, read from its sidecar.
 
-    `owner` is that KB's own id, so a partner's `pnk://self/…` is never expanded to us — the
-    retargeting defect §2.2's `self` expansion exists to prevent, and one this module would
-    reintroduce by passing the local id to a partner's file.
+    `owner` is that KB's own id, because that is what the sidecar's `self` links mean and `read()`
+    requires one. **It is not a safety property here, and an earlier version of this docstring
+    claimed it was.** Nothing in this function consumes the resolved links: only `.id` is returned,
+    so passing the local id to a partner's file is measurably unobservable — that mutation is caught
+    by no test, and the output is byte-identical against a partner sidecar carrying the exact
+    retargeting shape. The protection against retargeting lives where the links are *kept*
+    (`linkscan.scan_one`, which does read them), not here.
     """
     return sidecar_module.read(
         sidecar_module.sidecar_path(_document_in(root, raw, kb=kb)), owner=owner
@@ -186,9 +200,23 @@ def _document_in(root: Path, raw: str, *, kb: str) -> Path:
     same document. An absolute path is accepted when it lands inside that KB, and refused when it
     does not: a link is a fact about a KB's own documents, and `../../elsewhere/notes.md` has no
     ULID this KB may write down.
+
+    **Normalised lexically, never through `resolve()`.** `resolve()` follows the final symlink
+    before the containment check, so a *symlinked document* — which `pnk sync` indexes, `pnk doctor`
+    calls a readable sidecar, and `pnk links` traverses — was refused as "outside this KB", with a
+    remedy repeating the path the user had just typed correctly. Nothing could then link it, in
+    either direction. What decides membership is the path under the KB's `[sources]`, which is what
+    every other command uses; where the inode lives is not this command's business. `..` is still
+    collapsed, so the escape the check exists for is still refused.
+
+    No `expanduser()` either: this argument is documented as KB-root-relative, so a successfully
+    expanded `~` lands in `$HOME` and is refused by the very next line — it bought nothing and
+    raised `RuntimeError`, which is not a `PinakesError`, straight out through `cli.main` as a
+    traceback.
     """
-    given = Path(raw).expanduser()
-    document = (given if given.is_absolute() else root / given).resolve()
+    given = Path(raw)
+    joined = given if given.is_absolute() else root / given
+    document = Path(os.path.normpath(joined))
     if not document.is_relative_to(root):
         raise PinakesError(
             f"{raw!r} is outside {kb}.",
