@@ -23,12 +23,15 @@ deleting the middle of three commented links, `# first` stays correct, `# second
 *third* link, and `# third` disappears. The surviving links are all correct; the prose beside one of
 them is not.
 
-**Some rules cannot be tested, and saying so beats inventing a test.** The plan's *"assign a known
-key only when its value actually changed"* has no observable effect: `_merge_mapping` and
-`_merge_links` mutate their nodes in place, and `deepcopy` of an immutable scalar returns the same
-object, so a write of an unchanged document is already a no-op without the short-circuit. Two
-attempts at a test for it passed against the mutated source. The rule states intent and saves a
-walk; the honest thing is a docstring saying no mutation of it can fail, not a third attempt.
+**"Unobservable" was the wrong conclusion; "observable only where something else is broken" was the
+right one.** The plan's *"assign a known key only when its value actually changed"* looked untestable
+— every known-key value is the node read out of the document and written straight back, so a write
+of an unchanged document is already a no-op. Two attempts at a test passed against the mutated
+source and I wrote that no mutation of it could fail. A reviewer then removed the rule and the
+committed corpora stopped round-tripping: the short-circuit was **masking** the duplicate-link
+defect below, not proving its own redundancy. Once that was fixed the rule really was unobservable
+— but the claim was true by accident for two commits, and the difference is exactly what an
+adversarial pass is for.
 
 **`-x` makes a mutation look like it was caught by the wrong test.** Two links mutations appeared to
 be killed only by an unrelated pre-existing test; without `-x` both were also killed by the test
@@ -47,3 +50,20 @@ is deleted" is required at the top of `provenance` — or `--force` leaves a fal
 and destructive one level down, where `with_extraction_provenance` builds a plain four-key
 replacement and the user's own `reviewed_by` sits beside `content_hash`. One sentence, two opposite
 correct answers, distinguished only by depth.
+
+**The exit criterion was the thing nobody ran.** The plan's one falsifiable sentence — *every
+committed sidecar still round-trips* — had no test, and running it by hand found a `pnk://self/…`
+entry in `partner-kb` being deleted, rebuilt without its unknown per-link keys, and moved to the end
+of its block. `_links()` expands `self` on read, so the loaded entry's raw `to` never equals
+anything in the reconciliation set. The docs bounded the invariant with "`pnk://self/…` expansion",
+which reads as *the URI text changes* and not *the entry is rebuilt* — a documented exclusion that
+quietly covered a defect.
+
+**Quoting was applied on the path that was tested and not on the path that ships.** Decision 23's
+predicate reached the merge branch and the mint, but not the branch taken when a key **first
+appears** — which is the branch `pnk link` will follow on a sidecar that has no `links:` yet, i.e.
+almost all of them. Three quoting mutations survived the whole suite.
+
+**An error message is part of the interface.** Three of this increment's breaking changes surfaced
+as `TaggedScalar`, `ScalarFloat` and `OctalInt` — ruamel class names, from a library the user never
+chose, with no remedy. The type is not what they need; "quote it, or drop the tag" is.

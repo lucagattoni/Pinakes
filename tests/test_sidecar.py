@@ -871,11 +871,11 @@ def test_a_comment_on_a_tags_entry_survives_a_rewrite(tmp_path: Path, owner: KbI
 
 
 def test_an_unchanged_known_key_is_not_reassigned(tmp_path: Path, owner: KbId) -> None:
-    """The rule underneath the fix, asserted on **node identity** rather than on bytes.
+    """The property, on **node identity** rather than on bytes — bytes can match by luck.
 
-    Bytes can match by luck; a node that was never touched cannot have lost a comment. Nothing in
-    pinakes edits `tags`, so under this rule its node survives a rewrite unmodified — which is what
-    makes byte-identity structural instead of incidental.
+    It does **not** guard the unchanged-key short-circuit: `_merge_tags` mutates the sequence in
+    place and never reassigns `document["tags"]`, so this identity holds with the rule removed.
+    Nothing here can distinguish them, and the reason is worth knowing rather than papering over.
     """
     path = tmp_path / f"t.md{SIDECAR_SUFFIX}"
     path.write_text(
@@ -944,11 +944,11 @@ def test_a_removed_link_takes_only_its_own_comment(tmp_path: Path, owner: KbId) 
 
 
 def test_an_unchanged_links_block_is_not_rewritten(tmp_path: Path, owner: KbId) -> None:
-    """The unchanged-key rule, asserted where it is load-bearing rather than on `tags`.
+    """The same property for `links`, and blind in the same way.
 
-    `_merge_links` reassigns each matched entry's `rel`, replacing that scalar node. Under the rule
-    the whole branch is skipped, so the node the user wrote survives untouched — which is what
-    makes byte-identity structural rather than a property that happens to hold.
+    `_links()` hands back the very `SingleQuotedScalarString` node it read, so even the merge path
+    reassigns the same object and identity survives. What this pins is that a plain read-write does
+    not disturb the block; the short-circuit that skips the walk is not observable here either.
     """
     kb, target = mint_kb_id(), mint_doc_id()
     path = tmp_path / f"w.md{SIDECAR_SUFFIX}"
@@ -1104,3 +1104,121 @@ def test_a_self_referential_anchor_is_nulled_rather_than_refused(
     write(path, parsed)
     after = path.read_text(encoding="utf-8")
     assert "&x" not in after and "*x" not in after, "the anchor and alias do not survive"
+
+
+@pytest.mark.parametrize(
+    ("field", "body"),
+    [
+        ("title", "title: 1e3"),
+        ("title", "title: 0o17"),
+        ("created", "created: 1E3"),
+        ("tags", "tags:\n- 1e3"),
+    ],
+)
+def test_a_string_field_that_yaml_1_2_resolves_as_a_number_is_refused(
+    tmp_path: Path, owner: KbId, field: str, body: str
+) -> None:
+    """One of the increment's three breaking changes. Under YAML 1.1 these were strings; 1.2 reads
+    them as numbers and the field checks refuse them."""
+    path = tmp_path / f"cc.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\n{body}\n", encoding="utf-8")
+    with pytest.raises(SidecarError) as caught:
+        read(path, owner=owner)
+    assert field in caught.value.message and "number" in caught.value.message
+
+
+@pytest.mark.parametrize(
+    "body",
+    ["title: !whatever v", "title: !!str hello", "created: !whatever v", "tags:\n- !whatever v"],
+)
+def test_a_tagged_scalar_in_a_known_field_is_refused_with_a_remedy(
+    tmp_path: Path, owner: KbId, body: str
+) -> None:
+    """And it must not say `TaggedScalar`. Three of this increment's breaking changes reach a user
+    through these messages, and naming a ruamel internal class tells them nothing they can act on —
+    what they need is "quote it, or drop the tag"."""
+    path = tmp_path / f"dd.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\n{body}\n", encoding="utf-8")
+    with pytest.raises(SidecarError) as caught:
+        read(path, owner=owner)
+    assert "tagged value" in caught.value.message
+    assert "Scalar" not in caught.value.message and "Tagged" not in caught.value.message
+    assert "Quote it" in caught.value.remedy
+
+
+def test_a_rel_or_tag_that_looks_like_a_boolean_is_quoted_when_written(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """Decision 23 on every path pinakes writes a scalar, not just the minted `title`.
+
+    Three quoting mutations survived the whole suite before this: dropping `_authored` from the
+    links merge, from the links append, and from the tags append. `pnk link --rel no` is the real
+    case — read back **through PyYAML**, because after this increment nothing else in the repo
+    reads YAML 1.1 and nothing else would notice.
+    """
+    kb, target = mint_kb_id(), mint_doc_id()
+    path = tmp_path / f"ee.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\ntags: []\nlinks: []\n", encoding="utf-8")
+
+    parsed = read(path, owner=owner)
+    write(
+        path,
+        replace(
+            parsed,
+            tags=("no", "accessions"),
+            links=(Link(to=PnkUri(kb=kb, doc=target), rel="no"),),
+        ),
+    )
+    reread = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    assert reread["tags"] == ["no", "accessions"], "a YAML 1.1 reader must not see False"
+    assert reread["links"][0]["rel"] == "no"
+
+
+def test_a_link_written_where_none_existed_is_quoted_too(tmp_path: Path, owner: KbId) -> None:
+    """The other half: the branch taken when a key **first appears**, which is what `pnk link` will
+    follow on a sidecar that has no `links:` yet — the common case, and it wrote bare. `tags` goes
+    through the same branch and had the same hole."""
+    kb, target = mint_kb_id(), mint_doc_id()
+    path = tmp_path / f"ff.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\ntitle: A document\n", encoding="utf-8")
+
+    parsed = read(path, owner=owner)
+    write(
+        path,
+        replace(parsed, tags=("no",), links=(Link(to=PnkUri(kb=kb, doc=target), rel="no"),)),
+    )
+    reread = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    assert reread["links"][0]["rel"] == "no"
+    assert reread["tags"] == ["no"], "the same branch writes tags, and it was bare too"
+
+
+def test_a_self_link_keeps_its_place_its_comment_and_its_unknown_keys(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """`_links()` expands `self`, so a `pnk://self/…` entry never equalled anything in the wanted
+    set: it was deleted and a bare replacement appended at the end. Reproduced on a **committed
+    corpus sidecar**, where it silently reordered the block.
+
+    The expansion itself is a documented exclusion. Rebuilding the entry around it is not.
+    """
+    other, target, sibling = mint_kb_id(), mint_doc_id(), mint_doc_id()
+    path = tmp_path / f"gg.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\nlinks:\n"
+        f"# the sibling in this same KB\n- to: pnk://self/{sibling}\n  rel: related\n"
+        "  confidence: high\n"
+        f"- to: pnk://{other}/{target}\n  rel: counterpart\n",
+        encoding="utf-8",
+    )
+    write(path, read(path, owner=owner))
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    assert (
+        lines[lines.index("# the sibling in this same KB") + 1] == f"- to: pnk://{owner}/{sibling}"
+    )
+    assert "  confidence: high" in lines, "its unknown per-link keys survive"
+    assert lines.index(f"- to: pnk://{other}/{target}") > lines.index(
+        "# the sibling in this same KB"
+    )

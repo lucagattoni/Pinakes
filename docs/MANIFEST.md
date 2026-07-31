@@ -212,10 +212,12 @@ Four bounds on that, all of them things pinakes or YAML does rather than choices
 
 | Bound | What happens |
 |---|---|
-| **Values must be JSON-encodable** | The index stores metadata as JSON. A YAML tag (`!!binary`, `!!set`, `!!timestamp`, `!!str`, or one of your own), a bare date, or a mapping mixing string and non-string keys is refused at read with a remedy — rather than crashing `pnk sync` later, which is what used to happen |
+| **Values must be JSON-encodable** | The index stores metadata as JSON. A tag on a *scalar* (`!!binary`, `!!set`, `!!timestamp`, `!!str`, or one of your own), a bare date, or a mapping mixing string and non-string keys is refused at read with a remedy — rather than crashing `pnk sync` later, which is what used to happen. A custom tag on a *mapping* or a *sequence* is fine: it serialises |
 | **Indentation follows the writer** | A block sequence written `  - item` comes back `- item`. Nothing is lost; the bytes differ |
 | **Deleting loses one comment and moves another** | A comment belongs to the construct *before* it, so removing a key or a list entry leaves that comment on whatever replaces it and drops the last one in the block |
 | **What YAML does not carry** | CRLF line endings, a byte-order mark, and `---`/`...` document markers |
+| **`pnk://self/…` is expanded** | A `self` link is rewritten to the full `pnk://<kb-ulid>/…` form in place — the entry keeps its position, its comment and any keys of your own |
+| **A self-referential anchor is not preserved** | `mine: &x` containing `b: *x` reads as `null` and loses its anchor. It used to crash `pnk sync` instead |
 
 A **duplicate key is an error**, not a silent last-wins: which of the two values you meant is not
 something any tool can recover.

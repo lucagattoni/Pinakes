@@ -206,6 +206,13 @@ test, or write **none** and say why in the same commit.
 | two links sharing a `to` keep their own `rel` and comment | L5b | `tests/test_sidecar.py::test_two_links_sharing_a_to_keep_their_own_rel_and_comment` |
 | a user key inside `provenance.extraction` survives a re-extraction | L5b | `tests/test_sidecar.py::test_a_user_key_inside_provenance_extraction_survives_a_re_extraction` |
 | a document-trailing comment is captured by an appended key (pinned) | L5b | `tests/test_sidecar.py::test_a_document_trailing_comment_is_captured_by_an_appended_key` |
+| **every committed sidecar round-trips** (the exit criterion) | L5b | `tests/test_partner_kb.py::test_every_committed_sidecar_round_trips_through_read_and_write` |
+| a `self` link keeps its place, comment and unknown keys | L5b | `tests/test_sidecar.py::test_a_self_link_keeps_its_place_its_comment_and_its_unknown_keys` |
+| a string field 1.2 resolves as a number is refused | L5b | `tests/test_sidecar.py::test_a_string_field_that_yaml_1_2_resolves_as_a_number_is_refused` |
+| a tagged scalar in a known field is refused, without a ruamel class name | L5b | `tests/test_sidecar.py::test_a_tagged_scalar_in_a_known_field_is_refused_with_a_remedy` |
+| a `rel` or tag that looks like a boolean is quoted when written | L5b | `tests/test_sidecar.py::test_a_rel_or_tag_that_looks_like_a_boolean_is_quoted_when_written` |
+| ...including when the key first appears | L5b | `tests/test_sidecar.py::test_a_link_written_where_none_existed_is_quoted_too` |
+| the two-resolver union covers PyYAML 1.1 | L5b | `tests/test_packaging.py::test_the_two_resolver_union_covers_pyyaml_1_1` |
 | a self-referential anchor is nulled rather than refused (pinned) | L5b | `tests/test_sidecar.py::test_a_self_referential_anchor_is_nulled_rather_than_refused` |
 | the deletion limitation is pinned, not fixed | L5b | `tests/test_sidecar.py::test_deleting_a_commented_key_loses_one_comment_and_misattributes_another` |
 | `original` is excluded from equality | L5b | `tests/test_sidecar.py::test_the_original_document_is_excluded_from_equality` |

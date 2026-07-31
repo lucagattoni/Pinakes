@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from ruamel.yaml import YAML, YAMLError
-from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.comments import CommentedMap, TaggedScalar
 from ruamel.yaml.constructor import DuplicateKeyError
 from ruamel.yaml.nodes import ScalarNode
 from ruamel.yaml.resolver import VersionedResolver
@@ -67,7 +67,7 @@ _RESOLVERS = (VersionedResolver((1, 1)), VersionedResolver((1, 2)))
 _STRING_TAG = "tag:yaml.org,2002:str"
 
 
-def _needs_quoting(value: str) -> bool:
+def needs_quoting(value: str) -> bool:
     """Whether a scalar **pinakes is writing** would be read back as something other than a string.
 
     Keyed on the value being assigned, never on whether the document is new: `skeleton()` derives a
@@ -84,7 +84,7 @@ def _needs_quoting(value: str) -> bool:
 
 
 def _authored(value: str) -> str | SingleQuotedScalarString:
-    return SingleQuotedScalarString(value) if _needs_quoting(value) else value
+    return SingleQuotedScalarString(value) if needs_quoting(value) else value
 
 
 def _json_encodable(path: Path, name: str, mapping: dict[str, Any]) -> None:
@@ -119,12 +119,13 @@ def _json_encodable(path: Path, name: str, mapping: dict[str, Any]) -> None:
         )
         raise SidecarError(
             path,
-            f"has a `{name}` value the index cannot store: {offending}",
+            f"has an unusable `{name}` value the index cannot store: {offending}",
             remedy=(
                 "The index stores sidecar metadata as JSON, so every value under "
-                f"`{name}` must be JSON-encodable. A YAML tag (`!!binary`, `!!set`, `!!timestamp`, "
-                "`!!str`, or one of your own), a bare date, or a mapping mixing string and "
-                "non-string keys will not encode. Quote it, or drop the tag."
+                f"`{name}` must be JSON-encodable. A tag on a *scalar* (`!!binary`, `!!set`, "
+                "`!!timestamp`, `!!str`, or one of your own), a bare date, or a mapping mixing "
+                "string and non-string keys will not encode — a custom tag on a mapping or a "
+                "sequence is fine, because it serialises. Quote it, or drop the tag."
             ),
         ) from exc
 
@@ -302,9 +303,27 @@ def _merge_links(existing: Any, links: tuple[Link, ...]) -> None:
             del existing[index]
             continue
         entry = cast(dict[str, Any], raw_entry)
-        pair = (str(entry.get("to")), str(entry.get("rel")))
-        if pair in wanted:
-            wanted.discard(pair)  # matched in place; its `rel` already says what it should
+        rel = str(entry.get("rel"))
+        written = str(entry.get("to"))
+        # **Matched on the *resolved* URI, then updated in place.** `_links()` expands `self`, so a
+        # `pnk://self/DOC` entry never equals any link in `wanted` — it was deleted and a bare
+        # replacement appended at the end, taking the user's comment and their unknown per-link
+        # keys with it, and reordering the block. Reproduced on a committed corpus sidecar. A `self`
+        # URI matches on `(doc, rel)`: it means "this KB" by definition, and document ULIDs are
+        # unique, so there is nothing else it could name.
+        pair = next(
+            (
+                candidate
+                for candidate in wanted
+                if candidate[1] == rel
+                and (candidate[0] == written or _is_self_for(written, candidate[0]))
+            ),
+            None,
+        )
+        if pair is not None:
+            wanted.discard(pair)
+            if pair[0] != written:
+                entry["to"] = _authored(pair[0])  # expand `self`, keeping the entry itself
         else:
             del existing[index]
     for link in links:
@@ -347,6 +366,47 @@ def _unchanged(existing: object, incoming: object) -> bool:
     return type(existing) is type(incoming) and repr(existing) == repr(incoming)
 
 
+def _describe(value: object) -> str:
+    """What a wrong value *is*, in words a person can act on.
+
+    `type(value).__name__` names a ruamel internal on exactly the inputs this increment made
+    reachable — `TaggedScalar`, `ScalarFloat`, `OctalInt` — so three of its headline breaking
+    changes would have surfaced as class names from a library the user never chose. The remedy
+    matters more than the type: what they wrote needs quoting, or its tag dropped.
+    """
+    if isinstance(value, TaggedScalar):
+        return "a tagged value"
+    if isinstance(value, bool):
+        return "a boolean"
+    if isinstance(value, int):
+        return "a number"
+    if isinstance(value, float):
+        return "a number"
+    if isinstance(value, list):
+        return "a list"
+    if isinstance(value, dict):
+        return "a mapping"
+    if value is None:
+        return "nothing"
+    return f"a {type(value).__name__}"
+
+
+_QUOTE_IT = (
+    "Quote it — YAML 1.2 reads an unquoted `1e3`, `0o17` or `NO` as a number or a boolean, and a "
+    "tagged value (`!!str`, `!!binary`, or one of your own) is not a string either. Wrapping it in "
+    "quotes makes it the string it looks like."
+)
+
+
+def _is_self_for(written: str, resolved: str) -> bool:
+    """Whether a `pnk://self/…` as written names the same document as an already-resolved URI."""
+    try:
+        parsed = parse_uri(written)
+    except InvalidUriError:
+        return False
+    return parsed.is_self and str(parsed.doc) == resolved.rsplit("/", 1)[-1]
+
+
 def _merge_tags(existing: Any, tags: tuple[str, ...]) -> None:
     """Reconcile `tags` **by value** — match, append, delete the removed — the same shape `links`
     uses for `to`.
@@ -377,7 +437,13 @@ def _known(sidecar: Sidecar) -> dict[str, Any]:
     if sidecar.created is not None or "created" in sidecar.present:
         document["created"] = _authored(sidecar.created) if sidecar.created is not None else None
     if sidecar.links or "links" in sidecar.present:
-        document["links"] = [{"to": str(link.to), "rel": link.rel} for link in sidecar.links]
+        # `_authored` here too: this is the branch taken when `links` first appears and on a mint,
+        # which is exactly the path `pnk link` follows on a sidecar that has none yet — so
+        # `--rel no` would otherwise land bare and read as `False` to any YAML 1.1 reader. The
+        # merge path quoted; this one did not, and it is the common case.
+        document["links"] = [
+            {"to": _authored(str(link.to)), "rel": _authored(link.rel)} for link in sidecar.links
+        ]
     if sidecar.provenance or "provenance" in sidecar.present:
         document["provenance"] = dict(sidecar.provenance)
     return document
@@ -577,7 +643,7 @@ def _id(path: Path, data: dict[str, Any]) -> DocId:
             remedy="Every sidecar carries the document's permanent ULID (docs/DESIGN.md §2.2).",
         )
     if not isinstance(raw, str):
-        raise SidecarError(path, f"`id` must be a string, found {type(raw).__name__}")
+        raise SidecarError(path, f"`id` must be a string, found {_describe(raw)}", remedy=_QUOTE_IT)
     try:
         return parse_doc_id(raw)
     except InvalidIdError as exc:
@@ -596,7 +662,9 @@ def _optional_str(path: Path, data: dict[str, Any], key: str) -> str | None:
     if raw is None:
         return None
     if not isinstance(raw, str):
-        raise SidecarError(path, f"`{key}` must be a string, found {type(raw).__name__}")
+        raise SidecarError(
+            path, f"`{key}` must be a string, found {_describe(raw)}", remedy=_QUOTE_IT
+        )
     return raw
 
 
@@ -609,7 +677,9 @@ def _tags(path: Path, data: dict[str, Any]) -> tuple[str, ...]:
     tags: list[str] = []
     for item in cast(list[object], raw):
         if not isinstance(item, str):
-            raise SidecarError(path, f"`tags` must be strings, found {type(item).__name__}")
+            raise SidecarError(
+                path, f"`tags` must be strings, found {_describe(item)}", remedy=_QUOTE_IT
+            )
         tags.append(item)
     return tuple(tags)
 

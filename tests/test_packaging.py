@@ -229,3 +229,74 @@ def test_every_symbol_the_ruamel_stub_declares_matches_inspect_signature() -> No
     instance.preserve_quotes = True
     instance.width = 4096
     assert instance.preserve_quotes is True and instance.width == 4096
+
+
+def test_the_two_resolver_union_covers_pyyaml_1_1() -> None:
+    """Decision 23 says to prove this rather than assume it.
+
+    The quoting predicate uses two `VersionedResolver`s, at 1.1 and 1.2, and deliberately **not**
+    `yaml.resolver.Resolver`: L5b removes `pyyaml` from the runtime dependencies, so importing it
+    in `write()` would `ImportError` on a user's install — and the AST gate is built to fail on
+    exactly that import, so the increment could not be green and correct at once.
+
+    The claim that makes that safe is that the ruamel pair is not weaker: there is no value PyYAML
+    1.1 resolves as non-`str` while both ruamel versions resolve as `str`. Proved here, in `tests/`,
+    where `pyyaml` *is* installed.
+    """
+    import yaml
+
+    from pinakes.sidecar import needs_quoting
+
+    probes = [
+        "NO",
+        "no",
+        "No",
+        "yes",
+        "Yes",
+        "YES",
+        "on",
+        "off",
+        "ON",
+        "OFF",
+        "true",
+        "false",
+        "True",
+        "False",
+        "TRUE",
+        "y",
+        "n",
+        "Y",
+        "N",
+        "~",
+        "null",
+        "Null",
+        "NULL",
+        "",
+        "0755",
+        "0o17",
+        "0x1F",
+        "1e3",
+        "1E3",
+        "1.5",
+        "-3",
+        "+7",
+        "1_000",
+        "1:30",
+        "1:30:00",
+        ".inf",
+        "-.inf",
+        ".nan",
+        "2026-07-31",
+        "2026-07-31 18:00:00",
+        "hello",
+        "a b",
+    ]
+    weaker: list[str] = []
+    for probe in probes:
+        pyyaml_is_str = isinstance(yaml.safe_load(f"v: {probe}\n").get("v"), str)
+        if not pyyaml_is_str and not needs_quoting(probe):
+            weaker.append(probe)
+
+    assert not weaker, (
+        "these resolve as non-strings under PyYAML 1.1 and would be written bare: " + str(weaker)
+    )
