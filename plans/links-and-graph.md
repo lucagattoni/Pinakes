@@ -638,7 +638,13 @@ widened acceptance becoming a crash.
        comments onto different links** when the list is reordered, and deletes them when it shrinks —
        measured, and worse than the mapping-key limitation below because the prose then describes
        the wrong data. `tags` reconciles **by value**, the same shape: match, append, delete
-       the removed. It is *not* "a list of plain strings with no per-entry comments" — measured,
+       the removed — **and delete with `del existing[i]`, in descending index order, never by slice
+       assignment.** Reported by the executor, measured: `existing[:] = keep` wipes
+       `CommentedSeq.ca.items` **outright** — every comment in the block, not only the removed
+       entry's — where `del` shifts the survivors (`{}` against `{0: '# first', 1: '# third'}`).
+       Both merge functions had it. *(Planner note: on a leading-comment fixture I could not
+       reproduce the difference — both forms behaved identically and `.ca.items` was empty — so the
+       executor's fixture is the one that pins it. Use theirs.)* It is *not* "a list of plain strings with no per-entry comments" — measured,
        ruamel stores a comment on a `tags` entry exactly as it does on a `links` entry
        (`.ca.items: {0: [CommentToken('# the department that owns this')]}`), and replacing the
        sequence wholesale destroys it. A comment on a *deleted* entry is still lost, in either
@@ -809,6 +815,10 @@ an equality assertion can never detect their loss.
 of the nested map** — the only position that reproduces it);
 `::test_a_comment_inside_the_links_block_survives_a_rewrite`;
 `::test_a_comment_on_a_tags_entry_survives_a_rewrite`;
+`::test_deleting_a_sequence_entry_does_not_wipe_the_other_comments` (the executor's fixture — slice
+assignment against `del`);
+`::test_deleting_a_middle_sequence_entry_misattributes_the_next_comment` (pins the limitation in its
+**sequence** shape, not only its mapping shape);
 `::test_an_unchanged_known_key_is_not_reassigned` (the general rule — assert the node object is the
 same, not merely that the bytes match);
 `::test_comments_survive_a_rewrite`;
@@ -860,11 +870,31 @@ fails. Restore `sorted(extra)` on the original-document path → the key-order t
 mint-quoting predicate → the boolean-title test fails. Drop the `ScalarBoolean` coercion, **or make it one level deep**, → the
 anchored-boolean test fails. Drop the JSON check → the tagged-sidecar test fails. Drop
 `sort_keys=True` from it → the mixed-key test fails. Reconcile `links` by index instead of by `to` → the
-comment-misattribution test fails. Assign `tags` unconditionally → the tags-comment test fails. Replace the AST scan with an import walk → the lazy-import test
+comment-misattribution test fails. Assign `tags` unconditionally → the tags-comment test fails. Delete
+sequence entries by slice assignment instead of descending `del` → the comment-wipe test fails. Replace the AST scan with an import walk → the lazy-import test
 fails. Revert one `replace()` to a hand-enumerated constructor → a comment test fails.
 
-**Known limitation, pinned not fixed.** Deleting a key misattributes its leading comment to the next
-key *and silently deletes that key's own comment*. Reachable via `without_extraction_provenance`.
+**Known limitation, pinned not fixed — and it covers sequences, not only mappings.** ruamel binds a
+comment to whatever precedes it, so:
+
+- **Mapping keys:** deleting a key misattributes its leading comment to the next key *and silently
+  deletes that key's own comment*. Reachable via `without_extraction_provenance`.
+- **Sequence entries:** the same. Reproduced — deleting the middle of three commented links leaves
+  `# second` labelling the **third**:
+
+  ```yaml
+  links:
+  # first
+  - to: pnk://k/a
+    rel: related
+  # second          <- was the second link's; now labels the third
+  - to: pnk://k/c
+    rel: counterpart
+  ```
+
+  Reachable whenever `links` or `tags` loses an entry, which `pnk link` will do routinely in L6.
+  Pin **both** shapes; a mapping-only fixture passes on an implementation that misattributes in
+  sequences.
 
 **Docs.** `DESIGN.md` §2.2 — the deferral becomes a delivery, and §2.2 is where the *rationale*
 lives. Read `docs/KB-UPDATES.md` §5 first: it already argues for `tomlkit` in core on this same
