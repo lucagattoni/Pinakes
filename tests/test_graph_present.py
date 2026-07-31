@@ -186,6 +186,10 @@ def test_the_projections_key_sets_match_what_the_rows_carry() -> None:
     """
     row = present.neighbour_row(_neighbour(1.0), provider=cast(Any, _StubProvider()))
     assert present.NEIGHBOUR_KEYS == NEIGHBOUR_KEYS == set(row)
+    # The fallback, which only a provider that never recorded this row can reach. `unknown` rather
+    # than `both`, so a direction nobody established cannot render as the strongest claim there is
+    # — the CLI would otherwise draw it as `<->`, "written from both ends".
+    assert row["direction"] == "unknown"
     assert present.FRONTIER_KEYS == FRONTIER_KEYS
     assert present.UNRESOLVED_KEYS == UNRESOLVED_KEYS
     assert (
@@ -373,3 +377,58 @@ def test_a_frontier_entry_carries_the_distance_it_was_found_at() -> None:
     )
     payload = present.payload(result, provider=cast(Any, _StubProvider()), document="DOC")
     assert payload["frontier"][0]["distance"] == 3
+
+
+def test_a_query_reaches_the_ranking_on_both_surfaces(tmp_path: Path) -> None:
+    """`scores` is assigned to the provider *after* construction, so `--direction` can be refused
+    before a model loads. Nothing asserted the assignment: deleting it left every gate green while
+    query ranking silently stopped happening — neighbours came back on the edge-weight scale, in
+    the wrong order, flagged `scored_by_query: false`.
+
+    Both call sites, because they are two separate assignments (`Server.links` and `run_links`).
+    """
+    from pinakes.serve import Server
+
+    root = make_kb(
+        tmp_path / "ranked",
+        name="ranked",
+        documents={
+            "a.md": "# A\n\nRetrieval.\n",
+            "b.md": "# B\n\nRanking is what a reranker does.\n",
+            "c.md": "# C\n\nSourdough needs a patient starter.\n",
+        },
+    )
+    kb_id = load(root).kb.id
+    author_link(root, "a.md", f"pnk://{kb_id}/{doc_id_of(root, 'b.md')}", "related")
+    author_link(root, "a.md", f"pnk://{kb_id}/{doc_id_of(root, 'c.md')}", "related")
+    wanted = doc_id_of(root, "c.md")
+
+    cli_rows = _payload(root, "a.md", query="sourdough")["neighbours"]
+    assert [row["scored_by_query"] for row in cli_rows] == [True, True]
+    assert cli_rows[0]["doc_id"] == wanted, "the query must decide the order, not the edge weight"
+
+    made = Server([root])
+    try:
+        mcp_rows = made.links(doc_id_of(root, "a.md"), query="sourdough")["neighbours"]
+    finally:
+        made.close()
+    assert [row["scored_by_query"] for row in mcp_rows] == [True, True]
+    assert mcp_rows[0]["doc_id"] == wanted
+
+    # ...and through `run_links` itself, not a reimplementation of it: the two assignments are two
+    # separate lines, and `_payload` above exercises the constructor rather than the CLI's own.
+    import contextlib
+    import io
+    import json
+
+    from pinakes.cli import main
+
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        code = main(
+            ["links", "docs/a.md", "--kb", str(root), "--json", "--query", "sourdough", "--offline"]
+        )
+    assert code == 0, buffer.getvalue()
+    through_cli = json.loads(buffer.getvalue())["neighbours"]
+    assert [row["scored_by_query"] for row in through_cli] == [True, True]
+    assert through_cli[0]["doc_id"] == wanted

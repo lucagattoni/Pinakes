@@ -364,9 +364,25 @@ def test_the_human_output_names_each_direction_with_its_own_arrow(tmp_path: Path
     kb.set_links("beta", [(kb.uri("alpha"), "cites")])
     run(kb)
 
-    out = human_output(kb, "docs/alpha.md")
-    assert "-> related: beta" in out, "written here"
-    assert "<- cites: beta" in out, "pointing here"
-    assert "<-> mutual: gamma" in out, "the same relation from both ends"
+    # Matched against whole lines, never as substrings: `-> related: beta` is *inside*
+    # `<-> related: beta`, so dropping the `out` mapping rendered every outbound link as
+    # reciprocal and this test still passed.
+    lines = {line.split("  [hop")[0] for line in human_output(kb, "docs/alpha.md").splitlines()}
+    assert "-> related: beta" in lines, "written here"
+    assert "<- cites: beta" in lines, "pointing here"
+    assert "<-> mutual: gamma" in lines, "the same relation from both ends"
 
     assert "no links" in human_output(kb, "docs/orphan.md"), "silence would read as success"
+
+
+def test_the_cli_says_so_when_every_link_dangles(tmp_path: Path) -> None:
+    """stdout said `no links` for a document whose links exist and resolve to nothing, while
+    stderr listed them. A user piping stdout reads only the contradiction."""
+    kb = make_kb(tmp_path / "cli", "cli", ["alpha", "stale"])
+    absent = f"pnk://{kb.kb_id}/{mint_doc_id()}"  # minted, never hand-written
+    kb.set_links("stale", [(absent, "related")])
+    run(kb)
+
+    dangling = human_output(kb, "docs/stale.md")
+    assert "no links" not in dangling, "its links exist — they resolve to nothing"
+    assert "resolve to nothing" in dangling

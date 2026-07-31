@@ -45,3 +45,27 @@ A second adversarial pass found it by varying the one parameter the tests held f
 
 The generalisation: **when a fix adds a rule, test the axis the rule is defined over.** The rule was
 about *which expansion* a direction came from, and every test pinned a single expansion.
+
+**A third pass found no new defect in the traversal itself, and four in what surrounded it.** The
+`(node, rel)` scheme was probed against a reciprocal pair, a mutual same-rel pair, each `direction`,
+a self-loop, a 3-cycle, a node reached at two different hops by different relations, a node reached
+by two parents in one hop with opposite directions, and a node dropped by fan-out then re-reached —
+all correct. What was still wrong sat one layer out: an assignment nobody asserted, a message worded
+from the wrong end, a branch ordered ahead of a better one, and an assertion satisfied by a
+substring.
+
+Two of those are worth naming as patterns:
+
+- **`assert "-> related: b" in output` passed on `<-> related: b`.** A substring assertion over
+  rendered text will match a *longer* glyph containing the shorter one, so dropping the outbound
+  arrow entirely left the test green. Match whole lines when asserting on human output.
+- **Splitting `f(x, scores=s)` into `f(x); f.scores = s` moved a value out of the type checker's
+  reach.** The construction was covered by the tests that built providers directly; the assignment
+  was covered by nothing, and deleting it disabled query ranking with every gate green. When a
+  refactor turns an argument into a mutation, the mutation needs its own assertion at its own call
+  site — and there were two call sites.
+
+**Left for the graph release** (L3 core, predating this increment, found while probing): a node
+dropped by fan-out at hop 1 and re-reached at hop 2 is emitted with `distance: 2` although it is one
+authored hop from the start; and a self-loop (`a --sameas--> a`) is dropped entirely — not a
+neighbour, not unresolved, not on the frontier.

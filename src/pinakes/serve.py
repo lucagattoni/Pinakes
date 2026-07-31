@@ -454,19 +454,29 @@ def _links_suggestion(result: "TraverseResult", *, filtered: bool) -> str:
     the caller's own arguments are what emptied it.
     """
     if not result.neighbours:
-        if result.unresolved:
-            # Links exist; their targets do not. Saying "no links from here" alongside a populated
-            # `unresolved` list contradicts the payload in the same breath.
-            return (
-                "This document's links point at documents this KB no longer has — `unresolved` "
-                "lists them. `pnk doctor` names dangling targets; pinakes_search finds documents "
-                "by content in the meantime."
-            )
+        # `filtered` first, deliberately. When the caller narrowed the walk, that is the fact that
+        # changes what they do next — a live neighbour may sit one dropped argument away, and
+        # sending them to full-text search instead would be the worse of the two wrong answers.
+        # Nothing is lost by the order: fix 4's own target case is an unfiltered call, where this
+        # branch does not fire and the next one does.
         if filtered:
             return (
                 "No links match these arguments — which is not the same as none existing. Retry "
                 "with direction='both', no rel and depth=1 before concluding this document is "
                 "unlinked; pinakes_search finds documents by content if it really is."
+            )
+        if result.unresolved:
+            # Links exist; their targets do not. Saying "no links from here" alongside a populated
+            # `unresolved` list contradicts the payload in the same breath.
+            #
+            # Worded without a direction on purpose: `unresolved` reports every edge *touching*
+            # this document whose local endpoint is gone, inbound included. A deleted document
+            # keeps its `links` rows (sync soft-deletes), so "this document's links point at..."
+            # would assert that this document wrote a link when the other one did.
+            return (
+                "Some links touching this document resolve to documents this KB no longer has — "
+                "`unresolved` lists them. `pnk doctor` names dangling targets; pinakes_search "
+                "finds documents by content in the meantime."
             )
         return "No links from here. pinakes_search finds documents by content instead."
     if any(entry.reason == "terminal" for entry in result.frontier):

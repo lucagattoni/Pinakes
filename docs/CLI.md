@@ -294,6 +294,18 @@ search` prints.
 | `--query` | Rank neighbours by similarity to this instead of by edge. Loads the embedding model; without it, no model is loaded at all |
 | `--json` | `{document, neighbours, frontier, unresolved, truncated}` |
 
+Without `--json` each neighbour is one line, and the arrow says who wrote the link:
+
+| Glyph | Means |
+|---|---|
+| `->` | written **here** — this document's own sidecar carries it |
+| `<-` | written **there**, pointing here; from the other KB's sidecars when it lives in one |
+| `<->` | the **same relation written from both ends** — two people, one pair |
+
+A row also reports `direction` under `--json`, carrying those same three values. Rows come back in
+rank order; `score` is comparable only among rows sharing a `scored_by_query`, because a neighbour
+with no local chunks to embed falls back to its edge weight, which is not a cosine.
+
 **Every neighbour is a document**, and `kb_id` is always the KB's ULID — never `[kb] name`, which
 is free to rename, and never a `[[links.kb]]` alias, which means nothing on another machine.
 
@@ -306,7 +318,9 @@ cross-KB one, for the same reason: this index has the partner's links, not its d
 Neighbours found but **not** expanded come back on `frontier` with one of five reasons —
 `terminal`, `depth`, `fanout`, `rows`, `tokens`. Links whose target this KB does not have come back
 under `unresolved` rather than being dropped, and never appear as neighbours: there is no document
-there to be one.
+there to be one. When *every* link resolves to nothing, the human output says so rather than
+printing `no links` — a document whose links dangle is not an unlinked document, and stdout must
+not claim it is while stderr lists them.
 
 ---
 

@@ -157,6 +157,8 @@ test, or write **none** and say why in the same commit.
 | ...over a real KB too | L5 | `tests/test_graph_present.py::test_a_score_is_rounded_to_four_places` |
 | `truncated` reports the caps that bit | L5 | `tests/test_graph_present.py::test_truncated_reports_the_caps_that_bit` |
 | a frontier entry carries the distance it was found at | L5 | `tests/test_graph_present.py::test_a_frontier_entry_carries_the_distance_it_was_found_at` |
+| the CLI says so when every link dangles | L5 | `tests/test_cli_links.py::test_the_cli_says_so_when_every_link_dangles` |
+| a query reaches the ranking on both surfaces | L5 | `tests/test_graph_present.py::test_a_query_reaches_the_ranking_on_both_surfaces` |
 | a document whose links all dangle is not called unlinked | L5 | `tests/test_serve.py::test_a_document_whose_links_all_dangle_is_not_called_unlinked` |
 | a direction does not change with `depth` | L5 | `tests/test_graph_present.py::test_a_direction_does_not_change_with_depth` |
 | `present`'s key constants match the rows | L5 | `tests/test_graph_present.py::test_the_projections_key_sets_match_what_the_rows_carry` |

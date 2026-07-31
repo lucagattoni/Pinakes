@@ -30,4 +30,8 @@
   is now refused *before* a query loads the embedding backend, rather than after cosining the whole
   KB to answer a call that could never succeed. And a document whose links all point at documents
   the KB no longer has is no longer told it has no links — the payload was listing them under
-  `unresolved` in the same breath.
+  `unresolved` in the same breath — on both surfaces, and worded without a direction, because a
+  deleted document keeps its outbound `links` rows and "this document's links point at…" would
+  then credit a link to whichever end did not write it. When the caller also narrowed the walk,
+  the narrowing is reported first: a live neighbour may sit one dropped argument away, and sending
+  them to full-text search instead is the worse of the two wrong answers.
