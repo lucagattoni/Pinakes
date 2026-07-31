@@ -1292,3 +1292,41 @@ def test_editing_a_rel_updates_the_entry_rather_than_replacing_it(
     assert lines[lines.index("# why these two are connected") + 1] == f"- to: pnk://{kb}/{target}"
     assert "  rel: supersedes" in lines, "the relation changed"
     assert "  confidence: high" in lines, "and the entry's own keys are still there"
+
+
+def test_a_reused_anchor_name_is_refused_rather_than_silently_resolved(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """It was a clean `SidecarError` before the swap and is a silent value change after.
+
+    PyYAML raises `ComposerError`, a `YAMLError`. ruamel accepts the document, resolves every alias
+    to the **last** anchor of that name — `a: &dup 1`, `b: &dup 2`, `c: *dup` makes `c` equal 2 —
+    and reports it only as a `ReusedAnchorWarning` on stderr. That is not a `YAMLError`, so
+    `read()`'s handlers never saw it; and under this project's `filterwarnings = ["error"]` it
+    escaped as a bare warning traceback instead of a named error.
+
+    Promoted explicitly at the load, so the outcome does not depend on the caller's filters.
+    """
+    path = tmp_path / f"kk.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\na: &dup 1\nb: &dup 2\nc: *dup\n", encoding="utf-8")
+
+    with pytest.raises(SidecarError) as caught:
+        read(path, owner=owner)
+    assert "anchor" in caught.value.message
+    assert caught.value.remedy
+
+
+def test_a_reused_anchor_is_refused_whatever_the_ambient_warning_filter_says(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """`ignore` must not turn the refusal back into silent acceptance — the filter belongs to
+    whoever imported pinakes, and this is a property of the sidecar format, not of their config."""
+    import warnings as warnings_module
+
+    path = tmp_path / f"ll.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\na: &dup 1\nb: &dup 2\n", encoding="utf-8")
+
+    with warnings_module.catch_warnings():
+        warnings_module.simplefilter("ignore")
+        with pytest.raises(SidecarError):
+            read(path, owner=owner)

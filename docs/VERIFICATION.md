@@ -206,6 +206,8 @@ test, or write **none** and say why in the same commit.
 | two links sharing a `to` keep their own `rel` and comment | L5b | `tests/test_sidecar.py::test_two_links_sharing_a_to_keep_their_own_rel_and_comment` |
 | a user key inside `provenance.extraction` survives a re-extraction | L5b | `tests/test_sidecar.py::test_a_user_key_inside_provenance_extraction_survives_a_re_extraction` |
 | a document-trailing comment is captured by an appended key (pinned) | L5b | `tests/test_sidecar.py::test_a_document_trailing_comment_is_captured_by_an_appended_key` |
+| a reused anchor name is refused, not silently resolved | L5b | `tests/test_sidecar.py::test_a_reused_anchor_name_is_refused_rather_than_silently_resolved` |
+| ...whatever the caller's warning filter says | L5b | `tests/test_sidecar.py::test_a_reused_anchor_is_refused_whatever_the_ambient_warning_filter_says` |
 | a non-string key at the top level is refused | L5b | `tests/test_sidecar.py::test_a_non_string_key_at_the_top_level_is_refused` |
 | two identical link entries both survive | L5b | `tests/test_sidecar.py::test_two_identical_link_entries_both_survive` |
 | editing a `rel` updates the entry rather than replacing it | L5b | `tests/test_sidecar.py::test_editing_a_rel_updates_the_entry_rather_than_replacing_it` |

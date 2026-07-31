@@ -26,6 +26,7 @@ the point rather than a side effect (`plans/decision-ruamel-yaml.md`):
 
 import json
 import os
+import warnings
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from io import StringIO
@@ -35,6 +36,7 @@ from typing import Any, cast
 from ruamel.yaml import YAML, YAMLError
 from ruamel.yaml.comments import CommentedMap, TaggedScalar
 from ruamel.yaml.constructor import DuplicateKeyError
+from ruamel.yaml.error import ReusedAnchorWarning
 from ruamel.yaml.nodes import ScalarNode
 from ruamel.yaml.resolver import VersionedResolver
 from ruamel.yaml.scalarstring import SingleQuotedScalarString
@@ -209,7 +211,27 @@ def read(path: Path, *, owner: KbId) -> Sidecar:
         raise SidecarError(path, "is not valid UTF-8") from exc
 
     try:
-        loaded: object = _YAML.load(raw)
+        # **The warning is promoted to an error here, not left to the ambient filter.** A repeated
+        # anchor name was a clean `SidecarError` before the swap (PyYAML raises `ComposerError`,
+        # which is a `YAMLError`); ruamel accepts it, resolves every alias to the *last* anchor of
+        # that name — so `a: &dup 1`, `b: &dup 2`, `c: *dup` silently makes `c` equal 2 — and says
+        # so only through a `ReusedAnchorWarning` on stderr. That warning is not a `YAMLError`, so
+        # the handlers below never see it; and under `filterwarnings = ["error"]`, which this
+        # project's pytest config sets, it escapes as a bare `ReusedAnchorWarning` traceback
+        # instead. Catching it explicitly makes the outcome the same everywhere, whatever the
+        # caller's warning filters happen to be.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ReusedAnchorWarning)
+            loaded: object = _YAML.load(raw)
+    except ReusedAnchorWarning as exc:
+        raise SidecarError(
+            path,
+            f"reuses an anchor name: {exc}",
+            remedy=(
+                "Give each `&anchor` its own name. Every `*alias` to a repeated name resolves to "
+                "the last one, so which value an alias meant is not recoverable."
+            ),
+        ) from exc
     except DuplicateKeyError as exc:
         # Caught ahead of `YAMLError`, which it subclasses. PyYAML took the last of a repeated key
         # silently; ruamel refuses, and its own message ends with a URL for suppressing the check —

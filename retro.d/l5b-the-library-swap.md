@@ -87,3 +87,13 @@ parts is not checking the whole, and the docstring asserting otherwise is what m
 unchanged document short-circuits before the merge runs, so a `wanted` that deduplicates survived
 `test_two_identical_link_entries_both_survive` and a `set`-based collapse was invisible. Any test of
 reconciliation has to *change* something first, or it is testing the short-circuit.
+
+**A warning is not an error, and a library that downgrades one is changing behaviour.** A reused
+anchor name raised `ComposerError` — a `YAMLError` — before the swap, and after it the document
+loads, every alias resolves to the **last** anchor of that name, and the only signal is a
+`ReusedAnchorWarning` on stderr. Three consequences, none visible in a passing suite: the value
+silently changes; `read()`'s `except YAMLError` never sees it, because a `Warning` is not one; and
+under this project's `filterwarnings = ["error"]` it escapes as a bare warning traceback rather than
+a named error. Promoting it at the load makes the outcome independent of whatever warning filters
+the calling program happens to have set — which is the right place for a property of the file
+format to live.

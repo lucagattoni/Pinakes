@@ -204,7 +204,7 @@ def test_every_symbol_the_ruamel_stub_declares_matches_inspect_signature() -> No
     declared = {
         "ruamel.yaml": ["YAML"],
         "ruamel.yaml.comments": ["CommentedMap", "CommentedSeq", "TaggedScalar"],
-        "ruamel.yaml.error": ["YAMLError"],
+        "ruamel.yaml.error": ["YAMLError", "ReusedAnchorWarning"],
         "ruamel.yaml.constructor": ["DuplicateKeyError", "ScalarBoolean"],
         "ruamel.yaml.scalarstring": ["SingleQuotedScalarString"],
         "ruamel.yaml.scalarbool": ["ScalarBoolean"],
