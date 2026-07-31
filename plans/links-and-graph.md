@@ -588,7 +588,11 @@ measurements and decisions 19–27. This section is instructions only.
      `present`. **State where a newly-appearing known key is inserted** — `provenance` first appears
      on a paid extraction.
    - **The user's key order is untouched.** Canonical ordering is for minting only.
-   - **Quote ambiguous scalars pinakes writes** (decision 23), keyed on the value being assigned.
+   - **Quote ambiguous scalars pinakes writes** (decision 23), keyed on *the value being
+     assigned*, never on `original is None`. Predicate: the union of `yaml.resolver.Resolver`
+     (PyYAML 1.1) and `ruamel.yaml.resolver.VersionedResolver` at `(1, 1)` and `(1, 2)` — anything
+     not resolving to `tag:yaml.org,2002:str` in **all three** is emitted
+     `SingleQuotedScalarString`. Scalars pinakes did not author are left as the user wrote them.
    - **Refuse non-string top-level keys** (19) and **JSON-unencodable `extra`/`provenance` values**
      (26), each with a remedy.
    - `DuplicateKeyError` (from **`ruamel.yaml.constructor`**) is caught before `YAMLError` and given

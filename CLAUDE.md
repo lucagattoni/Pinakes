@@ -197,6 +197,10 @@ only when the *reasoning* changes, never for a new flag or field alone.
   came to fix rarely stopped there. A decision's neighbourhood is every table, increment, release
   structure and invariant that assumed the one it replaces, not only prose. Full rule and the
   20260729 / 20260731 measurements: [`docs/README.md` § Conventions](docs/README.md#conventions).
+- **Name the audience (human / agent / both) and the goal (reference / executor) before writing.**
+  An executor doc — `CLAUDE.md`, a `plans/` increment — is imperative and self-sufficient, naming
+  exact files, symbols and predicates. A reference doc argues and measures. Rationale in an executor
+  doc is noise; an instruction in a reference doc is a defect.
 - **Rewrite to the current state; never layer corrections**, and **compact monthly** — cut recaps,
   superseded reasoning, and anything re-arguing what another file owns; keep decisions, measured
   numbers and instructions. A section far larger than its siblings is the signal.

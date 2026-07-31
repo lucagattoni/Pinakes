@@ -113,6 +113,23 @@ is what stops the next plan from assuming a number that a parallel session has a
   record and leaving the tables is how a plan comes to say two things at once. Measured 20260731:
   of nine decisions in the `ruamel.yaml` swap, three rippled into tables the deciding pass never
   opened, and an adversarial pass found them.
+- **Name the audience and the goal before writing a line.** Audience: a **human**, an **agent**, or
+  **both**. Goal: **reference** (answers "why" or "what is true") or **executor** (something acts on
+  it). The two axes decide the form, and getting them wrong is the commonest defect here.
+
+  | Doc | Audience | Goal |
+  |---|---|---|
+  | `README.md`, `GUIDE.md` | human | orientation / executor |
+  | `CLI.md`, `MANIFEST.md`, `STATUS.md`, `VERIFICATION.md` | both | reference |
+  | `DESIGN.md`, `plans/decision-*.md` | both | reference — rationale only |
+  | `CLAUDE.md`, `plans/<plan>.md` | agent | **executor** |
+  | `changelog.d/`, `retro.d/` fragments | agent | executor |
+
+  An **executor** doc is imperative, self-sufficient, and names exact files, symbols and predicates:
+  the agent reading it has no access to whoever wrote it. A **reference** doc may argue, measure and
+  survey. **Rationale in an executor doc is noise; an instruction in a reference doc is a defect** —
+  compacting L5b on 20260731 moved decision 23's resolver predicate into the decision record and
+  left the increment unbuildable from its own text.
 - **Rewrite to the current state; do not layer corrections.** A doc that grows by appending
   "actually, that was wrong" makes every reader traverse the archaeology to learn what is true now.
   State each claim correctly once and delete what it replaced — git holds the history. Measured
