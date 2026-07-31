@@ -61,7 +61,7 @@ in `sys.modules`.
 | Budget | Pre-call reservation · hard cap per operation · rolling ledger (§5) |
 | Blueprint | Instantiable template **and** reproducible recipe |
 | Federation | Cross-KB links you can follow (no fan-out query in v1) |
-| Retrieval | Hybrid (BM25 + vector) + rerank · metadata filters · multi-hop (single-KB in v0.1, cross-KB in the links release) |
+| Retrieval | Hybrid (BM25 + vector) + rerank · metadata filters · multi-hop within a KB, and one terminal hop across a link |
 | Cost policy | Free path first; escalate only when it's insufficient |
 | Content vs repo | Engine public; real KBs live elsewhere; one synthetic demo KB in-repo |
 | Linking | Sidecar metadata files (originals never mutated) |
@@ -153,7 +153,7 @@ document changed without a sync in between. Nothing in the pairing algorithm (§
 sidecars pair by adjacency, documents pair by the index's hashes.
 
 **A paid PDF extraction adds `provenance.extraction: {backend, fingerprint, extracted,
-content_hash}`** (v0.2, decision 11) — the one case where sync rewrites an *existing* sidecar rather
+content_hash}`** (decision 11) — the one case where sync rewrites an *existing* sidecar rather
 than only minting or moving one. `content_hash` here is deliberately narrower than the general
 change-detection hash this section already refuses to store: it records the file's hash *at the
 moment this specific paid extraction ran*, changes only when a fresh paid extraction does, and exists
@@ -221,8 +221,8 @@ One SQLite file, `.pinakes/index.db`, in **WAL mode**. No server, no separate ve
 **Index schema migrations do not exist.** On `schema_version` mismatch the index refuses to open and
 instructs `pnk sync --rebuild`. Because `.pinakes/` is disposable and rebuilds are free, migration
 code would be pure liability — this is the payoff of the truth/derived split. `schema_version` is
-`2` as of v0.2 (I5's page and extraction-backend columns above); a v0.1 index raises `IndexSchemaError`
-naming the same rebuild remedy, never a migration.
+`2` (the page and extraction-backend columns above); an index written under any earlier version
+raises `IndexSchemaError` naming the same rebuild remedy, never a migration.
 
 ### 3.1 Vector search: what the tiers actually buy
 
@@ -243,8 +243,8 @@ scan becomes the binding limit before 2M chunks, the honest fix is splitting the
 in an ANN index. `sqlite-vec` is also pre-v1 with breaking changes expected — contained by only
 being reached above 50k chunks, with `vector_tier = "numpy"` supported as a config override.
 
-**What v0.1 actually ships:** the NumPy tier only, at *any* corpus size — the `sqlite-vec` tier lands
-in the template release (§8). NumPy does not fail above 50k, it just costs linear RAM (≈1.5 GB at 1M chunks × 384
+**What is built:** the NumPy tier only, at *any* corpus size — the `sqlite-vec` tier lands in the
+template release (§8). NumPy does not fail above 50k, it just costs linear RAM (≈1.5 GB at 1M chunks × 384
 dims); `pnk doctor` warns past the 50k threshold and names the tier that will fix it. Stating this
 matters because a table of three tiers reads as three *available* tiers.
 
@@ -330,8 +330,9 @@ Multi-hop is delivered by **making the tools composable rather than by building 
 `pinakes_search` → `pinakes_get` → `pinakes_search` is a plan-retrieve-read-refine loop, and Claude
 Code already runs it in its own context on the caller's existing subscription.
 
-Scope, stated precisely: **v0.1 gives multi-hop within a single KB.** Cross-KB hops need
-`pinakes_links`, which ships in the links release (§8).
+Scope, stated precisely: `pinakes_search` → `pinakes_get` walks **within one KB**. Crossing into
+another takes `pinakes_links`, because a link is the only thing that knows where the other KB is —
+and a cross-KB neighbour is terminal, since this KB cannot vouch for what lies beyond it (§6.2).
 
 `pnk ask --deep` exists for CLI and cron use, where no agent is present. It runs a bounded version of
 the same loop with its own API key under the budget ledger (§5). Same tools, same evidence contract —
@@ -343,7 +344,7 @@ Embeddings are meaningless across models. The manifest records provider, model a
 `.pinakes/index.db` was built with anything else, queries **refuse to run** and instruct a rebuild. A
 KB that silently returns garbage after a model upgrade is worse than one that stops.
 
-**Per-document extraction coherence (v0.2, decision 13).** A PDF's *extractor* can drift the same
+**Per-document extraction coherence (decision 13).** A PDF's *extractor* can drift the same
 way an embedding model can: `pypdfium2` upgrades its running-head threshold, `claude-vision`'s prompt
 or schema changes. Every query re-derives each distinct recorded `(extraction_backend,
 extraction_fingerprint)` pair's *current* fingerprint and compares — from a dict of version strings
@@ -385,7 +386,7 @@ regardless, which is why `[st]` is never one of the three.
 
 `[pdf]` (pypdfium2, BSD-3-Clause/Apache-2.0) and `[claude]` (the Anthropic SDK — named for the
 vendor, because an extra whose name hid which client it installs would hide that from whoever reads
-the manifest) are the v0.2 extractor backends (§2.1's `[extraction]`). **`[claude]` requires
+the manifest) are the extractor backends (§2.1's `[extraction]`). **`[claude]` requires
 `[pdf]`**: the paid path slices PDFs, pre-checks the free text yield and audits its output against
 the native layer, all through pypdfium2 — installing it without `[pdf]` would be a backend that
 cannot run its own pre-checks.
@@ -437,7 +438,7 @@ for more is a hard error, not a silent truncation — a truncated chunk is a chu
 unsearchable, and nothing in the output would reveal it. Chunks that cannot be encoded whole are
 split, never trimmed.
 
-**PDF chunks additionally carry `page_start`/`page_end`** (v0.2), a 1-indexed lookup against the
+**PDF chunks additionally carry `page_start`/`page_end`**, a 1-indexed lookup against the
 extractor's own per-page character spans — no separate page-aware splitting algorithm, since the
 existing paragraph/blank-line block detection already produces a block that straddles a page
 boundary whenever the free path's own hyphenation-joining joined a word across one with no
@@ -792,7 +793,7 @@ Four consequences the table implies but must be stated:
   re-embedded, and **no soft delete is emitted for that ID**. If the sidecar did not travel,
   soft-delete + mint is the honest outcome, and sync reports it as a likely moved-without-sidecar
   case (§9's most-likely-corruption risk, surfaced at the moment it happens).
-- **`--rebuild`'s empty `before` cannot see a recorded backend, so it is not asked to (v0.2).**
+- **`--rebuild`'s empty `before` cannot see a recorded backend, so it is not asked to.**
   `pair()`'s comparison-based rows above only ever run against the same, populated `before` a normal
   sync sees; `--rebuild` builds into a brand-new `.pinakes/index.db.new` (§6.5) and reads `before`
   from that empty file, so every document looks new to it regardless — including a document that was
@@ -1005,7 +1006,7 @@ cut, and [STATUS](STATUS.md#release-roadmap) is where the mapping lives.
 
 | Release | Why here |
 |---|---|
-| PDF extraction (0.2.x, completed by the paid-extraction release) | Parsing is the single biggest quality risk (§9), so it is isolated from core-design feedback rather than mixed into it. Scope covers **both** paths: the free `pypdfium2` default, and the opt-in paid Claude-vision extractor that is the only answer to a scanned page (§9) — which is what drags the budget machinery into this release, per the governing rule below |
+| PDF extraction, completed by the paid-extraction release | Parsing is the single biggest quality risk (§9), so it is isolated from core-design feedback rather than mixed into it. Scope covers **both** paths: the free `pypdfium2` default, and the opt-in paid Claude-vision extractor that is the only answer to a scanned page (§9) — which is what drags the budget machinery into this release, per the governing rule below |
 | the links release — cross-KB links | Needs two populated KBs to be worth anything. Build order: [`plans/links-and-graph.md`](../plans/links-and-graph.md) |
 | the graph release — structural edges and the expansion channel | Edges are only worth deriving once there is a link graph to derive them beside, and the channel is gated on the golden set |
 | the graph release (staged) — graph channels | Each is **eval-gated rather than scheduled** — it ships only if the golden set justifies it (`graph/PINAKES_APPROACH.md` §9) |
@@ -1049,7 +1050,7 @@ returned, identified, and marked unreachable, because omitting it would hide a l
 | **Unbounded spend across invocations** | One `pnk sync` is capped; nothing caps the tenth. Freshness is hook-driven (§6.3), which makes `pnk sync` machine-driven, so a per-invocation cap is really an allowance renewed on every commit — the per-invocation framing hides that the invocations are the loop. Mitigated by making the cap arithmetic over a *running* total: `per_operation_eur`, `daily_eur` **and** `monthly_eur` are all checked before every call, aggregated in `[budget] timezone`. `monthly_eur` is **per KB**, so ten paid KBs are ten allowances; there is no global cap, and this says so rather than letting a reader assume one. All of it is built: the reservation arithmetic (I6a), reading the ledger, hooks and `pnk init --ci` forced onto the free backend, and the no-TTY abort (I6b) |
 | **Price-table staleness, and the USD→EUR rate inside it** | The manifest prices in EUR and the vendor bills in USD, so the rate is a second number that goes stale with nothing saying so — and a ledger recording only a EUR figure cannot be re-derived once it moves. Mitigated by giving `usd_per_eur` the same `as_of` as the model prices (both shipped in `prices.toml`), recording `cost_usd`, the rate and its `as_of` on every ledger line with EUR computed at read time, and refusing to estimate against prices older than `max_price_age_days` rather than guessing. Deliberately **not** a CI gate: a wall-clock gate fails a quiet weekend with no code change, so staleness is a `pnk doctor` WARN and a runtime refusal, while CI only checks the file is well-formed. Built: every ledger line carries `cost_usd`, the rate and its `as_of`, and `pnk doctor` reports the table's age against `max_price_age_days` |
 | **Scanned-PDF quality cannot be measured by the audit that measures everything else** | The completeness audit's witness is the page's native text layer, and a scanned page has none — so the gate is blind on precisely the stratum the paid feature exists for. Mitigated by reporting `exempt K of M` rather than scoring exempt pages as passing (a pass rate that counts unmeasurable pages as passes is the vacuous-metric failure §7 exists to avoid), and by hand-authoring the scanned stratum's ground truth from the generator's spec rather than from any extractor's output. the audit is built and **reports only** — it re-extracts nothing and spends nothing, because the loop it would drive needs a floor and the pair that floor must be fitted against is (native layer → Claude output), which did not exist until the first real runs produced it. **Those numbers are now in the PDF-extraction-quality row above** — measured 20260729 03:17, claude-opus-5, €0.11 — and they are measured on synthetic rasters, which is the caveat that matters |
-| **A paid extraction's text has no durable, cross-machine home (v0.2)** | The sidecar's `provenance.extraction` proves a file is *unchanged* since a paid extraction anywhere (§6.4) — but the extracted *text* itself lives only in one machine's `extract/cache.py` or `index.db`, both gitignored. A fresh clone's first sync over a KB whose paid PDFs were extracted elsewhere gets an honest `PaidExtractionUnavailableError`, never a false "content changed" claim, but also cannot avoid paying again without one of those two local stores. Accepted for v0.2, not solved: a shared or committed store for paid extraction results is a real design question (would it live in git, defeating "originals are the truth"? A remote cache?) deliberately deferred rather than answered under this increment's own scope |
+| **A paid extraction's text has no durable, cross-machine home** | The sidecar's `provenance.extraction` proves a file is *unchanged* since a paid extraction anywhere (§6.4) — but the extracted *text* itself lives only in one machine's `extract/cache.py` or `index.db`, both gitignored. A fresh clone's first sync over a KB whose paid PDFs were extracted elsewhere gets an honest `PaidExtractionUnavailableError`, never a false "content changed" claim, but also cannot avoid paying again without one of those two local stores. Accepted, not solved: a shared or committed store for paid extraction results is a real design question (would it live in git, defeating "originals are the truth"? A remote cache?) deliberately deferred rather than answered under this increment's own scope |
 
 ---
 

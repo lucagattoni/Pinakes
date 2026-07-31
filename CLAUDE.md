@@ -16,6 +16,31 @@ indexes the rest (which file owns which fact). This file only carries rules that
 - Vet every file for PII, credentials, private URLs, and anything copied from memory before staging.
 - Never commit model weights or `.pinakes/` state (both are gitignored — keep it that way).
 
+## Documentation has one owner
+
+**The planner agent owns every document in this repo. No other agent edits one — it proposes.**
+Decided by the user 20260801 01:24.
+
+| | |
+|---|---|
+| **Planner-only** | `docs/**`, `plans/**`, `README.md`, `CLAUDE.md`, `CHANGELOG.md` |
+| **Yours to write** | `changelog.d/` and `retro.d/` fragments; docstrings and comments in `src/`, `tests/`, `tools/`. Fragments exist so an implementer records what it changed *without* touching a shared document — that is the mechanism, not an exception to it |
+| **One narrow exception** | `docs/VERIFICATION.md`: add **only** the row a test you wrote requires. `tests/test_verification.py` hard-fails on an unresolvable name, so a renamed or new test with no row makes *your own* branch red and you could not self-certify. Nothing else in that file |
+
+**How to propose:** `git diff <sha> -- <file>` against a **named commit**, in your branch's commit
+message or a note the planner reads. Never an edit, never "it is one line".
+
+**What the planner does with it:** incorporates it — judging *when*, not whether. A correction to
+what is true **today** lands on `main` at once, independently of your branch. A doc change that
+describes **your unlanded work** lands with your merge, because main must not describe a command
+that does not exist yet.
+
+**Why:** documentation is the coordination surface. Several agents work here at once, a clean
+auto-merge is **not** a correct merge (20260729 — two documents merged silently and contradicted
+themselves while every command reported success), and a document edited by whoever happened to be in
+the code drifts until no reader can tell which sentence is current. One owner is one voice and one
+audit. The cost is real and accepted: a correction waits for the planner instead of landing at once.
+
 ## 🚫 Unbuilt work is named, never numbered
 
 **A version number belongs to a release when it is cut — never before.** Refer to unbuilt work by
@@ -94,8 +119,10 @@ written with and carry a header note.
 
 ## Building a release — one increment at a time
 
-Each version has a reviewed plan under [`plans/`](plans/) that is the build order (v0.1 shipped as
-I1–I15; the current plan is the newest file there). Never batch increments; each one is a separate,
+Each version has a reviewed plan under [`plans/`](plans/) that is the build order. The current one
+is [`plans/links-and-graph.md`](plans/links-and-graph.md) — **not** "the newest file there", which
+`plans/` no longer supports: it also holds shipped plans, that plan's iteration log, and
+standalone increments such as [`source-walk-containment.md`](plans/source-walk-containment.md). Never batch increments; each one is a separate,
 bisectable landing:
 
 1. Own worktree, branch `YYYYMMDD_HHMM-i<N>-<slug>`.

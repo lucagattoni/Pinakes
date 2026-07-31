@@ -105,6 +105,89 @@ Sort by timestamp. Low value, do it last.
 
 ---
 
+## 8 · `tools/link_density_gate.py` — an uncaught `ValueError` on a non-canonical root
+
+**Current:** `census` calls `document.relative_to(root)` on the **raw** root while `documents_of`
+resolves its bases (`(root / name).resolve()`). On macOS, where `/tmp` is a symlink to
+`/private/tmp`, the two disagree and the tool dies with a traceback:
+
+```text
+ValueError: '/private/tmp/dgtest/docs/access-restrictions.md'
+            is not in the subpath of '/tmp/dgtest'
+```
+
+Reproduced 20260731 17:16 on `main` with `cp -R tests/demo-kb /tmp/dgtest && uv run python
+tools/link_density_gate.py /tmp/dgtest`.
+
+**Required:** resolve the root once, at the top of `census` (`root = root.resolve()`), so the
+denominator and the `relative_to` share one base. A test passing a root through a symlinked parent
+pins it.
+
+**Why it matters:** it only bites on an explicit non-canonical root, so the committed corpora are
+fine and CI is green — but this is the tool L7 tells an executor to run *against a copy* when
+comparing the gate's number with doctor's, which is exactly a `/tmp` path on this platform. Found by
+a reviewer doing that comparison.
+
+---
+
+## 9 · ~~L6 review 7 — the freshness-branch test never enters the freshness branch~~ **CLOSED**
+
+> **Do not apply the fix below.** L6 review 8b (`cdee8d8`) closed this the other way round, and the
+> prescribed `assert report.link_scan == ()` would now pin the behaviour review 8 **replaced**: an
+> unresolvable path is no longer fresh-skipped, it falls through to the walk and is reported. The
+> test is renamed `test_an_unresolvable_path_is_reported_rather_than_fresh_skipped`. Verified
+> 20260731 20:43 — mutating the fall-through back to a fresh skip fails it, and forcing `is_stale`
+> true fails `test_a_fresh_kb_refs_entry_skips_the_walk`. Kept for the record only.
+
+**Blocks the merge.** Everything else in `1d4de4e` is correct: I ran the failure paths end to end
+and the gate on that tip (**1034 passed, 0 pyright errors, ruff clean, all gates green**).
+
+**Current:** `test_a_fresh_partner_with_an_unresolvable_path_does_not_crash_the_sync`
+(`tests/test_sync_links.py`) asserts only `report.ok`. Its docstring says it covers *"the freshness branch of
+`scan()` — which **plain `pnk sync`** takes … No test touched this branch at all"*. It does not
+touch it either: the assertion holds whether the branch runs or not.
+
+**Proof** — `is_stale` forced to `return True`, so the fresh branch is never taken:
+
+```text
+unmutated:  PROBE link_scan = ()                      1 passed
+mutated:    PROBE link_scan = (('partner', 'linked KB `partner` cannot be read at
+            ~nosuchuser12345/kb: no such directory.', …),)   1 passed
+```
+
+**Required:** add `assert report.link_scan == ()` after `assert report.ok`. That is the
+discriminating assertion, and the output above is why: a skipped-fresh row carries no issue, so
+`link_scan` is empty **only** when the branch was taken. Confirm by re-running the same mutation —
+it must now fail.
+
+**Why it matters:** this is the increment's own recurring class — an assertion satisfied by
+something other than the property it names — inside the fix for the finding that said *"that branch
+had no test at all"*. The commit message calls the two wrapper removals "mutation-verified"; this
+test was not.
+
+**Also verified, so do not re-derive:** `Path.is_file()`, `.is_dir()` and `.exists()` swallow the
+`ValueError` an embedded NUL raises (they return `False`), so narrowing `scan_one`'s handler from
+`(OSError, RuntimeError)` to `OSError` leaves no escape, and `why_not_a_kb` — which touches only
+`exists()` and `is_dir()` — is safe on such a path. `tomllib` does accept `\u0000`, and
+`expanduser("~nosuchuser/kb")` does raise `RuntimeError`, both as the commit claims. End to end on
+a KB declaring a NUL path and a `~nosuchuser` path: `pnk sync` and `pnk sync --scan-links` both
+exit 0 and report each partner as unreachable naming the declared text; `pnk link` through either
+alias exits 1 with the same message. The declared-text fallback is pinned at
+`tests/test_sync_links.py:543`, so the totality test not pinning it is not a gap.
+
+---
+
+## 10 · The local source walk escapes the KB — its own increment, not an item here
+
+Three measured defects in `sync.walk_sources` and `manifest._sources`, live on `main` in 0.5.0: a
+`..` in `[sources] include` walks out of the KB and mints sidecars outside it; an absolute `include`
+is an unhandled `NotImplementedError` traceback; and a symlinked directory carries the walk out with
+no `..` anywhere. Too large for this file — the build order, the two layers, the six tests and the
+release are in [`source-walk-containment.md`](source-walk-containment.md). **Not part of L6/L7/L8**,
+and it must not wait behind them.
+
+---
+
 ## Not to be fixed — recorded so nobody tries
 
 - **A sidecar carrying its own `%YAML 1.1` directive** is parsed at 1.1, so `country: NO` becomes
@@ -114,3 +197,8 @@ Sort by timestamp. Low value, do it last.
   `docs/MANIFEST.md`'s bounds table, not a defect.
 - **The `v0.5.0` tag annotation** says "Three breaking changes". Tag annotations are not cleanly
   rewritable and the tag is published; the release body and CHANGELOG are the corrected records.
+- **A raw NUL byte reaches user-facing output** — a `[[links.kb]] path` written as `part\u0000ner`
+  produces `cannot be read at part<NUL>ner`, which makes the line binary to `grep` and to any log
+  consumer. Reachable only from a hand-written manifest using the `\u0000` escape, never from
+  `argv`, which cannot carry one. Sanitising the path into the message would mean every error
+  string stops showing exactly what the author wrote — the property review 7 exists to protect.
