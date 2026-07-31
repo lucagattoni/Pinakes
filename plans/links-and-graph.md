@@ -221,9 +221,9 @@ earlier.
 | Rule | Amendment | Lands in |
 |---|---|---|
 | *"`docs/` belongs to the user … never any other key"* | A second, narrower exception: **a user-invoked authoring command** writing `links[]` to the source document's own sidecar | L6 |
-| The "🚫 Unbuilt work is named" table (**not** the "Naming (fixed…)" table) in `CLAUDE.md` **and** `docs/STATUS.md` | Both files' links-release rows gain `pnk links`. **Reconcile the two tables** — `CLAUDE.md` still carries the paid-extraction row that 0.4.0 retired and `docs/STATUS.md` has already dropped. Assigned to L4, which landed without doing it; **reassigned to L5b**, the cutting increment | L4 → **L5b** |
+| The "🚫 Unbuilt work is named" table (**not** the "Naming (fixed…)" table) in `CLAUDE.md` **and** `docs/STATUS.md` | **Only `docs/STATUS.md`'s *roadmap* row lacks `pnk links`** — both 🚫 tables already carry it, and only `CLAUDE.md`'s 🚫 table still needs the paid-extraction row dropped. Check each before editing. **Reconcile the two tables** — `CLAUDE.md` still carries the paid-extraction row that 0.4.0 retired and `docs/STATUS.md` has already dropped. Assigned to L4, which landed without doing it; **reassigned to L5b**, the cutting increment | L4 → **L5b** |
 | *Landing work: always push, always release* | A release that **cuts more than once** keeps its name in the 🚫 unbuilt-work table until the **final** cut; the roadmap row carries both tags. CLAUDE.md today says to drop the name when the roadmap row is ticked, which at an interim cut deletes a name L8 needs back — the churn decision 27 was chosen to avoid | L5b |
-| *Invariants that must not be broken* | A new one: **an unknown key in a sidecar round-trips byte-identically** — stronger and more testable than "untouched", and false until L5b. It excludes what pinakes normalises by design (`pnk://self/…` expansion; canonical ordering **on a minted sidecar only** — an existing file keeps the user's order), what **ruamel** normalises (block-sequence and nested-mapping **indentation**, which follows the dumper settings rather than the source; the non-specific `!` tag; and a **recursive anchor**, whose anchor and alias are destroyed and whose value is nulled), and what YAML itself does not carry (CRLF, a BOM, `---`/`...` markers) | L5b |
+| *Invariants that must not be broken* | A new one: **an unknown key in a sidecar round-trips byte-identically** — stronger and more testable than "untouched", and false until L5b. It excludes what pinakes normalises by design (`pnk://self/…` expansion; canonical ordering **on a minted sidecar only** — an existing file keeps the user's order), what **ruamel** normalises (block-sequence and nested-mapping **indentation**, which follows the dumper settings rather than the source; **every explicit YAML tag on a value ruamel resolves natively** — `!!int`, `!!bool`, `!!seq`, `!!map`, `!!null` and the non-specific `!` — all dropped on write; and an anchor whose value is **null or recursive**, whose anchor and alias are destroyed and whose value is nulled), and what YAML itself does not carry (CRLF, a BOM, `---`/`...` markers) | L5b |
 
 ---
 
@@ -603,7 +603,9 @@ treat it as a defect in this plan and say so rather than choosing.
 (was silent last-wins); a string field YAML 1.2 resolves as a number (`1e3`, `1E3`, `0o17` in
 `title`, `created`, `tags[]`, `links[].to`, `links[].rel`) now fails `_optional_str`; and an
 `!!str`-tagged value is refused. It is **the only *working* tag that breaks**, not the only tag that
-works: `!!int`, `!!float`, `!!bool`, `!!seq` and `!!map` all work today and keep working — verified. Separately, **four
+works: `!!int`, `!!float`, `!!bool`, `!!seq` and `!!map` all **load** identically —
+but **every explicit tag is stripped on round-trip**: `mine: !!int 3` writes back as `mine: 3`.
+"Keep working" is true of loading and false of byte-identity, and the invariant must exclude it. Separately, **four
 shapes whose current unhandled `TypeError` becomes a named error** — `!!binary`, `!!set`,
 `!!timestamp`, a bare date. Those are a fix, not a break, and the changelog lists them apart.
 
@@ -639,7 +641,25 @@ widened acceptance becoming a crash.
        node that already exists. One level is not enough: `with_extraction_provenance` builds a plain
        `dict` for `extraction`, and ruamel stores a comment as the **preceding key's** trailer, so a
        comment describing a *sibling* of `extraction` lives inside that node and dies with it.
-     - **`links` reconciles by `(to, rel)`, never by position and never by `to` alone.** That pair
+     - **`links` reconciles on the RESOLVED URI, with multiplicity, and updates in place.** Three
+       rules, each of which a shipped implementation got wrong:
+       **(a) Resolve before comparing.** `read()` expands `pnk://self/X` to
+       `pnk://<kb-ulid>/X`, so a loaded entry's `to` never equals the raw text in the node.
+       Comparing raw text finds no match, deletes the entry and appends a bare replacement —
+       reproduced on `tests/partner-kb/docs/outgoing-loans.md.pnk.yaml`, **on a no-op write**,
+       taking the comment and the unknown per-link keys with it. Compare
+       `resolve_link(node["to"], node["rel"], owner=owner).to` against `link.to`, and assign the
+       expanded text **into the matched node**. Fixed in `e804858`.
+       **(b) Multiplicity, never a set.** `wanted = {(to, rel) …}` collapses two identical entries,
+       so the second is deleted — measured, three links in and one out, where `main` keeps both.
+       `_links()` does not dedup; only the index PK does. Build `wanted` as a **list** and match by
+       `list.remove`, as `_merge_tags` already does correctly.
+       **(c) A `rel` edit is an in-place assignment, not delete+append.** Keying on the whole
+       `(to, rel)` pair makes every edit a delete and an append, which by the pinned limitation
+       below misattributes one comment and destroys another. Match on resolved `to` plus
+       multiplicity, assign `rel` in place, and use the pair only to disambiguate when one `to`
+       appears more than once.
+       *(Superseded: "by `(to, rel)`, never by position and never by `to` alone".)* That pair
        is the index's own identity (`store.py:110`'s
        `PRIMARY KEY (src_kb_id, src_doc_id, dst_kb_id, dst_doc_id, rel)`). Two links may share a
        `to` with different `rel`s — `_links()` accepts it and the index stores two rows — so keying
@@ -674,7 +694,7 @@ widened acceptance becoming a crash.
        `without_extraction_provenance` needs (it removes `extraction` from `provenance`'s top
        level). Recursing the delete rule into `provenance.extraction` would strip the user's own
        keys from it, because `with_extraction_provenance` builds a plain four-key replacement —
-       measured, `note: mine` and its comment vanish — and CLAUDE.md's invariant says a paid
+       measured, `note: mine` vanishes and **its comment is misattributed onto the next key**, not deleted — and CLAUDE.md's invariant says a paid
        extraction rewrites the sidecar **additively**, *"never any other key"*. Below depth 1,
        merge without deleting — `without_extraction_provenance` returns a provenance without
        `extraction`, and an assign-and-recurse merge would leave the stale paid claim in place,
@@ -690,8 +710,10 @@ widened acceptance becoming a crash.
        canonical order and makes a larger diff, but inserting it at the canonical position would
        land it between the last known key and the first unknown one — and ruamel binds a comment to
        its **preceding** key, so the comment introducing that unknown key would end up above
-       `provenance` instead. A larger diff is preferable to a misplaced comment in the increment
-       whose purpose is not to misplace comments.
+       `provenance` instead. **Both options misplace a comment** — appending moves a document-trailing note onto the new
+       block, inserting moves the first unknown key's leading note. Appending is chosen because the
+       moved comment is at the foot of the file rather than mid-document, not because it moves
+       none. The test's name must not claim otherwise.
        `test_provenance_first_appearing_is_appended_and_moves_no_comment` — **the fixture must carry a
        comment after the last key**, or the test is green on the broken case: measured, a
        document-trailing note ends up introducing pinakes's new `provenance:` block. That is a
@@ -763,6 +785,12 @@ widened acceptance becoming a crash.
      so a uniformly int-keyed **nested** mapping is covered by neither increment. Identical today
      under PyYAML, so not a regression — a stated residual, alongside `.nan`/`.inf`, which encode as
      `NaN`/`Infinity` that no conforming JSON reader accepts.
+     **Second documented widening:** a **duplicate anchor name** (`a: &x 1` / `b: &x 2`) is a clean
+     `SidecarError` today — PyYAML raises `ComposerError` — and is silently accepted by ruamel,
+     which resolves `*x` to the *second* anchor. It also emits `ReusedAnchorWarning`, which is
+     **not** a `YAMLError`, so `read()`'s `except` will not catch it and `filterwarnings = ["error"]`
+     turns it into an escaping traceback under pytest. Either refuse it at `read()` or accept it
+     with a test; do not leave it unnamed.
      **Documented widening:** a **custom-tagged** mapping or sequence (`!custom {a: 1}`) is
      `ConstructorError` under PyYAML and a `CommentedMap` after, so it is now accepted. Not `!!map`
      or `!!seq` — those were never refused, and a reader checking the claim against them concludes
@@ -779,9 +807,10 @@ widened acceptance becoming a crash.
      below one level is still `original`'s live node — an in-place walk strips **the anchor on the
      coerced boolean itself, and every alias to it**, out of the user's file — measured; anchors on
      the *enclosing* nodes survive. The "assign only when changed" rule cannot help, because the
-     node was mutated rather than reassigned. **Not reachable from a file today** — every
-     `write_sidecar` in `_index_document` (`sync.py:1659`, `:1681`) runs before `_metadata()`
-     (`:1719`) — so this is defence against a future ordering, not a live bug. A mutation test must
+     node was mutated rather than reassigned. **Not reachable from a file today** — in `_index_document` every
+     `write_sidecar` (`sync.py:1659`, `:1681`) runs before `_metadata()` (`:1719`) — **but
+     `_metadata()` has four call sites** (`:1258`, `:1347`, `:1452`, `:1719`), and the paid-rebuild
+     paths at `:1347` and `:1452` are unchecked — so this is defence against a future ordering, not a live bug. A mutation test must
      assert on the **coerced boolean's own** anchor; asserting on an enclosing one is green on the
      defective version.
      **Walk mappings and sequences recursively, and coerce keys as well as values** — an anchored
@@ -877,10 +906,14 @@ Every comment test **compares file bytes** — `CommentedMap.__eq__` ignores com
 an equality assertion can never detect their loss.
 
 `test_sidecar.py`: `::test_an_unknown_key_round_trips_byte_identically`;
-`::test_a_comment_inside_provenance_extraction_survives_a_re_extraction` (comment on the **last key
-of the nested map** — the only position that reproduces it);
+`::test_a_comment_inside_provenance_extraction_survives_a_re_extraction` (comment on **any key of the nested map but the
+first** — the first survives, because ruamel stores it as the parent's trailer);
 `::test_a_comment_inside_the_links_block_survives_a_rewrite`;
 `::test_a_comment_on_a_tags_entry_survives_a_rewrite`;
+`::test_two_links_sharing_a_to_keep_their_own_rel_and_comment`;
+`::test_two_identical_links_both_survive_when_a_third_is_dropped`;
+`::test_a_self_link_keeps_its_position_its_comment_and_its_unknown_keys_when_expanded`;
+`::test_an_explicit_tag_is_stripped_on_rewrite` (pins the exclusion);
 `::test_changing_the_title_leaves_the_links_block_byte_identical`;
 `::test_changing_the_title_leaves_the_tags_block_byte_identical` (the masking case above — these are
 the only tests that exercise reconciliation on an unchanged sequence);
@@ -941,8 +974,9 @@ spaced-long-value test fails. Make the known-key merge one level deep → the ne
 fails. Restore `sorted(extra)` on the original-document path → the key-order test fails. Drop the
 mint-quoting predicate → the boolean-title test fails. Drop the `ScalarBoolean` coercion, **or make it one level deep**, → the
 anchored-boolean test fails. Drop the JSON check → the tagged-sidecar test fails. Drop
-`sort_keys=True` from it → the mixed-key test fails. Reconcile `links` by index instead of by `to` → the
-comment-misattribution test fails. Assign `tags` unconditionally → the tags-comment test fails. Delete
+`sort_keys=True` from it → the mixed-key test fails. Key `links` on `to` alone → the shared-`to` test fails.
+Build `wanted` as a **set** instead of a list → the duplicate-link test fails. Compare raw `to` text
+instead of the resolved URI → the self-link test fails. Assign `tags` unconditionally → the tags-comment test fails. Delete
 sequence entries by slice assignment instead of descending `del` → the comment-wipe test fails. Replace the AST scan with an import walk → the lazy-import test
 fails. Revert one `replace()` to a hand-enumerated constructor → a comment test fails.
 
@@ -1730,3 +1764,4 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | 20260731 08:12 | **Pass 4 — 6 HIGH, but the seam and L5c both cleared.** The reviewer enumerated every shape under both libraries and confirmed **no shape regresses at L5b** and that reverting L5c leaves L5b correct; it **found nothing wrong in L5c**. What it found in L5b was worse than a wording defect: **`tests/free_path_run.py` already imports PyYAML and writes a sidecar with `yaml.safe_dump` at `:160`**, so the runtime gate is red on day one and, after the swap, that line is the only PyYAML sidecar writer left in the repo — the exact divergence the gate exists to forbid. The section had reasoned carefully about false positives and never checked the true positive. **The `ScalarBoolean` coercion was one level deep**, and `_metadata()` is a shallow spread, so a nested or `provenance`-held anchored boolean still indexes as `1`; both the named test and the mutation target passed on the defect — the third instance of the same increment-shaped blind spot in one section. The stub list was declared *complete* and omitted `ScalarBoolean` and `ScalarNode`, both of which the increment's own code needs. Item 5's divergence paragraph still attributed L5b's changes to L5c. And the interim cut — the project's first cut of this release, publishing to PyPI — claimed L8 steps it never listed: the GUIDE install line (which this increment changes), `SCHEMA_VERSION == 2`, and `pnk doctor` exiting 0 on both corpora, plus no cut procedure and no three-document stale sweep. Also: the verification table named a renamed test, and `tests/test_verification.py` hard-fails on an unresolvable one; the 871/872 figure predates L5 and the suite now collects **1027**, so the one falsifiable exit criterion rested on a number from a different tree |
 | 20260731 08:32 | **Pass 5 — 7 HIGH, and the calibration point is that a *person* found what five agent passes did not.** The `tags`-comment defect (a comment on a `tags` entry, destroyed by the "replaced wholesale" rule justified with a fabricated claim that such comments do not exist) was found by the user testing, not by any review. Of pass 5's own seven: the pass-4 fix commit **corrupted two rows of the verification table it was editing** — one lost a column, one gained a fifth holding the neighbouring row's test, and `tests/test_verification.py` would have caught only the first; the item renumber left **four dangling `item N` references**, one of them written *by that same commit and wrong on arrival*; two "the only/the last PyYAML site" claims were false (fifteen `safe_dump` sites across eight test files survive, and item 5's own "gate, not a fixture writer" distinction argues the other way); the new runtime gate was placed in a file where **every neighbouring caller carries a `skipif` on `anthropic`**, so an executor copying the convention would disable it on two of three CI legs for an unrelated reason; the 871/872 correction was written into a commit message and a log row and **never landed in the plan body** — recording a finding is not fixing it; the cut procedure instructed the exact 🚫-table churn decision 27 exists to prevent, 685 lines from the amendment forbidding it, while two of L5b's three CLAUDE.md amendments had no landing instruction at all; and *"the check and the thing it protects cannot disagree"* was false — `_metadata()` builds a **union**, so a key-type collision created *by the merge* passes a separate-mapping check and then `TypeError`s. Also measured: an in-place coercion walk **strips the user's anchors out of the file**, and a self-referencing anchor raises `ValueError`, not `TypeError`, making it a fifth crash shape the check must catch |
 | 20260731 08:50 | **Pass 6 — 7 HIGH, five of them inside pass 5's fix, and one repeat offence.** The pass-5 commit's message said *"It now says explicitly: no skipif"*; a grep found the word in the iteration log and **nowhere in the plan body** — the second time an edit of mine silently failed to match, on the very finding that had named *"written into a commit message and a log row and never landed"* as the failure mode. Every edit in this pass was applied through a harness that reports which patterns matched; it caught one immediately. The withdrawn `ValueError` claim was hiding a real regression underneath it: measured, `mine: &x\n  b: *x` round-trips to `mine:\n  b:\n` — anchor and alias destroyed, value nulled — where PyYAML raises `Circular reference detected` out of `pnk sync`. **A loud crash becomes silent corruption**, in the increment whose thesis is behaviour equivalence, and it was in no exclusion list. Three specification defects: `links` keyed on `to` alone is undefined when two links share a `to` with different `rel`s, which `_links()` accepts and the index stores as two rows — reproduced, one link overwrote the other and its comment came with it; the `provenance` delete-what-is-missing rule was unbounded in depth, so it would strip a user's own keys out of `provenance.extraction`, against CLAUDE.md's *"additively … never any other key"*; and "append at the end" misplaces a **document-trailing** comment, which the named test's fixture could not detect. Also: the 🚫-table instruction told the executor to add `pnk links` where both tables already have it while missing the roadmap row that lacks it; the in-place-anchor measurement was wrong in its specifics (only the coerced boolean's *own* anchor vanishes) and unreachable today; verification step 0 had no pass criterion and is now a precondition with one |
+| 20260731 09:10 | **Pass 7 — 7 HIGH, measured against the executor's real implementation rather than a prototype, which is why it found more.** The worst fired **on a no-op write over a committed corpus file**: `read()` expands `pnk://self/X`, so the loaded entry's `to` never equalled the raw node text, the match failed, and the entry was deleted and re-appended — carrying the user's comment onto the *next* link, destroying that link's own comment, and moving the entry to the end. The invariant's exclusion list said *"`pnk://self/…` expansion"*, which reads as *the URI text changes* and was quietly covering a rebuild. Two more were **defects pass 6 introduced**: keying on `(to, rel)` makes every `rel` edit a delete-and-append, replacing the one edit shape that preserved comments with one the plan's own pinned limitation says destroys two; and "positional fallback among equal pairs" was implemented as a **set**, so three links went in and one came out. Also: **every explicit `!!` tag is stripped on round-trip** (`!!int 3` → `3`), so "keep working — verified" was true of loading and false of the byte-identity invariant being written into `CLAUDE.md`; a **duplicate anchor name** is a clean `SidecarError` today and silently accepted after, emitting a `ReusedAnchorWarning` that is not a `YAMLError` and so escapes `read()`'s `except` under `filterwarnings = ["error"]`; and a non-recursive anchor on an **empty** value is destroyed too, which the recursive-only exclusion missed. Two of my own measurements were wrong: the unbounded-delete comment is **misattributed, not deleted**, and the nested-comment fixture's "only position that reproduces it" is any position **but the first**. It also verified the precondition criterion exactly — 1020 passed, 6 skipped, 1 failed, the single failure being the predicted `{id: x, : }` case |
