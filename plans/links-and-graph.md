@@ -865,7 +865,12 @@ widened acceptance becoming a crash.
    Declare only what is used; a symbol declared in the wrong module is pyright-green and an
    `ImportError` at runtime, which is why item 8's signature test exists.
 
-8. **Three pytest gates, in two named files** — plus a fourth at wheel level, verification step 3. No one gate suffices: the AST scan sees lazy and
+8. **Three pytest gates, in two named files** — plus a fourth at wheel level, verification step 3. **"PyYAML left the runtime" is true of what pinakes *declares* and false of what a user's machine
+   *has*.** Verified: a bare wheel has no `yaml`, but `pinakes[light]` pulls it transitively through
+   `huggingface_hub` (`pyyaml>=5.1`), so `import yaml` **succeeds** in a real install. A stray import
+   in `src/` would therefore work quietly rather than fail loudly — which is what makes the AST scan
+   load-bearing rather than a second belt, and why the wheel assertion is correctly scoped to the
+   bare wheel. No one gate suffices: the AST scan sees lazy and
    function-scoped imports but not dynamic ones; the runtime check sees transitive and dynamic
    imports but only what the run actually executes.
    - `tests/test_packaging.py::test_no_module_under_src_imports_pyyaml` — walk every `.py` under
