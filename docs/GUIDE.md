@@ -321,13 +321,31 @@ Or without installing anything:
 }
 ```
 
-Three tools, namespaced so they cannot collide with another KB server the agent has loaded:
+Four tools, namespaced so they cannot collide with another KB server the agent has loaded:
 
 | Tool | Does |
 |---|---|
 | `pinakes_search` | Ranked, cited passages with a confidence signal. Each carries `page_start`/`page_end` (both `null` for a source with no pages) beside the rendered citation |
 | `pinakes_get` | A document by ULID. `page_start`/`page_end` read one range of a PDF; page boundaries come back marked by a line reading `[page N]` |
+| `pinakes_links` | What a document connects to, and what connects to it. `depth` is capped at 3 server-side; a neighbour in another KB is returned and never expanded |
 | `pinakes_list_kbs` | The KBs this server was pointed at |
+
+**`pinakes_links` reports `confidence: "unknown"` on every call** — with a `query` and without one.
+The signal `pinakes_search` reports is fitted per KB on the reranker score of a retrieved passage; a
+traversal neighbour is not one, and a neighbour list spanning two KBs has no single manifest whose
+thresholds would apply. `unknown` is the honest answer, and it is the only one this tool gives.
+
+A neighbour in a KB **this server was not pointed at** still comes back — with its `kb_id`, its
+`doc_id` and `reachable: false` — because a link that exists is worth knowing about even when this
+process cannot follow it. Point `pnk serve` at both KBs and it becomes reachable; nothing about the
+KBs themselves changed. A reachable neighbour in a *different* KB needs its `kb_id` passed too —
+`pinakes_get(doc_id, kb=kb_id)`, since an id resolves inside one KB — and the row carries a
+`fetch_with` object holding exactly that pair.
+
+Rows come back **in rank order**. `score` is comparable only among rows with the same
+`scored_by_query`: with a `query`, a neighbour with no local chunks to embed falls back to its edge
+weight, which is a different scale from a cosine — so re-sorting by `score` reorders the list
+against itself.
 
 **One citation vocabulary across both surfaces.** An agent can cite `docs/paper.pdf:p7` from a
 `get` exactly as it can from a `search` — the numbers are the same numbers, and the trace tests
@@ -428,7 +446,9 @@ $ pnk links docs/loans-outward.md
 -> counterpart: 01KYP8878AZWS2ZWEBD0KQYTXE (other KB)  [hop 1]
 ```
 
-`->` is a link written here; `<-` is one pointing here, learned by scanning the other KB. A
+`->` is a link written by the document the row hangs off — the one you asked about at hop 1,
+its parent beyond that; `<-` is one pointing back, learned by scanning the other KB when it
+lives there; `<->` is the same relation written from both ends. A
 neighbour in another KB shows its ULID rather than a title, because this KB holds the partner's
 *links*, not its documents.
 

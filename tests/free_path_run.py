@@ -131,7 +131,51 @@ def _build(root: Path, *, backend: str) -> Path:
     (root / "docs" / "a.md").write_text(
         "# Retrieval\n\nHybrid retrieval fuses lexical and dense candidates.\n", encoding="utf-8"
     )
+    # A second document, and two authored links from the first — one intra-KB and one pointing at a
+    # KB that does not exist. Without them `server.links` walks an empty graph and the whole
+    # neighbour projection (`title`, `round`, the reachability branch) never executes, so a paid
+    # import planted in that loop would sail past this gate while it reported success.
+    (root / "docs" / "b.md").write_text(
+        "# Ranking\n\nA cross-encoder reranks the fused candidates.\n", encoding="utf-8"
+    )
     return root
+
+
+def _author_links(root: Path) -> None:
+    """Written after the first sync, which is what mints `b.md`'s ULID for `a.md` to point at."""
+    import yaml
+
+    from pinakes.sidecar import SIDECAR_SUFFIX
+
+    def sidecar(name: str) -> Path:
+        return root / "docs" / f"{name}{SIDECAR_SUFFIX}"
+
+    kb_id = str(load(root).kb.id)
+    target = str(yaml.safe_load(sidecar("b.md").read_text(encoding="utf-8"))["id"])
+    body = yaml.safe_load(sidecar("a.md").read_text(encoding="utf-8"))
+    body["links"] = [
+        {"to": f"pnk://{kb_id}/{target}", "rel": "related"},
+        {"to": f"pnk://{UNSERVED_KB}/{UNSERVED_DOC}", "rel": "counterpart"},
+    ]
+    sidecar("a.md").write_text(yaml.safe_dump(body, sort_keys=False), encoding="utf-8")
+    if main(["sync", "--kb", str(root)]) != 0:
+        raise SystemExit("free-path run: re-syncing the authored links failed")
+
+    # `pnk links` walks the link graph — no models, no extractor, nothing that could spend. It runs
+    # *here*, after the links exist, rather than in `_run_free_surfaces` where it used to: over an
+    # unlinked graph the walk returns before entering the projection, so the surface gate 4 claims
+    # to cover was never actually executed.
+    if main(["links", "docs/a.md", "--kb", str(root)]) != 0:
+        raise SystemExit(f"free-path run: `pnk links` failed on {root}")
+
+
+UNSERVED_KB = "01KYD0000000000000ABSENTKB"
+UNSERVED_DOC = "01KYD000000000000000ABSENT"
+"""A KB nothing points at, so `pinakes_links` has an unreachable neighbour to project.
+
+26 Crockford characters each — `parse_kb_id`/`parse_doc_id` reject anything else, and a rejected
+link would leave the graph empty again without failing anything visibly.
+"""
 
 
 def _run_free_surfaces(root: Path) -> None:
@@ -154,24 +198,56 @@ def _run_free_surfaces(root: Path) -> None:
     # accidental paid import, and it is on the free path by definition.
     if main(["budget", "--kb", str(root)]) != 0:
         raise SystemExit(f"free-path run: `pnk budget` failed on {root}")
-    # `pnk links` walks the link graph — no models, no extractor, and nothing that could spend.
-    # It is here because gate 4 asserts a *property of the import graph*, and a surface left out
-    # of the run is a surface the property was never checked on.
-    if main(["links", "docs/a.md", "--kb", str(root)]) != 0:
-        raise SystemExit(f"free-path run: `pnk links` failed on {root}")
     main(["doctor", "--kb", str(root)])
 
 
 def _mcp_handshake(root: Path) -> None:
-    """Build the MCP server and list its tools — `pnk serve`'s import graph without a stdio loop."""
+    """Build the MCP server, list its tools, and **call** one — `pnk serve`'s import graph.
+
+    Listing alone was never enough: `list_tools` walks signatures and docstrings, so a tool whose
+    *body* imports a paid client would list perfectly and never be seen by this gate. Calling one
+    is what makes the import graph include what the tool actually does.
+
+    `pinakes_links` is the one called because it is the newest, and because a traversal touches the
+    graph core and its provider — territory the gate had no coverage of at all before L3 and L4.
+    """
     import asyncio
 
+    from pinakes.graph import provider as provider_module
     from pinakes.serve import build
 
-    mcp, _server = build([root])
-    tools = asyncio.run(mcp.list_tools())
-    if not tools:
-        raise SystemExit("free-path run: the MCP server listed no tools")
+    mcp, server = build([root])
+    try:
+        tools = asyncio.run(mcp.list_tools())
+        if not tools:
+            raise SystemExit("free-path run: the MCP server listed no tools")
+        if "pinakes_links" not in {tool.name for tool in tools}:
+            raise SystemExit("free-path run: the MCP server does not expose pinakes_links")
+
+        served = server.resolve(None)
+        document = provider_module.resolve_document(served.connection(), "docs/a.md")
+        if document is None:
+            raise SystemExit("free-path run: the fixture KB has no docs/a.md to traverse from")
+        # With a `query`, so `score_documents` runs too — the embedding path a traversal reaches.
+        payload = server.links(str(document), query="retrieval")
+        if "frontier" not in payload or payload.get("confidence") != "unknown":
+            raise SystemExit(f"free-path run: pinakes_links returned {sorted(payload)}")
+
+        # The projection loop must actually have run. Listing a tool walks its signature and
+        # docstring; calling one over an empty graph never enters the body where the payload is
+        # built. Both branches — reachable and not — are asserted, because the unreachable one is
+        # its own code path.
+        reachable = [row for row in payload["neighbours"] if row["reachable"]]
+        unreachable = [row for row in payload["neighbours"] if not row["reachable"]]
+        if not reachable or not unreachable:
+            raise SystemExit(
+                "free-path run: pinakes_links must return one reachable and one unreachable "
+                f"neighbour for the gate to cover both branches, got {payload['neighbours']}"
+            )
+        if not reachable[0].get("title") or "title" in unreachable[0]:
+            raise SystemExit("free-path run: the title branch did not run as expected")
+    finally:
+        server.close()
 
 
 def main_script(output: Path) -> None:
@@ -183,6 +259,7 @@ def main_script(output: Path) -> None:
 
         free_kb = _build(area / "free-kb", backend="pypdfium2")
         _run_free_surfaces(free_kb)
+        _author_links(free_kb)
         _mcp_handshake(free_kb)
 
         # The KB that makes this gate real: a paid backend configured, never invoked.

@@ -237,7 +237,35 @@ says so rather than leaving a reader to assume one.
 pnk serve [--offline] [KB ...]
 ```
 
-Runs the MCP server over stdio, exposing `pinakes_search`, `pinakes_get` and `pinakes_list_kbs`.
+Runs the MCP server over stdio, exposing four tools:
+
+| Tool | Arguments | Returns |
+|---|---|---|
+| `pinakes_search` | `query`, `kb?`, `tags?`, `path_prefix?`, `source_type?`, `k?` | Cited passages, a confidence signal, a suggested next step |
+| `pinakes_get` | `doc_id`, `kb?`, `page_start?`, `page_end?` | One document, optionally one page range |
+| `pinakes_links` | `doc_id`, `kb?`, `rel?`, `direction?` (`out`/`in`/`both`), `depth?`, `query?` | Neighbours, `frontier`, `unresolved`, `truncated` — and `confidence` always `unknown` |
+| `pinakes_list_kbs` | — | The KBs this server was pointed at |
+
+**Every tool that answers about a KB takes an explicit `kb`**, defaulting to the first one served
+(`pinakes_list_kbs` takes no arguments — it *is* the list). `pinakes_links` caps `depth` at 3
+server-side and has no query language, ever.
+
+A neighbour's `score` is comparable only among rows carrying the same `scored_by_query`: with a
+`query`, a neighbour with no local chunks to embed falls back to its edge weight, which is not on
+the same scale as a cosine. The list comes back in rank order, so re-sorting it by `score` is a
+mistake rather than a refinement. A neighbour in a *different* served KB carries `fetch_with` —
+the `doc_id` and `kb` that `pinakes_get` needs together, because an id resolves inside one KB.
+
+Its `confidence` is `unknown` on **every** return, with or without a `query`. The thresholds
+`pinakes_search` reports against are fitted per KB on the reranker score of the top retrieved
+passage; a traversal neighbour is not a retrieved passage, and a neighbour list spanning two KBs has
+no single manifest whose thresholds would apply. Reporting anything else would be an invented
+signal.
+
+A neighbour whose KB **this server was not pointed at** comes back with `reachable: false`, its
+`kb_id`, its `doc_id` and a reason — identified rather than omitted, so an agent can act on the fact
+that the link exists and this process cannot follow it. Reachability is a property of the server
+invocation, not of any manifest.
 
 `KB` is one or more KB directories; with none, the nearest one. **The server answers only about the
 KBs named here** — no tool argument accepts a filesystem path, and `pinakes_get` resolves a document
@@ -266,6 +294,21 @@ search` prints.
 | `--query` | Rank neighbours by similarity to this instead of by edge. Loads the embedding model; without it, no model is loaded at all |
 | `--json` | `{document, neighbours, frontier, unresolved, truncated}` |
 
+Without `--json` each neighbour is one line, and the arrow says who wrote the link:
+
+| Glyph | Means |
+|---|---|
+| `->` | written **by the document it hangs off** — the one you asked about at hop 1, its parent beyond that |
+| `<-` | written at the other end, pointing back; from the other KB's sidecars when it lives in one |
+| `<->` | the **same relation written from both ends** — two people, one pair |
+| `?` | no direction was established. Unreachable through the shipped provider; it exists so an unestablished direction cannot render as `<->` |
+
+A row also reports `direction` under `--json`, carrying `out`, `in` or `both` — and `unknown` for
+the `?` case. Beyond hop 1 the direction is relative to the **parent** that reached the row, not to
+the document you asked about, because a row does not carry which parent that was. Rows come back in
+rank order; `score` is comparable only among rows sharing a `scored_by_query`, because a neighbour
+with no local chunks to embed falls back to its edge weight, which is not a cosine.
+
 **Every neighbour is a document**, and `kb_id` is always the KB's ULID — never `[kb] name`, which
 is free to rename, and never a `[[links.kb]]` alias, which means nothing on another machine.
 
@@ -278,7 +321,11 @@ cross-KB one, for the same reason: this index has the partner's links, not its d
 Neighbours found but **not** expanded come back on `frontier` with one of five reasons —
 `terminal`, `depth`, `fanout`, `rows`, `tokens`. Links whose target this KB does not have come back
 under `unresolved` rather than being dropped, and never appear as neighbours: there is no document
-there to be one.
+there to be one. When a walk returns nothing the human output says **why**, in the same precedence
+`pinakes_links` uses: your `--rel`, `--direction` or `--depth` excluded everything, or the links
+resolve to nothing, or there genuinely are none. The narrowing is reported first because a live neighbour may
+sit one dropped argument away — and stdout must never print `no links` for a document whose links
+stderr is listing.
 
 ---
 
@@ -290,5 +337,5 @@ Listed so the shape is known in advance; each names the increment that lands it
 | Surface | Increment | Adds |
 |---|---|---|
 | `pnk ask --deep` | the deep release | Bounded, budgeted synthesis for CLI and cron use, where no agent is present |
-| `pnk link`, `pinakes_links` | the links release | Authoring a link from the command line, and traversing over MCP. `pnk links` is **built** — see above |
+| `pnk link` | the links release | Authoring a link from the command line. Traversal — `pnk links` and `pinakes_links` — is **built**; see above |
 | `pnk upgrade` | the template release | Diffs a KB's template version against the installed one and *prints* a migration — never applies one |

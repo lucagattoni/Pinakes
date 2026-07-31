@@ -649,6 +649,7 @@ def run_links(args: argparse.Namespace) -> int:
     from pinakes import manifest as manifest_module
     from pinakes import store
     from pinakes.errors import PinakesError
+    from pinakes.graph import present
     from pinakes.graph import provider as provider_module
     from pinakes.graph.traverse import traverse
 
@@ -662,6 +663,10 @@ def run_links(args: argparse.Namespace) -> int:
                 remedy="Pass a document ULID, or its path as `pnk search` prints it.",
             )
 
+        # Constructed first, so an unknown `--direction` is refused before a model is loaded.
+        provider = provider_module.DocumentProvider(
+            connection, local_kb=loaded.kb.id, direction=args.direction, rel=args.rel
+        )
         scores: dict[str, float] = {}
         if args.query is not None:
             # Loaded only when a query was given: ranking by edge needs no model at all, and
@@ -675,13 +680,7 @@ def run_links(args: argparse.Namespace) -> int:
                 dim=loaded.embedding.dim,
             )
 
-        provider = provider_module.DocumentProvider(
-            connection,
-            local_kb=loaded.kb.id,
-            direction=args.direction,
-            rel=args.rel,
-            scores=scores,
-        )
+        provider.scores = scores
         result = traverse(
             provider,
             provider_module.document_key(str(loaded.kb.id), str(start_doc)),
@@ -689,56 +688,28 @@ def run_links(args: argparse.Namespace) -> int:
             adjacent_k=loaded.retrieval.adjacent_k,
             query=args.query,
         )
-        rows = [
-            {
-                "kb_id": neighbour.node_key[0],
-                "doc_id": neighbour.node_key[1],
-                "rel": neighbour.rel,
-                "direction": provider.directions.get(neighbour.node_key, args.direction),
-                "distance": neighbour.distance,
-                "score": round(neighbour.score, 4),
-                "terminal": neighbour.terminal,
-                **(
-                    {"title": title}
-                    if (title := provider.title(*neighbour.node_key)) is not None
-                    else {}
-                ),
-            }
-            for neighbour in result.neighbours
-        ]
+        body = present.payload(result, provider=provider, document=str(start_doc))
+        rows = body["neighbours"]
     finally:
         connection.close()
 
     if args.json:
-        print(
-            json_module.dumps(
-                {
-                    "document": str(start_doc),
-                    "neighbours": rows,
-                    "frontier": [
-                        {
-                            "kb_id": entry.node_key[0],
-                            "doc_id": entry.node_key[1],
-                            "rel": entry.rel,
-                            "reason": entry.reason,
-                        }
-                        for entry in result.frontier
-                    ],
-                    "unresolved": [
-                        {"doc_id": entry.node_key[1], "rel": entry.rel, "reason": entry.reason}
-                        for entry in result.unresolved
-                    ],
-                    "truncated": sorted(result.truncated),
-                },
-                indent=2,
-            )
-        )
+        print(json_module.dumps(body, indent=2))
         return EXIT_OK
 
     if not rows:
-        print("no links")
+        # The same precedence `pinakes_links` uses, for the same reason: when the caller narrowed
+        # the walk, that is what changes their next move — a live neighbour may sit one dropped
+        # argument away, and "your links resolve to nothing" would be false about the one they
+        # filtered out. Only then does the dangling case get to speak.
+        if present.is_filtered(rel=args.rel, direction=args.direction, depth=args.depth):
+            print("no links match these arguments — retry without --rel/--direction, --depth 1")
+        elif result.unresolved:
+            print("links exist but resolve to nothing — see stderr")
+        else:
+            print("no links")
     for row in rows:
-        arrow = "->" if row["direction"] == "out" else "<-"
+        arrow = present.arrow(row["direction"])
         label = row.get("title") or row["doc_id"]
         marker = " (other KB)" if row["terminal"] else ""
         print(f"{arrow} {row['rel']}: {label}{marker}  [hop {row['distance']}]")

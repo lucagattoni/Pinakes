@@ -85,6 +85,7 @@ def test_every_neighbour_is_a_document(linked: tuple[Kb, Kb]) -> None:
             "direction",
             "distance",
             "score",
+            "scored_by_query",
             "terminal",
             "title",
         }
@@ -140,7 +141,17 @@ def test_json_output_shape_is_pinned(linked: tuple[Kb, Kb]) -> None:
 
     assert set(payload) == {"document", "neighbours", "frontier", "unresolved", "truncated"}
     row = payload["neighbours"][0]
-    assert {"kb_id", "doc_id", "rel", "direction", "distance", "score", "terminal"} <= set(row)
+    assert {
+        "kb_id",
+        "doc_id",
+        "rel",
+        "direction",
+        "distance",
+        "score",
+        "scored_by_query",
+        "terminal",
+    } <= set(row)
+    assert {"kb_id", "doc_id", "rel", "reason", "distance"} == set(payload["frontier"][0])
 
 
 # --- Bounds ---------------------------------------------------------------------------------
@@ -312,3 +323,96 @@ def test_depth_is_honoured_not_merely_capped(linked: tuple[Kb, Kb]) -> None:
     assert 2 in {row["distance"] for row in two["neighbours"]}
     assert str(local.docs["gamma"]) in {row["doc_id"] for row in two["neighbours"]}
     assert str(local.docs["gamma"]) not in {row["doc_id"] for row in one["neighbours"]}
+
+
+def human_output(kb: Kb, document: str, **options: object) -> str:
+    """`pnk links` as a person reads it — stdout only, no `--json`."""
+    import contextlib
+    import io
+
+    from pinakes.cli import main
+
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        code = main(
+            [
+                "links",
+                document,
+                "--kb",
+                str(kb.root),
+                *[
+                    part
+                    for name, value in options.items()
+                    for part in (f"--{name.replace('_', '-')}", str(value))
+                ],
+            ]
+        )
+    assert code == 0, buffer.getvalue()
+    return buffer.getvalue()
+
+
+def test_the_human_output_names_each_direction_with_its_own_arrow(tmp_path: Path) -> None:
+    """`->` written here, `<-` pointing here, `<->` the same relation written from both ends.
+
+    `run_links`' human output had no assertion at all until this: mutating the arrow's fallback to
+    `<-` survived the whole suite, and so did deleting the `no links` line, which would leave an
+    unlinked document printing nothing and exiting 0.
+    """
+    kb = make_kb(tmp_path / "arrows", "arrows", ["alpha", "beta", "gamma", "orphan"])
+    kb.set_links("alpha", [(kb.uri("beta"), "related"), (kb.uri("gamma"), "mutual")])
+    kb.set_links("gamma", [(kb.uri("alpha"), "mutual")])
+    kb.set_links("beta", [(kb.uri("alpha"), "cites")])
+    run(kb)
+
+    # Matched against whole lines, never as substrings: `-> related: beta` is *inside*
+    # `<-> related: beta`, so dropping the `out` mapping rendered every outbound link as
+    # reciprocal and this test still passed.
+    lines = {line.split("  [hop")[0] for line in human_output(kb, "docs/alpha.md").splitlines()}
+    assert "-> related: beta" in lines, "written here"
+    assert "<- cites: beta" in lines, "pointing here"
+    assert "<-> mutual: gamma" in lines, "the same relation from both ends"
+
+    assert "no links" in human_output(kb, "docs/orphan.md"), "silence would read as success"
+
+
+def test_the_cli_says_so_when_every_link_dangles(tmp_path: Path) -> None:
+    """stdout said `no links` for a document whose links exist and resolve to nothing, while
+    stderr listed them. A user piping stdout reads only the contradiction."""
+    kb = make_kb(tmp_path / "cli", "cli", ["alpha", "stale"])
+    absent = f"pnk://{kb.kb_id}/{mint_doc_id()}"  # minted, never hand-written
+    kb.set_links("stale", [(absent, "related")])
+    run(kb)
+
+    dangling = human_output(kb, "docs/stale.md")
+    assert "no links" not in dangling, "its links exist — they resolve to nothing"
+    assert "resolve to nothing" in dangling
+
+
+def test_a_filtered_walk_reports_the_filter_before_the_dangling_links(tmp_path: Path) -> None:
+    """The precedence itself, which needs both conditions true **at once** to mean anything.
+
+    `--rel` narrows `provider.unresolved` too, so filtering by a relation nothing carries leaves
+    `unresolved` empty and the branch under test never competes — the first attempt at this
+    assertion could not detect the branches being swapped. `--direction` is the lever that works:
+    `alpha`'s outbound link dangles and its inbound one is live, so asking for `out` alone makes
+    the walk empty, `unresolved` populated, and a live neighbour one dropped argument away.
+    """
+    kb = make_kb(tmp_path / "both", "both", ["alpha", "beta"])
+    kb.set_links("alpha", [(f"pnk://{kb.kb_id}/{mint_doc_id()}", "related")])  # outbound, dangles
+    kb.set_links("beta", [(kb.uri("alpha"), "cites")])  # inbound, live
+    run(kb)
+
+    out = human_output(kb, "docs/alpha.md", direction="out")
+    assert "no links match these arguments" in out, "the filter is what emptied it"
+    assert "resolve to nothing" not in out, "beta is one dropped --direction away"
+
+    # The advice must name every argument `is_filtered` tests. `--depth 0` empties the walk on its
+    # own, and advice that omits it sends the caller to a retry reproducing the same output.
+    by_depth = human_output(kb, "docs/alpha.md", depth=0)
+    assert "no links match these arguments" in by_depth
+    assert "--depth 1" in by_depth, "the retry must change the argument that emptied it"
+
+    # ...and unfiltered, the same document reaches the live neighbour rather than either message.
+    assert "<- cites: beta" in {
+        line.split("  [hop")[0] for line in human_output(kb, "docs/alpha.md").splitlines()
+    }

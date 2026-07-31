@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from pinakes.errors import TraversalError
 from pinakes.graph.traverse import Candidate, NodeKey, Unresolved
 from pinakes.ids import DocId, KbId
 
@@ -38,6 +39,12 @@ the deterministic `node_key` tie-break rather than to an invented distinction.
 """
 
 DIRECTIONS = ("out", "in", "both")
+"""The only three a caller may ask for — **enforced**, not merely documented.
+
+`edges_of` tests `direction in ("out", "both")` and `("in", "both")`, so an unrecognised string ran
+neither query and returned a confident empty answer. The CLI's `argparse` `choices` caught it there;
+the MCP surface, which is the one an untrusted model types into, had nothing.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +113,11 @@ class DocumentProvider:
         rel: str | None = None,
         scores: dict[str, float] | None = None,
     ) -> None:
+        if direction not in DIRECTIONS:
+            raise TraversalError(
+                f"{direction!r} is not a direction.",
+                remedy=f"Use one of: {', '.join(DIRECTIONS)}.",
+            )
         self.connection = connection
         self.local_kb = str(local_kb)
         self.direction = direction
@@ -118,9 +130,26 @@ class DocumentProvider:
             str(row[0]): str(row[1] or "")
             for row in connection.execute("SELECT id, title FROM documents WHERE state = 'active'")
         }
-        self.directions: dict[NodeKey, str] = {}
+        self.directions: dict[tuple[NodeKey, str], str] = {}
         """Which way each neighbour was reached — the core does not carry it, and the surface
-        needs it. Keyed by node, because a node reached both ways is still one neighbour."""
+        needs it.
+
+        **Keyed by `(node, rel)`**, not by node alone: keyed by node, the first edge seen won and
+        every later row for that node inherited its direction, so given `a --related--> b` and
+        `b --cites--> a`, asking about `a` reported the citation as running *from* `a`.
+
+        **First expansion wins, and `both` is decided inside one expansion only.** Direction is
+        relative to the node being expanded, so merging across expansions asserts something nobody
+        wrote: with `t --cites--> a`, `a --related--> m` and `m --cites--> t`, expanding `m` at
+        depth 2 would flip the already-emitted `(t, cites)` row from `in` to `both` — claiming `a`
+        cites `t`. A row's direction would then change with `--depth`. Within a single expansion a
+        `both` is real: two people wrote the same relation from either end of the same pair.
+
+        The residual imprecision is inherited from L4 and left deliberately: a row at distance ≥ 2
+        reports its direction relative to the **first** parent that reached it, because `Neighbour`
+        does not carry which parent that was. Every distance-1 row — the only one most callers
+        read, and the only one `depth=1` can produce — is exact, since the start is the sole parent.
+        """
 
     def title(self, kb_id: str, doc_id: str) -> str | None:
         """A title for a **local** document only.
@@ -135,6 +164,9 @@ class DocumentProvider:
     def neighbours(self, node_key: NodeKey, *, query: str | None) -> Sequence[Candidate]:
         self.queries += 1
         candidates: list[Candidate] = []
+        # Scoped to this one expansion. Merged into `self.directions` below with `setdefault`, so a
+        # later hop can never rewrite the direction of a row an earlier hop already emitted.
+        here: dict[tuple[NodeKey, str], str] = {}
         for edge in edges_of(self.connection, node_key, direction=self.direction, rel=self.rel):
             if edge.kb_id == self.local_kb and edge.doc_id not in self._titles:
                 # A local target this KB does not have is **not** a neighbour — there is no
@@ -143,7 +175,9 @@ class DocumentProvider:
                 # which one was lying.
                 continue
             target = document_key(edge.kb_id, edge.doc_id)
-            self.directions.setdefault(target, edge.direction)
+            row_key = (target, edge.rel)
+            seen = here.get(row_key)
+            here[row_key] = edge.direction if seen is None or seen == edge.direction else "both"
             candidates.append(
                 Candidate(
                     node_key=target,
@@ -158,6 +192,8 @@ class DocumentProvider:
                     tokens=_tokens(edge, self.title(edge.kb_id, edge.doc_id)),
                 )
             )
+        for row_key, resolved in here.items():
+            self.directions.setdefault(row_key, resolved)
         return candidates
 
     def unresolved(self, node_key: NodeKey) -> Sequence[Unresolved]:

@@ -347,6 +347,14 @@ class HookError(PinakesError):
     """Git hooks cannot be installed here."""
 
 
+class TraversalError(PinakesError):
+    """A traversal was asked for something it cannot mean — an unknown `direction`, so far.
+
+    Not a `ServeError`: both `pnk links` and `pinakes_links` reach the same provider, and the error
+    belongs to the traversal rather than to whichever surface asked for it.
+    """
+
+
 class ServeError(PinakesError):
     """The MCP server cannot answer as asked."""
 
