@@ -14,17 +14,30 @@ consequences shape this module:
 There is deliberately no `content_hash` here: change detection is the index's job, and a hash in a
 committed file would dirty two files per edit and go stale whenever sync had not run (§2.2).
 
-In v0.1 sidecars are *created* and *moved*, never rewritten in place, so PyYAML dropping comments on
-dump costs nothing yet. `pnk link` (the links release) is what will need a
-comment-preserving writer.
+**Written through `ruamel.yaml`, in round-trip mode, at YAML 1.2.** Two things follow, and both are
+the point rather than a side effect (`plans/decision-ruamel-yaml.md`):
+
+* **A rewrite preserves comments, quoting, block scalars and blank lines**, because `write()`
+  reconciles the known keys *into the document that was read* instead of rendering a fresh one.
+* **`country: NO` stays `NO`.** Under YAML 1.1 it was read as `False` and written back as `false` —
+  along with `0755` → `493` and `1:30` → `90` — silently, on keys this module documents as
+  round-tripped untouched. 1.2 reads them as the strings they visibly are.
 """
 
+import json
 import os
-from dataclasses import dataclass, field
+from copy import deepcopy
+from dataclasses import dataclass, field, replace
+from io import StringIO
 from pathlib import Path
 from typing import Any, cast
 
-import yaml
+from ruamel.yaml import YAML, YAMLError
+from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.constructor import DuplicateKeyError
+from ruamel.yaml.nodes import ScalarNode
+from ruamel.yaml.resolver import VersionedResolver
+from ruamel.yaml.scalarstring import SingleQuotedScalarString
 
 from pinakes.errors import InvalidIdError, InvalidUriError, SidecarError
 from pinakes.ids import DocId, KbId, mint_doc_id, parse_doc_id
@@ -35,6 +48,98 @@ SIDECAR_SUFFIX = ".pnk.yaml"
 
 # Keys this module understands. Anything else is preserved verbatim under `extra`.
 KNOWN_KEYS = frozenset({"id", "title", "tags", "created", "links", "provenance"})
+
+_YAML = YAML()  # round-trip, YAML 1.2
+_YAML.preserve_quotes = True
+_YAML.width = 4096
+"""One instance, module-level, serving both `load` and `dump` interleaved.
+
+Both settings are load-bearing. Without `preserve_quotes` a quoted scalar comes back bare on the
+next write; `width` at ruamel's default of 80 folds a long value with spaces in it across lines,
+which changes the file for a document nobody edited. 4096 exceeds what PyYAML did rather than
+restoring parity with it.
+
+Rebuilt per call the parse costs 399 µs against 282 µs, and there is nothing to gain: `lock.py`
+serialises every writer, so no two calls are in flight at once.
+"""
+
+_RESOLVERS = (VersionedResolver((1, 1)), VersionedResolver((1, 2)))
+_STRING_TAG = "tag:yaml.org,2002:str"
+
+
+def _needs_quoting(value: str) -> bool:
+    """Whether a scalar **pinakes is writing** would be read back as something other than a string.
+
+    Keyed on the value being assigned, never on whether the document is new: `skeleton()` derives a
+    title from the filename stem, so `NO.md` would mint a bare `title: NO` that any 1.1 reader takes
+    as `False` — and `pnk link --rel no` is the same hazard on a file that already exists.
+
+    Both YAML versions, because the file may be read by something that is not pinakes. 1.2 alone
+    would leave `NO` bare, which is correct for 1.2 and wrong for every 1.1 reader in the world.
+    Scalars pinakes did *not* author are left exactly as the user wrote them.
+    """
+    return any(
+        resolver.resolve(ScalarNode, value, (True, False)) != _STRING_TAG for resolver in _RESOLVERS
+    )
+
+
+def _authored(value: str) -> str | SingleQuotedScalarString:
+    return SingleQuotedScalarString(value) if _needs_quoting(value) else value
+
+
+def _json_encodable(path: Path, name: str, mapping: dict[str, Any]) -> None:
+    """Refuse a mapping the index could not store — **the assembled mapping, not each value**.
+
+    `store.dumps_metadata` is `json.dumps(metadata, sort_keys=True, ensure_ascii=False)`, and
+    `_metadata()` hands it `tags`, `provenance` and every `extra` key at once. Checking values one
+    at a time accepts `{123: v, abc: w}` — both values encode fine — and the `TypeError` then
+    escapes from `pnk sync`, because the failure is a comparison *between* keys, not a property of
+    either. So the call here is exactly the call being protected.
+
+    **This keeps behaviour equivalent; it is not a new refusal.** PyYAML rejects an unknown tag
+    today as a clean `SidecarError` (`ConstructorError` subclasses `YAMLError`); ruamel returns a
+    `TaggedScalar` instead, so without this the swap alone would turn that clean error into a
+    traceback out of `pnk sync`.
+
+    Two residuals, both identical under PyYAML today and so neither a regression:
+    `.nan`/`.inf` encode as `NaN`/`Infinity`, which no conforming JSON reader accepts; and a
+    **uniformly** non-string-keyed mapping is accepted and silently coerced (`{1: a, 2: b}` becomes
+    `{"1": "a", "2": "b"}`, at any depth). `sort_keys=True` catches **mixed**-type keys only.
+    """
+    try:
+        json.dumps(dict(mapping), sort_keys=True, ensure_ascii=False)
+    except TypeError as exc:
+        offending = next(
+            (
+                f"{key!r} ({type(value).__name__})"
+                for key, value in mapping.items()
+                if not _encodes(value)
+            ),
+            str(exc),
+        )
+        raise SidecarError(
+            path,
+            f"has a `{name}` value the index cannot store: {offending}",
+            remedy=(
+                "The index stores sidecar metadata as JSON, so every value under "
+                f"`{name}` must be JSON-encodable. A YAML tag (`!!binary`, `!!set`, `!!timestamp`, "
+                "`!!str`, or one of your own), a bare date, or a mapping mixing string and "
+                "non-string keys will not encode. Quote it, or drop the tag."
+            ),
+        ) from exc
+
+
+def _checked(path: Path, name: str, mapping: dict[str, Any]) -> dict[str, Any]:
+    _json_encodable(path, name, mapping)
+    return mapping
+
+
+def _encodes(value: Any) -> bool:
+    try:
+        json.dumps(value, sort_keys=True, ensure_ascii=False)
+    except TypeError:
+        return False
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +164,16 @@ class Sidecar:
 
     An explicit `tags: []` is not the same as no `tags` at all: the first is something the user
     wrote and expects to still be there. Without this, writing back would quietly delete it.
+    """
+
+    original: CommentedMap | None = field(default=None, compare=False, repr=False)
+    """The document this sidecar was read from, comments and all — `None` when freshly minted.
+
+    `write()` reconciles the known keys *into* this rather than rendering a new document, which is
+    the only way comments, quoting and blank lines survive a rewrite.
+
+    `compare=False`: two sidecars with the same fields are the same sidecar whether or not one of
+    them remembers a file. It is also excluded from `repr`, being a whole document.
     """
 
 
@@ -87,8 +202,18 @@ def read(path: Path, *, owner: KbId) -> Sidecar:
         raise SidecarError(path, "is not valid UTF-8") from exc
 
     try:
-        loaded: object = yaml.safe_load(raw)
-    except yaml.YAMLError as exc:
+        loaded: object = _YAML.load(raw)
+    except DuplicateKeyError as exc:
+        # Caught ahead of `YAMLError`, which it subclasses. PyYAML took the last of a repeated key
+        # silently; ruamel refuses, and its own message ends with a URL for suppressing the check —
+        # advice pinakes does not want followed, since which value was meant is exactly what nobody
+        # can know.
+        raise SidecarError(
+            path,
+            f"repeats a key: {exc.problem or exc}".split("\nTo suppress")[0],
+            remedy="Delete the duplicate. Which of the two values was meant is not recoverable.",
+        ) from exc
+    except YAMLError as exc:
         raise SidecarError(path, f"is not valid YAML: {exc}") from exc
 
     if loaded is None:
@@ -96,38 +221,199 @@ def read(path: Path, *, owner: KbId) -> Sidecar:
     if not isinstance(loaded, dict):
         raise SidecarError(path, f"must be a mapping, found {type(loaded).__name__}")
 
-    data = cast(dict[str, Any], loaded)
+    data = cast(CommentedMap, loaded)
     return Sidecar(
         id=_id(path, data),
         title=_optional_str(path, data, "title"),
         tags=_tags(path, data),
         created=_optional_str(path, data, "created"),
         links=_links(path, data, owner=owner),
-        provenance=_mapping(path, data, "provenance"),
-        extra={key: value for key, value in data.items() if key not in KNOWN_KEYS},
+        # **Copies, not the live nodes.** `_mapping` would otherwise hand back the very node stored
+        # in `original`, and `dataclasses.replace` shares it between the pre- and post-extraction
+        # sidecar — so `write()` would merge a mapping into itself. That is a silent no-op, not a
+        # crash, which is the worst way for it to be wrong.
+        provenance=_checked(path, "provenance", deepcopy(_mapping(path, data, "provenance"))),
+        extra=_checked(
+            path,
+            "extra",
+            deepcopy({key: value for key, value in data.items() if key not in KNOWN_KEYS}),
+        ),
         present=frozenset(key for key in KNOWN_KEYS if key in data),
+        original=data,
     )
 
 
-def write(path: Path, sidecar: Sidecar) -> None:
-    """Write a sidecar. Unknown keys are written back; ordering is stable so diffs stay small."""
-    document: dict[str, Any] = {"id": str(sidecar.id)}
+def _merge_mapping(existing: Any, incoming: dict[str, Any]) -> None:
+    """Merge `incoming` into `existing` in place, key by key, **at every depth**.
+
+    Never replaces a mapping node that already exists, because ruamel binds a comment to the
+    **preceding** key — so a comment describing a *sibling* of `extraction` lives inside the
+    `extraction` node and dies with it. One level of merging is not enough:
+    `with_extraction_provenance` builds a plain `dict` for `extraction`, and assigning that whole
+    dict over the loaded node takes the comment with it.
+
+    A key absent from `incoming` **is deleted**. That is required rather than incidental:
+    `without_extraction_provenance` returns a provenance with no `extraction`, and a merge that only
+    assigns would leave the stale paid claim in place — silently failing the `--force` reversal
+    DESIGN §2.2 treats as an invariant.
+    """
+    for key in [key for key in existing if key not in incoming]:
+        del existing[key]
+    for key, value in incoming.items():
+        if isinstance(value, dict) and isinstance(existing.get(key), dict):
+            _merge_mapping(existing[key], cast(dict[str, Any], value))
+        else:
+            existing[key] = value
+
+
+def _merge_links(existing: Any, links: tuple[Link, ...]) -> None:
+    """Reconcile the `links` block **by `to` URI, never by position**.
+
+    Positional matching misattributes the user's comments onto different links the moment the list
+    is reordered, and deletes them when it shrinks — measured, and worse than losing a comment
+    outright, because the prose then describes the wrong link.
+
+    Only `to` and `rel` are assigned inside a matched entry, and **nothing is deleted from one**:
+    `_links()` surfaces those two fields alone, so a delete-what-is-missing merge would destroy the
+    unknown per-link keys DESIGN §2.2 requires to round-trip.
+    """
+    by_uri = {str(link.to): link for link in links}
+    # **Deleted by index, highest first — never by slice assignment.** `existing[:] = keep` wipes
+    # `CommentedSeq.ca.items` outright, taking every comment in the sequence with it; `del` shifts
+    # the surviving indices and their comments along with them. Measured: after a slice assignment
+    # `ca.items` is `{}`, after a `del` it is `{0: '# first', 1: '# third'}`.
+    for index in range(len(cast(list[object], existing)) - 1, -1, -1):
+        # One cast at the boundary, as `link_density_gate.py` does: a `CommentedMap` is a
+        # `dict[Any, Any]`, and letting that `Any` leak makes every later subscript unknown to the
+        # strict checker — which is how a module ends up carrying per-line suppressions.
+        raw_entry: object = existing[index]
+        if not isinstance(raw_entry, dict):
+            del existing[index]
+            continue
+        entry = cast(dict[str, Any], raw_entry)
+        uri = str(entry.get("to"))
+        if uri in by_uri:
+            entry["rel"] = _authored(by_uri.pop(uri).rel)
+        else:
+            del existing[index]
+    for link in links:
+        if str(link.to) in by_uri:  # never seen in the document — append it
+            existing.append(CommentedMap(to=_authored(str(link.to)), rel=_authored(link.rel)))
+
+
+def _unchanged(existing: object, incoming: object) -> bool:
+    """Whether a key's reconciled value is already exactly what the document holds.
+
+    **Assign a known key only when its value actually changed.** This is what makes byte-identity
+    structural rather than incidental: nothing in pinakes edits `tags`, so under this rule its node
+    is never touched at all, and the same holds for every key a given write does not modify.
+
+    Compared through `str` for scalars, because the document's entries may be `ScalarString`
+    subclasses carrying their original quoting — equal to a plain `str`, but not interchangeable
+    with one. Scalars are safe either way (reassigning the same string keeps its trailing comment,
+    verified); sequences and mappings are not, which is what this is for.
+    """
+    if isinstance(existing, list) and isinstance(incoming, list):
+        left = cast(list[object], existing)
+        right = cast(list[object], incoming)
+        return len(left) == len(right) and all(
+            _unchanged(a, b) for a, b in zip(left, right, strict=True)
+        )
+    if isinstance(existing, dict) and isinstance(incoming, dict):
+        left_map = cast(dict[object, object], existing)
+        right_map = cast(dict[object, object], incoming)
+        return set(left_map) == set(right_map) and all(
+            _unchanged(left_map[key], right_map[key]) for key in left_map
+        )
+    if isinstance(existing, list | dict) or isinstance(incoming, list | dict):
+        return False  # one is a container and the other is not, or they are of different kinds
+    if isinstance(existing, str) and isinstance(incoming, str):
+        return str(existing) == str(incoming)
+    # Scalars, by type and representation. `existing == incoming` is `Any` here — one side comes
+    # out of a `CommentedMap` — and comparing through `repr` keeps this typed without a
+    # suppression, while distinguishing `1` from `True` and from `1.0`, which `==` does not.
+    return type(existing) is type(incoming) and repr(existing) == repr(incoming)
+
+
+def _merge_tags(existing: Any, tags: tuple[str, ...]) -> None:
+    """Reconcile `tags` **by value** — match, append, delete the removed — the same shape `links`
+    uses for `to`.
+
+    Not "a list of plain strings with no per-entry comments": ruamel stores a comment on a `tags`
+    entry exactly as it does on a `links` entry, and replacing the sequence wholesale destroys it.
+    A comment on a *deleted* entry is still lost, in either sequence.
+    """
+    wanted = list(tags)
+    # Highest index first, and `del` rather than a slice assignment — see `_merge_links`.
+    for index in range(len(cast(list[object], existing)) - 1, -1, -1):
+        value = str(cast(list[object], existing)[index])
+        if value in wanted:
+            wanted.remove(value)
+        else:
+            del existing[index]
+    for tag in wanted:
+        existing.append(_authored(tag))
+
+
+def _known(sidecar: Sidecar) -> dict[str, Any]:
+    """The known keys this sidecar would write, in canonical order, omitting those it does not."""
+    document: dict[str, Any] = {"id": _authored(str(sidecar.id))}
     if sidecar.title is not None or "title" in sidecar.present:
-        document["title"] = sidecar.title
+        document["title"] = _authored(sidecar.title) if sidecar.title is not None else None
     if sidecar.tags or "tags" in sidecar.present:
-        document["tags"] = list(sidecar.tags)
+        document["tags"] = [_authored(tag) for tag in sidecar.tags]
     if sidecar.created is not None or "created" in sidecar.present:
-        document["created"] = sidecar.created
+        document["created"] = _authored(sidecar.created) if sidecar.created is not None else None
     if sidecar.links or "links" in sidecar.present:
         document["links"] = [{"to": str(link.to), "rel": link.rel} for link in sidecar.links]
     if sidecar.provenance or "provenance" in sidecar.present:
         document["provenance"] = dict(sidecar.provenance)
-    for key in sorted(sidecar.extra):
-        document[key] = sidecar.extra[key]
+    return document
 
-    rendered = yaml.safe_dump(
-        document, sort_keys=False, allow_unicode=True, default_flow_style=False
-    )
+
+def write(path: Path, sidecar: Sidecar) -> None:
+    """Write a sidecar, preserving everything about the file this one was read from.
+
+    When `sidecar.original` is present the known keys are **reconciled into it** — comments,
+    quoting, blank lines and the user's own key order all survive, because the document being
+    dumped is the document that was parsed. A freshly minted sidecar has no original and is
+    rendered in canonical order instead.
+    """
+    known = _known(sidecar)
+    if sidecar.original is None:
+        document = CommentedMap()
+        for key, value in known.items():
+            document[key] = value
+        for key in sorted(sidecar.extra):  # canonical order, for minting only
+            document[key] = sidecar.extra[key]
+    else:
+        document = sidecar.original
+        for key, value in known.items():
+            if key not in document:
+                # **Appended at the end, never inserted at its canonical position.** `provenance`
+                # first appears on a paid extraction; inserting it between the last known key and
+                # the first unknown one would put it directly above a comment that introduces that
+                # unknown key — and ruamel binds a comment to its preceding key, so the comment
+                # would end up reading as though it described `provenance`. A larger diff beats a
+                # misplaced comment, in the increment whose whole purpose is not to misplace them.
+                document[key] = value
+            elif _unchanged(document.get(key), value):
+                continue  # the node already says this; touching it can only lose a comment
+            elif key == "links":
+                _merge_links(document[key], sidecar.links)
+            elif key == "tags" and isinstance(document.get(key), list):
+                _merge_tags(document[key], sidecar.tags)
+            elif isinstance(value, dict) and isinstance(document.get(key), dict):
+                _merge_mapping(document[key], cast(dict[str, Any], value))
+            else:
+                document[key] = value
+        # A known key that left `present` goes; `present` names top-level keys and nothing nested.
+        for key in [key for key in document if key in KNOWN_KEYS and key not in known]:
+            del document[key]
+
+    stream = StringIO()
+    _YAML.dump(document, stream)
+    rendered = stream.getvalue()
 
     # Atomically: write beside the target, then rename over it. A truncated sidecar would lose the
     # document's permanent ULID, and every inbound pnk:// link with it — the one failure in this
@@ -210,16 +496,9 @@ def with_extraction_provenance(
             "content_hash": content_hash,
         },
     }
-    return Sidecar(
-        id=sidecar.id,
-        title=sidecar.title,
-        tags=sidecar.tags,
-        created=sidecar.created,
-        links=sidecar.links,
-        provenance=merged_provenance,
-        extra=sidecar.extra,
-        present=sidecar.present | {"provenance"},
-    )
+    # `replace`, never a hand-enumerated constructor: this dataclass has gained a field before
+    # (`original`), and every field a rebuilder forgets is silently dropped rather than flagged.
+    return replace(sidecar, provenance=merged_provenance, present=sidecar.present | {"provenance"})
 
 
 def without_extraction_provenance(sidecar: Sidecar) -> Sidecar:
@@ -232,16 +511,7 @@ def without_extraction_provenance(sidecar: Sidecar) -> Sidecar:
     """
     remaining = {key: value for key, value in sidecar.provenance.items() if key != "extraction"}
     present = sidecar.present | {"provenance"} if remaining else sidecar.present - {"provenance"}
-    return Sidecar(
-        id=sidecar.id,
-        title=sidecar.title,
-        tags=sidecar.tags,
-        created=sidecar.created,
-        links=sidecar.links,
-        provenance=remaining,
-        extra=sidecar.extra,
-        present=present,
-    )
+    return replace(sidecar, provenance=remaining, present=present)
 
 
 def extraction_provenance(sidecar: Sidecar) -> tuple[str, str, str] | None:

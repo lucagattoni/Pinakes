@@ -142,22 +142,40 @@ def _build(root: Path, *, backend: str) -> Path:
 
 
 def _author_links(root: Path) -> None:
-    """Written after the first sync, which is what mints `b.md`'s ULID for `a.md` to point at."""
-    import yaml
+    """Written after the first sync, which is what mints `b.md`'s ULID for `a.md` to point at.
 
-    from pinakes.sidecar import SIDECAR_SUFFIX
+    Through `pinakes.sidecar`, never PyYAML. This helper used to `yaml.safe_dump` a sidecar, which
+    put `yaml` into the very module list the free-path gate inspects — so the gate that forbids
+    PyYAML on the free path was red on day one, defeated by its own harness. It was also the last
+    PyYAML sidecar *writer* in the repo, which is exactly the divergence that gate exists to
+    prevent: a fixture written by one library and read by another.
+    """
+    from dataclasses import replace
+
+    from pinakes.sidecar import SIDECAR_SUFFIX, Link, read, write
+    from pinakes.uri import PnkUri
+    from pinakes.uri import parse as parse_uri
 
     def sidecar(name: str) -> Path:
         return root / "docs" / f"{name}{SIDECAR_SUFFIX}"
 
-    kb_id = str(load(root).kb.id)
-    target = str(yaml.safe_load(sidecar("b.md").read_text(encoding="utf-8"))["id"])
-    body = yaml.safe_load(sidecar("a.md").read_text(encoding="utf-8"))
-    body["links"] = [
-        {"to": f"pnk://{kb_id}/{target}", "rel": "related"},
-        {"to": f"pnk://{UNSERVED_KB}/{UNSERVED_DOC}", "rel": "counterpart"},
-    ]
-    sidecar("a.md").write_text(yaml.safe_dump(body, sort_keys=False), encoding="utf-8")
+    kb_id = load(root).kb.id
+    target = read(sidecar("b.md"), owner=kb_id).id
+    source = read(sidecar("a.md"), owner=kb_id)
+    write(
+        sidecar("a.md"),
+        replace(
+            source,
+            links=(
+                Link(to=PnkUri(kb=kb_id, doc=target), rel="related"),
+                Link(
+                    to=parse_uri(f"pnk://{UNSERVED_KB}/{UNSERVED_DOC}").resolve(owner=kb_id),
+                    rel="counterpart",
+                ),
+            ),
+            present=source.present | {"links"},
+        ),
+    )
     if main(["sync", "--kb", str(root)]) != 0:
         raise SystemExit("free-path run: re-syncing the authored links failed")
 

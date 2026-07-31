@@ -37,7 +37,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-import yaml
+from ruamel.yaml import YAML
+
+_YAML = YAML(typ="safe")
+"""The same library the product reads sidecars with, so the gate counts the same population.
+
+`check.sh` says keeping those two populations identical is why this gate exists; on PyYAML it would
+count sidecars the product now refuses. `typ="safe"` closes the scalar-resolution and duplicate-key
+divergence, which is what matters for counting links — it does not close all of it. **After L5b**
+this loader refuses the custom-tagged mappings and sequences the product accepts, and accepts the
+JSON-unencodable shapes the product refuses; **after L5c** it also accepts the non-string top-level
+keys the product refuses. None of those shapes appears in the committed corpora, which is why the
+divergence is stated here rather than engineered away.
+"""
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_ROOTS = (REPO / "tests/demo-kb", REPO / "tests/partner-kb")
@@ -150,10 +162,10 @@ def census(root: Path) -> Census:
         path = document.with_name(document.name + SIDECAR_SUFFIX)
         if not path.is_file():
             continue
-        loaded: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+        loaded: object = _YAML.load(path.read_text(encoding="utf-8"))
         if not isinstance(loaded, dict):
             raise SystemExit(f"{path}: not a mapping")
-        # One cast at the boundary. `yaml.safe_load` returns `Any`, and letting that leak makes
+        # One cast at the boundary. The loader returns `Any`, and letting that leak makes
         # every later `.get` unknown to the strict checker — which is how a small script ends up
         # littered with per-line suppressions that hide the one real mistake among them.
         body = cast(dict[str, object], loaded)

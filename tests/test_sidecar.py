@@ -1,5 +1,6 @@
 """Sidecars: the user's file. Identity is permanent, unknown keys survive, links resolve."""
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -132,7 +133,10 @@ def test_a_hand_broken_id_says_not_to_renumber(tmp_path: Path, owner: KbId) -> N
         ("", "is empty"),
         ("- a\n- b\n", "must be a mapping"),
         ("id: [1]\n", "`id` must be a string"),
-        ("{id: x, : }", "is not valid YAML"),
+        # An unclosed flow mapping, which **both** libraries reject as a parse error. The old
+        # fixture `{id: x, : }` relied on PyYAML refusing an empty key; ruamel parses it and the
+        # case then fell through to the `id` check, testing nothing about the parse-error branch.
+        ("{id: x", "is not valid YAML"),
     ],
 )
 def test_malformed_sidecars_are_rejected(
@@ -423,3 +427,561 @@ def test_create_refuses_a_dangling_symlink_too(tmp_path: Path) -> None:
         create(target, skeleton(tmp_path / "note.md", created="20260729 07:00"))
 
     assert target.is_symlink()
+
+
+# --- The ruamel round-trip (L5b) ---------------------------------------------------------------
+#
+# **Every comment test compares file bytes.** `CommentedMap.__eq__` ignores comments entirely, so a
+# test asserting `read(p) == before` passes with every comment in the file destroyed. What is being
+# claimed here is a property of the *file*, and only the file can witness it.
+
+ANNOTATED = """\
+# Transcribed from the 1974 accession register, box 12.
+# Do not renumber `id` — every inbound link depends on it.
+id: {id}
+title: "Loans outward, 1974"      # as printed on the register spine
+tags:
+- accessions
+- loans          # kept for the quarterly report
+created: "20260725 18:00"
+
+links:
+# The counterpart record in the partner archive:
+- to: {counterpart}
+  rel: counterpart
+
+notes: |
+  Two folios are missing from this box.
+  The gap is recorded in the 1975 audit.
+shelf: 0755
+country: NO
+"""
+
+
+def _annotated(tmp_path: Path, owner: KbId) -> tuple[Path, str]:
+    """A sidecar with everything PyYAML used to destroy, written the way a person would write it."""
+    doc = mint_doc_id()
+    body = ANNOTATED.format(id=doc, counterpart=f"pnk://{mint_kb_id()}/{mint_doc_id()}")
+    path = tmp_path / f"a.md{SIDECAR_SUFFIX}"
+    path.write_text(body, encoding="utf-8")
+    return path, body
+
+
+def test_comments_survive_a_rewrite(tmp_path: Path, owner: KbId) -> None:
+    path, before = _annotated(tmp_path, owner)
+    write(path, read(path, owner=owner))
+    after = path.read_text(encoding="utf-8")
+
+    assert "# Transcribed from the 1974 accession register, box 12." in after
+    assert "# Do not renumber `id`" in after
+    assert "# as printed on the register spine" in after
+    assert "# kept for the quarterly report" in after
+    assert after.count("#") == before.count("#"), "no comment gained or lost"
+
+
+def test_quoting_style_survives_a_rewrite(tmp_path: Path, owner: KbId) -> None:
+    """PyYAML emitted `title: Loans outward, 1974` — bare. `preserve_quotes` is what stops that."""
+    path, _ = _annotated(tmp_path, owner)
+    write(path, read(path, owner=owner))
+    assert 'title: "Loans outward, 1974"' in path.read_text(encoding="utf-8")
+
+
+def test_block_scalars_and_blank_lines_survive_a_rewrite(tmp_path: Path, owner: KbId) -> None:
+    """PyYAML turned `notes: |` into a single-quoted blob with blank lines spliced in."""
+    path, before = _annotated(tmp_path, owner)
+    write(path, read(path, owner=owner))
+    after = path.read_text(encoding="utf-8")
+
+    assert "notes: |" in after
+    assert "  Two folios are missing from this box." in after
+    assert after.count("\n\n") == before.count("\n\n"), "blank-line structure is part of the file"
+
+
+def test_yaml_1_1_scalars_are_no_longer_corrupted(tmp_path: Path, owner: KbId) -> None:
+    """The bug that is not about comments. Under YAML 1.1 these were read as `False` and `493` and
+    written back that way — on keys this module documents as round-tripped untouched."""
+    path, _ = _annotated(tmp_path, owner)
+    parsed = read(path, owner=owner)
+    assert parsed.extra["country"] == "NO", "PyYAML read this as False"
+    # `0755` is not octal in YAML 1.2, so the value is 755 rather than PyYAML's 493 — and ruamel
+    # remembers the written form, so the file keeps `0755` regardless of what the number is.
+    assert parsed.extra["shelf"] == 755, "PyYAML read this as 493"
+
+    write(path, parsed)
+    after = path.read_text(encoding="utf-8")
+    assert "country: NO" in after and "shelf: 0755" in after
+    # Asserted as whole lines: a minted ULID can contain `493`, and a bare substring test would
+    # then pass or fail depending on the id, which is the definition of a flaky assertion.
+    lines = after.splitlines()
+    assert "country: false" not in lines and "shelf: 493" not in lines
+
+
+def test_an_unknown_key_round_trips_byte_identically(tmp_path: Path, owner: KbId) -> None:
+    """The invariant this increment introduces, stated over the bytes rather than over a dict."""
+    path, before = _annotated(tmp_path, owner)
+    write(path, read(path, owner=owner))
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_the_users_key_order_is_preserved_on_rewrite(tmp_path: Path, owner: KbId) -> None:
+    """Canonical ordering is for minting. An existing file keeps the order its author chose —
+    `sorted(extra)` on this path would reorder a document nobody edited."""
+    path = tmp_path / f"b.md{SIDECAR_SUFFIX}"
+    path.write_text(f"zebra: last\nid: {mint_doc_id()}\nalpha: first\n", encoding="utf-8")
+    write(path, read(path, owner=owner))
+    assert [line.split(":")[0] for line in path.read_text(encoding="utf-8").splitlines()] == [
+        "zebra",
+        "id",
+        "alpha",
+    ]
+
+
+def test_a_minted_sidecar_still_uses_canonical_order(tmp_path: Path) -> None:
+    path = tmp_path / f"c.md{SIDECAR_SUFFIX}"
+    write(path, skeleton(Path("docs/c.md"), created="20260725 18:00"))
+    keys = [line.split(":")[0] for line in path.read_text(encoding="utf-8").splitlines()]
+    assert keys[0] == "id" and "title" in keys and "created" in keys
+
+
+def test_a_value_with_spaces_past_eighty_columns_is_not_folded(tmp_path: Path, owner: KbId) -> None:
+    """ruamel's default `width` is 80 and folds a long value across lines — changing a file nobody
+    edited. `width = 4096` is what keeps it on one line."""
+    long_value = " ".join(["preservation"] * 20)
+    path = tmp_path / f"d.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\nnote: {long_value}\n", encoding="utf-8")
+    write(path, read(path, owner=owner))
+    assert f"note: {long_value}" in path.read_text(encoding="utf-8")
+
+
+def test_a_duplicate_key_is_refused_without_ruamels_suppression_url(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """PyYAML took the last silently. Which value was meant is exactly what nobody can recover —
+    and ruamel's own message ends with a URL for switching the check off, which must not travel."""
+    path = tmp_path / f"e.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\ntitle: First\ntitle: Second\n", encoding="utf-8")
+    with pytest.raises(SidecarError) as caught:
+        read(path, owner=owner)
+    assert "repeats a key" in caught.value.message
+    assert "http" not in caught.value.message and "suppress" not in caught.value.message.lower()
+    assert caught.value.remedy
+
+
+def test_a_minted_title_that_looks_like_a_boolean_is_quoted(tmp_path: Path) -> None:
+    """`skeleton()` derives the title from the filename stem, so `NO.md` mints `title: NO` — which
+    a YAML 1.1 reader takes as `False`. Read back **through PyYAML**, deliberately: after this
+    increment nothing else in the repo reads 1.1, so nothing else keeps the claim honest."""
+    path = tmp_path / f"NO.md{SIDECAR_SUFFIX}"
+    write(path, skeleton(Path("docs/NO.md"), created="20260725 18:00"))
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["title"] == "NO"
+
+
+def test_a_two_space_indented_sequence_is_reindented(tmp_path: Path, owner: KbId) -> None:
+    """A **documented exclusion** from the byte-identity invariant, pinned so it stays documented.
+
+    ruamel emits block sequences at the dumper's indentation, not the source's, so a file written
+    with `  - item` comes back as `- item`. Nothing is lost — comments, values and order all
+    survive — but the bytes differ, and the invariant CLAUDE.md gains says so explicitly.
+    `docs/GUIDE.md`'s `links:` example is written in the indented style and is the counter-example,
+    not a typo.
+    """
+    path = tmp_path / f"f.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\ntags:\n  - one   # kept\n  - two\n", encoding="utf-8")
+    write(path, read(path, owner=owner))
+    after = path.read_text(encoding="utf-8")
+
+    assert "\n- one" in after and "\n- two" in after, "reindented to the dumper's style"
+    assert "# kept" in after, "and the comment rides along with it"
+
+
+def _provenanced(tmp_path: Path, name: str = "g") -> Path:
+    """A sidecar already carrying `provenance.extraction`, commented at the nested map's **last
+    key** — the only position that reproduces the loss, because ruamel stores a comment as the
+    *preceding* key's trailer, so a comment describing a sibling of `extraction` lives inside it."""
+    path = tmp_path / f"{name}.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\n"
+        "provenance:\n"
+        "  extraction:\n"
+        "    backend: claude-vision\n"
+        "    fingerprint: fp-1\n"
+        "    extracted: '20260725 18:00'\n"
+        "    content_hash: abc   # the file's hash when this extraction ran\n"
+        "  note: hand-checked against the register\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_a_comment_inside_provenance_extraction_survives_a_re_extraction(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """A one-level merge assigns a plain `dict` over the loaded `extraction` node and takes the
+    comment with it — this is the nested case that catches it."""
+    path = _provenanced(tmp_path)
+    write(
+        path,
+        with_extraction_provenance(
+            read(path, owner=owner),
+            backend="claude-vision",
+            fingerprint="fp-2",
+            extracted="20260726 09:00",
+            content_hash="def",
+        ),
+    )
+    after = path.read_text(encoding="utf-8")
+
+    assert "# the file's hash when this extraction ran" in after
+    assert "note: hand-checked against the register" in after
+    assert "fingerprint: fp-2" in after and "fp-1" not in after
+
+
+def test_with_extraction_provenance_preserves_comments(tmp_path: Path, owner: KbId) -> None:
+    path = _provenanced(tmp_path, "h")
+    before = path.read_text(encoding="utf-8").count("#")
+    write(
+        path,
+        with_extraction_provenance(
+            read(path, owner=owner),
+            backend="claude-vision",
+            fingerprint="fp-2",
+            extracted="20260726 09:00",
+            content_hash="def",
+        ),
+    )
+    assert path.read_text(encoding="utf-8").count("#") == before
+
+
+def test_without_extraction_provenance_preserves_comments(tmp_path: Path, owner: KbId) -> None:
+    """The `--force` reversal. `extraction` must actually go — a merge that only assigns would
+    leave the stale paid claim in place, silently failing the invariant DESIGN §2.2 states."""
+    path = _provenanced(tmp_path, "i")
+    write(path, without_extraction_provenance(read(path, owner=owner)))
+    after = path.read_text(encoding="utf-8")
+
+    assert "extraction:" not in after, "the stale paid claim must be gone"
+    assert "note: hand-checked against the register" in after, "its sibling stays"
+
+
+def test_provenance_first_appearing_is_appended_and_moves_no_comment(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """Appended at the end, never inserted at its canonical position: ruamel binds a comment to its
+    *preceding* key, so inserting `provenance` above an unknown key would leave that key's own
+    comment reading as though it introduced `provenance`."""
+    path = tmp_path / f"j.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\n# describes the shelf below, and nothing else\nshelf: A12\n",
+        encoding="utf-8",
+    )
+    write(
+        path,
+        with_extraction_provenance(
+            read(path, owner=owner),
+            backend="claude-vision",
+            fingerprint="fp-1",
+            extracted="20260726 09:00",
+            content_hash="abc",
+        ),
+    )
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    comment = lines.index("# describes the shelf below, and nothing else")
+    assert lines[comment + 1].startswith("shelf:"), "the comment still introduces `shelf`"
+    assert lines.index("provenance:") > comment, "appended after the user's keys"
+
+
+def test_reordering_links_does_not_move_their_comments(tmp_path: Path, owner: KbId) -> None:
+    """Reconciled by `to`, never by position. Positional matching silently reattaches the user's
+    prose to a different link the moment the list is reordered — worse than losing it, because the
+    comment then describes the wrong thing."""
+    kb, first, second = mint_kb_id(), mint_doc_id(), mint_doc_id()
+    path = tmp_path / f"k.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\n"
+        "links:\n"
+        "# the counterpart in the partner archive\n"
+        f"- to: pnk://{kb}/{first}\n"
+        "  rel: counterpart\n"
+        "# superseded by the 1975 revision\n"
+        f"- to: pnk://{kb}/{second}\n"
+        "  rel: supersedes\n",
+        encoding="utf-8",
+    )
+    parsed = read(path, owner=owner)
+    reordered = replace(parsed, links=tuple(reversed(parsed.links)))
+    write(path, reordered)
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    # Both assertions matter and neither implies the other: a rebuild that wipes ruamel's comment
+    # metadata outright leaves *no* comment misattributed, so the "stayed with its own link" check
+    # passes vacuously unless presence is asserted first.
+    assert path.read_text(encoding="utf-8").count("#") == 2, "both comments are still there"
+    counterpart = lines.index("# the counterpart in the partner archive")
+    assert str(first) in lines[counterpart + 1], "the comment stayed with its own link"
+    superseded = lines.index("# superseded by the 1975 revision")
+    assert str(second) in lines[superseded + 1]
+
+
+def test_unknown_keys_inside_a_link_entry_survive_a_rewrite(tmp_path: Path, owner: KbId) -> None:
+    """Nothing is deleted from inside a matched entry: `_links()` surfaces `to` and `rel` alone, so
+    a delete-what-is-missing merge there would destroy what DESIGN §2.2 requires to round-trip."""
+    kb, target = mint_kb_id(), mint_doc_id()
+    path = tmp_path / f"l.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\nlinks:\n- to: pnk://{kb}/{target}\n  rel: related\n"
+        "  confidence: high\n  noted: '20260725'\n",
+        encoding="utf-8",
+    )
+    write(path, read(path, owner=owner))
+    after = path.read_text(encoding="utf-8")
+
+    assert "confidence: high" in after and "noted: '20260725'" in after
+
+
+def test_the_original_document_is_excluded_from_equality(tmp_path: Path, owner: KbId) -> None:
+    """Same fields, same sidecar — whether or not one of them still remembers a file."""
+    path, _ = _annotated(tmp_path, owner)
+    parsed = read(path, owner=owner)
+    assert parsed.original is not None
+    assert replace(parsed, original=None) == parsed
+
+
+def test_deleting_a_commented_key_loses_one_comment_and_misattributes_another(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """**A known limitation, pinned rather than fixed.** ruamel binds a comment to its preceding
+    key, so deleting a key drops that key's own comment and leaves the one above it attached to
+    whatever follows. Reachable through `without_extraction_provenance`."""
+    path = tmp_path / f"m.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\n"
+        "provenance:\n"
+        "  # introduces extraction\n"
+        "  extraction:\n"
+        "    backend: claude-vision\n"
+        "    fingerprint: fp-1\n"
+        "    extracted: '20260725 18:00'\n"
+        "    content_hash: abc\n"
+        "  # introduces note\n"
+        "  note: kept\n",
+        encoding="utf-8",
+    )
+    write(path, without_extraction_provenance(read(path, owner=owner)))
+    after = path.read_text(encoding="utf-8")
+
+    assert "note: kept" in after, "the surviving key is intact"
+    # Measured, and this is the shape of the loss: the comment that *preceded* the deleted key
+    # survives and reattaches to whatever follows — so it now introduces the wrong thing — while
+    # the surviving key's own comment is the one that disappears.
+    assert "# introduces extraction" in after, "misattributed, not deleted"
+    lines = after.splitlines()
+    assert lines[lines.index("  # introduces extraction") + 1].strip() == "note: kept"
+    assert "# introduces note" not in after, "this is the one that is silently lost"
+
+
+@pytest.mark.parametrize(
+    ("body", "why"),
+    [
+        ("blob: !!binary aGk=", "bytes"),
+        ("members: !!set\n  ? a", "a set"),
+        ("when: !!timestamp 2026-07-31", "a timestamp"),
+        ("when: 2026-07-31", "a bare date"),
+        ("thing: !whatever v", "an unknown tag"),
+        ("!whatever k: v", "a tagged key"),
+        ("m:\n  1: a\n  b: c", "a mapping mixing string and non-string keys"),
+    ],
+)
+def test_a_json_unencodable_extra_value_is_refused_with_a_remedy(
+    tmp_path: Path, owner: KbId, body: str, why: str
+) -> None:
+    """The index stores metadata as JSON, so `read()` refuses what `json.dumps` would not take.
+
+    **Equivalence, not a new refusal.** PyYAML rejects an unknown tag today as a clean
+    `SidecarError`; ruamel returns a `TaggedScalar`, so without this the swap alone would turn that
+    clean error into a traceback out of `pnk sync`.
+
+    The mixed-key case is why the check encodes the **assembled mapping** rather than each value:
+    both values there are perfectly encodable on their own, and the failure is a comparison
+    *between* the keys.
+    """
+    path = tmp_path / f"n.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\n{body}\n", encoding="utf-8")
+    with pytest.raises(SidecarError) as caught:
+        read(path, owner=owner)
+    assert "cannot store" in caught.value.message, why
+    assert "JSON" in caught.value.remedy
+
+
+def test_a_double_bang_str_value_is_refused(tmp_path: Path, owner: KbId) -> None:
+    """`!!str` is the only *working* tag that breaks — `!!int`, `!!float`, `!!bool`, `!!seq` and
+    `!!map` all worked before the swap and still do. It is a documented breaking change."""
+    path = tmp_path / f"o.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\nlabel: !!str hello\n", encoding="utf-8")
+    with pytest.raises(SidecarError):
+        read(path, owner=owner)
+
+
+def test_the_standard_tags_that_worked_before_the_swap_still_work(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """The other half of that claim, asserted rather than implied."""
+    path = tmp_path / f"p.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\ni: !!int 5\nf: !!float 1.5\nb: !!bool true\n"
+        "s: !!seq [a]\nm: !!map {a: b}\n",
+        encoding="utf-8",
+    )
+    extra = read(path, owner=owner).extra
+    assert extra["i"] == 5 and extra["f"] == 1.5 and extra["b"] is True
+    assert extra["s"] == ["a"] and extra["m"] == {"a": "b"}
+
+
+def test_a_tagged_mapping_is_accepted_because_it_serialises(tmp_path: Path, owner: KbId) -> None:
+    """The **documented widening**: a *custom*-tagged mapping or sequence is `ConstructorError`
+    under PyYAML and a `CommentedMap` after — so it is now accepted. Not `!!map`/`!!seq`, which
+    were never refused."""
+    path = tmp_path / f"q.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\nblock: !custom\n  a: 1\n", encoding="utf-8")
+    assert read(path, owner=owner).extra["block"] == {"a": 1}
+
+
+def test_a_uniformly_non_string_keyed_mapping_is_a_stated_residual(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """`sort_keys=True` catches **mixed**-type keys only. A uniformly int-keyed mapping is accepted
+    and silently coerced to string keys by `json.dumps`, at any depth — identical under PyYAML
+    today, so not a regression, but the invariant is not absolute and this pins that."""
+    path = tmp_path / f"r.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\nm:\n  1: a\n  2: b\n", encoding="utf-8")
+    assert read(path, owner=owner).extra["m"] == {1: "a", 2: "b"}
+
+
+def test_a_comment_on_a_tags_entry_survives_a_rewrite(tmp_path: Path, owner: KbId) -> None:
+    """`tags` was specified as "a list of plain strings with no per-entry comments" and replaced
+    wholesale. Measured, ruamel stores a comment on a `tags` entry exactly as on a `links` entry —
+    so the increment whose purpose is to stop destroying comments was specified to destroy these."""
+    path = tmp_path / f"s.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\ntags:\n- accessions   # the department that owns this\n- loans\n",
+        encoding="utf-8",
+    )
+    write(path, read(path, owner=owner))
+    assert "# the department that owns this" in path.read_text(encoding="utf-8")
+
+
+def test_an_unchanged_known_key_is_not_reassigned(tmp_path: Path, owner: KbId) -> None:
+    """The rule underneath the fix, asserted on **node identity** rather than on bytes.
+
+    Bytes can match by luck; a node that was never touched cannot have lost a comment. Nothing in
+    pinakes edits `tags`, so under this rule its node survives a rewrite unmodified — which is what
+    makes byte-identity structural instead of incidental.
+    """
+    path = tmp_path / f"t.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\ntags:\n- one   # kept\n- two\nlinks: []\n", encoding="utf-8"
+    )
+    parsed = read(path, owner=owner)
+    assert parsed.original is not None
+    before = parsed.original["tags"]
+
+    write(path, parsed)
+    assert parsed.original["tags"] is before, "the node itself must not be replaced"
+    assert "# kept" in path.read_text(encoding="utf-8")
+
+
+def test_changed_tags_keep_the_comments_of_the_entries_that_remain(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """When they *do* change, reconciliation is by value — so a surviving entry keeps its comment
+    and only a genuinely removed one loses it."""
+    path = tmp_path / f"u.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\ntags:\n- accessions   # the department\n- loans   # quarterly\n",
+        encoding="utf-8",
+    )
+    parsed = read(path, owner=owner)
+    write(path, replace(parsed, tags=("accessions", "audit")))
+    after = path.read_text(encoding="utf-8")
+
+    assert "# the department" in after, "a surviving entry keeps its own comment"
+    assert "- audit" in after and "- loans" not in after
+
+
+def test_a_removed_link_takes_only_its_own_comment(tmp_path: Path, owner: KbId) -> None:
+    """Deletion by index, not slice assignment.
+
+    `existing[:] = keep` wipes `CommentedSeq.ca.items` outright — every comment in the sequence,
+    not just the removed entry's — while `del` shifts what it can. Measured on trailing comments:
+    `{}` versus `{0: '# first', 1: '# third'}`.
+
+    Leading comments are a different case, and this test pins it rather than claiming it is fixed.
+    """
+    kb, first, second, third = mint_kb_id(), mint_doc_id(), mint_doc_id(), mint_doc_id()
+    path = tmp_path / f"v.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\nlinks:\n"
+        f"# first\n- to: pnk://{kb}/{first}\n  rel: a\n"
+        f"# second\n- to: pnk://{kb}/{second}\n  rel: b\n"
+        f"# third\n- to: pnk://{kb}/{third}\n  rel: c\n",
+        encoding="utf-8",
+    )
+    parsed = read(path, owner=owner)
+    write(path, replace(parsed, links=(parsed.links[0], parsed.links[2])))
+    after = path.read_text(encoding="utf-8")
+
+    assert str(second) not in after, "the entry itself is gone"
+    # **The pinned limitation, and it is broader than mapping keys.** A comment written on its own
+    # line before a sequence entry is stored as the *preceding* entry's trailer, exactly as it is
+    # for a mapping key — so deleting an entry leaves its leading comment attached to whatever
+    # takes its place, and the last comment in the block is the one that disappears. Nothing is
+    # silently *wrong* about the surviving links; the prose beside one of them is.
+    assert "# first" in after, "the first entry's own comment is untouched"
+    assert "# second" in after, "misattributed to the entry that took its place, not deleted"
+    lines = after.splitlines()
+    assert str(third) in lines[lines.index("# second") + 1]
+    assert "# third" not in after, "this is the one that is silently lost"
+
+
+def test_an_unchanged_links_block_is_not_rewritten(tmp_path: Path, owner: KbId) -> None:
+    """The unchanged-key rule, asserted where it is load-bearing rather than on `tags`.
+
+    `_merge_links` reassigns each matched entry's `rel`, replacing that scalar node. Under the rule
+    the whole branch is skipped, so the node the user wrote survives untouched — which is what
+    makes byte-identity structural rather than a property that happens to hold.
+    """
+    kb, target = mint_kb_id(), mint_doc_id()
+    path = tmp_path / f"w.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\nlinks:\n- to: pnk://{kb}/{target}\n  rel: 'related'\n",
+        encoding="utf-8",
+    )
+    parsed = read(path, owner=owner)
+    assert parsed.original is not None
+    before = parsed.original["links"][0]["rel"]
+
+    write(path, parsed)
+    assert parsed.original["links"][0]["rel"] is before, "an unchanged rel must not be reassigned"
+    assert "rel: 'related'" in path.read_text(encoding="utf-8"), "...so its quoting survives"
+
+
+def test_an_unchanged_provenance_node_survives_a_rewrite_intact(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """The property, asserted — but **not** a guard on the unchanged-key rule, which nothing can
+    guard.
+
+    Removing `_unchanged` changes no observable behaviour, and it is worth writing down why rather
+    than pretending a test covers it: `_merge_mapping` and `_merge_links` mutate their nodes **in
+    place**, and `deepcopy` of an immutable scalar returns the same object — so a write of an
+    unchanged document is already a no-op without the short-circuit. The rule states the intent and
+    saves the walk; it does not change the result, and no mutation of it can fail a test.
+    """
+    path = _provenanced(tmp_path, "x")
+    parsed = read(path, owner=owner)
+    assert parsed.original is not None
+    before = parsed.original["provenance"]["extraction"]["backend"]
+
+    write(path, parsed)
+    assert parsed.original["provenance"]["extraction"]["backend"] is before
+    assert "# the file's hash when this extraction ran" in path.read_text(encoding="utf-8")

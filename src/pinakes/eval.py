@@ -24,7 +24,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-import yaml
+from ruamel.yaml import YAML, YAMLError
+from ruamel.yaml.constructor import DuplicateKeyError
 
 from pinakes import store
 from pinakes.embed import EmbeddingBackend, Reranker, load_backend, load_reranker
@@ -33,6 +34,15 @@ from pinakes.manifest import Manifest
 from pinakes.search import HIGH, LOW, UNKNOWN, Filters, search
 
 DEFAULT_K = 5
+
+
+_YAML = YAML(typ="safe")
+"""The golden set is data, never a document to round-trip — `typ="safe"` is the right loader.
+
+Reused rather than constructed per call, like `sidecar.py`'s. Duplicate keys are mapped the same
+way there and here: `load_questions` has no `try/except` of its own, so a repeated question key in
+a user's golden set would otherwise escape `make eval` as a bare `DuplicateKeyError`.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +118,18 @@ class Metrics:
 
 
 def load_questions(path: Path) -> list[Question]:
-    raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    try:
+        raw: object = _YAML.load(path.read_text(encoding="utf-8"))
+    except DuplicateKeyError as exc:
+        raise EvalError(
+            f"{path} repeats a question key: {str(exc).splitlines()[0]}",
+            remedy="Delete the duplicate — which of the two was meant is not recoverable.",
+        ) from exc
+    except YAMLError as exc:
+        raise EvalError(
+            f"{path} is not valid YAML: {exc}",
+            remedy="Fix the syntax the parser names, then re-run `make eval`.",
+        ) from exc
     if not isinstance(raw, dict):
         raise EvalError(f"{path} must be a mapping with a `questions` key.", remedy="See §7.")
     entries: object = cast(dict[str, Any], raw).get("questions") or []
