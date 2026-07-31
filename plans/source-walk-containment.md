@@ -95,12 +95,19 @@ on every plain sync before refusing what it found — measured on the partner si
 outside files against 0.0005s for the static refusal. For each `(root, pattern)`:
 
 ```python
-probe = base.joinpath(*Path(pattern).parts)
+probe = base.joinpath(*(part for part in Path(pattern).parts if part != "**"))
 if not (probe.parent.resolve() / probe.name).is_relative_to(anchor):   # anchor = kb_root.resolve()
     ...refuse this pattern...
 ```
 
-Three things that spelling gets right and the two obvious alternatives do not:
+**`**` is dropped from the probe** (L6 review 14, 20260801). `Path.parts` counts it as one
+component while `glob` lets it match *zero*, so keeping it let a following `..` cancel it and the
+probe landed one level *below* where the walk actually goes: `**/../../**/*.md` probed inside the KB
+and then walked the directory containing it, recursively. The drop is exact rather than merely
+conservative — every component `**` expands to is one a following `..` then pops, so the
+zero-expansion is the highest the walk can reach, and that is what must be inside the KB.
+
+Three more things that spelling gets right and the two obvious alternatives do not:
 
 - **Not "does the pattern contain `..`"** (review 12). `../notes/*.md` from `docs/` lands inside the
   KB and is legitimate; refusing it calls a valid manifest an escape. What matters is where the
@@ -159,6 +166,7 @@ In `tests/test_sync.py` unless a better home exists — check before writing:
 | `test_the_same_document_is_ingested_by_a_fixed_and_a_globbed_pattern_alike` | review 13's second defect — two spellings of one include must not give opposite answers |
 | `test_a_dot_dot_pattern_that_stays_inside_the_kb_is_accepted` | review 12 — refusing a valid manifest is the same defect as accepting an invalid one |
 | `test_a_leading_glob_does_not_defeat_the_static_refusal` | review 13's first defect |
+| `test_a_double_star_before_a_dot_dot_does_not_defeat_the_refusal` | review 14 — `**` matches *zero* components while `Path.parts` counts it as one, so a following `..` cancels it. **Review 13's ten measured patterns were all correct and none combined `**` with `..`**: a table of cases proves the cases in it and reads like proof of the rule |
 | `test_an_escaping_pattern_is_refused_without_enumerating_the_tree` | layer 1's whole purpose — count entries pulled from the generator, not `resolve()` calls |
 | `test_the_escape_is_reported_once_per_pattern_not_once_per_file` | the report shape |
 | `test_an_excluded_pattern_may_contain_dot_dot` | the stated asymmetry, so a later pass does not "fix" it |
