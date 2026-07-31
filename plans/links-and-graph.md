@@ -726,6 +726,8 @@ widened acceptance becoming a crash.
      id: X / 1: a  ->  read OK, then TypeError: '<' not supported between 'int' and 'str'
      ```
 
+     **Still open in `d35fef8`** — measured: `id: X` + `1: a` reads clean and then `TypeError`s in
+     `dumps_metadata`, because `_checked()` is called once per mapping.
      **Observed in the first implementation** (20260731 08:40): the helper's docstring stated the
      union reasoning correctly and the code still called it twice, once per mapping. Two calls on
      the parts is not one call on the whole — `{1: a}` is uniformly keyed and encodes fine alone;
@@ -864,7 +866,14 @@ widened acceptance becoming a crash.
      **declares one that does not exist** is.
 
 
-**Tests.** Every comment test **compares file bytes** — `CommentedMap.__eq__` ignores comments, so
+**Tests.** **Every sequence and mapping key needs a test that changes a *different* key.** The
+"assign only when changed" rule short-circuits reconciliation whenever the value is unchanged, so a
+fixture that modifies the thing under test never exercises the reconciliation path at all — the
+defect only bites on a write that modifies something *else*. Reported by the executor, 20260731,
+after the `links` defect proved invisible to every test written for it. Minimum: change `title` and
+assert the `links` and `tags` blocks are **byte-identical**, comments included.
+
+Every comment test **compares file bytes** — `CommentedMap.__eq__` ignores comments, so
 an equality assertion can never detect their loss.
 
 `test_sidecar.py`: `::test_an_unknown_key_round_trips_byte_identically`;
@@ -872,6 +881,9 @@ an equality assertion can never detect their loss.
 of the nested map** — the only position that reproduces it);
 `::test_a_comment_inside_the_links_block_survives_a_rewrite`;
 `::test_a_comment_on_a_tags_entry_survives_a_rewrite`;
+`::test_changing_the_title_leaves_the_links_block_byte_identical`;
+`::test_changing_the_title_leaves_the_tags_block_byte_identical` (the masking case above — these are
+the only tests that exercise reconciliation on an unchanged sequence);
 `::test_deleting_a_sequence_entry_does_not_wipe_the_other_comments` (the executor's fixture — slice
 assignment against `del`);
 `::test_deleting_a_middle_sequence_entry_misattributes_the_next_comment` (pins the limitation in its
