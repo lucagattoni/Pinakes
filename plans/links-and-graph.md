@@ -218,6 +218,7 @@ earlier.
 | §5 | `frontier` entries gain `kb_id` and a five-valued `reason`, and include fan-out-dropped candidates, not only next hops | L3 |
 | §9 | Its `expand` gate demands **false-abstain flat**; clause 3 permits the rise contributed by newly-found-at-low-confidence questions, and treats only the confidence-lost term as a regression | G5 |
 | §5, §10 | `pinakes_search`'s `entities`/`concepts` parameters are not built (decision 8) | — |
+| §3 | The zero-link nudge is **KB-wide**, not "warn on zero-link docs" — L1's ≤ 35% density cap guarantees a per-document nudge fires on both committed corpora by construction | L7 |
 
 ## CLAUDE.md amendments
 
@@ -1259,40 +1260,104 @@ the `rel` quoting predicate.
 
 ### L7 — `pnk doctor`: link coverage and cross-KB resolution
 
-**What lands.** `doctor.py`'s `"cross-KB (unchecked until the links release)"` becomes a real check.
-Link coverage **already** counts authored links only (`origin = 'sidecar'`, shipped) — verify, do not re-implement. It counts index rows where L1's gate counts sidecar files, so the two agree **only when the index is in step**. L7 also breaks two committed tests that must be updated with it: `test_link_coverage_is_reported_even_when_nothing_is_linked` asserts `Status.OK` where zero links becomes WARN, and `test_a_cross_kb_link_is_counted_and_declared_unchecked` asserts the literal `"cross-KB (unchecked until the links release)"` string this increment retires. Coverage counts — the same population as L1's gate, so the number a
-user reads and the number the gate enforces cannot differ. Highest-degree authored targets reported.
-**Zero authored links KB-wide** is a WARN nudge — not a per-document count, which L1's ≤ 35% cap
-guarantees would fire on both committed corpora by construction.
+**What lands.** Two things in `src/pinakes/doctor.py`:
 
-**Severity:** absent linked-KB path → WARN; a `pnk://` target absent from a KB that did resolve →
-WARN with the count; **not** a malformed `pnk://` → FAIL — such a URI never reaches the `links` table, because `sidecar._links` raises at read and sync never indexes it, and doctor's *sidecars* check already reports it FAIL; a test named for it would pass against the pre-existing check while the new one went unexercised; an absolute
-`[[links.kb]] path` → WARN.
+1. **The coverage ceiling DESIGN §6.2 promises** — *"`pnk doctor` reports it (linked docs / total
+   docs)"*. The `origin = 'sidecar'` **filter** is shipped in `_links`; the **metric** is not. The
+   shipped check prints an *edge* count (`16 links, 4 cross-KB`) and prints a ratio only in its zero
+   branch — on `tests/demo-kb` those 16 edges come from 8 of 30 documents, so the ceiling the
+   §6.2 row is tabled against, 27%, is never printed. Add `COUNT(DISTINCT src_doc_id)` over the same
+   filter and print the ratio in **both** branches. Verify the filter; **build** the metric.
+2. **`"cross-KB (unchecked until the links release)"`** becomes a real check: each cross-KB target is
+   resolved through the `[[links.kb]]` entry naming its KB, via `linkscan.resolve_path`.
+
+**Where each check lives.** `_links` is yielded from *inside* `_index`, which returns at its first
+branch when `.pinakes/` is absent. Anything needing only the manifest must not live there, or it
+never fires on a freshly cloned KB — exactly when a committed absolute path is a hazard.
+
+| Check | Home | Needs |
+|---|---|---|
+| coverage ratio, dangling-internal, cross-KB resolution | `_links`, as today | the index |
+| `[[links.kb]] path` absent on this machine, or absolute | a new `_linked_kbs(manifest)`, appended in `diagnose` immediately after `_template(manifest)` | the manifest only |
+
+**The detail string, exactly.** `_links` builds `f"{linked} of {active} documents linked
+({linked / active:.0%}), {len(targets)} links, {external} cross-KB"` — `{:.0%}` matching
+`tools/link_density_gate.py`'s `render`, so the two read alike — then appends, each only when
+non-zero and in this order: `f"; {n} dangling inside this KB"`, **wording unchanged**, and
+`f"; {n} cross-KB unresolved"`. The zero branch keeps its `"none authored"` wording and gains the
+same `0 of {active}` ratio.
+
+**Doctor's number is as of the last sync.** It counts index rows where L1's gate counts sidecar
+files, so one `pnk link` without a re-sync makes them disagree — measured on a copy of the committed
+corpus: gate 17, doctor 16. Say so in the detail line. Do **not** write that they cannot differ.
+
+**Severity.** Zero authored links KB-wide → WARN nudge (not per-document: L1's ≤ 35% cap guarantees
+that would fire on both committed corpora by construction — an amendment to APPROACH §3, tabled
+above). Cross-KB target absent from a KB that did resolve → WARN with the count. `[[links.kb]] path`
+absent on this machine → WARN; absolute → WARN. Nothing here is FAIL — `cli.py`'s `doctor` exits
+non-zero only on `Status.FAIL`, and none of these is a broken KB. **Every new WARN carries a
+remedy**: `test_every_problem_carries_a_remedy` runs on a fixture that cannot reach these checks, so
+it will not catch a missing one.
+
+**Not a check here: a malformed `pnk://`.** It never reaches the `links` table — `sidecar._links`
+raises `SidecarError` at read, and doctor's *sidecars* check already reports it FAIL. A test named
+for it would pass against that pre-existing check while the new one went unexercised. Do not write
+one. (It also holds only for sidecars under the local `[sources] roots`; a malformed URI in a
+*partner's* sidecar surfaces as a linkscan failure at sync time, not here.)
+
+**Three committed tests break, not two** — all in `tests/test_doctor.py`:
+
+| Test | Why |
+|---|---|
+| `test_link_coverage_is_reported_even_when_nothing_is_linked` | asserts `Status.OK` where zero becomes WARN — update |
+| `test_a_cross_kb_link_is_counted_and_declared_unchecked` | asserts the literal string this increment retires — update |
+| `test_a_dangling_link_inside_this_kb_is_a_warning_naming_how_many` | asserts `"1 dangling inside this KB"` while the detail *prefix* changes — it survives only because the suffix wording above is held fixed. Re-run it; do not edit it |
+
+**The meta-guard cannot see the new checks.** `test_every_doctor_check_is_exercised_by_a_test` builds
+its set from `diagnose()` on a fixture that declares no `[[links.kb]]`, so `_linked_kbs` is invisible
+to it. Add `"linked KBs"` to that test's `conditional` map, naming the test that covers it.
 
 **Tests.** `tests/test_doctor.py::test_link_coverage_counts_authored_links_only`;
-`::test_a_dangling_cross_kb_target_warns_with_a_reason`; `::test_a_malformed_pnk_uri_fails`;
-`::test_an_absolute_linked_kb_path_warns`; `::test_a_kb_with_no_authored_links_nudges`.
+`::test_link_coverage_reports_the_ratio_not_the_edge_count`;
+`::test_a_dangling_cross_kb_target_warns_with_a_reason`;
+`::test_an_absolute_linked_kb_path_warns`;
+`::test_a_linked_kb_absent_from_this_machine_warns`;
+`::test_a_kb_with_no_authored_links_nudges`.
 
-**Docs:** `docs/CLI.md` (doctor's checks), `docs/STATUS.md`, a `changelog.d/` fragment.
+**Docs.** Four files carry claims this increment falsifies, and none is optional:
+
+- `docs/CLI.md` — doctor's checks, **and** the `pnk link` section's *"`pnk doctor`'s cross-KB check
+  is not built yet"*, which an executor told to update "doctor's checks" will not open.
+- `docs/MANIFEST.md` — the *"`path` is stored but **not yet read by anything**"* paragraph: already
+  false since 0.5.0 (`linkscan.resolve_path` reads it), and it states L7's absolute-path warn in the
+  future tense.
+- `docs/VERIFICATION.md` — the two rows naming the retired tests, plus a row per new test.
+  `tests/test_verification.py` hard-fails on an unresolvable name, so renaming a test without editing
+  the table is a red gate; editing the test in place leaves the table asserting a falsehood that
+  nothing catches.
+- `docs/STATUS.md`, and a `changelog.d/` fragment.
 
 ---
 
 ### L8 — Verification of the whole, and the links release's **final** cut
 
-**Two cuts, not one** (decision 27). **L5b** takes the **interim** cut and runs steps 1, 3, 4, 5, 6
-and 7 below; step 2 needs `pnk link`, and step 8 is the ClaudeKB corpus-realism check, which L8
-keeps. L8 takes the
-**final** cut and runs all eight. `tools/fragments.py --apply` runs at *each* cut and deletes what it
-consumes, so the interim cut's CHANGELOG section carries L1–L5b and the final one carries L6–L8 —
-neither carries both.
+**Two cuts, not one** (decision 27). **L5b** took the **interim** cut, running the steps that
+existed then; L8 takes the **final** cut and runs all eight below. `tools/fragments.py --apply` runs
+at *each* cut and deletes what it consumes, so the interim cut's CHANGELOG section carries L1–L5b and
+the final one carries everything spliced after it — L6–L8, plus any fragment landed on `main` since
+the interim cut.
 
 **Verification** — run, not reasoned about:
 
 1. `./check.sh` green on all three CI legs; CI green on the merge.
-2. A fresh KB works, **in this order**: `pnk init` → add a document → **`pnk sync`** (which mints the
-   sidecar and its ULID) → `pnk link` to a second KB → **`pnk sync` again** (which carries the link
-   into the `links` table) → `pnk search` → `pnk links` — executed. `pnk link` cannot precede the
-   first sync: there is no sidecar to write into and no ULID to link from. (If L6 was deferred, the link is hand-authored and that is recorded.)
+2. A fresh KB works, **in this order**: `pnk init` → **set `provider = "fastembed"` in both
+   `[embedding]` and `[rerank]`** → add a document → **`pnk sync`** (which mints the sidecar and its
+   ULID) → `pnk link` to a second KB → **`pnk sync` again** (which carries the link into the `links`
+   table) → `pnk search` → `pnk links` — executed. The manifest edit is not optional: `pnk init`
+   stamps `sentence-transformers` in both tables, all three CI legs are `[light]`, and without it
+   `pnk sync` exits 1 before `pnk link` is ever reached. `docs/GUIDE.md` documents the same two lines
+   — cite it rather than inventing wording. `pnk link` cannot precede the first sync: there is no
+   sidecar to write into and no ULID to link from, and it says so and exits 1.
 3. Every command in `docs/GUIDE.md` runs as written, install line included.
 4. `.paid-path-allowlist` byte-identical; the free-path gate covers `pnk link`, `pnk links` and an
    MCP handshake that **invokes** `pinakes_links`.
@@ -1300,16 +1365,29 @@ neither carries both.
    swapped the loader `load_questions` uses; the swap was measured inert on both committed
    `questions.yaml`, so movement here would mean that measurement was wrong.
 6. **`store.SCHEMA_VERSION` is still 2.**
-7. `pnk doctor` exits 0 on both corpora — "clean" means no FAIL. WARNs are possible and do not
-   block; the zero-link nudge is KB-wide (L7), so it does not fire on a corpus with any authored
-   links at all.
+7. **`pnk sync` both corpora first**, then `pnk doctor` on each, and paste each `links:` line — it
+   must name a coverage ratio *and* a count. Unsynced, `.pinakes/` is absent (it is gitignored, so
+   that is their committed state), `_index` returns at its first branch and **no link check runs at
+   all**: a bare exit-0 would prove nothing about L7. `make demo` syncs `tests/demo-kb`; nothing
+   syncs `tests/partner-kb`. "Clean" means no FAIL — WARNs are possible and do not block, and the
+   zero-link nudge is KB-wide (L7), so it does not fire on a corpus with any authored links at all.
+   Then run `pnk doctor` once on an **unsynced** copy: still exit 0, and it must say the link checks
+   could not run.
 8. The ClaudeKB realism check is **run, or declined in writing**.
 
 **The final cut's sweep — decision 27's exception inverted.** The links release's name is dropped
 from the 🚫 unbuilt-work table **here and only here**: `CLAUDE.md` and `docs/STATUS.md`'s mirrored
-table both. `docs/STATUS.md`'s *Cross-KB links* row moves from **partly built** to built, tagged with
-both releases; its *Published on PyPI* table and `README.md`'s install lines are swept as at any
-release. Verify by querying the index, not by reading. Step 3 carries L5b's wording in full — diff
+table both. Then four edits, each already *partly* done by L6 — read the row before rewriting it:
+
+- `docs/STATUS.md`'s **`pnk link` command row**, still reading "on `main`, unreleased".
+- `docs/STATUS.md`'s ***Cross-KB links*** row — L6 already moved it to **built**; its tail still says
+  `pnk link` is "on `main` and unreleased" and that "what remains is `pnk doctor`'s link coverage
+  (L7)".
+- `docs/STATUS.md`'s **Release roadmap**: a new row for the final version, and the `0.5.0` row's
+  tail, which still reads "the final cut is at L8 … **Next: L7**, then L8 and that cut".
+- The *Published on PyPI* table and `README.md`'s install lines, as at any release.
+
+Verify by querying the index, not by reading. Step 3 carries L5b's wording in full — diff
 the GUIDE's printed output rather than running it, and test against the **built wheel**, since
 `uvx --from "pinakes[light]"` resolves from the index and would validate the previous release.
 
@@ -1320,7 +1398,8 @@ repointing `[Unreleased]`'s compare** (`fragments.py --apply` splices entries an
 footer), commit, **merge from the primary checkout**,
 push, `make release-check`, tag, push the tag, create the GitHub release. Then `git tag -l`,
 `gh release list` and `git merge-base --is-ancestor` to verify it happened.
-**Check `origin/main` for the number first** — 0.3.0 shipped mid-plan, and I8/I9 may cut another.
+**Check `origin/main` for the number first** — this plan's own interim cut took 0.5.0, and another
+agent may cut again before L8 lands.
 
 ---
 
@@ -1775,9 +1854,11 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | A link-scan failure never fails the sync on a hook | pass 7 | L2 | `test_an_unreachable_linked_kb_does_not_fail_the_sync` |
 | An authored row reclaims a tuple a reverse scan wrote | pass 7 | L2 | `test_an_authored_row_reclaims_a_tuple_a_reverse_scan_already_wrote` |
 | Dangling cross-KB targets surfaced | DESIGN §6.2 | L7 | `test_a_dangling_cross_kb_target_warns_with_a_reason` |
-| Link coverage reported as the ceiling | DESIGN §6.2 | L7 | `test_link_coverage_counts_authored_links_only` |
-| The zero-link nudge | APPROACH §3 | L7 | `test_a_kb_with_no_authored_links_nudges` |
+| Coverage counts authored links only | DESIGN §6.2 | L7 | `test_link_coverage_counts_authored_links_only` |
+| Coverage is reported **as the ceiling** — linked docs / total docs, not an edge count | DESIGN §6.2 | L7 | `test_link_coverage_reports_the_ratio_not_the_edge_count` |
+| The zero-link nudge, KB-wide | APPROACH §3, amended | L7 | `test_a_kb_with_no_authored_links_nudges` |
 | Absolute linked-KB paths are a publication hazard | DESIGN §4.7 | L7 | `test_an_absolute_linked_kb_path_warns` |
+| A linked KB absent from this machine is reported, not an error | DESIGN §6.2 | L7 | `test_a_linked_kb_absent_from_this_machine_warns` |
 | Aliases never inside a `pnk://` URI | DESIGN §2.2 | L6 | `test_an_alias_is_resolved_to_a_ulid_on_write` |
 | Comment-preserving sidecar writer | DESIGN §2.2 | **L5b** | `test_comments_survive_a_rewrite` |
 | An unknown key round-trips **byte-identically** | decision-ruamel-yaml | L5b | `test_an_unknown_key_round_trips_byte_identically`, `test_every_committed_sidecar_round_trips_through_read_and_write` |
@@ -1879,3 +1960,4 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | 20260731 08:50 | **Pass 6 — 7 HIGH, five of them inside pass 5's fix, and one repeat offence.** The pass-5 commit's message said *"It now says explicitly: no skipif"*; a grep found the word in the iteration log and **nowhere in the plan body** — the second time an edit of mine silently failed to match, on the very finding that had named *"written into a commit message and a log row and never landed"* as the failure mode. Every edit in this pass was applied through a harness that reports which patterns matched; it caught one immediately. The withdrawn `ValueError` claim was hiding a real regression underneath it: measured, `mine: &x\n  b: *x` round-trips to `mine:\n  b:\n` — anchor and alias destroyed, value nulled — where PyYAML raises `Circular reference detected` out of `pnk sync`. **A loud crash becomes silent corruption**, in the increment whose thesis is behaviour equivalence, and it was in no exclusion list. Three specification defects: `links` keyed on `to` alone is undefined when two links share a `to` with different `rel`s, which `_links()` accepts and the index stores as two rows — reproduced, one link overwrote the other and its comment came with it; the `provenance` delete-what-is-missing rule was unbounded in depth, so it would strip a user's own keys out of `provenance.extraction`, against CLAUDE.md's *"additively … never any other key"*; and "append at the end" misplaces a **document-trailing** comment, which the named test's fixture could not detect. Also: the 🚫-table instruction told the executor to add `pnk links` where both tables already have it while missing the roadmap row that lacks it; the in-place-anchor measurement was wrong in its specifics (only the coerced boolean's *own* anchor vanishes) and unreachable today; verification step 0 had no pass criterion and is now a precondition with one |
 | 20260731 09:10 | **Pass 7 — 7 HIGH, measured against the executor's real implementation rather than a prototype, which is why it found more.** The worst fired **on a no-op write over a committed corpus file**: `read()` expands `pnk://self/X`, so the loaded entry's `to` never equalled the raw node text, the match failed, and the entry was deleted and re-appended — carrying the user's comment onto the *next* link, destroying that link's own comment, and moving the entry to the end. The invariant's exclusion list said *"`pnk://self/…` expansion"*, which reads as *the URI text changes* and was quietly covering a rebuild. Two more were **defects pass 6 introduced**: keying on `(to, rel)` makes every `rel` edit a delete-and-append, replacing the one edit shape that preserved comments with one the plan's own pinned limitation says destroys two; and "positional fallback among equal pairs" was implemented as a **set**, so three links went in and one came out. Also: **every explicit `!!` tag is stripped on round-trip** (`!!int 3` → `3`), so "keep working — verified" was true of loading and false of the byte-identity invariant being written into `CLAUDE.md`; a **duplicate anchor name** is a clean `SidecarError` today and silently accepted after, emitting a `ReusedAnchorWarning` that is not a `YAMLError` and so escapes `read()`'s `except` under `filterwarnings = ["error"]`; and a non-recursive anchor on an **empty** value is destroyed too, which the recursive-only exclusion missed. Two of my own measurements were wrong: the unbounded-delete comment is **misattributed, not deleted**, and the nested-comment fixture's "only position that reproduces it" is any position **but the first**. It also verified the precondition criterion exactly — 1020 passed, 6 skipped, 1 failed, the single failure being the predicted `{id: x, : }` case |
 | 20260731 10:50 | **Adversarial code review — 5 HIGH, and the worst is a rule this plan wrote.** *"One instance, reused rather than reconstructed per call"* — specified in item 2, justified by 282 µs against 399 µs — is a **cross-document corruption bug**. ruamel keeps the `%YAML` directive from the last `load()` on the instance and applies it to every later load *and* dump, so one sidecar carrying `%YAML 1.1` flips the process to 1.1: measured, `country: NO` was written as `false` into a **different file that never carried a directive**, with a `%YAML 1.1` header injected, and freshly minted sidecars contaminated too. That is precisely the corruption the increment exists to remove, reintroduced across documents in exchange for 117 µs. Reversed to a fresh `YAML()` per call; resetting `version`, pinning it up-front and nulling `_yaml_version` were each measured insufficient. Four more: `links:` with a **null** value crashes `write()` with an unhandled `TypeError` that escapes `pnk sync` — and **works on `main`**, so it is a regression, on the shape a user writes before their first link; the `(to, rel)`-then-`to` fallback is a single pass with two tiers, so a later entry consumes the exact match an earlier one was owed — editing one `rel` where two links share a `to` swapped both and misattributed both comments; the stub-signature gate never reads the `.pyi` files, so a stub declaring a parameter ruamel lacks is green under both pytest and pyright — the one thing it exists to catch; and a key-type failure is reported as a value failure, leaking `CommentedMap` into a user-facing remedy. It also confirmed 18 of the plan's own mutation targets kill their tests, that the `4d8994c` multiplicity fix and union check are correct, and that the AST and free-path gates both work |
+| 20260731 17:16 | **Adversarial review of L7 and L8 — 5 HIGH, four of them in L7, and four of the five were introduced or left standing by this morning's revision of that section.** The worst is the named failure class again: *"link coverage **already** counts authored links only — verify, do not re-implement"* was true of the **filter** and false of the **metric**. DESIGN §6.2 promises *linked docs / total docs*; the shipped check prints an **edge** count and prints a ratio only in its zero branch, so `test_link_coverage_counts_authored_links_only` passes green against 16 edges while the ceiling it is tabled against — 8 of 30 documents, 27% — stays unbuilt and unprinted. L7 now builds the metric. Two more were self-contradictions inside the fix: the section argued at length why a malformed-`pnk://` test would pass against doctor's *pre-existing* sidecars check while the new one went unexercised, then listed `::test_a_malformed_pnk_uri_fails` four lines later; and one sentence said doctor and L1's gate agree *"only when the index is in step"* while the next said they *"cannot differ"* — measured, one `pnk link` without a re-sync gives gate 17, doctor 16. **L8 step 7 was vacuous**: `_links` is yielded from inside `_index`, which returns at its first branch when `.pinakes/` is absent — the committed state of both corpora, since it is gitignored — so `pnk doctor` exits 0 with no `links:` line at all, and L7's entire delivery went unexercised by the release's own verification. The same early return would have swallowed two of L7's three severities, both pure-manifest facts, on exactly the freshly-cloned KB where a committed absolute path is a hazard; each check now has a named home. Also: **three** committed doctor tests break, not two, and the third survives only because the detail string's suffix wording is now pinned; both meta-guards (`test_every_doctor_check_is_exercised_by_a_test`, `test_every_problem_carries_a_remedy`) run on a fixture that declares no `[[links.kb]]` and so cannot observe the new checks; `docs/VERIFICATION.md` holds the two rows L7 retires and is the **gated** table — renaming a test without editing it is a red gate, editing the test in place leaves the table asserting a falsehood nothing catches — and it was in no Docs list, nor were `docs/MANIFEST.md`'s *"not yet read by anything"* paragraph (false since 0.5.0) and `docs/CLI.md`'s *"`pnk doctor`'s cross-KB check is not built yet"*. L8 step 2 was not executable on any CI leg: `pnk init` stamps `sentence-transformers` and all three legs are `[light]`, so `pnk sync` exits 1 before `pnk link` is reached; the reviewer ran the whole sequence end to end once the two `fastembed` lines were set. The final-cut sweep was partly done by L6 already and omitted the **Release roadmap**, one of the three documents CLAUDE.md names as staled by a release. *"Highest-degree authored targets reported"* was dropped: no test, no verification row, no source promising it, and its direction (in- or out-degree) never stated — G6 owns hub reporting. What the pass confirmed: severity/exit-code coherence, the `origin = 'sidecar'` filter, the malformed-URI mechanism, the per-document nudge's counter-argument, step 2's ordering claim, `SCHEMA_VERSION == 2`, a green `make eval`, step 4 already satisfied by L6, the cut procedure, and no test-name collision across L6, L7, L8 or G6 |
