@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 import yaml
 
-from pinakes import store
+from pinakes import linkscan, store
 from pinakes.embed import EmbeddingBackend, ModelInfo, Vectors
 from pinakes.errors import SyncError
 from pinakes.ids import DocId, KbId, mint_doc_id, mint_kb_id
@@ -892,7 +892,12 @@ def test_a_partner_root_outside_its_own_kb_is_refused(pair: tuple[Kb, Kb], tmp_p
 
     rels = {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
     assert "smuggled" not in rels
-    assert any("outside the KB" in message for _, message, _ in report.link_scan)
+    # **`roots entry`, not just "outside the KB".** Deleting this guard entirely left all 101
+    # tests green: the outside root was globbed and the *per-candidate* check then emitted
+    # "include pattern … reaches outside the KB", which satisfied a bare substring assertion.
+    # That check is not a substitute — it fires only once `glob` is already walking, which is
+    # exactly what this rule exists to prevent (`roots = ["/"]` on a `post-commit` hook).
+    assert any("roots entry" in message for _, message, _ in report.link_scan)
 
 
 @pytest.mark.parametrize(
@@ -1076,6 +1081,85 @@ def test_a_fixed_include_naming_a_symlinked_document_agrees_with_the_glob_spelli
         assert {path.name for path in found} >= {f"linked.md{SIDECAR_SUFFIX}"}, (
             f"{spelling!r} did not reach the symlinked document"
         )
+
+
+def test_a_double_star_before_a_dot_dot_does_not_defeat_the_refusal(
+    pair: tuple[Kb, Kb],
+) -> None:
+    """`**` matches **zero** or more components, while `Path.parts` counts it as one.
+
+    So a probe that kept `**` let a following `..` cancel it and landed one level *below* where the
+    walk actually goes: `**/../../**/*.md` probed inside the KB and walked the directory containing
+    it, recursively — measured linear in the outside tree, and reporting nothing, because an escape
+    is only noticed once a candidate is yielded and this pattern matched none.
+
+    Dropping `**` from the probe is exact rather than merely conservative: every component `**`
+    expands to is one a following `..` then pops, so the zero-expansion is the highest the walk can
+    reach, and that is what has to be inside the KB.
+    """
+    _local, partner = pair
+    outside = partner.root.parent / "outside"
+    outside.mkdir()
+    for index in range(40):
+        (outside / f"dir{index}").mkdir()
+
+    for pattern in ("**/../../outside/*.md", "**/../../**/*.md"):
+        _found, problems = sidecars_under(partner.root, ["docs/"], [pattern], [])
+        assert problems, f"{pattern!r} was not refused"
+        assert "reaches outside the KB" in problems[0]
+
+    found, problems = sidecars_under(partner.root, ["docs/"], ["**/*.md"], [])
+    assert problems == [], "an ordinary `**` was caught by the escape rule"
+    assert len(found) == 2
+
+
+def test_one_unusable_include_pattern_does_not_discard_the_others(pair: tuple[Kb, Kb]) -> None:
+    """`Path.glob("")` raises `ValueError`, and that reached `scan_one`, which reported the whole
+    partner unreachable: every other `include` entry was discarded, `complete` stayed false
+    forever, and the message named `'.'` for a pattern the author wrote as `""`.
+
+    One pattern is one problem — the precedent the absolute case sets one branch above. Both the
+    `glob()` call and each `next()` are guarded, because `""` raises at the call while a pattern
+    that turns unacceptable partway raises from the step; the first version of this fix guarded
+    only the step, and `""` still escaped.
+    """
+    _local, partner = pair
+    for bad in ("", "."):
+        found, problems = sidecars_under(partner.root, ["docs/"], ["**/*.md", bad], [])
+        assert len(found) == 2, f"{bad!r} discarded the valid include entries"
+        assert problems == [
+            f"[sources] include pattern {bad!r} cannot be walked: "
+            "Unacceptable pattern: PosixPath('.')"
+        ]
+
+
+def test_the_walk_raising_is_an_issue_not_a_traceback(
+    pair: tuple[Kb, Kb], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`scan_one` promises *"Never raises: every failure comes back in `issues`"*, and its guard
+    around `sidecars_under` had stopped being exercised by anything.
+
+    The input that used to reach it — `include = ["/etc/**/*.md"]` — is now answered by the
+    absolute branch and never reaches `glob`, so the test written for it passes on the new message
+    while the guard it was written for is dead. That is the third time in this increment a later
+    fix has quietly disarmed an older test, so the promise is pinned directly here instead of
+    through an input that a future fix can intercept.
+    """
+    local, _partner = pair
+
+    def exploding(
+        _root: Path, _roots: list[str], _include: list[str], _exclude: list[str]
+    ) -> tuple[list[Path], list[str]]:
+        raise OSError(5, "io")
+
+    monkeypatch.setattr(linkscan, "sidecars_under", exploding)
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    assert report.ok
+    assert len(report.link_scan) == 1
+    _alias, message, _remedy = report.link_scan[0]
+    assert "[sources]" in message
 
 
 def test_an_absolute_include_says_it_is_absolute_not_that_it_escapes(pair: tuple[Kb, Kb]) -> None:

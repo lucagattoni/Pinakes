@@ -322,6 +322,7 @@ def sidecars_under(
     # same thing, and removing either alone leaves the count right.
     escaping: set[str] = set()
     absolute: set[str] = set()
+    unusable: list[str] = []
     # `parent.resolve()` is a syscall chain per candidate, and a large KB globs thousands of files
     # out of a handful of directories.
     resolved: dict[Path, Path] = {}
@@ -366,14 +367,53 @@ def sidecars_under(
             # `parent.resolve() / name` is the spelling `link._document_in` uses and the candidate
             # loop below uses, for the same reason in all three: the directory chain is followed, so
             # `..` collapses and an escape through a symlinked ancestor is caught, while the final
-            # component is left alone, so a symlinked *document* stays readable. A glob component is
-            # just a name that does not exist, which `resolve()` handles lexically — so one
-            # `resolve()`, no enumeration, and the bound survives.
-            probe = base.joinpath(*Path(pattern).parts)
+            # component is left alone, so a symlinked *document* stays readable. A `*`, `?` or `[…]`
+            # component is just a name that does not exist, which `resolve()` handles lexically — so
+            # one `resolve()`, no enumeration, and the bound survives.
+            #
+            # **`**` is dropped, because it matches *zero* or more components while `Path.parts`
+            # counts it as one.** Keeping it let a following `..` cancel it, so the probe landed one
+            # level below where the walk actually goes: `**/../../**/*.md` probed inside the KB and
+            # walked the directory *containing* it, recursively — measured linear in the outside
+            # tree and reported nothing, because the escape is only noticed when a candidate is
+            # yielded. Dropping it is exactly right rather than merely conservative: each component
+            # `**` expands to is one a following `..` then pops, so the zero-expansion is the
+            # highest the walk can reach, and that is what has to be inside the KB.
+            probe = base.joinpath(*(part for part in Path(pattern).parts if part != "**"))
             if not (probe.parent.resolve() / probe.name).is_relative_to(anchor):
                 escaping.add(pattern)
                 continue
-            for candidate in base.glob(pattern):
+            # **One unusable pattern is one problem, not the end of the partner.** `glob` raises
+            # `ValueError` on `""` and `"."` ("Unacceptable pattern"), and that escaped to
+            # `scan_one`, which reported the *whole* KB unreachable: the partner's other, valid
+            # `include` entries were discarded, `complete` stayed false forever, and the message
+            # named `'.'` for a pattern the author had written as `""`. Caught here for the same
+            # reason the absolute case is answered above — the report should say which pattern,
+            # not which exception.
+            #
+            # Wrapped around `next`, not around the loop body, and never `list(...)`: materialising
+            # the generator would discard the `break` below, which is the only thing bounding a
+            # symlinked-directory escape. Scoped this tightly because the body raises `ValueError`
+            # too — `Path.match("")` does, for a partner's empty `exclude` entry — and reporting
+            # that as an unwalkable *include* would name the wrong key.
+            # Both the call and each step: `Path.glob("")` raises immediately, while a pattern that
+            # only becomes unacceptable partway raises from `next`. Guarding one and not the other
+            # is how `""` still escaped after the first version of this fix.
+            try:
+                candidates = base.glob(pattern)
+            except (ValueError, NotImplementedError) as exc:
+                unusable.append(f"[sources] include pattern {pattern!r} cannot be walked: {exc}")
+                continue
+            while True:
+                try:
+                    candidate = next(candidates)
+                except StopIteration:
+                    break
+                except (ValueError, NotImplementedError) as exc:
+                    unusable.append(
+                        f"[sources] include pattern {pattern!r} cannot be walked: {exc}"
+                    )
+                    break
                 parent = resolved.get(candidate.parent)
                 if parent is None:
                     parent = candidate.parent.resolve()
@@ -408,6 +448,7 @@ def sidecars_under(
         f"[sources] include pattern {pattern!r} is absolute; patterns are relative to a root"
         for pattern in sorted(absolute)
     )
+    problems.extend(sorted(set(unusable)))
     return sorted(found), problems
 
 

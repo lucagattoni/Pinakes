@@ -221,6 +221,9 @@ test, or write **none** and say why in the same commit.
 | ...and a *leading* glob does not defeat the refusal | L6 review 13 | `tests/test_sync_links.py::test_a_leading_glob_does_not_defeat_the_static_refusal` |
 | a fixed and a glob include naming one symlinked document agree | L6 review 13 | `tests/test_sync_links.py::test_a_fixed_include_naming_a_symlinked_document_agrees_with_the_glob_spelling` |
 | an absolute include says it is absolute, not that it escapes | L6 review 13 | `tests/test_sync_links.py::test_an_absolute_include_says_it_is_absolute_not_that_it_escapes` |
+| ...and `**` before a `..` does not defeat the refusal | L6 review 14 | `tests/test_sync_links.py::test_a_double_star_before_a_dot_dot_does_not_defeat_the_refusal` |
+| one unusable include pattern does not discard the others | L6 review 14 | `tests/test_sync_links.py::test_one_unusable_include_pattern_does_not_discard_the_others` |
+| the walk raising is an issue, never a traceback | L6 review 14 | `tests/test_sync_links.py::test_the_walk_raising_is_an_issue_not_a_traceback` |
 | ...and an escape matching only sidecars is still reported | L6 review 11 | `tests/test_sync_links.py::test_an_escape_matching_only_sidecars_is_still_reported` |
 | one escaping pattern is one problem, however many roots | L6 review 11 | `tests/test_sync_links.py::test_one_escaping_pattern_is_one_problem_however_many_roots` |
 | `exclude` matches the path the partner wrote, not the resolved one | L6 review 11 | `tests/test_sync_links.py::test_an_exclude_rule_matches_the_path_the_partner_wrote_not_the_resolved_one` |

@@ -1,4 +1,4 @@
-## L6 — `pnk link` (20260801 00:28)
+## L6 — `pnk link` (20260801 00:52)
 
 **Every review commit on this increment found defects in the one before it, and most of them found
 the previous commit's own fix or claim** rather than something it had missed — `3ce150e` (review 1's
@@ -276,7 +276,19 @@ Each attempt reinvented it:
    with no enumeration. Ten patterns measured — a `..` staying inside, a directory genuinely named
    `a..b`, a literal bracket, two escapes, one behind a leading glob, a symlinked directory under a
    glob, a symlinked document by both spellings, and an absolute — all correct, escapes refused in
-   0.12ms without touching a 3000-file tree.
+   0.12ms without touching a 3000-file tree. **None of the ten contained `**` followed by `..`.**
+5. **Drop `**` from the probe.** `**` matches *zero* or more components while `Path.parts` counts
+   it as one, so keeping it let a following `..` cancel it and the probe landed one level below
+   where the walk goes. `**/../../**/*.md` probed inside the KB and walked the directory containing
+   it, recursively — linear in the outside tree, and silent, because an escape is only noticed once
+   a candidate is yielded and that pattern matched none. Dropping it is exact rather than merely
+   conservative: each component `**` expands to is one a following `..` then pops, so the
+   zero-expansion is the highest the walk can reach.
+
+   Attempt 4's measurement was real and its ten patterns were all correct. It was the *sampling*
+   that was wrong — ten hand-chosen inputs, none of which combined the two tokens whose interaction
+   is the whole difficulty. A table of cases proves the cases in it, and reads like proof of the
+   rule.
 
 An absolute pattern is refused separately, because `glob` cannot walk one *wherever it points* —
 including at this KB's own `docs/`. It had been folded into the escape message, which was simply
@@ -287,10 +299,17 @@ problem afresh instead of copying the spelling from the function twenty lines aw
 it.** A rule implemented twice is a rule with two behaviours; the fix was to make the third
 implementation textually identical to the first two and say so in all three.
 
-Each attempt was found by mutating its predecessor, and two of them had *disarmed an existing
-test*: a fix that catches its input earlier leaves the older test green with its guard unexercised.
-That is now its own note under the fixture section, and the rule it earns is to re-run the whole
-mutation battery after every fix, not just a mutant for the fix itself.
+Each attempt was found by mutating its predecessor, and **three of them disarmed an existing
+test**: a fix that catches its input earlier leaves the older test green with its guard
+unexercised. By the last round two guards written in *earlier* increments had gone dead this way —
+L2's `roots` containment check, whose test was satisfied by the substring "outside the KB" that the
+new per-candidate check also emits, and `scan_one`'s own `except` around the walk, whose only
+input (`include = ["/etc/**/*.md"]`) the absolute branch now answers first. Both were found by
+mutating behaviours *this increment never touched*.
+
+So the rule is stronger than "re-run the battery after every fix": **the battery is over the whole
+function, not the diff** — and a promise worth a guard is pinned directly (here, by making the walk
+raise) rather than through an input that some later fix can intercept.
 
 **`sync.walk_sources` has the identical shape for the *local* manifest** and is not fixed here: it
 is the user's own configuration rather than a partner's, and changing the engine's document walk is
