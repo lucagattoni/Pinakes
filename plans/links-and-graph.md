@@ -593,7 +593,8 @@ treat it as a defect in this plan and say so rather than choosing.
 **Three breaking changes, all consequences of the library**: a duplicate key becomes a hard error
 (was silent last-wins); a string field YAML 1.2 resolves as a number (`1e3`, `1E3`, `0o17` in
 `title`, `created`, `tags[]`, `links[].to`, `links[].rel`) now fails `_optional_str`; and an
-`!!str`-tagged value is refused (the only tag that works end-to-end today). Separately, **four
+`!!str`-tagged value is refused. It is **the only *working* tag that breaks**, not the only tag that
+works: `!!int`, `!!float`, `!!bool`, `!!seq` and `!!map` all work today and keep working — verified. Separately, **four
 shapes whose current unhandled `TypeError` becomes a named error** — `!!binary`, `!!set`,
 `!!timestamp`, a bare date. Those are a fix, not a break, and the changelog lists them apart.
 
@@ -671,24 +672,38 @@ widened acceptance becoming a crash.
      to ruamel, so after L5b the justification rests on *external* readers and on `pnk link --rel
      no`, not on anything here. `test_a_minted_title_that_looks_like_a_boolean_is_quoted` reads its
      result back **through PyYAML** precisely because nothing else keeps that honest.
-   - **Refuse JSON-unencodable `extra`/`provenance` values** (decision 26), at `read()`. **This is
+   - **Refuse an `extra` or `provenance` mapping that will not JSON-encode** (decision 26), at
+     `read()`. **Encode the assembled mapping, not each value separately** — measured, a per-value
+     check accepts `{123: v, abc: w}` and the `sorted()`-equivalent `TypeError` survives, because
+     the failure is a comparison *between* keys. Call
+     `json.dumps(dict(extra), sort_keys=True, ensure_ascii=False)` and the same for `provenance`,
+     mirroring what `_metadata()` hands `store.dumps_metadata`. **This is
      equivalence, not a new choice:** PyYAML refuses an unknown tag today as a clean `SidecarError`
      (`ConstructorError` is a `YAMLError`); ruamel accepts it, so without this check L5b alone turns
      that clean error into an unhandled `TypeError` from `json.dumps` out of `pnk sync` — measured.
      Use **exactly the call `store.dumps_metadata` makes** — `json.dumps(value, sort_keys=True,
      ensure_ascii=False)` — so the check and the thing it protects cannot disagree. Do not add
      `allow_nan=False`: the store does not, and a stricter check would refuse what the index would
-     have accepted. `sort_keys=True` also catches non-string keys **nested** below the top level.
-     The remedy names the key and the offending type, and says the index stores metadata as JSON.
-     **Accepted residual:** `.nan`/`.inf` encode as `NaN`/`Infinity`, which no conforming JSON
-     reader accepts; identical today under PyYAML, so not a regression, but the invariant is not
-     absolute. **Documented widening:** a tagged *mapping* or *sequence* serialises and is now
-     accepted where PyYAML refused it.
+     have accepted. The remedy names the key and the offending type, and says the index stores
+     metadata as JSON.
+     **What `sort_keys=True` does and does not catch.** It catches **mixed**-type keys, at any
+     depth. A **uniformly** non-string-keyed mapping is accepted and silently coerced — measured,
+     `{1: a, 2: b}` becomes `{"1": "a", "2": "b"}`, nested or not. Do not write that it "catches
+     non-string keys nested below the top level"; it does not, and an executor testing a uniform
+     case would find it green and conclude the check is broken. L5c's decision 19 is top-level only,
+     so a uniformly int-keyed **nested** mapping is covered by neither increment. Identical today
+     under PyYAML, so not a regression — a stated residual, alongside `.nan`/`.inf`, which encode as
+     `NaN`/`Infinity` that no conforming JSON reader accepts.
+     **Documented widening:** a **custom-tagged** mapping or sequence (`!custom {a: 1}`) is
+     `ConstructorError` under PyYAML and a `CommentedMap` after, so it is now accepted. Not `!!map`
+     or `!!seq` — those were never refused, and a reader checking the claim against them concludes
+     it is false.
    - `DuplicateKeyError` (from **`ruamel.yaml.constructor`**) is caught before `YAMLError` and given
      a pinakes message; ruamel's own ends with `To suppress this check see: <URL>`.
    - **Coerce ruamel's scalar subclasses at the `_metadata()` boundary in `sync.py`**, not in the
      sidecar. `ScalarBoolean` subclasses `int` (Python forbids subclassing `bool`), and ruamel
-     returns one for any boolean carrying an **anchor** — so `flag: &a true` is JSON-encodable —
+     returns one for any boolean carrying an **anchor or an alias** — both `flag: &a true` and
+     `same: *a` — so it is JSON-encodable —
      L5c's check will pass it — and lands in the index as `1` where PyYAML wrote `true`. Map
      `ScalarBoolean` → `bool`; leave `ScalarInt`/`ScalarFloat`/`ScalarString`, which already encode
      as their base types. `test_sync.py::test_an_anchored_boolean_is_indexed_as_true_not_one`.
@@ -772,7 +787,8 @@ mapping, which only `sort_keys=True` catches**); `::test_a_double_bang_str_value
 `::test_with_extraction_provenance_preserves_comments`;
 `::test_without_extraction_provenance_preserves_comments`.
 
-`test_sync.py::test_an_anchored_boolean_is_indexed_as_true_not_one`;
+`test_sync.py::test_an_anchored_boolean_is_indexed_as_true_not_one` (assert **both** the anchor and
+an alias of it);
 `test_sync.py::test_a_tagged_sidecar_is_refused_at_read_not_crashed_in_json` (the regression this
 check exists to prevent — without it, L5b turns today's clean `SidecarError` into a traceback);
 `test_partner_kb.py::test_every_committed_sidecar_round_trips_through_read_and_write` (copy into
@@ -1522,3 +1538,4 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | 20260731 07:52 | **Pass 3 — 7 HIGH**, and the worst was introduced by the commit that existed to remove ambiguity. Decision 23's disambiguated predicate named `yaml.resolver.Resolver`, running inside `write()` — while item 1 removes `pyyaml` from the runtime dependencies and item 7 adds a gate built to fail on that exact import, so the increment could not be green and correct at once. Measured redundant as well: over 38 probes there is no value PyYAML 1.1 calls non-`str` that both ruamel versions call `str`. Two more the plan had never considered: a boolean carrying an **anchor** returns `ScalarBoolean`, an `int` subclass, which passes decision 26 and lands in the index as `1` where PyYAML wrote `true`; and the known-key merge rule demanded nested deletion (`provenance` must lose `extraction`, or `--force` silently fails) while forbidding it (a `links[]` entry must keep its unknown keys) in one sentence. Reconciling `links` **by position** was measured to misattribute the user's comments onto different links on reorder and delete them on shrink — now keyed on `to`. Also: `CLAUDE.md`'s release rule tells an interim cut to drop a release name L8 needs back; the signature gate cannot reach `preserve_quotes`/`width`, which are instance attributes; the AST predicate as written false-positives on `from ruamel import yaml`; and the compaction two commits earlier had split the releases table with a paragraph, so the graph-release row rendered as literal text |
 | 20260731 08:05 | **L5b split into L5b and L5c (decision 28).** Not a finding — a response to the trajectory. Three passes on one section returned **8, 8 and 7 HIGH**, and each pass's worst finding was in the previous pass's *fix*: pass 3's was a predicate the disambiguation commit had introduced, which imported `pyyaml` into `src/` while the same increment removed it from the runtime dependencies and added a gate against exactly that import. Every concern in the section was individually settled; the churn was at the **interfaces** between eight of them bundled into one increment. The seam is *what the library does* (L5b — the swap, the round-trip, quoting, the `ScalarBoolean` coercion, the stub, the gates; two breaking changes, both intrinsic to ruamel; no cut) versus *what pinakes chooses to reject* (L5c — decisions 19 and 26; two more breaking changes; takes the interim cut). L5c is independently revertible, and L5b's exit criterion becomes falsifiable in one sentence: every committed sidecar still round-trips and the suite is green |
 | 20260731 08:18 | **The split's seam was wrong, and moving one decision fixed it.** Asked to confirm L5b was ready, I checked instead of asserting, and found two defects. **L5b alone would have landed with a red suite** — the `{id: x, : }` fixture amendment had been carved into L5c, but ruamel *parses* that fixture, so the test fails the moment the swap lands; it is the 872nd test of the prototype's 871/872. And **L5b alone was a regression**: PyYAML refuses an unknown tag today as a clean `SidecarError`, ruamel accepts it, so without decision 26 the sidecar reaches `json.dumps` and `pnk sync` exits on an unhandled `TypeError` — measured. Decision 26 was therefore never "a refusal pinakes chooses"; it is **required to keep behaviour equivalent**, and it moves into L5b along with the interim cut. L5c reduces to decision 19 alone — 32 lines, the one change that genuinely adds a refusal, depends on nothing in L5b, and closes a `TypeError` live on `main` today |
+| 20260731 08:00 | **Independent review of L5b — five findings, one of which changed the code.** Decision 26's check was specified over *values*; measured, a per-value check **accepts** `{123: v, abc: w}` and the `TypeError` survives, because the failure is a comparison *between* keys. It now encodes the **assembled mapping**, mirroring what `_metadata()` hands `store.dumps_metadata`. Three were false claims headed for the changelog: `sort_keys=True` catches **mixed**-type keys only — a *uniformly* int-keyed mapping is accepted and silently coerced at any depth, covered by neither increment and now a stated residual; `!!str` is the only **working** tag that breaks, not the only tag that works (`!!int`, `!!float`, `!!bool`, `!!seq`, `!!map` all survive); and the documented widening is for **custom**-tagged collections, since `!!map` and `!!seq` were never refused. The record's decision 23 still named `yaml.resolver.Resolver` two commits after the plan removed it — the exact neighbourhood miss the convention added this morning exists to catch. Also: `ScalarBoolean` arrives via an **alias** as well as an anchor, so the coercion test asserts both |

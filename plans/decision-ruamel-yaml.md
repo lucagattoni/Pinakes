@@ -62,7 +62,8 @@ carrying an anchor returns `ScalarBoolean`, an `int` subclass, which encodes as 
 wrote `true` — hence the coercion in L5b item 3. `isinstance(doc, dict)` and the `str` checks hold
 against `CommentedMap`.
 
-**Four breaking changes**, and separately **four crashes that become named errors** — `!!binary`,
+**Four breaking changes** (three in L5b, one in L5c), and separately **four crashes that become
+named errors** — `!!binary`,
 `!!set`, `!!timestamp` and a bare date all raise an unhandled `TypeError` from `json.dumps` today.
 
 | Breaking | Was |
@@ -70,7 +71,7 @@ against `CommentedMap`.
 | A duplicate key | silent last-wins |
 | A non-string top-level key | worked, unless mixed types made `sorted()` raise |
 | A string field 1.2 resolves as a number (`1e3`, `0o17`) — `title`, `created`, `tags[]`, `links[].to`, `links[].rel` alike | a string |
-| An `!!str`-tagged value | worked |
+| An `!!str`-tagged value — the only *working* tag that breaks; `!!int`, `!!float`, `!!bool`, `!!seq`, `!!map` keep working | worked |
 
 ## Decisions
 
@@ -80,8 +81,8 @@ against `CommentedMap`.
 | 20 | **A local stub under `stubs/`, plus a signature-comparison test.** `py.typed` does not satisfy pyright strict here: `load`/`dump` carry an untyped `stream`. `cast(Any, _yaml()).load(...)` also reaches zero errors but erases the whole surface. An *import*-only check is insufficient — a stub declaring a parameter ruamel lacks is pyright-green and `TypeError`s at runtime |
 | 21 | **An AST scan over `src/pinakes` proves `pyyaml` never returns**, paired with the existing runtime check. An import walk was specified first and is wrong twice: it loads `pypdfium2` (absent on the `[light]` leg, and probing a backend by loading it is forbidden), and it executes module scope only, so the lazy import it exists to catch is invisible to it |
 | 22 | **MINOR, at whatever number is next when cut.** No number is written here — CLAUDE.md forbids numbering unbuilt work |
-| 23 | **Every scalar pinakes writes is single-quoted when ambiguous** — minted or newly assigned into an existing document, keyed on *the value being assigned*, never on `original is None`. `skeleton()` derives the title from the filename stem, so `NO.md` otherwise mints a bare `title: NO` that a 1.1 reader takes as `False`; `pnk link --rel no` is the same hazard on an existing file. Predicate: the union of `yaml.resolver.Resolver` and `VersionedResolver` at `(1,1)` and `(1,2)` — anything not resolving to `…:str` in all three. Scalars pinakes did not author are left as the user wrote them |
-| 26 | *(L5b)* **Every value under `extra` and `provenance` must be JSON-encodable**, else `SidecarError`. This is the constraint the index imposes (`store.dumps_metadata` → `json.dumps`), so it tests the real thing rather than a tag taxonomy, and reaches tagged **keys** at any depth. Documented widening: a tagged *mapping* or *sequence* serialises and is now accepted where PyYAML refused it |
+| 23 | **Every scalar pinakes writes is single-quoted when ambiguous** — minted or newly assigned into an existing document, keyed on *the value being assigned*, never on `original is None`. `skeleton()` derives the title from the filename stem, so `NO.md` otherwise mints a bare `title: NO` that a 1.1 reader takes as `False`; `pnk link --rel no` is the same hazard on an existing file. Predicate: `VersionedResolver` at `(1,1)` **and** `(1,2)` — anything not resolving to `…:str` in both. **Not** `yaml.resolver.Resolver`: item 1 removes `pyyaml` from the runtime dependencies, so importing it in `write()` would `ImportError` on a user's install, and L5b's AST gate fails on that import. Measured redundant over 38 probes; proven by a test in `tests/`, where `pyyaml` is installed. Scalars pinakes did not author are left as the user wrote them |
+| 26 | *(L5b)* **The `extra` and `provenance` mappings must JSON-encode**, else `SidecarError` — the *assembled mapping*, not each value: a per-value check accepts `{123: v, abc: w}` and the `TypeError` survives, because the failure is a comparison *between* keys. This is the constraint the index imposes (`store.dumps_metadata` → `json.dumps`), so it tests the real thing rather than a tag taxonomy, and reaches tagged **keys** at any depth. Documented widening: a tagged *mapping* or *sequence* serialises and is now accepted where PyYAML refused it |
 | 28 | **L5b splits into L5b and L5c.** The seam is what the library does versus what pinakes chooses to reject. All the churn across three passes was at the interfaces inside one oversized increment; L5c is independently revertible |
 | 27 | **The links release cuts twice** — an interim MINOR at L5b carrying L1–L5b, and the final cut at L8. A tag is a point on `main`, so a cut at L5b ships everything merged before it; naming it after one increment would have been false |
 
