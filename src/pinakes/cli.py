@@ -703,7 +703,7 @@ def run_links(args: argparse.Namespace) -> int:
         # argument away, and "your links resolve to nothing" would be false about the one they
         # filtered out. Only then does the dangling case get to speak.
         if present.is_filtered(rel=args.rel, direction=args.direction, depth=args.depth):
-            print("no links match these arguments — retry without --rel/--direction")
+            print("no links match these arguments — retry without --rel/--direction, --depth 1")
         elif result.unresolved:
             print("links exist but resolve to nothing — see stderr")
         else:

@@ -583,6 +583,39 @@ def test_an_empty_answer_says_whether_the_arguments_emptied_it(linked_kb: Path) 
         unlinked.close()
 
 
+def test_a_filtered_walk_reports_the_filter_before_the_dangling_links(tmp_path: Path) -> None:
+    """Both conditions true at once — the only shape in which the precedence means anything.
+
+    `rel` narrows `unresolved` too, so a rel-filtered call leaves it empty and the branch this
+    orders against never competes. `direction` is the lever: `a.md`'s outbound link dangles, its
+    inbound one is live, so `direction="out"` empties the walk while `unresolved` fills and a live
+    neighbour sits one dropped argument away. Inverted, the caller is told their links are broken
+    and sent to full-text search instead of to the retry that works.
+    """
+    root = make_kb(
+        tmp_path / "both",
+        name="both",
+        documents={"a.md": "# A\n\nRetrieval.\n", "b.md": "# B\n\nRanking.\n"},
+    )
+    kb_id = load(root).kb.id
+    author_link(root, "a.md", f"pnk://{kb_id}/{ABSENT_DOC}", "related")  # outbound, dangles
+    author_link(root, "b.md", f"pnk://{kb_id}/{doc_id_of(root, 'a.md')}", "cites")  # inbound, live
+
+    made = Server([root])
+    try:
+        narrowed = made.links(doc_id_of(root, "a.md"), direction="out")
+        assert narrowed["neighbours"] == [] and narrowed["unresolved"], "both conditions hold"
+        assert "No links match these arguments" in narrowed["suggested_next"]
+        assert "resolve to documents this KB no longer has" not in narrowed["suggested_next"]
+
+        # ...and unfiltered, the same document reaches its live neighbour instead.
+        assert [row["rel"] for row in made.links(doc_id_of(root, "a.md"))["neighbours"]] == [
+            "cites"
+        ]
+    finally:
+        made.close()
+
+
 def test_a_document_whose_links_all_dangle_is_not_called_unlinked(tmp_path: Path) -> None:
     """`neighbours: []` beside a populated `unresolved` is not "no links from here".
 

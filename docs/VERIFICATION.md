@@ -158,7 +158,9 @@ test, or write **none** and say why in the same commit.
 | `truncated` reports the caps that bit | L5 | `tests/test_graph_present.py::test_truncated_reports_the_caps_that_bit` |
 | a frontier entry carries the distance it was found at | L5 | `tests/test_graph_present.py::test_a_frontier_entry_carries_the_distance_it_was_found_at` |
 | every direction has its own arrow, the unreachable one included | L5 | `tests/test_graph_present.py::test_every_direction_has_its_own_arrow_including_the_one_no_fixture_can_reach` |
-| the CLI says *why* a walk returned nothing, filter first | L5 | `tests/test_cli_links.py::test_the_cli_says_so_when_every_link_dangles` |
+| the CLI says *why* a walk returned nothing | L5 | `tests/test_cli_links.py::test_the_cli_says_so_when_every_link_dangles` |
+| ...filter before dangling, with both true at once (CLI) | L5 | `tests/test_cli_links.py::test_a_filtered_walk_reports_the_filter_before_the_dangling_links` |
+| ...and over MCP | L5 | `tests/test_serve.py::test_a_filtered_walk_reports_the_filter_before_the_dangling_links` |
 | a query reaches the ranking on both surfaces | L5 | `tests/test_graph_present.py::test_a_query_reaches_the_ranking_on_both_surfaces` |
 | a document whose links all dangle is not called unlinked | L5 | `tests/test_serve.py::test_a_document_whose_links_all_dangle_is_not_called_unlinked` |
 | a direction does not change with `depth` | L5 | `tests/test_graph_present.py::test_a_direction_does_not_change_with_depth` |

@@ -322,8 +322,8 @@ Neighbours found but **not** expanded come back on `frontier` with one of five r
 `terminal`, `depth`, `fanout`, `rows`, `tokens`. Links whose target this KB does not have come back
 under `unresolved` rather than being dropped, and never appear as neighbours: there is no document
 there to be one. When a walk returns nothing the human output says **why**, in the same precedence
-`pinakes_links` uses: your `--rel`/`--direction` excluded everything, or the links resolve to
-nothing, or there genuinely are none. The narrowing is reported first because a live neighbour may
+`pinakes_links` uses: your `--rel`, `--direction` or `--depth` excluded everything, or the links
+resolve to nothing, or there genuinely are none. The narrowing is reported first because a live neighbour may
 sit one dropped argument away — and stdout must never print `no links` for a document whose links
 stderr is listing.
 

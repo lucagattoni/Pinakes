@@ -89,3 +89,16 @@ findings, then 11 with one HIGH, then 7 with none, then 5 with none. What the la
 was never the traversal — it was the layer around it: an assignment nobody asserted, an assertion
 satisfied by a substring, a message worded from the wrong end, a branch ordered ahead of a better
 one, and a rule applied to one of two surfaces.
+
+**The rule two rounds were spent getting right had no test that could detect its inversion.** Round
+5 found the shipped behaviour correct on both surfaces and the precedence — *filter before dangling
+before "no links"* — freely reversible with the suite green. The cause was a fixture that could not
+make both conditions true at once: `--rel` narrows `provider.unresolved` as well as the neighbours
+(`edges_of` receives the same `rel`), so a rel-filtered call leaves `unresolved` empty and the
+branch being out-ranked never competes. `--direction` is the lever that does it — an outbound link
+that dangles and an inbound one that is live. The assertion that named the defect in its own message
+(*"one dropped argument away from a live neighbour"*) was the vacuous one.
+
+**Test the discriminating case, not the two sides separately.** A precedence rule is only observable
+where both branches are eligible; a fixture that satisfies one at a time asserts the wording of each
+and the order of neither.

@@ -387,10 +387,32 @@ def test_the_cli_says_so_when_every_link_dangles(tmp_path: Path) -> None:
     assert "no links" not in dangling, "its links exist — they resolve to nothing"
     assert "resolve to nothing" in dangling
 
-    # ...but not when the caller's own filter is what emptied it. `alpha` has a live link; asking
-    # for a relation it does not carry must not report that its links resolve to nothing.
-    kb.set_links("alpha", [(kb.uri("stale"), "related")])
+
+def test_a_filtered_walk_reports_the_filter_before_the_dangling_links(tmp_path: Path) -> None:
+    """The precedence itself, which needs both conditions true **at once** to mean anything.
+
+    `--rel` narrows `provider.unresolved` too, so filtering by a relation nothing carries leaves
+    `unresolved` empty and the branch under test never competes — the first attempt at this
+    assertion could not detect the branches being swapped. `--direction` is the lever that works:
+    `alpha`'s outbound link dangles and its inbound one is live, so asking for `out` alone makes
+    the walk empty, `unresolved` populated, and a live neighbour one dropped argument away.
+    """
+    kb = make_kb(tmp_path / "both", "both", ["alpha", "beta"])
+    kb.set_links("alpha", [(f"pnk://{kb.kb_id}/{mint_doc_id()}", "related")])  # outbound, dangles
+    kb.set_links("beta", [(kb.uri("alpha"), "cites")])  # inbound, live
     run(kb)
-    filtered = human_output(kb, "docs/alpha.md", rel="nosuchrel")
-    assert "resolve to nothing" not in filtered, "one dropped argument away from a live neighbour"
-    assert "no links match these arguments" in filtered
+
+    out = human_output(kb, "docs/alpha.md", direction="out")
+    assert "no links match these arguments" in out, "the filter is what emptied it"
+    assert "resolve to nothing" not in out, "beta is one dropped --direction away"
+
+    # The advice must name every argument `is_filtered` tests. `--depth 0` empties the walk on its
+    # own, and advice that omits it sends the caller to a retry reproducing the same output.
+    by_depth = human_output(kb, "docs/alpha.md", depth=0)
+    assert "no links match these arguments" in by_depth
+    assert "--depth 1" in by_depth, "the retry must change the argument that emptied it"
+
+    # ...and unfiltered, the same document reaches the live neighbour rather than either message.
+    assert "<- cites: beta" in {
+        line.split("  [hop")[0] for line in human_output(kb, "docs/alpha.md").splitlines()
+    }
