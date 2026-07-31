@@ -649,6 +649,7 @@ def run_links(args: argparse.Namespace) -> int:
     from pinakes import manifest as manifest_module
     from pinakes import store
     from pinakes.errors import PinakesError
+    from pinakes.graph import present
     from pinakes.graph import provider as provider_module
     from pinakes.graph.traverse import traverse
 
@@ -689,56 +690,19 @@ def run_links(args: argparse.Namespace) -> int:
             adjacent_k=loaded.retrieval.adjacent_k,
             query=args.query,
         )
-        rows = [
-            {
-                "kb_id": neighbour.node_key[0],
-                "doc_id": neighbour.node_key[1],
-                "rel": neighbour.rel,
-                "direction": provider.directions.get(neighbour.node_key, args.direction),
-                "distance": neighbour.distance,
-                "score": round(neighbour.score, 4),
-                "terminal": neighbour.terminal,
-                **(
-                    {"title": title}
-                    if (title := provider.title(*neighbour.node_key)) is not None
-                    else {}
-                ),
-            }
-            for neighbour in result.neighbours
-        ]
+        body = present.payload(result, provider=provider, document=str(start_doc))
+        rows = body["neighbours"]
     finally:
         connection.close()
 
     if args.json:
-        print(
-            json_module.dumps(
-                {
-                    "document": str(start_doc),
-                    "neighbours": rows,
-                    "frontier": [
-                        {
-                            "kb_id": entry.node_key[0],
-                            "doc_id": entry.node_key[1],
-                            "rel": entry.rel,
-                            "reason": entry.reason,
-                        }
-                        for entry in result.frontier
-                    ],
-                    "unresolved": [
-                        {"doc_id": entry.node_key[1], "rel": entry.rel, "reason": entry.reason}
-                        for entry in result.unresolved
-                    ],
-                    "truncated": sorted(result.truncated),
-                },
-                indent=2,
-            )
-        )
+        print(json_module.dumps(body, indent=2))
         return EXIT_OK
 
     if not rows:
         print("no links")
     for row in rows:
-        arrow = "->" if row["direction"] == "out" else "<-"
+        arrow = {"out": "->", "in": "<-"}.get(row["direction"], "<->")
         label = row.get("title") or row["doc_id"]
         marker = " (other KB)" if row["terminal"] else ""
         print(f"{arrow} {row['rel']}: {label}{marker}  [hop {row['distance']}]")

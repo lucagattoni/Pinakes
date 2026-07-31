@@ -362,7 +362,7 @@ def test_a_page_range_on_a_source_that_has_none_is_refused(server: Server) -> No
 # --- pinakes_links (L5) --------------------------------------------------------------------
 
 
-def _link(root: Path, source: str, target_uri: str, rel: str) -> None:
+def author_link(root: Path, source: str, target_uri: str, rel: str) -> None:
     """Author one link into `source`'s sidecar and re-sync — the authoring model, by hand."""
     import yaml
 
@@ -375,7 +375,7 @@ def _link(root: Path, source: str, target_uri: str, rel: str) -> None:
     sync(load(root), options=SyncOptions(), now="20260725 18:02")
 
 
-def _doc_id(root: Path, filename: str) -> str:
+def doc_id_of(root: Path, filename: str) -> str:
     import yaml
 
     from pinakes.sidecar import SIDECAR_SUFFIX
@@ -397,10 +397,16 @@ needs to be recognisable."""
 
 @pytest.fixture
 def linked_kb(kb: Path) -> Path:
-    """`a.md` links to `b.md`, and to a document in a KB this server is not pointed at."""
+    """`a.md` links to `b.md`, and to a document in a KB this server is not pointed at.
+
+    `c.md` is deliberately left unlinked: "this document has no links" and "your arguments excluded
+    them" are different answers, and without an unlinked document nothing can tell them apart.
+    """
+    (kb / "docs" / "c.md").write_text("# Isolated\n\nNothing links here.\n", encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260725 18:01")
     kb_id = load(kb).kb.id
-    _link(kb, "a.md", f"pnk://{kb_id}/{_doc_id(kb, 'b.md')}", "related")
-    _link(kb, "a.md", f"pnk://{ABSENT_KB}/{ABSENT_DOC}", "counterpart")
+    author_link(kb, "a.md", f"pnk://{kb_id}/{doc_id_of(kb, 'b.md')}", "related")
+    author_link(kb, "a.md", f"pnk://{ABSENT_KB}/{ABSENT_DOC}", "counterpart")
     return kb
 
 
@@ -409,13 +415,13 @@ def test_pinakes_links_returns_score_and_frontier_on_every_return(linked_kb: Pat
     agent that has to branch on a key's presence cannot write one code path."""
     made = Server([linked_kb])
     try:
-        payload = made.links(_doc_id(linked_kb, "a.md"))
+        payload = made.links(doc_id_of(linked_kb, "a.md"))
         assert "frontier" in payload
         for row in payload["neighbours"]:
             assert "score" in row and isinstance(row["score"], float | int)
 
-        # ...and on a document with no links at all, where there is nothing to report.
-        empty = made.links(_doc_id(linked_kb, "b.md"), direction="out")
+        # ...and on a walk that returned nothing, where there is nothing to report.
+        empty = made.links(doc_id_of(linked_kb, "b.md"), direction="out")
         assert empty["neighbours"] == []
         assert "frontier" in empty and "truncated" in empty
     finally:
@@ -431,8 +437,10 @@ def test_pinakes_links_reports_unknown_confidence_with_and_without_a_query(
     traversal signal exists. Anything else here would be the invented signal §4.2 forbids."""
     made = Server([linked_kb])
     try:
-        assert made.links(_doc_id(linked_kb, "a.md"))["confidence"] == "unknown"
-        assert made.links(_doc_id(linked_kb, "a.md"), query="retrieval")["confidence"] == "unknown"
+        assert made.links(doc_id_of(linked_kb, "a.md"))["confidence"] == "unknown"
+        assert (
+            made.links(doc_id_of(linked_kb, "a.md"), query="retrieval")["confidence"] == "unknown"
+        )
     finally:
         made.close()
 
@@ -445,7 +453,7 @@ def test_a_neighbour_outside_the_served_kbs_returns_its_kb_id_and_a_reason(
     still identified, never merely omitted, so the agent can act on the fact that it exists."""
     made = Server([linked_kb])
     try:
-        rows = {row["rel"]: row for row in made.links(_doc_id(linked_kb, "a.md"))["neighbours"]}
+        rows = {row["rel"]: row for row in made.links(doc_id_of(linked_kb, "a.md"))["neighbours"]}
         foreign = rows["counterpart"]
         assert foreign["reachable"] is False
         assert foreign["kb_id"] == ABSENT_KB
@@ -460,10 +468,36 @@ def test_pinakes_get_resolves_a_neighbour_returned_by_pinakes_links(linked_kb: P
     identifier, not an answer."""
     made = Server([linked_kb])
     try:
-        rows = made.links(_doc_id(linked_kb, "a.md"))["neighbours"]
+        rows = made.links(doc_id_of(linked_kb, "a.md"))["neighbours"]
         local = next(row for row in rows if row["reachable"])
         fetched = made.document(local["doc_id"])
         assert fetched["text"]
+    finally:
+        made.close()
+
+
+def test_a_neighbour_in_a_second_served_kb_says_which_kb_to_fetch_it_from(tmp_path: Path) -> None:
+    """`reachable: true` across two served KBs, where the obvious follow-up still fails.
+
+    A document id resolves **inside one KB**, so `pinakes_get(doc_id)` looks in the KB the traversal
+    started from and reports "no active document" for a neighbour that plainly exists. `reachable`
+    would then mean nothing an agent could act on, which is the opposite of why the flag is there.
+    Only this two-KB shape reaches it — the single-KB fixture above always picks a same-KB row.
+    """
+    alpha = make_kb(
+        tmp_path / "alpha", name="alpha", documents={"a.md": "# Retrieval\n\nRetrieval.\n"}
+    )
+    beta = make_kb(tmp_path / "beta", name="beta", documents={"b.md": "# Ranking\n\nRanking.\n"})
+    author_link(alpha, "a.md", f"pnk://{load(beta).kb.id}/{doc_id_of(beta, 'b.md')}", "partner")
+
+    made = Server([alpha, beta])
+    try:
+        row = made.links(doc_id_of(alpha, "a.md"))["neighbours"][0]
+        assert row["reachable"] is True and row["kb_id"] == str(load(beta).kb.id)
+
+        with pytest.raises(ServeError):
+            made.document(row["doc_id"])  # the trap: right id, wrong KB
+        assert made.document(**row["fetch_with"])["text"], "the row must carry what makes it work"
     finally:
         made.close()
 
@@ -480,7 +514,7 @@ def chain_kb(tmp_path: Path) -> Path:
     )
     kb_id = load(root).kb.id
     for i in range(7):
-        _link(root, f"c{i}.md", f"pnk://{kb_id}/{_doc_id(root, f'c{i + 1}.md')}", "next")
+        author_link(root, f"c{i}.md", f"pnk://{kb_id}/{doc_id_of(root, f'c{i + 1}.md')}", "next")
     return root
 
 
@@ -490,14 +524,14 @@ def test_depth_is_capped_server_side(chain_kb: Path) -> None:
     which is the one thing a cap test must not do."""
     made = Server([chain_kb])
     try:
-        payload = made.links(_doc_id(chain_kb, "c0.md"), depth=99, direction="out")
+        payload = made.links(doc_id_of(chain_kb, "c0.md"), depth=99, direction="out")
         distances = sorted(row["distance"] for row in payload["neighbours"])
 
         assert distances == [1, 2, 3], "the walk reaches exactly the documented cap, and no further"
         # c3 is returned and then *not expanded*: the frontier names the node the walk stopped at,
         # never the unseen c4 beyond it — a node the traversal has no way to know exists.
         frontier = {entry["doc_id"]: entry["reason"] for entry in payload["frontier"]}
-        assert frontier[_doc_id(chain_kb, "c3.md")] == "depth"
+        assert frontier[doc_id_of(chain_kb, "c3.md")] == "depth"
         # ...and `truncated` stays empty: it reports the *response* being cut short (rows, tokens),
         # never the walk stopping where it was asked to. Two different problems, two different keys.
         assert payload["truncated"] == []
@@ -505,11 +539,40 @@ def test_depth_is_capped_server_side(chain_kb: Path) -> None:
         made.close()
 
 
+def test_an_empty_answer_says_whether_the_arguments_emptied_it(linked_kb: Path) -> None:
+    """`b.md` has one inbound link. Asked for `out` only, it comes back with no neighbours — and
+    the hint used to read "No links from here; search instead", telling an agent to stop traversing
+    a graph it was standing in. The unfiltered case must still say exactly that, because there it
+    is true."""
+    made = Server([linked_kb])
+    try:
+        by_direction = made.links(doc_id_of(linked_kb, "b.md"), direction="out")
+        assert by_direction["neighbours"] == []
+        assert "No links from here" not in by_direction["suggested_next"]
+        assert "direction='both'" in by_direction["suggested_next"]
+
+        by_rel = made.links(doc_id_of(linked_kb, "a.md"), rel="nosuchrel")
+        assert by_rel["neighbours"] == []
+        assert "No links from here" not in by_rel["suggested_next"]
+    finally:
+        made.close()
+
+    # ...and where it *is* true — a document with no links, asked with no narrowing argument at all
+    # — the blunt advice must survive. A fix that never says it would be its own defect.
+    unlinked = Server([linked_kb])
+    try:
+        honest = unlinked.links(doc_id_of(linked_kb, "c.md"))["suggested_next"]
+        assert honest.startswith("No links from here")
+    finally:
+        unlinked.close()
+
+
 def test_a_cross_kb_neighbour_is_terminal_over_mcp_too(linked_kb: Path) -> None:
     made = Server([linked_kb])
     try:
         rows = {
-            row["rel"]: row for row in made.links(_doc_id(linked_kb, "a.md"), depth=3)["neighbours"]
+            row["rel"]: row
+            for row in made.links(doc_id_of(linked_kb, "a.md"), depth=3)["neighbours"]
         }
         assert rows["counterpart"]["terminal"] is True
         assert rows["related"]["terminal"] is False
@@ -560,7 +623,7 @@ def test_pinakes_search_and_get_payloads_are_unchanged(linked_kb: Path) -> None:
         # observed pins the wrong contract, and this test exists to catch a *change* — so the
         # baseline has to be what the code actually returns today. (`page_start`/`page_end` appear
         # only for a paged source; this document has none.)
-        assert set(made.document(_doc_id(linked_kb, "b.md"))) == {
+        assert set(made.document(doc_id_of(linked_kb, "b.md"))) == {
             "kb",
             "id",
             "path",

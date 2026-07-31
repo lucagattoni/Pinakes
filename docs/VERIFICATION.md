@@ -138,6 +138,7 @@ test, or write **none** and say why in the same commit.
 | the row cap keeps the highest-ranked across the whole hop | L3 | `tests/test_traverse.py::test_the_row_cap_keeps_the_highest_ranked_across_the_whole_hop` |
 | a score says whether it came from the query | L3 | `tests/test_traverse.py::test_a_score_says_whether_it_came_from_the_query` |
 | `adjacent_k` defaults to 8 | L3 | `tests/test_manifest.py::test_adjacent_k_defaults_to_eight` |
+| ...and above the cap is refused, not clamped | L3 | `tests/test_manifest.py::test_adjacent_k_above_the_server_cap_is_refused_not_clamped` |
 | `pinakes_links` returns `score` and `frontier` on every return | L5 | `tests/test_serve.py::test_pinakes_links_returns_score_and_frontier_on_every_return` |
 | ...and `confidence: unknown` with a query and without | L5 | `tests/test_serve.py::test_pinakes_links_reports_unknown_confidence_with_and_without_a_query` |
 | a neighbour outside the served KBs carries its `kb_id` and a reason | L5 | `tests/test_serve.py::test_a_neighbour_outside_the_served_kbs_returns_its_kb_id_and_a_reason` |
@@ -148,7 +149,17 @@ test, or write **none** and say why in the same commit.
 | the `pinakes_search` and `pinakes_get` payloads are unchanged | L5 | `tests/test_serve.py::test_pinakes_search_and_get_payloads_are_unchanged` |
 | the tool is namespaced alongside the other three | L5 | `tests/test_serve.py::test_the_tools_are_namespaced` |
 | the free-path gate **invokes** it, never only lists it | L5 | `tests/test_paid_path.py::test_the_free_path_never_imports_the_paid_client` (through `tests/free_path_run.py`) |
-| ...and above the cap is refused, not clamped | L3 | `tests/test_manifest.py::test_adjacent_k_above_the_server_cap_is_refused_not_clamped` |
+| `direction` is per relation, not per node | L5 | `tests/test_graph_present.py::test_direction_is_per_relation_not_per_node` |
+| ...and one relation written from both ends is `both` | L5 | `tests/test_graph_present.py::test_one_relation_written_from_both_ends_is_both` |
+| an unknown `direction` is refused, not answered emptily | L5 | `tests/test_graph_present.py::test_an_unknown_direction_is_refused_rather_than_answered_emptily` |
+| `scored_by_query` says which scale `score` is on | L5 | `tests/test_graph_present.py::test_scored_by_query_says_which_scale_the_score_is_on` |
+| a score is rounded to four places | L5 | `tests/test_graph_present.py::test_a_score_is_rounded_to_four_places` |
+| a local neighbour carries a title, a cross-KB one does not | L5 | `tests/test_graph_present.py::test_a_local_neighbour_carries_a_title_and_a_cross_kb_one_does_not` |
+| an unresolved row survives and carries the local `kb_id` | L5 | `tests/test_graph_present.py::test_an_unresolved_row_survives_and_carries_the_local_kb_id` |
+| every row shape is pinned by literal | L5 | `tests/test_graph_present.py::test_every_row_shape_is_pinned_by_literal` |
+| the CLI and MCP surfaces project the same keys | L5 | `tests/test_graph_present.py::test_the_two_surfaces_project_the_same_keys` |
+| an empty answer says whether the arguments emptied it | L5 | `tests/test_serve.py::test_an_empty_answer_says_whether_the_arguments_emptied_it` |
+| a neighbour in a second served KB says which KB to fetch it from | L5 | `tests/test_serve.py::test_a_neighbour_in_a_second_served_kb_says_which_kb_to_fetch_it_from` |
 
 ## The PDF corpus
 

@@ -21,7 +21,7 @@
 | `pnk search` | shipped | BM25 + vector + rerank, metadata filters, `--json` |
 | `pnk doctor` | shipped | environment, coherence, orphans, links, hooks, cache |
 | `pnk install-hooks` | shipped | the three-hook split; all three force `--extract=pypdfium2` (0.3.0) |
-| `pnk serve` | shipped | MCP: `pinakes_search`, `pinakes_get`, `pinakes_list_kbs` |
+| `pnk serve` | shipped | MCP: `pinakes_search`, `pinakes_get`, `pinakes_links`, `pinakes_list_kbs` |
 | `pnk budget` | shipped 0.3.0 | I6b. Day/month/operation spend, `--resolve` for an unknown outcome |
 | `pnk ask --deep` | **not built** | the deep release |
 
@@ -36,7 +36,7 @@
 | Budget estimator, caps, window aggregation | shipped 0.2.2, **inert** | I6a. The pure logic only — nothing calls it, so nothing can spend |
 | Budget ledger, `pnk budget`, the accountant | shipped 0.3.0 | I6b. `ledger.jsonl`, the reservation/outcome protocol, and I6a's decisions read from it — now driven by I7b's extractor |
 | `path:page` citations | shipped | I8. `docs/paper.pdf:p7` / `:p7-8`, on the CLI and MCP alike; `pnk doctor` names the pages with no text layer |
-| Cross-KB links (`pnk link`, `pnk links`, `pinakes_links`) | **partly built** — `pnk sync` records what other KBs link into this one (`--scan-links`), and `pnk links` traverses. `pnk links` and `pinakes_links` traverse. The authoring command is not built | the links release |
+| Cross-KB links (`pnk link`, `pnk links`, `pinakes_links`) | **partly built** — `pnk sync` records what other KBs link into this one (`--scan-links`), and `pnk links` and `pinakes_links` traverse. The authoring command is not built | the links release |
 | `sqlite-vec` tier, template ecosystem | **not built** | the template release |
 
 ⚠️ **0.3.0 is the first release that can spend money — and it will not, unless you ask it to.**

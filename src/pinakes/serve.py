@@ -215,6 +215,7 @@ class Server:
         invented signal §4.2 forbids — the honest answer is that this signal has not been
         calibrated, and saying so is what `unknown` is for.
         """
+        from pinakes.graph import present
         from pinakes.graph import provider as provider_module
         from pinakes.graph.traverse import traverse
 
@@ -253,54 +254,35 @@ class Server:
         # in `[[links.kb]]` but not served is a KB this process cannot answer questions about, and
         # saying otherwise would send an agent to a tool call that must fail.
         served_ids = {kb.kb_id for kb in self._kbs}
+        body = present.payload(result, provider=edges, document=str(start))
         neighbours: list[dict[str, Any]] = []
-        for neighbour in result.neighbours:
-            neighbour_kb, neighbour_doc = neighbour.node_key
-            reachable = neighbour_kb in served_ids
-            row: dict[str, Any] = {
-                "kb_id": neighbour_kb,
-                "doc_id": neighbour_doc,
-                "rel": neighbour.rel,
-                "direction": edges.directions.get(neighbour.node_key, direction),
-                "distance": neighbour.distance,
-                "score": round(neighbour.score, 4),
-                "scored_by_query": neighbour.scored_by_query,
-                "terminal": neighbour.terminal,
-                "reachable": reachable,
-            }
-            title = edges.title(neighbour_kb, neighbour_doc)
-            if title is not None:
-                row["title"] = title
+        for row in body["neighbours"]:
+            reachable = row["kb_id"] in served_ids
+            row["reachable"] = reachable
             if not reachable:
                 # Still identified, never merely omitted: the agent can act on the fact that this
                 # link exists and this server cannot follow it.
                 row["reason"] = (
                     "this server was not pointed at that KB — pinakes_list_kbs shows which it was"
                 )
+            elif row["kb_id"] != served.kb_id:
+                # Reachable, but not from the KB this call was about. `pinakes_get` resolves an id
+                # inside one KB, so the obvious follow-up fails with "no active document" unless
+                # `kb` comes with it — and "reachable" would then have meant nothing an agent could
+                # use. Say which argument to pass, on the row that needs it.
+                row["fetch_with"] = {"doc_id": row["doc_id"], "kb": row["kb_id"]}
             neighbours.append(row)
 
         return {
             "kb": served.name,
             "kb_id": served.kb_id,
-            "document": str(start),
+            **body,
             "neighbours": neighbours,
-            "frontier": [
-                {
-                    "kb_id": entry.node_key[0],
-                    "doc_id": entry.node_key[1],
-                    "rel": entry.rel,
-                    "reason": entry.reason,
-                    "distance": entry.distance,
-                }
-                for entry in result.frontier
-            ],
-            "unresolved": [
-                {"doc_id": entry.node_key[1], "rel": entry.rel, "reason": entry.reason}
-                for entry in result.unresolved
-            ],
-            "truncated": sorted(result.truncated),
             "confidence": "unknown",
-            "suggested_next": _links_suggestion(result, neighbours),
+            "suggested_next": _links_suggestion(
+                result,
+                filtered=present.is_filtered(rel=rel, direction=direction, depth=depth),
+            ),
         }
 
     def search(
@@ -466,13 +448,20 @@ def _suggestion(result: SearchResult) -> str:
     return "Follow up with pinakes_get on a cited document to read it in full."
 
 
-def _links_suggestion(result: "TraverseResult", neighbours: list[dict[str, Any]]) -> str:
+def _links_suggestion(result: "TraverseResult", *, filtered: bool) -> str:
     """The loop hint, labelled by where its advice comes from.
 
     An agent reads this to decide what to do next, so it says which *mechanism* produced the
-    situation rather than offering generic encouragement.
+    situation rather than offering generic encouragement — and, when the answer is empty, whether
+    the caller's own arguments are what emptied it.
     """
-    if not neighbours:
+    if not result.neighbours:
+        if filtered:
+            return (
+                "No links match these arguments — which is not the same as none existing. Retry "
+                "with direction='both', no rel and depth=1 before concluding this document is "
+                "unlinked; pinakes_search finds documents by content if it really is."
+            )
         return "No links from here. pinakes_search finds documents by content instead."
     if any(entry.reason == "terminal" for entry in result.frontier):
         return (
@@ -553,6 +542,13 @@ def build(roots: list[Path], *, offline: bool = False) -> tuple[FastMCP, Server]
         `depth`, `fanout`, `rows`, `tokens`); `unresolved` lists links whose target is missing.
         `confidence` is always `unknown` here — the confidence signal is calibrated for retrieved
         passages, and a traversal neighbour is not one.
+
+        **To read a neighbour, pass its `kb_id` too**: `pinakes_get(doc_id, kb=kb_id)`. A document
+        id resolves inside one KB, so a neighbour in a *different* served KB is not found without
+        it. Any row needing this carries a `fetch_with` object with both arguments ready.
+
+        `score` is comparable only among rows with the same `scored_by_query`; the list is already
+        in rank order, so re-sorting it by `score` is a mistake rather than a refinement.
         """
         return server.links(doc_id, kb=kb, rel=rel, direction=direction, depth=depth, query=query)
 

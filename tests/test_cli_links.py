@@ -85,6 +85,7 @@ def test_every_neighbour_is_a_document(linked: tuple[Kb, Kb]) -> None:
             "direction",
             "distance",
             "score",
+            "scored_by_query",
             "terminal",
             "title",
         }
@@ -140,7 +141,17 @@ def test_json_output_shape_is_pinned(linked: tuple[Kb, Kb]) -> None:
 
     assert set(payload) == {"document", "neighbours", "frontier", "unresolved", "truncated"}
     row = payload["neighbours"][0]
-    assert {"kb_id", "doc_id", "rel", "direction", "distance", "score", "terminal"} <= set(row)
+    assert {
+        "kb_id",
+        "doc_id",
+        "rel",
+        "direction",
+        "distance",
+        "score",
+        "scored_by_query",
+        "terminal",
+    } <= set(row)
+    assert {"kb_id", "doc_id", "rel", "reason", "distance"} == set(payload["frontier"][0])
 
 
 # --- Bounds ---------------------------------------------------------------------------------

@@ -246,8 +246,15 @@ Runs the MCP server over stdio, exposing four tools:
 | `pinakes_links` | `doc_id`, `kb?`, `rel?`, `direction?`, `depth?`, `query?` | Neighbours, `frontier`, `unresolved`, `truncated` — and `confidence` always `unknown` |
 | `pinakes_list_kbs` | — | The KBs this server was pointed at |
 
-**Every tool takes an explicit `kb`**, defaulting to the first one served. `pinakes_links` caps
-`depth` at 3 server-side and has no query language, ever.
+**Every tool that answers about a KB takes an explicit `kb`**, defaulting to the first one served
+(`pinakes_list_kbs` takes no arguments — it *is* the list). `pinakes_links` caps `depth` at 3
+server-side and has no query language, ever.
+
+A neighbour's `score` is comparable only among rows carrying the same `scored_by_query`: with a
+`query`, a neighbour with no local chunks to embed falls back to its edge weight, which is not on
+the same scale as a cosine. The list comes back in rank order, so re-sorting it by `score` is a
+mistake rather than a refinement. A neighbour in a *different* served KB carries `fetch_with` —
+the `doc_id` and `kb` that `pinakes_get` needs together, because an id resolves inside one KB.
 
 Its `confidence` is `unknown` on **every** return, with or without a `query`. The thresholds
 `pinakes_search` reports against are fitted per KB on the reranker score of the top retrieved
@@ -311,5 +318,5 @@ Listed so the shape is known in advance; each names the increment that lands it
 | Surface | Increment | Adds |
 |---|---|---|
 | `pnk ask --deep` | the deep release | Bounded, budgeted synthesis for CLI and cron use, where no agent is present |
-| `pnk link`, `pinakes_links` | the links release | Authoring a link from the command line, and traversing over MCP. `pnk links` is **built** — see above |
+| `pnk link` | the links release | Authoring a link from the command line. Traversal — `pnk links` and `pinakes_links` — is **built**; see above |
 | `pnk upgrade` | the template release | Diffs a KB's template version against the installed one and *prints* a migration — never applies one |

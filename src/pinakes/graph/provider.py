@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from pinakes.errors import TraversalError
 from pinakes.graph.traverse import Candidate, NodeKey, Unresolved
 from pinakes.ids import DocId, KbId
 
@@ -38,6 +39,12 @@ the deterministic `node_key` tie-break rather than to an invented distinction.
 """
 
 DIRECTIONS = ("out", "in", "both")
+"""The only three a caller may ask for — **enforced**, not merely documented.
+
+`edges_of` tests `direction in ("out", "both")` and `("in", "both")`, so an unrecognised string ran
+neither query and returned a confident empty answer. The CLI's `argparse` `choices` caught it there;
+the MCP surface, which is the one an untrusted model types into, had nothing.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +113,11 @@ class DocumentProvider:
         rel: str | None = None,
         scores: dict[str, float] | None = None,
     ) -> None:
+        if direction not in DIRECTIONS:
+            raise TraversalError(
+                f"{direction!r} is not a direction.",
+                remedy=f"Use one of: {', '.join(DIRECTIONS)}.",
+            )
         self.connection = connection
         self.local_kb = str(local_kb)
         self.direction = direction
@@ -118,9 +130,17 @@ class DocumentProvider:
             str(row[0]): str(row[1] or "")
             for row in connection.execute("SELECT id, title FROM documents WHERE state = 'active'")
         }
-        self.directions: dict[NodeKey, str] = {}
+        self.directions: dict[tuple[NodeKey, str], str] = {}
         """Which way each neighbour was reached — the core does not carry it, and the surface
-        needs it. Keyed by node, because a node reached both ways is still one neighbour."""
+        needs it.
+
+        **Keyed by `(node, rel)`, because that is what a row is.** Keyed by node alone, the first
+        edge seen won and every later row for that node inherited its direction: given
+        `a --related--> b` and `b --cites--> a`, asking about `a` reported the citation as running
+        *from* `a`, which is the opposite of what someone wrote. And a `(node, rel)` reached both
+        ways is genuinely `both` — two people wrote the same relation from either end — so that is
+        what it says, rather than whichever query ran first.
+        """
 
     def title(self, kb_id: str, doc_id: str) -> str | None:
         """A title for a **local** document only.
@@ -143,7 +163,11 @@ class DocumentProvider:
                 # which one was lying.
                 continue
             target = document_key(edge.kb_id, edge.doc_id)
-            self.directions.setdefault(target, edge.direction)
+            row_key = (target, edge.rel)
+            seen = self.directions.get(row_key)
+            self.directions[row_key] = (
+                edge.direction if seen is None or seen == edge.direction else "both"
+            )
             candidates.append(
                 Candidate(
                     node_key=target,
