@@ -83,29 +83,68 @@ created in a directory the tool was never pointed at.
 
 ## What to build
 
-**Both layers. Neither alone is enough** — defect 2 needs the load-time check (a glob that pathlib
-refuses never reaches the walk), and defect 3 needs the walk-time check (no pattern inspection can
-see a symlink).
+**Copy `linkscan.sidecars_under`, do not re-derive it.** Revised 20260801 00:58: this section
+originally specified review 10's shape, and L6 reviews **11, 12 and 13** each found a defect in it.
+Rebuilding that sequence here would be the increment's whole cost for nothing. Read
+`sidecars_under` at the L6 tip and mirror it; the four attempts and what each got wrong are in
+`retro.d/l6-pnk-link.md`. **Both layers, and neither covers the other.**
 
-**Layer 1 — `manifest.py`, in `_sources`.** Apply the existing `roots` predicate to `include` as
-well, in the same loop shape and with the same message, substituting the field name. Reject
-absolute entries and any entry with `..` in its parts. `exclude` is **not** validated: an `..` there
-can only fail to match, never widen the walk — say so in a comment so the asymmetry is not read as
-an oversight.
+**Layer 1 — static, *before* `glob`.** This is what bounds the walk. Review 10 checked containment
+per candidate *after* globbing, so `../../../../**/*.md` still enumerated and stat'd the whole tree
+on every plain sync before refusing what it found — measured on the partner side at 0.123s over 3000
+outside files against 0.0005s for the static refusal. For each `(root, pattern)`:
 
-**Layer 2 — `sync.walk_sources`.** Replace the lexical `candidate.relative_to(manifest.root)` with
-`linkscan.sidecars_under`'s spelling, which review 10 arrived at and tested: **resolve the parent,
-keep the final component unresolved**, then require `is_relative_to(manifest.root)`. A candidate
-that fails is skipped, and the skip is reported once **per pattern**, not per file — a hostile or
-mistaken `../**` matches thousands. The asymmetry is deliberate and must be preserved: a symlinked
-*document* inside the KB is still ingested, while a symlinked *directory* cannot carry the walk out.
+```python
+probe = base.joinpath(*Path(pattern).parts)
+if not (probe.parent.resolve() / probe.name).is_relative_to(anchor):   # anchor = kb_root.resolve()
+    ...refuse this pattern...
+```
 
-Apply the same predicate to the sidecar sweep ten lines below (`root.rglob(f"*{SIDECAR_SUFFIX}")`
-→ `candidate.relative_to(manifest.root)` at `sync.py:425`, and `document_for(candidate)
-.relative_to(manifest.root)` at `:426`, which has the identical shape).
+Three things that spelling gets right and the two obvious alternatives do not:
 
-**Do not** resolve the whole candidate path. Review 10 measured the cost of over-tightening on the
-partner side: it drops legitimate documents, and a dropped document is a deleted row.
+- **Not "does the pattern contain `..`"** (review 12). `../notes/*.md` from `docs/` lands inside the
+  KB and is legitimate; refusing it calls a valid manifest an escape. What matters is where the
+  path *lands*, never whether `..` occurs in it.
+- **Not "resolve the fixed prefix before the first glob component"** (review 13). A leading glob —
+  `*/../../../outside/**/*.md` — has an empty prefix, passes unconditionally, and runs its `..`
+  inside `glob`: review 10's unbounded walk, reachable again.
+- **Not "resolve the whole path"** (review 13). With no glob component the probe *is* the file, and
+  resolving it whole follows a final symlink — so `include = ["alpha.md"]` is refused as an escape
+  while `include = ["*.md"]`, the same file, is accepted. Parent resolved, final component left
+  alone: the directory chain is followed so `..` collapses and a symlinked ancestor is caught, while
+  a symlinked document stays readable. A glob component is a name that does not exist, which
+  `resolve()` collapses lexically — so this stays one `resolve()` and no enumeration.
+
+**An absolute pattern gets its own message**, not "reaches outside the KB": that is false for an
+absolute path naming this KB's own `docs/`, and `glob` refuses to walk one wherever it points
+(defect 2 above is exactly that `NotImplementedError`).
+
+**Layer 2 — dynamic, per candidate.** A symlinked *directory* is invisible to any static check
+(defect 3), so the same `probe.parent.resolve() / probe.name` test runs on each candidate — and on
+escape it **`break`s**, not `continue`s. Review 12 measured the difference at 360× on a symlinked
+escape and found the `break` had no test at all. It must run **before** the `is_file()`/sidecar
+skip: a pattern reaching outside that matched only sidecars or only directories hit that `continue`
+first, so the walk left the KB and reported nothing.
+
+**One problem per pattern, not per file and not per `(root, pattern)`** — a hostile `../**` matches
+thousands, and two roots reported the same escape twice. Collect into a `set` keyed on the pattern.
+
+**`exclude` keeps matching the path it matches today.** Review 10 switched the partner side to the
+*resolved* path and review 11 reverted it: with `docs/alias -> docs/real` inside the KB,
+`exclude = ["docs/real/*"]` began excluding documents reached as `docs/alias/…`. Here the stake is
+higher than on the partner side — a locally dropped document is a deleted index row *and* an
+orphaned sidecar, not just a missing inbound edge.
+
+Apply the same predicate to the sidecar sweep below (`root.rglob(f"*{SIDECAR_SUFFIX}")` →
+`candidate.relative_to(manifest.root)`, and `document_for(candidate).relative_to(manifest.root)`,
+which has the identical shape).
+
+**Where the refusal lives.** Unlike the partner side, this manifest is the user's own, so an
+escaping or absolute pattern is a **hard `ManifestError` at load**, matching the `roots` precedent —
+layer 1's predicate moves into `manifest._sources`, which already has `root` in hand. Layer 2 cannot
+be a load-time error (nothing is resolvable until the walk runs), so it stays a skip plus a reported
+problem. `exclude` is **not** validated: an `..` there can only fail to match, never widen the walk
+— say so in a comment so the asymmetry is not read as an oversight.
 
 ## Tests
 
@@ -117,6 +156,10 @@ In `tests/test_sync.py` unless a better home exists — check before writing:
 | `test_an_absolute_include_pattern_is_a_manifest_error_not_a_traceback` | defect 2 — assert the message and remedy, **and** that no `NotImplementedError` escapes |
 | `test_a_symlinked_directory_cannot_carry_the_walk_out_of_the_kb` | defect 3, layer 2 |
 | `test_a_symlinked_document_inside_the_kb_is_still_ingested` | the asymmetry — the over-tightening regression |
+| `test_the_same_document_is_ingested_by_a_fixed_and_a_globbed_pattern_alike` | review 13's second defect — two spellings of one include must not give opposite answers |
+| `test_a_dot_dot_pattern_that_stays_inside_the_kb_is_accepted` | review 12 — refusing a valid manifest is the same defect as accepting an invalid one |
+| `test_a_leading_glob_does_not_defeat_the_static_refusal` | review 13's first defect |
+| `test_an_escaping_pattern_is_refused_without_enumerating_the_tree` | layer 1's whole purpose — count entries pulled from the generator, not `resolve()` calls |
 | `test_the_escape_is_reported_once_per_pattern_not_once_per_file` | the report shape |
 | `test_an_excluded_pattern_may_contain_dot_dot` | the stated asymmetry, so a later pass does not "fix" it |
 
