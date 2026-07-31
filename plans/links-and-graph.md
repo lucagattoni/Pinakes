@@ -1172,7 +1172,22 @@ fallback path: no `pyyaml` retry, no comment-loss warning, and
 **What lands.** `pnk link <src> <dst> --rel <rel>`, writing one entry into the **source document's
 sidecar only**, rename-atomically.
 
-**`<dst>` grammar:** a path relative to the local KB root; `pnk://<kb-ulid>/<doc-ulid>`; or
+**`<src>`:** a path relative to the KB root. **A source with no sidecar is refused** — *"run `pnk
+sync` first"* — because a `links[].to` needs a doc ULID that only sync mints. **Never mint here**: if
+`pnk link` builds a sidecar and calls `write()`, it overwrites a file that may already hold a
+permanent ULID, which `sidecar.create()` exists to refuse (`sidecar.py:604-620` records the incident).
+An **unreadable** source sidecar is a typed error and is never overwritten. `--kb` is accepted like
+every other command; `--rel` is required (`_links` refuses an empty `rel`).
+
+**`<dst>` grammar, in precedence order** — the list was previously unordered and ambiguous. Try the
+`pnk://` prefix first; then `<alias>:` **only when the prefix is a declared `[[links.kb]]` name**
+(a POSIX path may contain a colon, and `pnk://…` itself splits as alias `pnk`); otherwise treat the
+whole string as a KB-root-relative path. An alias resolves via `linkscan.resolve_path` plus a read of
+the partner's sidecar for its `id`; an absent partner path is refused here (L7 only *warns* about one
+already written). **"Unresolvable" means the alias or `self` cannot be turned into a ULID pair** — a
+well-formed `pnk://` to an absent target **is written**, which `tests/free_path_run.py` depends on.
+
+**`<dst>` legacy note:** a path relative to the local KB root; `pnk://<kb-ulid>/<doc-ulid>`; or
 `<alias>:<path>` where the alias is a `[[links.kb]]` name. Aliases and `self` in the `<dst>` **argument** resolve to ULIDs before the
 entry is written. Note this is a different moment from `read()`, which resolves `pnk://self/…`
 already on disk, and from `write()`, which matches on the **resolved** URI — three resolution points,
@@ -1190,7 +1205,11 @@ regression guard rather than new behaviour.
 `write()` with an unhandled `TypeError`. `pnk link` reaches that shape on almost every first
 invocation, so test it explicitly rather than relying on L5b's guard holding.
 
-**Deleting is out of scope, which is why `pnk link` is safe.** L5b's pinned limitation — removing an
+**Two of L5b's pinned limitations are reachable here, and one fires on the common case.**
+Appending a key captures a **document-trailing comment** — measured, a foot-of-file note becomes the
+introduction to the new `links:` block — and `pnk link` appends `links` on every first invocation.
+Re-indentation is the second (see the test note below). What is *not* reachable is deletion:
+`pnk link` only appends. L5b's pinned limitation — removing an
 entry misattributes one comment and destroys another — is unreachable here: `pnk link` only appends.
 `pnk unlink` stays out (see *What this plan deliberately does NOT decide*); if it ever lands, that
 limitation becomes user-facing.
@@ -1207,10 +1226,19 @@ table already assigns this test here, and L6's list omitted it);
 `::test_the_write_is_atomic_under_an_interrupted_rename`;
 `::test_the_source_document_is_byte_identical_afterwards`;
 `::test_comments_in_the_sidecar_survive_a_rewrite` (**passing**, on L5b's writer);
-`::test_every_other_line_of_the_sidecar_is_byte_identical_after_a_link_is_added`.
+`::test_no_line_outside_the_links_block_changes_when_a_link_is_added` (**renamed** — the old name
+claimed byte-identity the invariant excludes: appending to a 2-space-indented `links:` block
+re-indents every line of it, and the committed corpora happen to use 0-indent sequences, so a fixture
+copied from them would be green while the promise in the name was false);
+`::test_an_indented_links_block_is_reindented_when_a_link_is_added` (pins that exclusion);
+`::test_a_document_trailing_comment_is_captured_when_the_first_link_is_appended` (pins the
+limitation above, at the CLI).
 
-**Exit criteria.** `DESIGN_COMMANDS`, `IMPLEMENTED`, DESIGN §8's command list and CLAUDE.md's
-`docs/`-ownership amendment all land here.
+**Exit criteria.** `DESIGN_COMMANDS` and `IMPLEMENTED` (`tests/test_cli.py:17`), `docs/CLI.md`'s
+*Planned — not built yet* row for `pnk link` moving into a real section, and CLAUDE.md's
+`docs/`-ownership amendment. **Not "DESIGN §8's command list" — there is no such list**: §8 is a
+why-this-order section that opens *"What has actually shipped is STATUS.md"*, and L4 and L5 were
+given the same amendment and landed without executing it.
 **Docs:** `docs/CLI.md`; `docs/GUIDE.md` — **diff its printed output against the real output**, not
 just run it (an L5 example survived a full increment because it ran fine and printed something else);
 `docs/MANIFEST.md` — specifically line ~241, *"It is the one place a machine writes into `docs/`"*,
@@ -1229,13 +1257,13 @@ the `rel` quoting predicate.
 ### L7 — `pnk doctor`: link coverage and cross-KB resolution
 
 **What lands.** `doctor.py`'s `"cross-KB (unchecked until the links release)"` becomes a real check.
-Link coverage counts **authored links only** — the same population as L1's gate, so the number a
+Link coverage **already** counts authored links only (`origin = 'sidecar'`, shipped) — verify, do not re-implement. It counts index rows where L1's gate counts sidecar files, so the two agree **only when the index is in step**. L7 also breaks two committed tests that must be updated with it: `test_link_coverage_is_reported_even_when_nothing_is_linked` asserts `Status.OK` where zero links becomes WARN, and `test_a_cross_kb_link_is_counted_and_declared_unchecked` asserts the literal `"cross-KB (unchecked until the links release)"` string this increment retires. Coverage counts — the same population as L1's gate, so the number a
 user reads and the number the gate enforces cannot differ. Highest-degree authored targets reported.
 **Zero authored links KB-wide** is a WARN nudge — not a per-document count, which L1's ≤ 35% cap
 guarantees would fire on both committed corpora by construction.
 
 **Severity:** absent linked-KB path → WARN; a `pnk://` target absent from a KB that did resolve →
-WARN with the count; a malformed `pnk://` in a committed sidecar → FAIL; an absolute
+WARN with the count; **not** a malformed `pnk://` → FAIL — such a URI never reaches the `links` table, because `sidecar._links` raises at read and sync never indexes it, and doctor's *sidecars* check already reports it FAIL; a test named for it would pass against the pre-existing check while the new one went unexercised; an absolute
 `[[links.kb]] path` → WARN.
 
 **Tests.** `tests/test_doctor.py::test_link_coverage_counts_authored_links_only`;
@@ -1258,8 +1286,10 @@ neither carries both.
 **Verification** — run, not reasoned about:
 
 1. `./check.sh` green on all three CI legs; CI green on the merge.
-2. A fresh KB works: `pnk init`, add a document, `pnk link` to a second KB, `pnk sync`, `pnk search`,
-   `pnk links` — executed. (If L6 was deferred, the link is hand-authored and that is recorded.)
+2. A fresh KB works, **in this order**: `pnk init` → add a document → **`pnk sync`** (which mints the
+   sidecar and its ULID) → `pnk link` to a second KB → **`pnk sync` again** (which carries the link
+   into the `links` table) → `pnk search` → `pnk links` — executed. `pnk link` cannot precede the
+   first sync: there is no sidecar to write into and no ULID to link from. (If L6 was deferred, the link is hand-authored and that is recorded.)
 3. Every command in `docs/GUIDE.md` runs as written, install line included.
 4. `.paid-path-allowlist` byte-identical; the free-path gate covers `pnk link`, `pnk links` and an
    MCP handshake that **invokes** `pinakes_links`.
@@ -1271,6 +1301,14 @@ neither carries both.
    block; the zero-link nudge is KB-wide (L7), so it does not fire on a corpus with any authored
    links at all.
 8. The ClaudeKB realism check is **run, or declined in writing**.
+
+**The final cut's sweep — decision 27's exception inverted.** The links release's name is dropped
+from the 🚫 unbuilt-work table **here and only here**: `CLAUDE.md` and `docs/STATUS.md`'s mirrored
+table both. `docs/STATUS.md`'s *Cross-KB links* row moves from **partly built** to built, tagged with
+both releases; its *Published on PyPI* table and `README.md`'s install lines are swept as at any
+release. Verify by querying the index, not by reading. Step 3 carries L5b's wording in full — diff
+the GUIDE's printed output rather than running it, and test against the **built wheel**, since
+`uvx --from "pinakes[light]"` resolves from the index and would validate the previous release.
 
 **The cut.** `python3 tools/fragments.py --apply` (splices `changelog.d/` and `retro.d/`, deleting
 what it consumes — a release that skips it and runs it later splices into the wrong version), bump
