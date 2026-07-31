@@ -152,8 +152,9 @@ earlier.
 
 - **The gate is an artifact.** `./check.sh` before every commit — **and every new gate also gets its
   own CI job**, because `ci.yml` never invokes `check.sh`. New gates and owners: link-density (L1),
-  L5b's two (no-pyyaml-under-`src/`, stub-signature) — pytest tests, so the "`ci.yml` never invokes
-  `check.sh`" rationale does not bite, and they need no separate CI job;
+  L5b's four — the AST scan, the free-path runtime check and the stub-signature test (all pytest, so
+  the "`ci.yml` never invokes `check.sh`" rationale does not bite), **plus** the wheel-level
+  `find_spec("yaml") is None` assertion, which is literally a new `ci.yml` step;
   traversal-caps (L3), eval reproducibility (G1).
 - **A gate that cannot run says so and is still a gate**, with a test asserting the printed reason.
 - **Worktree + branch per increment**, `YYYYMMDD_HHMM-<id>-<slug>`, timestamp from `date`.
@@ -220,7 +221,7 @@ earlier.
 | Rule | Amendment | Lands in |
 |---|---|---|
 | *"`docs/` belongs to the user … never any other key"* | A second, narrower exception: **a user-invoked authoring command** writing `links[]` to the source document's own sidecar | L6 |
-| The "🚫 Unbuilt work is named" table (**not** the "Naming (fixed…)" table) in `CLAUDE.md` **and** `docs/STATUS.md` | Both files' links-release rows gain `pnk links`. **Reconcile the two tables first** — `CLAUDE.md` still carries the paid-extraction row that 0.4.0 retired and `docs/STATUS.md` has already dropped | L4 |
+| The "🚫 Unbuilt work is named" table (**not** the "Naming (fixed…)" table) in `CLAUDE.md` **and** `docs/STATUS.md` | Both files' links-release rows gain `pnk links`. **Reconcile the two tables** — `CLAUDE.md` still carries the paid-extraction row that 0.4.0 retired and `docs/STATUS.md` has already dropped. Assigned to L4, which landed without doing it; **reassigned to L5b**, the cutting increment | L4 → **L5b** |
 | *Landing work: always push, always release* | A release that **cuts more than once** keeps its name in the 🚫 unbuilt-work table until the **final** cut; the roadmap row carries both tags. CLAUDE.md today says to drop the name when the roadmap row is ticked, which at an interim cut deletes a name L8 needs back — the churn decision 27 was chosen to avoid | L5b |
 | *Invariants that must not be broken* | A new one: **an unknown key in a sidecar round-trips byte-identically** — stronger and more testable than "untouched", and false until L5b. It excludes what pinakes normalises by design (`pnk://self/…` expansion; canonical ordering **on a minted sidecar only** — an existing file keeps the user's order), what **ruamel** normalises (block-sequence and nested-mapping **indentation**, which follows the dumper settings rather than the source; the non-specific `!` tag), and what YAML itself does not carry (CRLF, a BOM, `---`/`...` markers) | L5b |
 
@@ -576,8 +577,9 @@ explicit `kb`), `docs/STATUS.md`, a `changelog.d/` fragment.
 
 ### L5b — `ruamel.yaml` replaces `pyyaml` in the sidecar
 
-**The swap, and what keeps behaviour equivalent.** L5c adds the refusals pinakes *chooses*; this
-increment changes only what the library does. Split after three adversarial passes returned 8, 8 and
+**The swap, and everything needed to keep behaviour equivalent** — decision 26 included, because
+ruamel's widened acceptance would otherwise turn a clean `SidecarError` into a traceback. L5c adds
+the one refusal pinakes *chooses* (decision 19). Split after three adversarial passes returned 8, 8 and
 7 HIGH on a single section: every concern was individually settled and all the churn was at the
 interfaces between them.
 
@@ -704,9 +706,13 @@ widened acceptance becoming a crash.
      sidecar. `ScalarBoolean` subclasses `int` (Python forbids subclassing `bool`), and ruamel
      returns one for any boolean carrying an **anchor or an alias** — both `flag: &a true` and
      `same: *a` — so it is JSON-encodable —
-     L5c's check will pass it — and lands in the index as `1` where PyYAML wrote `true`. Map
+     the JSON check three bullets above will pass it — and lands in the index as `1` where PyYAML wrote `true`. Map
      `ScalarBoolean` → `bool`; leave `ScalarInt`/`ScalarFloat`/`ScalarString`, which already encode
-     as their base types. `test_sync.py::test_an_anchored_boolean_is_indexed_as_true_not_one`.
+     as their base types. **Walk mappings and sequences recursively** — `_metadata()`
+     (`sync.py:1276`) is a shallow spread, so a one-level coercion leaves
+     `{"nested": {"inner": 0}, "list": [1], "provenance": {"paid": 1}}` measured. A top-level-only
+     fixture is green on the defective version, which is the same increment-shaped blind spot this
+     section has now hit three times. `test_sync.py::test_an_anchored_boolean_is_indexed_as_true_not_one`.
    - `with_/without_extraction_provenance` become `dataclasses.replace`. **Name the aliasing they
      create:** `replace` shares one `original` node between the pre- and post-extraction `Sidecar`,
      and `_mapping()` returns the **live** loaded node, so `sidecar.provenance is
@@ -721,21 +727,32 @@ widened acceptance becoming a crash.
 5. **`tools/link_density_gate.py`** migrates too — a shipped gate, not a fixture writer. Left on
    PyYAML it counts sidecars the product now refuses, and `check.sh:105` says keeping those
    populations identical is why the gate exists. It closes the scalar-resolution and duplicate-key
-   divergence only. **After L5c** the gate diverges in both directions:
-   `typ="safe"` refuses an unknown tag L5c accepts (the documented widening) and accepts the
-   JSON-unencodable and non-string-key shapes L5c refuses. Neither reaches the committed corpora;
+   divergence only. **After L5b** the gate diverges: `typ="safe"` refuses the
+   custom-tagged mappings and sequences L5b accepts, and accepts the JSON-unencodable shapes L5b
+   refuses. **After L5c** it additionally accepts the non-string top-level keys L5c refuses. Neither reaches the committed corpora;
    state it rather than implying parity.
 
-6. **`stubs/ruamel/yaml/{__init__,comments,error,constructor,resolver,scalarstring}.pyi`.** pyright's
+6. **`tests/free_path_run.py` migrates.** It does `import yaml` at `:146` and **writes a sidecar**
+   through `yaml.safe_dump` at `:160`. Measured, the harness's module list already contains
+   `['yaml', 'yaml._yaml', 'yaml.composer', …]`, so item 7's runtime gate is **red on day one**; and
+   after the swap this is the only place in the repo that writes a sidecar through PyYAML — exactly
+   the divergence the gate exists to forbid. Replace the three `safe_load`/`safe_dump` calls with
+   `pinakes.sidecar.read`/`write`, which is what L6 needs anyway. Mutation target: restore the
+   `import yaml` → the runtime gate fails.
+
+7. **`stubs/ruamel/yaml/{__init__,comments,error,constructor,resolver,scalarstring}.pyi`.** pyright's
    `include` spans `src/`, `tests/` and `tools/`, and a stub overrides the real package for all
    three, so **every symbol any of them touches must be declared or that file stops type-checking**.
    The list, complete: `YAML` (`__init__` with `typ=`, `load`, `dump`, `preserve_quotes`, `width`),
    `CommentedMap`, `CommentedSeq`, `TaggedScalar`, `YAMLError`, `DuplicateKeyError`,
-   `SingleQuotedScalarString`, `VersionedResolver`, and `Resolver` if the predicate imports it.
+   `SingleQuotedScalarString`, `VersionedResolver`, **`ScalarBoolean`** (item 3's coercion needs
+   `isinstance`; re-exported from `ruamel.yaml.constructor`) and **`ScalarNode`**
+   (`VersionedResolver.resolve` is `(self, kind, value, implicit)` and `kind` is a node class;
+   re-exported from `ruamel.yaml.resolver`). **Not** `Resolver` — item 3 forbids importing it.
    Declare only what is used; a symbol declared in the wrong module is pyright-green and an
    `ImportError` at runtime, which is why item 7's signature test exists.
 
-7. **Three tests, in two named files.** Neither gate alone suffices: the AST scan sees lazy and
+8. **Three tests, in two named files.** Neither gate alone suffices: the AST scan sees lazy and
    function-scoped imports but not dynamic ones; the runtime check sees transitive and dynamic
    imports but only what the run actually executes.
    - `tests/test_packaging.py::test_no_module_under_src_imports_pyyaml` — walk every `.py` under
@@ -779,6 +796,9 @@ of the nested map** — the only position that reproduces it);
 `::test_a_json_unencodable_extra_value_is_refused_with_a_remedy` (`!!binary`, `!!set`,
 `!!timestamp`, bare date, unknown tag, tagged **key**, and **`{1: a, b: c}` — a nested mixed-key
 mapping, which only `sort_keys=True` catches**); `::test_a_double_bang_str_value_is_refused`;
+`::test_a_tagged_scalar_in_a_known_field_is_refused_with_a_remedy` (it bypasses the JSON check and
+would otherwise surface as ``"`title` must be a string, found TaggedScalar"`` — a ruamel class name
+with no remedy);
 `::test_a_tagged_mapping_is_accepted_because_it_serialises`;
 `::test_reordering_links_does_not_move_their_comments`;
 `::test_a_two_space_indented_sequence_is_reindented` (pins ruamel's normalisation);
@@ -787,8 +807,9 @@ mapping, which only `sort_keys=True` catches**); `::test_a_double_bang_str_value
 `::test_with_extraction_provenance_preserves_comments`;
 `::test_without_extraction_provenance_preserves_comments`.
 
-`test_sync.py::test_an_anchored_boolean_is_indexed_as_true_not_one` (assert **both** the anchor and
-an alias of it);
+`test_sync.py::test_an_anchored_boolean_is_indexed_as_true_not_one` — the fixture nests the anchored
+boolean **inside a mapping, inside a list, and inside `provenance`**, and asserts an alias too; a
+top-level-only fixture passes on the shallow version;
 `test_sync.py::test_a_tagged_sidecar_is_refused_at_read_not_crashed_in_json` (the regression this
 check exists to prevent — without it, L5b turns today's clean `SidecarError` into a traceback);
 `test_partner_kb.py::test_every_committed_sidecar_round_trips_through_read_and_write` (copy into
@@ -807,7 +828,7 @@ Owned by decision 23 but landing in **L6**:
 **Mutation targets.** Delete `preserve_quotes` → the quoting test fails. Delete `width` → the
 spaced-long-value test fails. Make the known-key merge one level deep → the nested-comment test
 fails. Restore `sorted(extra)` on the original-document path → the key-order test fails. Drop the
-mint-quoting predicate → the boolean-title test fails. Drop the `ScalarBoolean` coercion → the
+mint-quoting predicate → the boolean-title test fails. Drop the `ScalarBoolean` coercion, **or make it one level deep**, → the
 anchored-boolean test fails. Drop the JSON check → the tagged-sidecar test fails. Drop
 `sort_keys=True` from it → the mixed-key test fails. Reconcile `links` by index instead of by `to` → the
 comment-misattribution test fails. Replace the AST scan with an import walk → the lazy-import test
@@ -820,7 +841,7 @@ key *and silently deletes that key's own comment*. Reachable via `without_extrac
 lives. Read `docs/KB-UPDATES.md` §5 first: it already argues for `tomlkit` in core on this same
 trade. · `MANIFEST.md` — *"unknown keys round-trip untouched"* → byte-identically, with the
 exclusions. · `CLAUDE.md` — the new invariant. · `VERIFICATION.md`. · `STATUS.md`. · `GUIDE.md` —
-its `links:` example (~407) uses an indentation ruamel **re-indents**, so it is the counter-example
+its `links:` example (`docs/GUIDE.md:426-428`) uses an indentation ruamel **re-indents**, so it is the counter-example
 to the invariant, not a typo. · `check.sh:109` — the comment says *"it needs PyYAML"*; item 5
 falsifies it, but the `uv run` invocation stays, because ruamel is a dependency too. ·
 `check.sh:9` — explains `--extra-search-path stubs` as being about a missing `py.typed`; ruamel
@@ -856,12 +877,31 @@ historical.
 5. `make eval` unchanged.
 6. Each new gate fails when its protection is removed.
 7. `fragments.py --apply` splices L1–L5b's fragments; the CHANGELOG section covers all of them.
+8. **Every command in `docs/GUIDE.md` runs as written, install line included.** This increment
+   changes the runtime dependency set, so the install line is the single most likely thing to be
+   wrong, and CLAUDE.md requires verifying docs by running them.
+9. **`store.SCHEMA_VERSION` is still 2** — no bump, no rebuild.
+10. **`pnk doctor` exits 0 on `tests/demo-kb` and `tests/partner-kb`.** L5b rewrites the sidecar
+    reader and doctor reads every sidecar in both corpora — the cheapest end-to-end check there is.
+
+**The cut itself** follows CLAUDE.md's release procedure in full: `fragments.py --apply`, bump
+`__version__`, a dated `[x.y.z] — YYYYMMDD HH:MM` section **with its link definition and the
+repointed `[Unreleased]` compare**, merge **from the primary checkout**, `make release-check`
+*before* pushing the tag, then the GitHub release — and verify with `git tag -l`, `gh release list`
+and `git merge-base --is-ancestor`. **A tag publishes to PyPI**, and PyPI does not allow re-uploading
+a version.
+
+**Then sweep the three documents a release stales**: `docs/STATUS.md`'s *Published on PyPI* table and
+its roadmap row, and **`README.md`'s install lines** — which matter more at this cut than any before
+it, because the dependency set changed. Verify by querying the index and installing what the docs
+show, not by reading them; the JSON endpoint is CDN-cached, so cross-check `/simple/pinakes/`.
 
 **The falsifiable exit criterion:** every committed sidecar still round-trips, no sidecar that
 errors cleanly today crashes instead, and the suite is green.
 
-It runs L8's steps **1, 3, 4, 5, 6 and 7**. Step 2 needs `pnk link`; step 8 is the ClaudeKB
-corpus-realism check (decision 1), which L8 keeps.
+The list above **is** the interim cut's verification — do not resolve it against L8's numbering.
+L8's step 2 needs `pnk link`, its step 4 names `pnk link` in the free-path gate, and its step 8 is
+the ClaudeKB corpus-realism check (decision 1); all three stay with L8.
 
 ---
 
@@ -1452,11 +1492,13 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | The user's key order survives a rewrite | decision-ruamel-yaml | L5b | `test_the_users_key_order_is_preserved_on_rewrite` |
 | A duplicate key is a hard error, not a silent last-wins | decision-ruamel-yaml | L5b | `test_a_duplicate_key_is_refused_without_ruamels_suppression_url` |
 | A non-string top-level key is refused | decision 19 | **L5c** | `test_a_non_string_top_level_key_is_refused_with_a_remedy`, `test_a_single_non_string_key_is_refused_too` |
-| `extra`/`provenance` values are JSON-encodable | decision 26 | **L5b** | `test_a_json_unencodable_extra_value_is_refused_with_a_remedy`, `test_a_json_unencodable_sidecar_does_not_abort_the_sync_with_a_traceback` |
+| `extra`/`provenance` values are JSON-encodable | decision 26 | **L5b** | `test_a_json_unencodable_extra_value_is_refused_with_a_remedy`, `test_a_tagged_sidecar_is_refused_at_read_not_crashed_in_json` |
 | Every scalar pinakes writes survives a 1.1 **and** a 1.2 reader | decision 23 | L5b, L6 | `test_a_minted_title_that_looks_like_a_boolean_is_quoted`, `test_a_rel_that_looks_like_a_boolean_is_quoted` |
 | A comment inside a nested known-key block survives | decision-ruamel-yaml | L5b | `test_a_comment_inside_provenance_extraction_survives_a_re_extraction` |
 | `src/` never imports `pyyaml` again | decision 21 | L5b | `test_no_module_under_src_imports_pyyaml` (AST), `test_the_free_path_run_never_loads_yaml` (runtime) — neither alone suffices |
-| A tagged mapping is accepted, being serialisable | decision 26 | **L5b** | `test_a_tagged_mapping_is_accepted_because_it_serialises` |
+| A custom-tagged mapping is accepted, being serialisable | decision 26 | **L5b** |
+| An anchored or aliased boolean is indexed as `true` | pass 4 | L5b | `test_an_anchored_boolean_is_indexed_as_true_not_one` |
+| An `!!str` value is refused | decision 26 | L5b | `test_a_double_bang_str_value_is_refused` | `test_a_tagged_mapping_is_accepted_because_it_serialises` |
 | The links release cuts twice | decision 27 | L5b, L8 | L5b's verification list; L8's step 1 |
 | The ruamel stub describes the real library | decision 20 | L5b | `test_every_symbol_the_ruamel_stub_declares_matches_inspect_signature` |
 | Unknown per-link keys round-trip | DESIGN §2.2 | L6 | `test_unknown_keys_inside_a_link_entry_survive_a_rewrite` |
@@ -1539,3 +1581,4 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | 20260731 08:05 | **L5b split into L5b and L5c (decision 28).** Not a finding — a response to the trajectory. Three passes on one section returned **8, 8 and 7 HIGH**, and each pass's worst finding was in the previous pass's *fix*: pass 3's was a predicate the disambiguation commit had introduced, which imported `pyyaml` into `src/` while the same increment removed it from the runtime dependencies and added a gate against exactly that import. Every concern in the section was individually settled; the churn was at the **interfaces** between eight of them bundled into one increment. The seam is *what the library does* (L5b — the swap, the round-trip, quoting, the `ScalarBoolean` coercion, the stub, the gates; two breaking changes, both intrinsic to ruamel; no cut) versus *what pinakes chooses to reject* (L5c — decisions 19 and 26; two more breaking changes; takes the interim cut). L5c is independently revertible, and L5b's exit criterion becomes falsifiable in one sentence: every committed sidecar still round-trips and the suite is green |
 | 20260731 08:18 | **The split's seam was wrong, and moving one decision fixed it.** Asked to confirm L5b was ready, I checked instead of asserting, and found two defects. **L5b alone would have landed with a red suite** — the `{id: x, : }` fixture amendment had been carved into L5c, but ruamel *parses* that fixture, so the test fails the moment the swap lands; it is the 872nd test of the prototype's 871/872. And **L5b alone was a regression**: PyYAML refuses an unknown tag today as a clean `SidecarError`, ruamel accepts it, so without decision 26 the sidecar reaches `json.dumps` and `pnk sync` exits on an unhandled `TypeError` — measured. Decision 26 was therefore never "a refusal pinakes chooses"; it is **required to keep behaviour equivalent**, and it moves into L5b along with the interim cut. L5c reduces to decision 19 alone — 32 lines, the one change that genuinely adds a refusal, depends on nothing in L5b, and closes a `TypeError` live on `main` today |
 | 20260731 08:00 | **Independent review of L5b — five findings, one of which changed the code.** Decision 26's check was specified over *values*; measured, a per-value check **accepts** `{123: v, abc: w}` and the `TypeError` survives, because the failure is a comparison *between* keys. It now encodes the **assembled mapping**, mirroring what `_metadata()` hands `store.dumps_metadata`. Three were false claims headed for the changelog: `sort_keys=True` catches **mixed**-type keys only — a *uniformly* int-keyed mapping is accepted and silently coerced at any depth, covered by neither increment and now a stated residual; `!!str` is the only **working** tag that breaks, not the only tag that works (`!!int`, `!!float`, `!!bool`, `!!seq`, `!!map` all survive); and the documented widening is for **custom**-tagged collections, since `!!map` and `!!seq` were never refused. The record's decision 23 still named `yaml.resolver.Resolver` two commits after the plan removed it — the exact neighbourhood miss the convention added this morning exists to catch. Also: `ScalarBoolean` arrives via an **alias** as well as an anchor, so the coercion test asserts both |
+| 20260731 08:12 | **Pass 4 — 6 HIGH, but the seam and L5c both cleared.** The reviewer enumerated every shape under both libraries and confirmed **no shape regresses at L5b** and that reverting L5c leaves L5b correct; it **found nothing wrong in L5c**. What it found in L5b was worse than a wording defect: **`tests/free_path_run.py` already imports PyYAML and writes a sidecar with `yaml.safe_dump` at `:160`**, so the runtime gate is red on day one and, after the swap, that line is the only PyYAML sidecar writer left in the repo — the exact divergence the gate exists to forbid. The section had reasoned carefully about false positives and never checked the true positive. **The `ScalarBoolean` coercion was one level deep**, and `_metadata()` is a shallow spread, so a nested or `provenance`-held anchored boolean still indexes as `1`; both the named test and the mutation target passed on the defect — the third instance of the same increment-shaped blind spot in one section. The stub list was declared *complete* and omitted `ScalarBoolean` and `ScalarNode`, both of which the increment's own code needs. Item 5's divergence paragraph still attributed L5b's changes to L5c. And the interim cut — the project's first cut of this release, publishing to PyPI — claimed L8 steps it never listed: the GUIDE install line (which this increment changes), `SCHEMA_VERSION == 2`, and `pnk doctor` exiting 0 on both corpora, plus no cut procedure and no three-document stale sweep. Also: the verification table named a renamed test, and `tests/test_verification.py` hard-fails on an unresolvable one; the 871/872 figure predates L5 and the suite now collects **1027**, so the one falsifiable exit criterion rested on a number from a different tree |

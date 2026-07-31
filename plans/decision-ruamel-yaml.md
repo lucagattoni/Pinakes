@@ -12,8 +12,9 @@ unknown tag into a traceback. **L5c** is decision 19 alone. L5b takes the interi
 
 1. **`ruamel.yaml` replaces `pyyaml`** in `sidecar.py` (round-trip loader, YAML 1.2) and in
    `eval.py`'s single `safe_load`. A swap, not an addition: `pyyaml` leaves
-   `[project.dependencies]` for `[dependency-groups] dev`, where eight files under `tests/` and
-   `tools/` still need it.
+   `[project.dependencies]` for `[dependency-groups] dev`, where ten files under `tests/` and
+   `tools/` still import it — nine after L5b migrates `tools/link_density_gate.py`, and eight after
+   it migrates `tests/free_path_run.py`.
 2. **Its own increment before L6**, which is a new command depending on it.
 3. **L6 ships no fallback** — no `pyyaml` retry, no comment-loss warning, and
    `test_comments_in_the_sidecar_survive_a_rewrite` lands passing.
@@ -77,7 +78,7 @@ named errors** — `!!binary`,
 
 | # | Decision |
 |---|---|
-| 19 | *(L5c)* **Non-string top-level keys refused at `read()`**, with a remedy. Top level only — that is the mapping pinakes partitions into `KNOWN_KEYS`/`extra`. It makes `extra: dict[str, Any]` honest and closes a `TypeError` live on `main` today. `test_malformed_sidecars_are_rejected`'s `{id: x, : }` fixture becomes `{id: x`, which both libraries reject, so the parse-error branch stays covered |
+| 19 | *(L5c)* **Non-string top-level keys refused at `read()`**, with a remedy. Top level only — that is the mapping pinakes partitions into `KNOWN_KEYS`/`extra`. It makes `extra: dict[str, Any]` honest and closes a `TypeError` live on `main` today. *(The `test_malformed_sidecars_are_rejected` fixture swap this originally carried now belongs to **L5b**, which needs it the moment the swap lands — see the plan.)* |
 | 20 | **A local stub under `stubs/`, plus a signature-comparison test.** `py.typed` does not satisfy pyright strict here: `load`/`dump` carry an untyped `stream`. `cast(Any, _yaml()).load(...)` also reaches zero errors but erases the whole surface. An *import*-only check is insufficient — a stub declaring a parameter ruamel lacks is pyright-green and `TypeError`s at runtime |
 | 21 | **An AST scan over `src/pinakes` proves `pyyaml` never returns**, paired with the existing runtime check. An import walk was specified first and is wrong twice: it loads `pypdfium2` (absent on the `[light]` leg, and probing a backend by loading it is forbidden), and it executes module scope only, so the lazy import it exists to catch is invisible to it |
 | 22 | **MINOR, at whatever number is next when cut.** No number is written here — CLAUDE.md forbids numbering unbuilt work |
