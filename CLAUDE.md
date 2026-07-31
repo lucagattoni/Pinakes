@@ -23,11 +23,14 @@ name:
 
 | Name | What it is |
 |---|---|
-| **the paid-extraction release** | Budget machinery, the paid Claude-vision extractor, `path:page` citations (I6–I9) |
 | **the links release** | `pnk link`, `pnk links`, `pinakes_links`, reverse-scan, link-coverage reporting |
 | **the graph release** | Structural edges, the expansion channel — each eval-gated |
 | **the deep release** | `pnk ask --deep` |
 | **the template release** | Template ecosystem, `pnk upgrade`, the `sqlite-vec` tier |
+
+**A release that cuts more than once keeps its name in this table until the *final* cut**, and its
+roadmap row carries both tags. Dropping the name at an interim cut deletes one the later increments
+still need — the churn the two-cut decision was taken to avoid.
 
 **Never write `v0.4` for something unbuilt** — not in docs, not in `--help`, not in an error message,
 not in a code comment. Increment IDs (`I7b`, `I8`) stay: they name work inside a written plan, not a
@@ -51,6 +54,17 @@ written with and carry a header note.
 
 - **Document and KB ULIDs are permanent.** Never renumber, never regenerate. Every inbound link
   depends on them, and there is no migration machinery by design.
+- **An unknown key in a sidecar round-trips byte-identically.** Stronger and more testable than
+  "untouched", which was true of the dict and false of the file: under YAML 1.1 `country: NO` was
+  read as `False` and written back as `false`. Sidecars are read and written through
+  **`ruamel.yaml` in round-trip mode at YAML 1.2** — never `pyyaml`, which is dev-only and gated by
+  an AST scan over `src/` plus a runtime check on the free path. `write()` reconciles known keys
+  *into* the loaded document; it never renders a fresh one. Bounded by what pinakes normalises
+  (`pnk://self/…`, canonical order on a **minted** sidecar only), what ruamel normalises (sequence
+  and nested-mapping indentation, explicit `!!` tags, an anchor with no value, a missing final
+  newline), and what YAML does not carry (CRLF, BOM, `---`). Values must be JSON-encodable and
+  every key a string, because the index stores metadata as JSON. **Each exclusion is pinned by a
+  test** — a bound stated only in prose cannot notice the library's behaviour moving under it.
 - **`docs/` belongs to the user.** Never modify source documents, and never delete a sidecar without
   an explicit `--prune`-style flag plus a printed list. The one exception: a paid PDF extraction (or
   `--force` discarding one) additively rewrites that document's own sidecar with

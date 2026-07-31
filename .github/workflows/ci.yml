@@ -169,6 +169,8 @@ jobs:
       - run: uv sync --frozen
 
       - name: Authored links in both corpora stay sparse
+        # Through ruamel.yaml since L5b — the library the product itself reads sidecars with, so
+        # the gate's population and the product's cannot drift apart.
         run: uv run --frozen python tools/link_density_gate.py
 
       - name: The gate can still fail
@@ -207,6 +209,25 @@ jobs:
           test -f /tmp/smoke/kb/pinakes.toml
           test -f /tmp/smoke/kb/eval/questions.yaml
           grep -q '.pinakes/' /tmp/smoke/kb/.gitignore
+
+      # The dependency swap, asserted on an *installed* copy rather than in the source tree. L5b's
+      # AST scan and free-path check both run against the repo; neither can see what the wheel
+      # actually declares, so a `pyyaml` that crept back into `[project.dependencies]` would be
+      # invisible to them and present on every user's machine.
+      #
+      # Scoped to the **bare** wheel deliberately. `pinakes[light]` does get PyYAML transitively,
+      # from `huggingface_hub` — measured — and that is not pinakes' doing and not something this
+      # can or should police. What it does police is that pinakes never asks for it. The corollary
+      # matters more than the assertion: because `import yaml` *will* succeed on a real user's
+      # machine, a stray import in `src/` would work rather than fail loudly, which is why the AST
+      # scan is load-bearing rather than belt-and-braces.
+      - name: The installed wheel has ruamel.yaml and no PyYAML
+        run: |
+          uv run --isolated --no-project --with dist/*.whl python -c "
+          import importlib.util, sys
+          assert importlib.util.find_spec('ruamel.yaml') is not None, 'ruamel.yaml is not installed'
+          assert importlib.util.find_spec('yaml') is None, 'PyYAML is back in the runtime'
+          "
 
       # `floors.toml` and `prices.toml` are the two package-data files whose absence silently
       # disables a spending guard: a source-tree test finds them by path and passes on every

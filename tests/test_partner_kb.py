@@ -437,3 +437,38 @@ def test_the_report_names_the_cap_in_force_not_the_default(tmp_path: Path) -> No
     assert "of the 5% cap" in tightened.stdout, tightened.stdout
     assert "of the 35% cap" not in tightened.stdout
     assert "degree 1/0" in tightened.stdout, tightened.stdout
+
+
+def test_every_committed_sidecar_round_trips_through_read_and_write(tmp_path: Path) -> None:
+    """**The increment's falsifiable exit criterion**, and nothing was running it.
+
+    Copied into `tmp_path` first, so a failure cannot corrupt the corpora it is checking. The one
+    documented exclusion that applies to committed files is the `pnk://self/…` expansion, asserted
+    explicitly rather than tolerated by a loose comparison — a diff that says "some lines changed"
+    would have passed while a `self` entry was being deleted, rebuilt without its unknown keys, and
+    moved to the end of the block, which is what this caught.
+    """
+    import shutil
+
+    from pinakes.manifest import load
+    from pinakes.sidecar import read, write
+
+    expansions = 0
+    for corpus in ("tests/demo-kb", "tests/partner-kb"):
+        source = Path(corpus)
+        owner = load(source).kb.id
+        copy = tmp_path / source.name
+        shutil.copytree(source, copy)
+
+        for path in sorted(copy.rglob("*.pnk.yaml")):
+            before = path.read_text(encoding="utf-8")
+            write(path, read(path, owner=owner))
+            after = path.read_text(encoding="utf-8")
+            if after == before:
+                continue
+            # The only permitted difference: `pnk://self/X` became `pnk://<owner>/X`, in place.
+            assert "pnk://self/" in before, f"{path.name} changed for no documented reason"
+            expansions += 1
+            assert after == before.replace("pnk://self/", f"pnk://{owner}/")
+
+    assert expansions == 1, "the corpora carry exactly one `self` link, and it is the fixture"

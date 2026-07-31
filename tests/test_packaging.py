@@ -129,3 +129,268 @@ def test_paid_runnable_requires_all_three_conditions(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setenv("PINAKES_ALLOW_SPEND", "0")
     assert conftest.paid_runnable() is False  # opt-in set, but not to exactly "1"
+
+
+def test_ruamel_yaml_is_a_core_dependency() -> None:
+    """It reads and writes every sidecar; a KB cannot be opened without it."""
+    core = " ".join(_pyproject()["project"]["dependencies"]).lower()
+    assert "ruamel.yaml" in core or "ruamel-yaml" in core
+
+
+def test_pyyaml_is_dev_only_never_core_and_never_an_extra() -> None:
+    """PyYAML left the runtime with L5b and must not come back — the `pillow` precedent.
+
+    It stays in `dev` because the tests still need it: the one thing nothing else in this repo can
+    do any more is read a file the way a **YAML 1.1** reader would, which is what
+    `test_a_minted_title_that_looks_like_a_boolean_is_quoted` exists to check.
+    """
+    project = _pyproject()["project"]
+    assert "pyyaml" not in " ".join(project["dependencies"]).lower()
+
+    for name, entries in project["optional-dependencies"].items():
+        assert "pyyaml" not in " ".join(entries).lower(), f"pyyaml leaked into the [{name}] extra"
+
+    assert "pyyaml" in " ".join(_pyproject()["dependency-groups"]["dev"]).lower()
+
+
+def test_no_module_under_src_imports_pyyaml() -> None:
+    """An AST scan, not an import walk. Two reasons the walk is wrong: it loads `pypdfium2`, which
+    is absent on the `[light]` leg and which the paid-path rules forbid probing by import; and it
+    executes module scope only, so a lazy function-scoped import — the exact thing this guards
+    against — is invisible to it.
+
+    The **root** module name is compared, never a substring: `ruamel.yaml`, `from ruamel import
+    yaml`, `ruamel.yaml.comments` and `from ruamel.yaml import YAML` all contain "yaml" and are all
+    legal. `ImportFrom` additionally requires `level == 0`, or a relative `from .yaml import x`
+    would trip it.
+
+    Paired with `test_the_free_path_never_imports_the_paid_client`'s sibling runtime check, because
+    neither is sufficient alone: this one cannot see a dynamic import with a computed name, and the
+    runtime one only sees what a run executes — `pinakes.eval` is not in the free path's graph.
+    """
+    import ast
+
+    source_root = PYPROJECT.parent / "src" / "pinakes"
+    offenders: list[str] = []
+    for module in sorted(source_root.rglob("*.py")):
+        tree = ast.parse(module.read_text(encoding="utf-8"), filename=str(module))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(alias.name.split(".")[0] == "yaml" for alias in node.names):
+                    offenders.append(f"{module}:{node.lineno} import")
+            elif isinstance(node, ast.ImportFrom):
+                if node.level == 0 and (node.module or "").split(".")[0] == "yaml":
+                    offenders.append(f"{module}:{node.lineno} from-import")
+            elif isinstance(node, ast.Call):
+                target = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+                if target in {"import_module", "__import__"} and node.args:
+                    first = node.args[0]
+                    if isinstance(first, ast.Constant) and first.value == "yaml":
+                        offenders.append(f"{module}:{node.lineno} dynamic")
+
+    assert not offenders, "PyYAML is back in the runtime:\n  " + "\n  ".join(offenders)
+
+
+def test_every_symbol_the_ruamel_stub_declares_matches_inspect_signature() -> None:
+    """**Parsed out of the `.pyi` files**, never mirrored by hand.
+
+    The first version of this listed the symbols in a Python dict and checked them with `hasattr`,
+    against hardcoded signature supersets. That is green against a stub declaring a parameter
+    ruamel does not have — under pytest *and* pyright — which is the single failure decision 20
+    exists to catch: such a stub type-checks and `TypeError`s at runtime. A gate that never reads
+    the artifact it guards is checking a copy of it.
+
+    A stub that **omits** a real parameter is fine; no minimal stub could pass otherwise. A stub
+    that **invents** one is not.
+    """
+    import ast
+    import inspect
+
+    stub_root = PYPROJECT.parent / "stubs" / "ruamel" / "yaml"
+    stubs = sorted(stub_root.glob("*.pyi"))
+    assert stubs, "the stub package is missing entirely"
+
+    checked = 0
+    for stub in stubs:
+        module_name = "ruamel.yaml" + ("" if stub.stem == "__init__" else f".{stub.stem}")
+        module = import_module(module_name)
+        tree = ast.parse(stub.read_text(encoding="utf-8"), filename=str(stub))
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            real = getattr(module, node.name, None)
+            assert real is not None, f"{module_name}.{node.name} is declared and does not exist"
+            checked += 1
+
+            for member in node.body:
+                if not isinstance(member, ast.FunctionDef):
+                    continue
+                attribute = getattr(real, member.name, None)
+                assert attribute is not None, (
+                    f"{module_name}.{node.name}.{member.name} is declared and does not exist"
+                )
+                if not callable(attribute):
+                    continue
+                declared = {
+                    argument.arg
+                    for argument in [*member.args.args, *member.args.kwonlyargs]
+                    if argument.arg != "self"
+                }
+                actual = set(inspect.signature(attribute).parameters)
+                invented = declared - actual
+                assert not invented, (
+                    f"{module_name}.{node.name}.{member.name} declares parameters ruamel does not "
+                    f"have: {sorted(invented)}"
+                )
+
+    assert checked >= 8, f"only {checked} classes parsed; the stub layout has moved"
+
+    # `preserve_quotes` and `width` are *instance* attributes: `inspect.signature` does not apply
+    # and `getattr(YAML, "width")` raises, so they are asserted by setting them on an instance.
+    from ruamel.yaml import YAML
+
+    instance = YAML()
+    instance.preserve_quotes = True
+    instance.width = 4096
+    assert instance.preserve_quotes is True and instance.width == 4096
+
+
+def test_the_two_resolver_union_covers_pyyaml_1_1() -> None:
+    """Decision 23 says to prove this rather than assume it.
+
+    The quoting predicate uses two `VersionedResolver`s, at 1.1 and 1.2, and deliberately **not**
+    `yaml.resolver.Resolver`: L5b removes `pyyaml` from the runtime dependencies, so importing it
+    in `write()` would `ImportError` on a user's install — and the AST gate is built to fail on
+    exactly that import, so the increment could not be green and correct at once.
+
+    The claim that makes that safe is that the ruamel pair is not weaker: there is no value PyYAML
+    1.1 resolves as non-`str` while both ruamel versions resolve as `str`. Proved here, in `tests/`,
+    where `pyyaml` *is* installed.
+    """
+    import yaml
+
+    from pinakes.sidecar import needs_quoting
+
+    probes = [
+        "NO",
+        "no",
+        "No",
+        "yes",
+        "Yes",
+        "YES",
+        "on",
+        "off",
+        "ON",
+        "OFF",
+        "true",
+        "false",
+        "True",
+        "False",
+        "TRUE",
+        "y",
+        "n",
+        "Y",
+        "N",
+        "~",
+        "null",
+        "Null",
+        "NULL",
+        "",
+        "0755",
+        "0o17",
+        "0x1F",
+        "1e3",
+        "1E3",
+        "1.5",
+        "-3",
+        "+7",
+        "1_000",
+        "1:30",
+        "1:30:00",
+        ".inf",
+        "-.inf",
+        ".nan",
+        "2026-07-31",
+        "2026-07-31 18:00:00",
+        "hello",
+        "a b",
+    ]
+    weaker: list[str] = []
+    for probe in probes:
+        pyyaml_is_str = isinstance(yaml.safe_load(f"v: {probe}\n").get("v"), str)
+        if not pyyaml_is_str and not needs_quoting(probe):
+            weaker.append(probe)
+
+    assert not weaker, (
+        "these resolve as non-strings under PyYAML 1.1 and would be written bare: " + str(weaker)
+    )
+
+
+def test_the_ast_scan_catches_a_function_scoped_import(tmp_path: Path) -> None:
+    """The gate's whole reason for existing, asserted against a planted import.
+
+    An import walk was specified first and is wrong twice: it loads `pypdfium2` — absent on the
+    `[light]` leg, and probing a backend by importing it is forbidden — and it executes module
+    scope only, so a *lazy* import inside a function is invisible to it. This checks the scan sees
+    all four shapes, and that it does not fire on the four legal `ruamel` forms, every one of which
+    contains the substring "yaml".
+    """
+    import ast
+
+    def offends(source: str) -> bool:
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(alias.name.split(".")[0] == "yaml" for alias in node.names):
+                    return True
+            elif isinstance(node, ast.ImportFrom):
+                if node.level == 0 and (node.module or "").split(".")[0] == "yaml":
+                    return True
+            elif isinstance(node, ast.Call):
+                target = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+                if target in {"import_module", "__import__"} and node.args:
+                    first = node.args[0]
+                    if isinstance(first, ast.Constant) and first.value == "yaml":
+                        return True
+        return False
+
+    for planted in (
+        "import yaml",
+        "def f():\n    import yaml\n",  # the lazy one the import walk cannot see
+        "from yaml import safe_load",
+        "def f():\n    from yaml.composer import Composer\n",
+        "import importlib\ndef f():\n    importlib.import_module('yaml')\n",
+        "def f():\n    __import__('yaml')\n",
+    ):
+        assert offends(planted), f"the scan missed: {planted!r}"
+
+    for legal in (
+        "import ruamel.yaml",
+        "from ruamel import yaml",
+        "from ruamel.yaml import YAML",
+        "from ruamel.yaml.comments import CommentedMap",
+        "from .yaml import helper",  # a relative module of our own, were there one
+    ):
+        assert not offends(legal), f"the scan false-positives on: {legal!r}"
+
+    # And it is the same predicate the real gate runs, not a copy that has drifted.
+    assert test_no_module_under_src_imports_pyyaml() is None
+
+
+def test_the_stub_signature_test_catches_a_fabricated_parameter() -> None:
+    """A stub declaring a parameter ruamel does not have is pyright-green and a `TypeError` at
+    runtime — decision 20's reason for a signature comparison rather than an import check. The
+    real test compares against `inspect.signature`; this asserts that comparison can fail."""
+    import inspect
+
+    from ruamel.yaml import YAML
+
+    real = set(inspect.signature(YAML.__init__).parameters)
+    assert "typ" in real, "the stub declares this and it must exist"
+    assert "definitely_not_a_parameter" not in real, "a fabricated one must be detectable"
+    # `output`, `plug_ins` and `pure` are real parameters of `YAML.__init__` that the stub omits.
+    # An omission is allowed — no minimal stub could pass otherwise — and an invention is not.
+    # (`transform` belongs to `dump`, not here: naming it made this assertion fail, which is the
+    # check demonstrating it can.)
+    assert not {"output", "plug_ins", "pure"} - real

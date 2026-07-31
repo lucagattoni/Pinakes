@@ -203,8 +203,27 @@ provenance:
 | `provenance.source` | you | Where the document came from |
 | `provenance.extraction` | **sync, paid PDFs only** | `{backend, fingerprint, extracted, content_hash}` |
 
-**Your unknown keys round-trip untouched.** The file belongs to you; normalising your fields away
-would be data loss.
+**Your unknown keys round-trip byte-identically.** The file belongs to you; normalising your fields
+away would be data loss. Comments, quoting style, block scalars, blank lines and your own key order
+all survive a rewrite, and a value is stored exactly as you wrote it — `country: NO` stays `NO`
+rather than becoming `false`.
+
+Four bounds on that, all of them things pinakes or YAML does rather than choices about your keys:
+
+| Bound | What happens |
+|---|---|
+| **Values must be JSON-encodable** | The index stores metadata as JSON. A tag on a *scalar* (`!!binary`, `!!set`, `!!timestamp`, `!!str`, or one of your own), a bare date, or a mapping mixing string and non-string keys is refused at read with a remedy — rather than crashing `pnk sync` later, which is what used to happen. A custom tag on a *mapping* or a *sequence* is fine: it serialises |
+| **Indentation follows the writer** | A block sequence written `  - item` comes back `- item`. Nothing is lost; the bytes differ |
+| **Deleting loses one comment and moves another** | A comment belongs to the construct *before* it, so removing a key or a list entry leaves that comment on whatever replaces it and drops the last one in the block |
+| **What YAML does not carry** | CRLF line endings, a byte-order mark, `---`/`...` document markers — and a missing final newline, which is added |
+| **An explicit `!!` tag is dropped** | `!!int 3` comes back as `3`. The *value* is unchanged; the tag is not kept |
+| **An anchor with no value is dropped** | `mine: &x` with nothing after it loses its `&x`. An anchor on a real value survives |
+| **`pnk://self/…` is expanded** | A `self` link is rewritten to the full `pnk://<kb-ulid>/…` form in place — the entry keeps its position, its comment and any keys of your own |
+| **A self-referential anchor is not preserved** | `mine: &x` containing `b: *x` reads as `null` and loses its anchor. It used to crash `pnk sync` instead |
+| **A reused anchor name is refused** | Every alias to a repeated name would resolve to the last one, so which value it meant is not recoverable |
+
+A **duplicate key is an error**, not a silent last-wins: which of the two values you meant is not
+something any tool can recover.
 
 **Sidecars carry no general content hash**, deliberately: one would dirty two files on every
 document edit and go stale whenever a document changed without a sync in between. Change detection

@@ -1366,3 +1366,31 @@ def test_a_write_failure_on_the_pre_commit_path_is_recorded_not_raised(
     assert [path for path, _, _ in report.failures] == ["docs/a.md"]
     assert "PermissionError" in report.failures[0][1]
     assert not report.ok
+
+
+def test_an_anchored_boolean_is_indexed_as_true_not_one(kb: Path) -> None:
+    """`ScalarBoolean` subclasses `int` — Python forbids subclassing `bool` — and ruamel returns
+    one for any boolean carrying an **anchor or an alias**. It is JSON-encodable, so the sidecar's
+    own check passes it, and it lands in the index as `1` where PyYAML wrote `true`.
+
+    Asserted at every depth the coercion has to reach: `_metadata()` is a shallow spread, so a
+    boolean nested in a mapping or a list is not touched by coercing the top level — and both the
+    one-level implementation and its mutation target passed against a top-level-only fixture.
+    """
+    write(kb, "a.md", "# Alpha\n\nThe first document about retrieval.\n")
+    run(kb)
+
+    sidecar = kb / "docs" / f"a.md{SIDECAR_SUFFIX}"
+    body = sidecar.read_text(encoding="utf-8")
+    sidecar.write_text(
+        body + "anchored: &flag true\naliased: *flag\nnested:\n  deep: *flag\nlisted:\n- *flag\n",
+        encoding="utf-8",
+    )
+    run(kb)
+
+    metadata = store.loads_metadata(str(next(iter(index(kb)))["metadata"]))
+
+    assert metadata["anchored"] is True, "an anchored boolean must not index as 1"
+    assert metadata["aliased"] is True, "...nor an alias of one"
+    assert metadata["nested"] == {"deep": True}, "...nor one nested in a mapping"
+    assert metadata["listed"] == [True], "...nor one inside a list"

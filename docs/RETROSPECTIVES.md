@@ -1685,6 +1685,463 @@ URI and a malformed `id`. The defect is *any* `PinakesError` from `read_sidecar`
 path, and a test written only against a bad link would have gone quiet the moment link parsing
 moved.
 
+## L1 — The partner corpus and the density gate (20260729 08:47)
+
+**HIGH — the gate did not gate the one shape it was built for.** `degrees` was keyed by *basename*
+(`path.name`), so two documents sharing a filename in different folders collapsed to one key and the
+later-sorted one **overwrote** the earlier. Demonstrated against the shipped gate: a degree-6
+hub — 50% above the cap of 4 — behind `docs/aaa/policy.md` exited 0 and was reported as *"worst
+degree 1 (policy.md)"*. Density alone permits one hub wired to everything; the degree cap exists
+separately *precisely* to catch that, and a basename key is the single way it cannot. Now keyed by
+path relative to the KB root. The committed corpora are flat, so nothing in this repo would ever
+have exercised it — the fixture had to be built to find it.
+
+**HIGH — the gate counted sidecars where it meant documents**, and was wrong in both directions.
+An orphaned sidecar (which `pnk sync` deliberately keeps) inflated the denominator: 8 of 10 real
+documents linked read as 27% and passed a 35% cap. A document whose sidecar had not been minted was
+invisible, so the gate reported nonsense on any KB where sync had not run. Documents now come from
+`[sources] include`, which is what the word means.
+
+**HIGH — two documents kept a privacy claim the increment made false.** `README.md` still said
+*"The sole KB here is a small synthetic corpus"* and `CLAUDE.md` *"The only KB here is the synthetic
+demo corpus"*, while `DESIGN.md` was updated in the same commit to "the two synthetic corpora". The
+repo contradicted itself about what had been committed, in the section a reader consults **because**
+they are worried about exactly that. The *audit-the-neighbourhood* rule exists for this and I applied
+it to DESIGN alone — the file I was already editing — which is the failure mode the rule describes.
+
+**A claim that was true by coincidence, stated as if by construction.** The gate's docstring,
+`check.sh` and the changelog all said it "counts the same population `pnk doctor` reports". The
+*link* counts are the same population, by construction. The *document* counts are not: doctor counts
+indexed documents, the gate counts files matching `include`. They agree on the committed corpora and
+nothing makes them. The wording now says which half is guaranteed.
+
+**Two gates and no test that either still exists.** L1 added a `check.sh` gate and a CI job and
+asserted neither, so deleting either left the suite green — in a repo that already has
+`test_check_sh_declares_the_pdf_quality_guard`, written for that exact failure. The convention was
+there; I did not apply it. Both are pinned now, and CI's negative step additionally greps for the
+message rather than accepting any non-zero exit, since a crash, a missing corpus, or `uv` itself
+falling over all satisfy the weaker check.
+
+**What the corpus taught about relations.** `counterpart` was used both as a reciprocated 1:1
+pairing (inward loan ↔ outward loan) and as a loose association (courier requirements → outward
+loan). A later increment reading `counterpart` as a pairing would be misinformed by its own fixture.
+Now `governs`.
+
+**The `self`-form fixture is not a fixed point of the product's own writer.** `sidecar.write`
+resolves `self` to a ULID on write, so anything that reads and rewrites that file destroys the trap
+L2 needs — and `pnk link` (L6) writes exactly that key. The test catches it, but a long way from the
+cause, so the hazard is named in the test rather than left to be rediscovered.
+
+**Mutation, twice.** Seven targets before the review, seven after the gate was rewritten. Two
+mutations *appeared* to survive and were worth more than the ones that failed: the first had not
+applied at all — a `str.replace` searching for `'self'` where the source says `"self"`, the exact
+no-op `conftest._rewrite` refuses, met in my own mutation harness, which now asserts the
+substitution happened. The second was real: nothing asserted that the report prints the cap **in
+force** rather than the module default, so `--max-density 0.1` printed "27% of the 35% cap" and then
+failed the corpus in the next line.
+
+**And the verification gate caught its own author.** Renaming
+`test_the_committed_split_is_what_pnk_doctor_counts` (misnamed — it never consulted `pnk doctor`)
+turned `tests/test_verification.py` red until `docs/VERIFICATION.md` was updated with it. That is
+I9 working on the first increment after it shipped.
+
+## L2 — Reverse-scan (20260730 16:51)
+
+**One root cause behind all three HIGH findings: I bypassed `manifest.load` and kept none of what
+it was doing.** The bypass is right — a partner may run a newer pinakes whose manifest mentions keys
+this one has never heard of, and refusing to read a neighbour's inbound links over that would make
+every connected KB a version dependency of every other. But `load` is not only a parser; it is also
+the place that rejects an absolute `[sources] roots`, rejects `..` in one, and validates the include
+patterns. Reading the TOML directly removed all of it and replaced none of it, and the partner's
+manifest is **input this KB does not control**. Every one of the three failures below is that same
+sentence.
+
+**A partner renaming its own `docs/` silently deleted every inbound row it had.** A `roots` entry
+that is not a directory was a quiet `continue`, so the walk yielded zero sidecars, reported
+`complete=True`, and the caller did exactly what it is written to do with a complete walk: delete
+and replace. Reproduced — rows 1 → 0, `link_scan` empty, `last_scan` stamped fresh, so the retry was
+suppressed for a full window too. This is precisely the mass deletion the `complete` flag exists to
+prevent, arriving through the one door the flag was not watching, and **no "successful walk" test
+could ever have caught it** because they all leave the partner's sidecars where they are. A missing
+root is now a walk failure with a reason.
+
+**The partner's `exclude` was ignored, while a comment claimed otherwise.** `sidecars_under`'s
+docstring said a document "whose document was excluded" contributes nothing; it read only `roots`
+and `include`. The shipped `notes` template stamps `exclude = ["**/drafts/**"]`, so this is not an
+exotic configuration — it is the shape of every KB `pnk init` creates, and the scan was recording
+inbound links from documents the partner's own KB does not contain.
+
+**A partner's manifest could crash `pnk sync` on a git hook.** The `sidecars_under` call sat
+*outside* the `try`, and `Path.glob` raises on patterns `manifest.load` would have rejected —
+`NotImplementedError` for a non-relative pattern, `ValueError` for an empty one. Both escaped
+`sync()` entirely. The module's central promise is "nothing here raises", precisely so a partner
+that is merely broken cannot block a commit; the one call that could raise was the one left outside.
+
+**Two tests that could not fail, both of mine.** `test_the_partner_is_never_locked` asserted the
+partner had no `.pinakes/` — on a fixture where the partner was never synced, so the directory had
+never existed. It proved nothing was created and nothing whatever about locking; it now holds the
+partner's real `SyncLock` while the local sync runs. And a test asserting no SQLite connection was
+left open re-asserted pre-existing `sync()` behaviour (`_run`'s `finally: close()` always releases
+it), so no L2-shaped defect could have made it fail. Deleted rather than kept: a test that cannot
+fail is worse than no test, because it is counted.
+
+**A failed local run blamed the partner.** `known_documents` is read from the index, so a document
+that failed to index *this run* is absent from it — and a genuine inbound link was then reported as
+pointing at a document this KB does not have. It does have it; it failed to index it. The local
+picture is now passed as `None` on a failed or budget-stopped run, which suppresses that check
+without touching the rows, since the rows come from the partner and owe nothing to our state.
+`_run` already guards `active_content_hashes` on `report.ok` for the same class of reason — the
+precedent was there.
+
+**Dead code that credited itself with someone else's work.** `ScanResult.delisted` and the
+`known_kb_ids` parameter were computed every sync, complete with a docstring explaining that the
+rows "are removed" — by a function that never read either. The sweep is `store.forget_reverse_links`,
+which takes the manifest's ids directly. Removed, along with the `SELECT DISTINCT` that fed it.
+
+**Mutation: 11 targets before the review, 5 more after, all detected.** The one apparent survivor
+was equivalent code rather than a gap — taking `src_kb_id` from the declared id instead of the
+partner's own is indistinguishable wherever a row is written, *because* the mismatch guard refuses
+first. The guard is what carries the weight, so the test asserts what makes the assignment moot: a
+mismatched id writes no rows and no `kb_refs` entry.
+
+**And a test premise of mine was wrong, which the failure said plainly.** `_replace_links` only runs
+for a document that gets an action, so the reverse-then-authored ordering needs the document to
+actually change — a second sync skips everything and rewrites nothing. Worth keeping because it is a
+fact about when authored links are re-asserted at all, not just about this test.
+
+## L3–L4 — The traversal core and `pnk links` (20260730 18:06)
+
+**Four HIGH findings, all in the properties the increment's own prose claimed loudest.** That is
+the pattern worth keeping: the module docstring argued at length for double-capping, precedence and
+server-side clamping, and each of those three was where the defect was. Writing the argument down
+appears to have substituted for checking it.
+
+**The response was half-capped.** `max_rows` and `token_budget` gated `neighbours`; the `frontier`
+was appended to unconditionally. Measured: a caller asking for **one** row received **1,000**
+frontier entries — and the frontier is the part an agent parses to decide what to ask next. Now
+capped, and ordered so that entries about nodes you did *not* get come first: capping without that
+ordering let the `depth` notes of accepted nodes fill the whole budget and crowd out every `rows`
+note, so a caller asking for 2 of 5 was told nothing about the 3 it missed.
+
+**"Every bound is clamped server-side" was true of two of the four.** `max_rows=10**9` returned
+3,660 rows with an empty `truncated`. Three documents said otherwise. Once this is reachable over
+MCP the caller supplying `max_rows` is the untrusted party, so the sentence was not merely
+inaccurate.
+
+**A frontier entry contradicted the answer beside it.** A node dropped by fan-out at one hop and
+reached at another kept its `fanout` entry — while sitting in `neighbours` and having been
+expanded. `FrontierEntry`'s own docstring says "discovered and **not** expanded". Stale drops are
+now retracted at return; `terminal` and `depth` are kept, because those describe accepted nodes
+deliberately not expanded, which is the contract rather than a contradiction of it.
+
+**Half the stated precedence was inverted.** The row and token checks ran before terminality was
+consulted, so a terminal neighbour dropped by the row cap reported `rows` — inviting a retry with a
+*smaller* request, which cannot help. Of the ten pairs the declared order implies, five were
+backwards and exactly one was tested: the one the code happened to honour.
+
+**The gate had three separate ways of being vacuous, and its docstring was an essay about gates
+that cannot fail.**
+
+* It passed against a `traverse()` that returned an empty `Result` — every check was one-sided, so
+  zero neighbours satisfied all of them. Now equalities.
+* It imported `MAX_DEPTH` and `MAX_ADJACENT_K` from the code it gates and compared them with
+  themselves. Raising the caps to 10 and 150 moved the walk and the gate still passed, while
+  `docs/MANIFEST.md` went on promising 64. The documented numbers are now literals in the gate — a
+  second copy, which is the only thing that makes a silent change show up.
+* It had no negative check, in a repo where the *immediately preceding* increment added one to its
+  sibling job and a test that guards it. Added, with a `--expect-depth` override so CI can drive
+  the gate into failure on purpose and assert the stated reason.
+
+**Two more the same pass found.** The row cap truncated by parent-expansion order while ranking was
+per-parent, so a top-ranked neighbour behind a low-ranked parent lost to a worthless one in front of
+it — the same mistake as truncate-then-rank, one level up. And node-level row dedup silently dropped
+a second distinct relation to the same target, in a module whose contract is that a fact about the
+graph is returned rather than dropped; rows are now deduped per **edge** while expansion stays per
+**node**.
+
+**A dead sort term with a docstring defending it.** `_rank` sorted by `(-weight, distance,
+node_key)` and explained that a nearer neighbour of equal weight ranks higher. `_rank` is called
+with one hop's candidates, so `distance` was constant in every sort. Removing it changed nothing —
+which is how it was found, and is the argument for deleting rather than believing prose.
+
+**A test that could not hold its name.** `test_depth_counts_logical_hops_not_physical_edges` had no
+hub in its fixture and its own docstring conceded the core never sees one; it was a second copy of
+the clamp test wearing a larger claim, and `docs/VERIFICATION.md` cited it for a promise it could
+not carry. Renamed to what it actually checks. The logical-hop promise belongs to the provider that
+composes hubs.
+
+**And new behaviour shipped without tests.** `[retrieval] adjacent_k` and `_toml.integer(maximum=)`
+had none — the commit message's claim that a value above the cap is *refused* rather than clamped
+was asserted and never executed, against this project's own rule that tests ship in the increment
+that introduces the behaviour.
+
+**A process failure worth recording separately.** L4 was built in L3's worktree while L3's
+adversarial review was still reading it, so the reviewer found the tree dirty with a parallel
+increment's work and had to run every probe against a copy. It cost the review nothing this time
+because L4 added files rather than editing `traverse.py`, but that was luck. One increment, one
+worktree, and the review finishes before the next one starts.
+
+**Four silent `str.replace` no-ops this session**, one of which spliced a new import into the middle
+of an existing one and produced a nonsense symbol. It is the same failure `conftest._rewrite` exists
+to refuse, met in editing rather than in a fixture. Non-trivial edits now go through a tool that
+errors when its anchor does not match.
+
+### The defect was in the field nobody thought to assert (L5, the links release)
+
+L5's own mutation pass killed all three of the targets the plan named. An adversarial review then
+mutated **eight more** payload fields and watched every one survive the full 887-test suite. Two of
+those were real defects, not merely untested:
+
+- **`direction` was keyed by node, while a row is `(node, rel)`.** Given `a --related--> b` and
+  `b --cites--> a`, asking about `a` reported the citation as running *from* `a` — the opposite of
+  what someone wrote. Shipped in L4, copied verbatim into L5, wrong on both surfaces. The provider's
+  own docstring argued the case for the key it used: *"Keyed by node, because a node reached both
+  ways is still one neighbour"* — true of the node, irrelevant to the row.
+- **`DIRECTIONS` was defined and never enforced.** `edges_of` tests `in ("out", "both")` and
+  `in ("in", "both")`, so `direction="outbound"` ran neither query and returned a confident empty
+  answer with a "no links from here" hint. `argparse` `choices` covered the CLI; the MCP surface,
+  the one an untrusted model types into, had nothing.
+
+**The lesson that generalises: a field with no assertion is a field that can be a constant.** Ask of
+each one, "which mutation would this catch?" — not "is it correct?". `scored_by_query`, the field
+L3's docstring calls load-bearing, could be frozen to `True`; `unresolved`, whose contract says
+"returned, never dropped", could be frozen to `[]`.
+
+**A tidy fixture defeats a mutation test.** Three fields survived even after tests were written for
+them, because the KB-backed fixtures were too clean: the fake embedding backend's vectors are
+orthonormal, so every cosine is exactly 1.0 and deleting `round()` changes nothing; nothing hit a
+response cap, so `truncated` could be frozen empty; no frontier entry sat past distance 1. The fix
+was to build the dataclasses directly and take the fixture out of the question.
+
+**Two copies of one payload had already drifted** — the MCP `frontier` carried a `distance` the
+CLI's did not, `scored_by_query` reached only one of them, `unresolved` dropped a `kb_id` its
+sibling lists carried. Neither failed, because nothing compared them. They now share
+`pinakes.graph.present`, and a test asserts both surfaces project the same keys.
+
+**Calling a tool is not the same as exercising it.** The free-path gate was strengthened to *invoke*
+`pinakes_links` rather than only list it — but the fixture KB had one document and no links, so the
+whole neighbour projection never executed. A `raise SystemExit` planted in that loop never fired.
+The fixture now authors one intra-KB and one unreachable-KB link, and the same probe fires.
+
+**The fix for a wrong answer produced a differently wrong answer, and the tests written with it
+could not see that either.** Keying `directions` by `(node, rel)` was right; merging to `both`
+across *expansions* was not. `directions` accumulates over the whole walk, so an edge discovered
+while expanding an unrelated parent rewrote a row already emitted from the start — and a row's
+`direction` then changed with `--depth`, to exactly the untruth the fix was written to remove. Both
+new direction tests ran at `depth=1`, where the start is the only parent, so neither could reach it.
+A second adversarial pass found it by varying the one parameter the tests held fixed.
+
+The generalisation: **when a fix adds a rule, test the axis the rule is defined over.** The rule was
+about *which expansion* a direction came from, and every test pinned a single expansion.
+
+**A third pass found no new defect in the traversal itself, and four in what surrounded it.** The
+`(node, rel)` scheme was probed against a reciprocal pair, a mutual same-rel pair, each `direction`,
+a self-loop, a 3-cycle, a node reached at two different hops by different relations, a node reached
+by two parents in one hop with opposite directions, and a node dropped by fan-out then re-reached —
+all correct. What was still wrong sat one layer out: an assignment nobody asserted, a message worded
+from the wrong end, a branch ordered ahead of a better one, and an assertion satisfied by a
+substring.
+
+Two of those are worth naming as patterns:
+
+- **`assert "-> related: b" in output` passed on `<-> related: b`.** A substring assertion over
+  rendered text will match a *longer* glyph containing the shorter one, so dropping the outbound
+  arrow entirely left the test green. Match whole lines when asserting on human output.
+- **Splitting `f(x, scores=s)` into `f(x); f.scores = s` moved a value out of the type checker's
+  reach.** The construction was covered by the tests that built providers directly; the assignment
+  was covered by nothing, and deleting it disabled query ranking with every gate green. When a
+  refactor turns an argument into a mutation, the mutation needs its own assertion at its own call
+  site — and there were two call sites.
+
+**Left for the graph release** (L3 core, predating this increment, found while probing): a node
+dropped by fan-out at hop 1 and re-reached at hop 2 is emitted with `distance: 2` although it is one
+authored hop from the start; and a self-loop (`a --sameas--> a`) is dropped entirely — not a
+neighbour, not unresolved, not on the frontier.
+
+**A fix applied to one surface is half a fix.** Round 3 gave `pinakes_links` the rule that a
+narrowed walk reports the narrowing before it reports dangling links — and left `pnk links` branching
+on `unresolved` alone, in the same commit, so the CLI told a user their links "resolve to nothing"
+about a document with a live neighbour one dropped `--rel` away. Both the docs and the changelog
+described the MCP behaviour as though it were both. The two surfaces now share
+`present.is_filtered` and `present.arrow`, which is the only way this stops recurring: the rule has
+to live in one place, not be applied twice.
+
+**A remedy in an error message is a claim, and it was false.** The dangling-links hint sent the
+caller to `pnk doctor` — but `doctor._links` inspects only the *destination* side of local sidecar
+rows, so when the missing endpoint is the link's **source** (a deleted document whose outbound rows
+survive the soft delete) doctor reports `links: OK` and contradicts the message that sent you there.
+Dropped the clause; extending that check belongs to L7, which owns doctor's link coverage.
+
+Four review rounds, each finding real defects in the previous round's fix, then converging: 11
+findings, then 11 with one HIGH, then 7 with none, then 5 with none. What the last two rounds found
+was never the traversal — it was the layer around it: an assignment nobody asserted, an assertion
+satisfied by a substring, a message worded from the wrong end, a branch ordered ahead of a better
+one, and a rule applied to one of two surfaces.
+
+**The rule two rounds were spent getting right had no test that could detect its inversion.** Round
+5 found the shipped behaviour correct on both surfaces and the precedence — *filter before dangling
+before "no links"* — freely reversible with the suite green. The cause was a fixture that could not
+make both conditions true at once: `--rel` narrows `provider.unresolved` as well as the neighbours
+(`edges_of` receives the same `rel`), so a rel-filtered call leaves `unresolved` empty and the
+branch being out-ranked never competes. `--direction` is the lever that does it — an outbound link
+that dangles and an inbound one that is live. The assertion that named the defect in its own message
+(*"one dropped argument away from a live neighbour"*) was the vacuous one.
+
+**Test the discriminating case, not the two sides separately.** A precedence rule is only observable
+where both branches are eligible; a fixture that satisfies one at a time asserts the wording of each
+and the order of neither.
+
+### Swapping a YAML library is not a swap (L5b, the links release)
+
+**The plan predicted three failures precisely, and all three landed as written** — which is worth
+recording because it is the first increment in this project where that happened. It named the 872nd
+test (`{id: x, : }`, which ruamel parses, so the case fell through to the `id` check and the
+parse-error branch had been asserting nothing), the free-path gate being red on day one, and the
+`ScalarBoolean` coercion being insufficient at one level.
+
+**The free-path gate was defeated by its own harness, and I wrote the defect.** `_author_links` in
+`tests/free_path_run.py` — added in L5 to close a coverage hole — wrote a sidecar through
+`yaml.safe_dump`. That put `yaml` into the very module list the gate inspects, and it was also the
+last PyYAML sidecar *writer* in the repo: a fixture written by one library and read by another,
+which is exactly the divergence the gate exists to forbid.
+
+**`existing[:] = keep` wipes ruamel's comment metadata outright.** Reconciling a sequence by
+rebuilding a keep-list destroys `CommentedSeq.ca.items` entirely — every comment in the block, not
+just the removed entry's — while `del existing[index]` shifts the survivors. Measured: `{}` against
+`{0: '# first', 1: '# third'}`. Both merge functions had it.
+
+**A comment before a sequence entry belongs to the entry above it**, exactly as it does for a
+mapping key. The plan pins the deletion limitation for mapping keys; it is broader than that. After
+deleting the middle of three commented links, `# first` stays correct, `# second` reattaches to the
+*third* link, and `# third` disappears. The surviving links are all correct; the prose beside one of
+them is not.
+
+**"Unobservable" was the wrong conclusion; "observable only where something else is broken" was the
+right one.** The plan's *"assign a known key only when its value actually changed"* looked untestable
+— every known-key value is the node read out of the document and written straight back, so a write
+of an unchanged document is already a no-op. Two attempts at a test passed against the mutated
+source and I wrote that no mutation of it could fail. A reviewer then removed the rule and the
+committed corpora stopped round-tripping: the short-circuit was **masking** the duplicate-link
+defect below, not proving its own redundancy. Once that was fixed the rule really was unobservable
+— but the claim was true by accident for two commits, and the difference is exactly what an
+adversarial pass is for.
+
+**`-x` makes a mutation look like it was caught by the wrong test.** Two links mutations appeared to
+be killed only by an unrelated pre-existing test; without `-x` both were also killed by the test
+written for them. Run the mutation pass without early exit, or the report is about test ordering.
+
+**A merge key must be the identity the storage layer already uses.** Reconciling `links` on `to`
+alone looked sufficient and is undefined the moment two links point at one document with different
+relations — which `_links()` accepts and the index stores as two rows, its primary key including
+`rel`. Measured on the version that had it: dropping an *unrelated* third link rewrote the first
+link's `rel` to the second's and deleted the second, leaving one row carrying the wrong relation
+under the other's comment. The index's own `PRIMARY KEY` was the answer, and it was already written
+down in `store.py`.
+
+**A recursive rule needs a depth bound as much as a base case.** "A key absent from the new mapping
+is deleted" is required at the top of `provenance` — or `--force` leaves a false paid claim behind —
+and destructive one level down, where `with_extraction_provenance` builds a plain four-key
+replacement and the user's own `reviewed_by` sits beside `content_hash`. One sentence, two opposite
+correct answers, distinguished only by depth.
+
+**The exit criterion was the thing nobody ran.** The plan's one falsifiable sentence — *every
+committed sidecar still round-trips* — had no test, and running it by hand found a `pnk://self/…`
+entry in `partner-kb` being deleted, rebuilt without its unknown per-link keys, and moved to the end
+of its block. `_links()` expands `self` on read, so the loaded entry's raw `to` never equals
+anything in the reconciliation set. The docs bounded the invariant with "`pnk://self/…` expansion",
+which reads as *the URI text changes* and not *the entry is rebuilt* — a documented exclusion that
+quietly covered a defect.
+
+**Quoting was applied on the path that was tested and not on the path that ships.** Decision 23's
+predicate reached the merge branch and the mint, but not the branch taken when a key **first
+appears** — which is the branch `pnk link` will follow on a sidecar that has no `links:` yet, i.e.
+almost all of them. Three quoting mutations survived the whole suite.
+
+**An error message is part of the interface.** Three of this increment's breaking changes surfaced
+as `TaggedScalar`, `ScalarFloat` and `OctalInt` — ruamel class names, from a library the user never
+chose, with no remedy. The type is not what they need; "quote it, or drop the tag" is.
+
+**A fix instruction can carry its own defects, and two of pass 6's did.** Keying `links` on the
+`(to, rel)` pair made the pair the *entire content* of an entry, so no matched entry was ever
+updated and every `rel` edit became a delete plus an append — landing straight in the comment
+misattribution the rule was written to avoid. And "positional fallback among equal pairs" was too
+vague to implement; what I wrote from it used a `set`, which collapses two identical entries: three
+links in, one out. The final rule needed three explicit clauses — resolve before comparing,
+multiplicity never a set, assign `rel` in place — each naming the shipped version that got it wrong.
+
+**"Exactly the call being protected" was true of the call and false of the argument.** The
+JSON-encodability check ran `json.dumps(extra, sort_keys=True, ensure_ascii=False)` — the same
+function `store.dumps_metadata` calls — over `extra` alone. `_metadata()` hands that function
+`{"tags": …, "provenance": …, **extra}`. A uniformly int-keyed `{1: a}` sorts perfectly on its own
+and becomes mixed the moment the string keys join it, so `pnk sync` still crashed. Checking the
+parts is not checking the whole, and the docstring asserting otherwise is what made it look done.
+
+**Two tests could not observe what they claimed, for the same reason.** A plain read-write of an
+unchanged document short-circuits before the merge runs, so a `wanted` that deduplicates survived
+`test_two_identical_link_entries_both_survive` and a `set`-based collapse was invisible. Any test of
+reconciliation has to *change* something first, or it is testing the short-circuit.
+
+**A warning is not an error, and a library that downgrades one is changing behaviour.** A reused
+anchor name raised `ComposerError` — a `YAMLError` — before the swap, and after it the document
+loads, every alias resolves to the **last** anchor of that name, and the only signal is a
+`ReusedAnchorWarning` on stderr. Three consequences, none visible in a passing suite: the value
+silently changes; `read()`'s `except YAMLError` never sees it, because a `Warning` is not one; and
+under this project's `filterwarnings = ["error"]` it escapes as a bare warning traceback rather than
+a named error. Promoting it at the load makes the outcome independent of whatever warning filters
+the calling program happens to have set — which is the right place for a property of the file
+format to live.
+
+**An exclusion list is a set of claims, and claims rot.** Every bound on the byte-identity
+invariant — indentation, `!!` tags, anchors, CRLF, BOM, document markers — was prose in a table
+until it was pinned by a test. Writing those tests measured two behaviours that were *not on the
+list at all*: a plain (non-recursive) anchor on an **empty** value is destroyed, where the list
+named only the self-referential case; and a file with **no trailing newline** gains one. Both are
+byte changes to a file nobody edited, which is exactly what the invariant claims does not happen.
+A bound stated only in prose cannot notice the library moving under it, and cannot be wrong out loud.
+
+It also falsified a changelog line I had written: *"`!!int`, `!!float`, `!!bool`, `!!seq` and
+`!!map` keep working — verified"*. Verified of **loading**; the tag itself is dropped on write, so
+`!!int 3` comes back as `3`. True of the value, false of the invariant, and the word "verified" is
+what made it read as covering both.
+
+**A gate that has never been shown to fail is a claim too.** The AST scan now proves it sees all
+four shapes of a planted import — including the function-scoped one an import walk cannot reach —
+and does not fire on any of the four legal `ruamel` forms, every one of which contains "yaml". The
+stub signature test proves it can fail: writing `transform` into the expected set failed it,
+because `transform` belongs to `dump` rather than `__init__`.
+
+**"PyYAML left the runtime" is true of what pinakes declares and false of what a user's machine
+has.** Measured on a built wheel: bare, `yaml` is absent; `pinakes[light]` has it, transitively from
+`huggingface_hub`. `starlette` and `uvicorn` list it too, but only under an extra they do not pull.
+So the CI assertion is correctly scoped to the bare wheel — pinakes never asks for PyYAML — and the
+consequence is the part worth remembering: **`import yaml` will succeed in a real install**, so a
+stray import in `src/` would quietly work instead of failing loudly. That is what makes the AST scan
+load-bearing rather than a second belt.
+
+**The worst defect in this increment was a rule the plan itself wrote.** *"One instance, reused
+rather than reconstructed per call"*, justified by 282 µs against 399 µs. ruamel keeps the `%YAML`
+directive from the last `load()` **on the instance** and applies it to every later load *and* dump:
+read a sidecar carrying `%YAML 1.1`, then write an unrelated one that never did, and it comes back
+with the directive injected and `country: NO` rewritten to `false`. The exact corruption this
+increment exists to remove, reintroduced *across documents*, in exchange for 117 microseconds — and
+freshly minted sidecars are contaminated the same way. Nothing softer fixes it: resetting `version`
+after the load still emits the directive, pinning it up front is overwritten by the next load. A
+performance justification measured in microseconds should be read as an argument that the
+optimisation does not matter.
+
+**A gate that never reads the artifact it guards is checking a copy.** The stub-signature test
+listed the symbols in a hand-written Python dict, checked them with `hasattr`, and compared against
+hardcoded signature supersets — so a stub declaring a parameter ruamel does not have was green under
+pytest *and* pyright, which is the single failure decision 20 exists to catch. It parses the `.pyi`
+files with `ast` now.
+
+**A fixture can be right for the wrong reason and hide the defect it was written for.** The
+two-links-sharing-a-`to` test edited the *first* entry, and entries are walked in descending index
+order — so the single-pass form it was meant to catch happened to produce the correct answer.
+Editing the *second* entry is the discriminating case: its fallback claims the link the first was
+owed exactly, and both relations end up swapped under the wrong comments. Two of this increment's
+tests have now needed the *specific* case rather than a representative one.
+
 ## Design review passes 1–7 (pre-implementation)
 
 Seven adversarial passes over [`DESIGN.md`](DESIGN.md) **before any code was written** — 58 findings

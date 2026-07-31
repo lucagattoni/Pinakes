@@ -23,7 +23,7 @@ dependencies = [
     "mcp>=1.28",
     "numpy>=2.0",
     "python-ulid>=3.0",
-    "pyyaml>=6.0",
+    "ruamel.yaml>=0.19",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +46,7 @@ dev = [
     "ruff>=0.9",
     "ty>=0.0.63",
     "pillow>=12.3.0",
+    "pyyaml>=6.0",
 ]
 
 [build-system]

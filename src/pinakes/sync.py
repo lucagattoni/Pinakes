@@ -24,13 +24,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from pinakes import store
 
 if TYPE_CHECKING:  # `budget.accountant` reads the price table; a free sync must not pay for that
     from pinakes.budget.accountant import Accountant
     from pinakes.ids import OperationId
+
+from ruamel.yaml.scalarbool import ScalarBoolean
 
 from pinakes import linkscan
 from pinakes.chunk import PDF_SUFFIXES, assert_chunkable, chunk_document, source_type
@@ -1270,10 +1272,36 @@ def _read_sidecar_for(manifest: Manifest, path: str) -> Sidecar | None:
     return read_sidecar(target, owner=manifest.kb.id)
 
 
+def _plain(value: object) -> object:
+    """Ruamel's scalar subclasses, reduced to what JSON should see — **recursively**.
+
+    `ScalarBoolean` subclasses `int` (Python forbids subclassing `bool`), and ruamel returns one for
+    any boolean carrying an anchor *or an alias* — `flag: &a true` and `same: *a` alike. It is
+    JSON-encodable, so the sidecar's own check passes it, and it lands in the index as `1` where
+    PyYAML wrote `true`.
+
+    Recursive because `_metadata()` is a shallow spread: a boolean nested inside a mapping, a list,
+    or `provenance` is not reached by coercing the top level, and both the test and the mutation
+    target for the one-level version passed against it. `ScalarInt`/`ScalarFloat`/`ScalarString`
+    need no coercion — they already encode as their base types — but the walk has to descend
+    through them to find a boolean underneath.
+    """
+    if isinstance(value, ScalarBoolean):
+        return bool(value)
+    if isinstance(value, dict):
+        return {key: _plain(item) for key, item in cast(dict[object, object], value).items()}
+    if isinstance(value, list):
+        return [_plain(item) for item in cast(list[object], value)]
+    return value
+
+
 def _metadata(parsed: Sidecar | None) -> dict[str, object]:
     if parsed is None:
         return {}
-    return {"tags": list(parsed.tags), "provenance": dict(parsed.provenance), **parsed.extra}
+    plain = _plain(
+        {"tags": list(parsed.tags), "provenance": dict(parsed.provenance), **parsed.extra}
+    )
+    return cast(dict[str, object], plain)
 
 
 def _replace_links(

@@ -315,6 +315,23 @@ def _free_path_modules(tmp_path: Path, prelude: str = "") -> set[str]:
     return modules
 
 
+def test_the_free_path_run_never_loads_yaml(tmp_path: Path) -> None:
+    """PyYAML must not be reachable from the free path — the runtime half of L5b's pair.
+
+    Lives here rather than in `test_packaging.py` because this file already owns `FREE_PATH_RUN`
+    and the fresh-subprocess harness. The predicate is an exact match or a `yaml.` prefix, never a
+    substring: the module list legitimately contains `pydantic_settings.sources.providers.yaml`.
+
+    This caught a real one. `free_path_run.py` wrote a sidecar through `yaml.safe_dump`, so the
+    harness itself put `yaml` into the list — the gate was defeated by its own fixture, and that
+    line was also the last PyYAML sidecar *writer* in the repo.
+    """
+    modules = _free_path_modules(tmp_path)
+    loaded = sorted(name for name in modules if name == "yaml" or name.startswith("yaml."))
+    assert not loaded, f"the free path loaded PyYAML: {loaded}"
+    assert any(name.startswith("ruamel") for name in modules), "...and it must have loaded ruamel"
+
+
 def _assert_no_paid_client(modules: set[str]) -> None:
     """The checker itself, named so gate 4's negative test has something to make fail."""
     found = sorted(name for name in modules if _is_paid_module(name))
