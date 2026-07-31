@@ -637,8 +637,18 @@ widened acceptance becoming a crash.
        delete entries whose `to` is gone. Positional matching silently **misattributes the user's
        comments onto different links** when the list is reordered, and deletes them when it shrinks —
        measured, and worse than the mapping-key limitation below because the prose then describes
-       the wrong data. `tags` is a list of plain strings with no per-entry comments, so it is
-       replaced wholesale. A comment on a *deleted* link entry is still lost; that is pinned.
+       the wrong data. `tags` reconciles **by value**, the same shape: match, append, delete
+       the removed. It is *not* "a list of plain strings with no per-entry comments" — measured,
+       ruamel stores a comment on a `tags` entry exactly as it does on a `links` entry
+       (`.ca.items: {0: [CommentToken('# the department that owns this')]}`), and replacing the
+       sequence wholesale destroys it. A comment on a *deleted* entry is still lost, in either
+       sequence; that is pinned.
+     - **Assign a known key only when its value actually changed.** Compare first; if the
+       reconciled value equals what the node already holds, leave the node alone. This is what makes
+       byte-identity **structural rather than incidental**: nothing in pinakes ever edits `tags`, so
+       under this rule its node is never touched at all, and the same holds for every key a given
+       write does not modify. Scalars are safe either way — reassigning the same string keeps its
+       trailing comment, verified — but sequences and mappings are not.
      - **Nested deletion has two rules, and they differ.** Inside `provenance`, a key absent from
        the new mapping **is deleted** — `without_extraction_provenance` returns a provenance without
        `extraction`, and an assign-and-recurse merge would leave the stale paid claim in place,
@@ -782,7 +792,11 @@ an equality assertion can never detect their loss.
 `test_sidecar.py`: `::test_an_unknown_key_round_trips_byte_identically`;
 `::test_a_comment_inside_provenance_extraction_survives_a_re_extraction` (comment on the **last key
 of the nested map** — the only position that reproduces it);
-`::test_a_comment_inside_the_links_block_survives_a_rewrite`; `::test_comments_survive_a_rewrite`;
+`::test_a_comment_inside_the_links_block_survives_a_rewrite`;
+`::test_a_comment_on_a_tags_entry_survives_a_rewrite`;
+`::test_an_unchanged_known_key_is_not_reassigned` (the general rule — assert the node object is the
+same, not merely that the bytes match);
+`::test_comments_survive_a_rewrite`;
 `::test_quoting_style_survives_a_rewrite`;
 `::test_a_value_with_spaces_past_eighty_columns_is_not_folded`;
 `::test_block_scalars_and_blank_lines_survive_a_rewrite`;
@@ -831,7 +845,7 @@ fails. Restore `sorted(extra)` on the original-document path → the key-order t
 mint-quoting predicate → the boolean-title test fails. Drop the `ScalarBoolean` coercion, **or make it one level deep**, → the
 anchored-boolean test fails. Drop the JSON check → the tagged-sidecar test fails. Drop
 `sort_keys=True` from it → the mixed-key test fails. Reconcile `links` by index instead of by `to` → the
-comment-misattribution test fails. Replace the AST scan with an import walk → the lazy-import test
+comment-misattribution test fails. Assign `tags` unconditionally → the tags-comment test fails. Replace the AST scan with an import walk → the lazy-import test
 fails. Revert one `replace()` to a hand-enumerated constructor → a comment test fails.
 
 **Known limitation, pinned not fixed.** Deleting a key misattributes its leading comment to the next
