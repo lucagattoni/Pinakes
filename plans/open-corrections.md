@@ -130,7 +130,14 @@ a reviewer doing that comparison.
 
 ---
 
-## 9 · L6 review 7 — the freshness-branch test never enters the freshness branch
+## 9 · ~~L6 review 7 — the freshness-branch test never enters the freshness branch~~ **CLOSED**
+
+> **Do not apply the fix below.** L6 review 8b (`cdee8d8`) closed this the other way round, and the
+> prescribed `assert report.link_scan == ()` would now pin the behaviour review 8 **replaced**: an
+> unresolvable path is no longer fresh-skipped, it falls through to the walk and is reported. The
+> test is renamed `test_an_unresolvable_path_is_reported_rather_than_fresh_skipped`. Verified
+> 20260731 20:43 — mutating the fall-through back to a fresh skip fails it, and forcing `is_stale`
+> true fails `test_a_fresh_kb_refs_entry_skips_the_walk`. Kept for the record only.
 
 **Blocks the merge.** Everything else in `1d4de4e` is correct: I ran the failure paths end to end
 and the gate on that tip (**1034 passed, 0 pyright errors, ruff clean, all gates green**).
