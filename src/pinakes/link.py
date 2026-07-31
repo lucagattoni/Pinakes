@@ -175,9 +175,13 @@ def _via_alias(linked: LinkedKb, relative: str, *, local_root: Path) -> PnkUri:
     # closed the instance in front of it and stopped; the search that finally worked was grepping
     # the module for every call that touches the filesystem, this one included.
     #
-    # `root` is bound before the `try` so the handler can name it, and only the `resolve_path`
-    # failure has to fall back to `linked.path` — at that point there is no resolved path to show.
-    root = local_root
+    # `root` is bound before the `try` so the handler can name it, and the fallback is
+    # **`linked.path` as declared** — the string the user actually wrote. An earlier version bound
+    # `local_root` here, which reported a `~` that would not expand as "cannot be read at
+    # <the local KB root>": a real, readable directory with nothing to do with the failure, while
+    # the text they typed appeared nowhere. Once `resolve_path` succeeds this is overwritten with
+    # the resolved path, which is what every other failure should name.
+    root = Path(linked.path)
     try:
         # Against the *local KB root*, never the working directory: a manifest is committed and
         # shared, so `../partner-kb` has to mean the same place whatever directory `pnk` ran from.
@@ -201,8 +205,10 @@ def _via_alias(linked: LinkedKb, relative: str, *, local_root: Path) -> PnkUri:
         # a ULID, naming neither the KB it came from nor the file.
         partner_id, *_ = partner_sources(root)
     except (OSError, ValueError, tomllib.TOMLDecodeError, PinakesError) as exc:
-        reason = exc.message if isinstance(exc, PinakesError) else str(exc)
-        raise LinkedKbUnreachableError(linked.name, root, reason=reason) from exc
+        # `str(exc)`, not `exc.message if isinstance(...)`: `PinakesError.__init__` passes the
+        # message straight to `Exception.__init__`, so the two are always equal. Spelling it the
+        # long way made this branch read as though the two modules differed where they do not.
+        raise LinkedKbUnreachableError(linked.name, root, reason=str(exc)) from exc
 
     if partner_id != linked.id:
         raise LinkedKbIdMismatchError(linked.name, declared=str(linked.id), found=str(partner_id))

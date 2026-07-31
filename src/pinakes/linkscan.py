@@ -259,7 +259,12 @@ def scan_one(
     # broken by the three lines that ran before any of the handling did. Found by grepping the
     # module for calls that touch the filesystem, after the same class had been fixed four times
     # one instance at a time in `link.py` (L6).
-    path = local_root
+    # `linked.path` as declared, not `local_root`: when `resolve_path` is what failed there is no
+    # resolved path to show, and naming the local KB root points the reader at a readable directory
+    # with nothing to do with the failure. Overwritten with the resolved path the moment there is
+    # one. `ScannedKb.path` normally records the resolved form, and a row that reaches here is
+    # never persisted — `sync` gates `record_kb_ref` on `complete`, which this is not.
+    path = Path(linked.path)
     try:
         path = resolve_path(local_root, linked.path)
         base = ScannedKb(alias=linked.name, declared_id=linked.id, path=path)

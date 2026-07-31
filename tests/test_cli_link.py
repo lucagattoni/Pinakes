@@ -259,6 +259,13 @@ def test_a_linked_kb_path_that_will_not_expand_is_unreachable_not_a_traceback(
     with pytest.raises(PinakesError) as caught:
         add(load(local.root), source="docs/alpha.md", target="partner:docs/one.md", rel="cites")
     assert caught.value.message.startswith("linked KB `partner` ")
+    # **The path it names is the one the user wrote.** Asserting only the prefix let an earlier
+    # version report the *local KB root* — a real, readable directory with nothing to do with the
+    # failure — while the string they typed appeared nowhere.
+    assert "~nosuchuser12345/kb" in caught.value.message
+    assert str(local.root) not in caught.value.message
+    # And exactly one full stop: this reason is borrowed from `RuntimeError`, which ends in one.
+    assert not caught.value.message.endswith("..")
 
 
 def _declared_path(manifest_text: str) -> str:
@@ -304,6 +311,8 @@ def test_a_partner_with_a_malformed_kb_id_names_the_kb_it_came_from(pair: tuple[
         add(load(local.root), source="docs/alpha.md", target="partner:docs/one.md", rel="cites")
     assert caught.value.message.startswith("linked KB `partner` ")
     assert "not-a-ulid" in caught.value.message
+    # This reason is another `PinakesError`'s message, which already ends in a full stop.
+    assert not caught.value.message.endswith("..")
 
 
 def test_an_alias_whose_partner_declares_a_different_id_is_refused(pair: tuple[Kb, Kb]) -> None:

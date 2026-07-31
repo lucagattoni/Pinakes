@@ -487,7 +487,11 @@ class LinkScanError(PinakesError):
     """
 
     def __init__(self, alias: str, message: str, *, remedy: str) -> None:
-        super().__init__(f"linked KB `{alias}` {message}.", remedy=remedy)
+        # `rstrip(".")` before appending one: the reasons these carry are increasingly borrowed
+        # from other exceptions — `RuntimeError`'s "Could not determine home directory.", another
+        # `PinakesError`'s own already-punctuated message — and those arrive with a full stop, so a
+        # fixed `.` produced `…home directory..`. Every reason written by hand here has none.
+        super().__init__(f"linked KB `{alias}` {message.rstrip('.')}.", remedy=remedy)
         self.alias = alias
 
 

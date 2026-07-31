@@ -537,6 +537,11 @@ def test_a_linked_kb_that_raises_before_the_handling_is_still_only_an_issue(
     report = run(local, now="20260730 14:00", scan_links=True)
     assert report.ok
     assert len(report.link_scan) == 1
+    # The path reported is the one declared, not the local KB root — which is a readable directory
+    # with nothing to do with the failure, and was what an earlier version named.
+    _alias, message, _remedy = report.link_scan[0]
+    assert "~nosuchuser12345/kb" in message
+    assert str(local.root) not in message
 
 
 # --- The TTL --------------------------------------------------------------------------------------
