@@ -116,3 +116,11 @@ four shapes of a planted import — including the function-scoped one an import 
 and does not fire on any of the four legal `ruamel` forms, every one of which contains "yaml". The
 stub signature test proves it can fail: writing `transform` into the expected set failed it,
 because `transform` belongs to `dump` rather than `__init__`.
+
+**"PyYAML left the runtime" is true of what pinakes declares and false of what a user's machine
+has.** Measured on a built wheel: bare, `yaml` is absent; `pinakes[light]` has it, transitively from
+`huggingface_hub`. `starlette` and `uvicorn` list it too, but only under an extra they do not pull.
+So the CI assertion is correctly scoped to the bare wheel — pinakes never asks for PyYAML — and the
+consequence is the part worth remembering: **`import yaml` will succeed in a real install**, so a
+stray import in `src/` would quietly work instead of failing loudly. That is what makes the AST scan
+load-bearing rather than a second belt.

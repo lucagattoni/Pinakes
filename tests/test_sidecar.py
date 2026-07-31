@@ -1392,11 +1392,20 @@ def test_what_yaml_does_not_carry_is_not_carried(
     """CRLF, a byte-order mark and `---`/`...` markers are all lost. They are documented as lost;
     documented is not the same as tested, and a library that started preserving one of them would
     change the file without anything noticing."""
+    path = tmp_path / f"{name}.md{SIDECAR_SUFFIX}"
     body = raw.replace(b"%s", str(mint_doc_id()).encode())
-    after = _round_trip(tmp_path / f"{name}.md{SIDECAR_SUFFIX}", owner, body)
+    after = _round_trip(path, owner, body)
 
     assert gone not in after
     assert b"k: v" in after, "the content survives; only the framing does not"
+
+    if name == "crlf":
+        # **Bytes, never text.** `Path.read_text` normalises line endings on the way in, so a
+        # text-level comparison here compares normalised against normalised and reports
+        # "identical" for a file whose bytes plainly changed. A probe that cannot observe the
+        # property it tests still reads as evidence — the same failure mode as a fixture that
+        # passes on broken code. Recorded here so nobody simplifies `_round_trip` to `read_text`.
+        assert path.read_text(encoding="utf-8") == body.decode().replace("\r\n", "\n")
 
 
 def test_a_missing_trailing_newline_is_added(tmp_path: Path, owner: KbId) -> None:
