@@ -567,6 +567,28 @@ def test_an_empty_answer_says_whether_the_arguments_emptied_it(linked_kb: Path) 
         unlinked.close()
 
 
+def test_a_document_whose_links_all_dangle_is_not_called_unlinked(tmp_path: Path) -> None:
+    """`neighbours: []` beside a populated `unresolved` is not "no links from here".
+
+    The payload contradicts itself in the same breath: it lists the links and then advises the
+    caller to stop traversing and search instead. No filter is involved, so the `filtered` branch
+    cannot cover it.
+    """
+    root = make_kb(
+        tmp_path / "dangling", name="dangling", documents={"a.md": "# A\n\nRetrieval.\n"}
+    )
+    author_link(root, "a.md", f"pnk://{load(root).kb.id}/{ABSENT_DOC}", "related")
+
+    made = Server([root])
+    try:
+        payload = made.links(doc_id_of(root, "a.md"))
+        assert payload["neighbours"] == [] and payload["unresolved"]
+        assert "No links from here" not in payload["suggested_next"]
+        assert "unresolved" in payload["suggested_next"]
+    finally:
+        made.close()
+
+
 def test_a_cross_kb_neighbour_is_terminal_over_mcp_too(linked_kb: Path) -> None:
     made = Server([linked_kb])
     try:

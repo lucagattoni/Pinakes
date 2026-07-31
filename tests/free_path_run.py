@@ -161,6 +161,13 @@ def _author_links(root: Path) -> None:
     if main(["sync", "--kb", str(root)]) != 0:
         raise SystemExit("free-path run: re-syncing the authored links failed")
 
+    # `pnk links` walks the link graph — no models, no extractor, nothing that could spend. It runs
+    # *here*, after the links exist, rather than in `_run_free_surfaces` where it used to: over an
+    # unlinked graph the walk returns before entering the projection, so the surface gate 4 claims
+    # to cover was never actually executed.
+    if main(["links", "docs/a.md", "--kb", str(root)]) != 0:
+        raise SystemExit(f"free-path run: `pnk links` failed on {root}")
+
 
 UNSERVED_KB = "01KYD0000000000000ABSENTKB"
 UNSERVED_DOC = "01KYD000000000000000ABSENT"
@@ -191,11 +198,6 @@ def _run_free_surfaces(root: Path) -> None:
     # accidental paid import, and it is on the free path by definition.
     if main(["budget", "--kb", str(root)]) != 0:
         raise SystemExit(f"free-path run: `pnk budget` failed on {root}")
-    # `pnk links` walks the link graph — no models, no extractor, and nothing that could spend.
-    # It is here because gate 4 asserts a *property of the import graph*, and a surface left out
-    # of the run is a surface the property was never checked on.
-    if main(["links", "docs/a.md", "--kb", str(root)]) != 0:
-        raise SystemExit(f"free-path run: `pnk links` failed on {root}")
     main(["doctor", "--kb", str(root)])
 
 

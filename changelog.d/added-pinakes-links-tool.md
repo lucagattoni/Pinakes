@@ -23,3 +23,11 @@
   **An empty answer now says whether your own arguments emptied it** — `direction="out"` on a
   document whose only link is inbound used to advise "No links from here, search instead", which
   tells an agent to stop traversing a graph it is standing in.
+- **A neighbour's `direction` no longer changes with `depth`.** The `both` merge is decided inside
+  one expansion and never across them: direction is relative to the node being expanded, so an edge
+  found while expanding an unrelated parent was rewriting a row already returned from the start
+  document. `pnk links` prints `<->` for a relation written from both ends. An unknown `direction`
+  is now refused *before* a query loads the embedding backend, rather than after cosining the whole
+  KB to answer a call that could never succeed. And a document whose links all point at documents
+  the KB no longer has is no longer told it has no links — the payload was listing them under
+  `unresolved` in the same breath.

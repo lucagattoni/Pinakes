@@ -307,6 +307,9 @@ def _free_path_modules(tmp_path: Path, prelude: str = "") -> set[str]:
         # the traversal core plus its provider are new territory on the free path (L3, L4).
         "pinakes.graph.traverse",
         "pinakes.graph.provider",
+        # The projection both surfaces return through — the module the fixture's authored links
+        # exist to reach, and the one whose loop body a paid import could have hidden in.
+        "pinakes.graph.present",
     ):
         assert surface in modules, f"the free-path run never reached {surface}"
     return modules

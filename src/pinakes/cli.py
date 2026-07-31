@@ -663,6 +663,10 @@ def run_links(args: argparse.Namespace) -> int:
                 remedy="Pass a document ULID, or its path as `pnk search` prints it.",
             )
 
+        # Constructed first, so an unknown `--direction` is refused before a model is loaded.
+        provider = provider_module.DocumentProvider(
+            connection, local_kb=loaded.kb.id, direction=args.direction, rel=args.rel
+        )
         scores: dict[str, float] = {}
         if args.query is not None:
             # Loaded only when a query was given: ranking by edge needs no model at all, and
@@ -676,13 +680,7 @@ def run_links(args: argparse.Namespace) -> int:
                 dim=loaded.embedding.dim,
             )
 
-        provider = provider_module.DocumentProvider(
-            connection,
-            local_kb=loaded.kb.id,
-            direction=args.direction,
-            rel=args.rel,
-            scores=scores,
-        )
+        provider.scores = scores
         result = traverse(
             provider,
             provider_module.document_key(str(loaded.kb.id), str(start_doc)),

@@ -34,3 +34,14 @@ sibling lists carried. Neither failed, because nothing compared them. They now s
 `pinakes_links` rather than only list it — but the fixture KB had one document and no links, so the
 whole neighbour projection never executed. A `raise SystemExit` planted in that loop never fired.
 The fixture now authors one intra-KB and one unreachable-KB link, and the same probe fires.
+
+**The fix for a wrong answer produced a differently wrong answer, and the tests written with it
+could not see that either.** Keying `directions` by `(node, rel)` was right; merging to `both`
+across *expansions* was not. `directions` accumulates over the whole walk, so an edge discovered
+while expanding an unrelated parent rewrote a row already emitted from the start — and a row's
+`direction` then changed with `--depth`, to exactly the untruth the fix was written to remove. Both
+new direction tests ran at `depth=1`, where the start is the only parent, so neither could reach it.
+A second adversarial pass found it by varying the one parameter the tests held fixed.
+
+The generalisation: **when a fix adds a rule, test the axis the rule is defined over.** The rule was
+about *which expansion* a direction came from, and every test pinned a single expansion.

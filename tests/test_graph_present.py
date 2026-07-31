@@ -20,7 +20,14 @@ from pinakes import store
 from pinakes.errors import TraversalError
 from pinakes.graph import present
 from pinakes.graph.provider import DocumentProvider, document_key
-from pinakes.graph.traverse import FrontierEntry, Neighbour, NodeKey, Result, traverse
+from pinakes.graph.traverse import (
+    FrontierEntry,
+    Neighbour,
+    NodeKey,
+    Result,
+    Unresolved,
+    traverse,
+)
 from pinakes.ids import parse_doc_id, parse_kb_id
 from pinakes.manifest import load
 
@@ -135,6 +142,66 @@ def test_one_relation_written_from_both_ends_is_both(tmp_path: Path) -> None:
     assert [row["direction"] for row in rows] == ["both"]
 
 
+def test_a_direction_does_not_change_with_depth(tmp_path: Path) -> None:
+    """A row's direction must not depend on how far the walk was allowed to go.
+
+    `directions` accumulates across the whole walk, so merging `both` across *expansions* let an
+    edge found while expanding an unrelated parent rewrite a row already emitted from the start.
+    With `t --cites--> a`, `a --related--> m` and `m --cites--> t`, expanding `m` at depth 2 flipped
+    the `(t, cites)` row from `in` to `both` — asserting that `a` cites `t`, which nobody wrote.
+    Both other direction tests run at depth 1, where the start is the only parent, so neither can
+    see this.
+    """
+    root = make_kb(
+        tmp_path / "depths",
+        name="depths",
+        documents={
+            "a.md": "# A\n\nRetrieval.\n",
+            "m.md": "# M\n\nRanking.\n",
+            "t.md": "# T\n\nSourdough.\n",
+        },
+    )
+    kb_id = load(root).kb.id
+    author_link(root, "t.md", f"pnk://{kb_id}/{doc_id_of(root, 'a.md')}", "cites")
+    author_link(root, "a.md", f"pnk://{kb_id}/{doc_id_of(root, 'm.md')}", "related")
+    author_link(root, "m.md", f"pnk://{kb_id}/{doc_id_of(root, 't.md')}", "cites")
+
+    target = doc_id_of(root, "t.md")
+    seen = {
+        depth: next(
+            row
+            for row in _payload(root, "a.md", depth=depth)["neighbours"]
+            if row["doc_id"] == target and row["rel"] == "cites"
+        )["direction"]
+        for depth in (1, 2, 3)
+    }
+    assert seen == {1: "in", 2: "in", 3: "in"}, f"direction moved with depth: {seen}"
+
+
+def test_the_projections_key_sets_match_what_the_rows_carry() -> None:
+    """`present`'s three constants are documentation until something compares them to a real row.
+
+    All three could be replaced with nonsense and nothing failed — the same "a field with no
+    assertion can be a constant" lesson this increment was written about, one level up.
+    """
+    row = present.neighbour_row(_neighbour(1.0), provider=cast(Any, _StubProvider()))
+    assert present.NEIGHBOUR_KEYS == NEIGHBOUR_KEYS == set(row)
+    assert present.FRONTIER_KEYS == FRONTIER_KEYS
+    assert present.UNRESOLVED_KEYS == UNRESOLVED_KEYS
+    assert (
+        set(
+            present.frontier_row(
+                FrontierEntry(node_key=("K", "D"), rel="r", reason="depth", distance=1)
+            )
+        )
+        == present.FRONTIER_KEYS
+    )
+    assert (
+        set(present.unresolved_row(Unresolved(node_key=("K", "D"), rel="r", reason="gone")))
+        == present.UNRESOLVED_KEYS
+    )
+
+
 def test_an_unknown_direction_is_refused_rather_than_answered_emptily(reciprocal: Path) -> None:
     """`edges_of` tests `in ("out", "both")` and `in ("in", "both")`, so an unrecognised string ran
     neither query and produced a confident empty answer with a "no links from here" hint."""
@@ -209,10 +276,12 @@ def test_every_row_shape_is_pinned_by_literal(reciprocal: Path) -> None:
     payload = _payload(reciprocal, "a.md", depth=3)
 
     assert set(payload) == {"document", "neighbours", "frontier", "unresolved", "truncated"}
+    assert payload["neighbours"], "an empty list would satisfy the loop below without checking it"
     for row in payload["neighbours"]:
         assert NEIGHBOUR_KEYS <= set(row) <= NEIGHBOUR_KEYS | {"title"}
-    for entry in payload["frontier"]:
-        assert set(entry) == FRONTIER_KEYS
+    # The frontier and unresolved shapes are pinned directly in
+    # `test_the_projections_key_sets_match_what_the_rows_carry` — this fixture produces neither,
+    # and a `for` over an empty list asserts nothing at all.
 
 
 def test_the_two_surfaces_project_the_same_keys(reciprocal: Path) -> None:
@@ -228,7 +297,7 @@ def test_the_two_surfaces_project_the_same_keys(reciprocal: Path) -> None:
     finally:
         made.close()
 
-    # MCP adds two keys of its own, and both are facts about *this server*, not about the KB.
+    # MCP adds four keys of its own, every one a fact about *this server*, not about the KB.
     assert set(mcp_payload) - set(cli_payload) == {
         "kb",
         "kb_id",
@@ -237,7 +306,7 @@ def test_the_two_surfaces_project_the_same_keys(reciprocal: Path) -> None:
     }
     cli_rows = {row["rel"]: row for row in cli_payload["neighbours"]}
     for row in mcp_payload["neighbours"]:
-        assert set(row) - set(cli_rows[row["rel"]]) <= {"reachable", "reason"}
+        assert set(row) - set(cli_rows[row["rel"]]) <= {"reachable", "reason", "fetch_with"}
         assert set(cli_rows[row["rel"]]) <= set(row), "the CLI must not carry a key MCP dropped"
 
 

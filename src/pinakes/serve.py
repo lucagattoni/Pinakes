@@ -228,19 +228,17 @@ class Server:
                 remedy="Use an id returned by pinakes_search.",
             )
 
-        scores: dict[str, float] = {}
+        # Built before the scoring block, never after: `DocumentProvider.__init__` is where an
+        # unknown `direction` is refused, and refusing it *after* `score_documents` means loading
+        # the embedding backend and cosining every chunk in the KB to answer a call that was always
+        # going to fail.
+        edges = provider_module.DocumentProvider(
+            connection, local_kb=served.manifest.kb.id, direction=direction, rel=rel
+        )
         if query is not None:
-            scores = provider_module.score_documents(
+            edges.scores = provider_module.score_documents(
                 connection, self.backend(served), query, dim=served.manifest.embedding.dim
             )
-
-        edges = provider_module.DocumentProvider(
-            connection,
-            local_kb=served.manifest.kb.id,
-            direction=direction,
-            rel=rel,
-            scores=scores,
-        )
         result = traverse(
             edges,
             provider_module.document_key(served.kb_id, str(start)),
@@ -456,6 +454,14 @@ def _links_suggestion(result: "TraverseResult", *, filtered: bool) -> str:
     the caller's own arguments are what emptied it.
     """
     if not result.neighbours:
+        if result.unresolved:
+            # Links exist; their targets do not. Saying "no links from here" alongside a populated
+            # `unresolved` list contradicts the payload in the same breath.
+            return (
+                "This document's links point at documents this KB no longer has — `unresolved` "
+                "lists them. `pnk doctor` names dangling targets; pinakes_search finds documents "
+                "by content in the meantime."
+            )
         if filtered:
             return (
                 "No links match these arguments — which is not the same as none existing. Retry "

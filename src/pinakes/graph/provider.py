@@ -134,12 +134,21 @@ class DocumentProvider:
         """Which way each neighbour was reached — the core does not carry it, and the surface
         needs it.
 
-        **Keyed by `(node, rel)`, because that is what a row is.** Keyed by node alone, the first
-        edge seen won and every later row for that node inherited its direction: given
-        `a --related--> b` and `b --cites--> a`, asking about `a` reported the citation as running
-        *from* `a`, which is the opposite of what someone wrote. And a `(node, rel)` reached both
-        ways is genuinely `both` — two people wrote the same relation from either end — so that is
-        what it says, rather than whichever query ran first.
+        **Keyed by `(node, rel)`**, not by node alone: keyed by node, the first edge seen won and
+        every later row for that node inherited its direction, so given `a --related--> b` and
+        `b --cites--> a`, asking about `a` reported the citation as running *from* `a`.
+
+        **First expansion wins, and `both` is decided inside one expansion only.** Direction is
+        relative to the node being expanded, so merging across expansions asserts something nobody
+        wrote: with `t --cites--> a`, `a --related--> m` and `m --cites--> t`, expanding `m` at
+        depth 2 would flip the already-emitted `(t, cites)` row from `in` to `both` — claiming `a`
+        cites `t`. A row's direction would then change with `--depth`. Within a single expansion a
+        `both` is real: two people wrote the same relation from either end of the same pair.
+
+        The residual imprecision is inherited from L4 and left deliberately: a row at distance ≥ 2
+        reports its direction relative to the **first** parent that reached it, because `Neighbour`
+        does not carry which parent that was. Every distance-1 row — the only one most callers
+        read, and the only one `depth=1` can produce — is exact, since the start is the sole parent.
         """
 
     def title(self, kb_id: str, doc_id: str) -> str | None:
@@ -155,6 +164,9 @@ class DocumentProvider:
     def neighbours(self, node_key: NodeKey, *, query: str | None) -> Sequence[Candidate]:
         self.queries += 1
         candidates: list[Candidate] = []
+        # Scoped to this one expansion. Merged into `self.directions` below with `setdefault`, so a
+        # later hop can never rewrite the direction of a row an earlier hop already emitted.
+        here: dict[tuple[NodeKey, str], str] = {}
         for edge in edges_of(self.connection, node_key, direction=self.direction, rel=self.rel):
             if edge.kb_id == self.local_kb and edge.doc_id not in self._titles:
                 # A local target this KB does not have is **not** a neighbour — there is no
@@ -164,10 +176,8 @@ class DocumentProvider:
                 continue
             target = document_key(edge.kb_id, edge.doc_id)
             row_key = (target, edge.rel)
-            seen = self.directions.get(row_key)
-            self.directions[row_key] = (
-                edge.direction if seen is None or seen == edge.direction else "both"
-            )
+            seen = here.get(row_key)
+            here[row_key] = edge.direction if seen is None or seen == edge.direction else "both"
             candidates.append(
                 Candidate(
                     node_key=target,
@@ -182,6 +192,8 @@ class DocumentProvider:
                     tokens=_tokens(edge, self.title(edge.kb_id, edge.doc_id)),
                 )
             )
+        for row_key, resolved in here.items():
+            self.directions.setdefault(row_key, resolved)
         return candidates
 
     def unresolved(self, node_key: NodeKey) -> Sequence[Unresolved]:

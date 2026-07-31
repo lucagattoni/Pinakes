@@ -243,7 +243,7 @@ Runs the MCP server over stdio, exposing four tools:
 |---|---|---|
 | `pinakes_search` | `query`, `kb?`, `tags?`, `path_prefix?`, `source_type?`, `k?` | Cited passages, a confidence signal, a suggested next step |
 | `pinakes_get` | `doc_id`, `kb?`, `page_start?`, `page_end?` | One document, optionally one page range |
-| `pinakes_links` | `doc_id`, `kb?`, `rel?`, `direction?`, `depth?`, `query?` | Neighbours, `frontier`, `unresolved`, `truncated` — and `confidence` always `unknown` |
+| `pinakes_links` | `doc_id`, `kb?`, `rel?`, `direction?` (`out`/`in`/`both`), `depth?`, `query?` | Neighbours, `frontier`, `unresolved`, `truncated` — and `confidence` always `unknown` |
 | `pinakes_list_kbs` | — | The KBs this server was pointed at |
 
 **Every tool that answers about a KB takes an explicit `kb`**, defaulting to the first one served

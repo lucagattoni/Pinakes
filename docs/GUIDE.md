@@ -446,7 +446,8 @@ $ pnk links docs/loans-outward.md
 -> counterpart: 01KYP8878AZWS2ZWEBD0KQYTXE (other KB)  [hop 1]
 ```
 
-`->` is a link written here; `<-` is one pointing here, learned by scanning the other KB. A
+`->` is a link written here; `<-` is one pointing here; `<->` is the same relation
+written from both ends, learned by scanning the other KB. A
 neighbour in another KB shows its ULID rather than a title, because this KB holds the partner's
 *links*, not its documents.
 

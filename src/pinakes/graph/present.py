@@ -37,7 +37,10 @@ def neighbour_row(neighbour: Neighbour, *, provider: DocumentProvider) -> dict[s
         "kb_id": kb_id,
         "doc_id": doc_id,
         "rel": neighbour.rel,
-        "direction": provider.directions.get((neighbour.node_key, neighbour.rel), "both"),
+        # `unknown` rather than `both` on the fallback: every emitted neighbour came from a
+        # candidate this provider already recorded, so the default is unreachable — and an
+        # unreachable branch should not default to the strongest claim the payload can make.
+        "direction": provider.directions.get((neighbour.node_key, neighbour.rel), "unknown"),
         "distance": neighbour.distance,
         "score": round(neighbour.score, 4),
         # Which scale `score` is on. With a query, a neighbour with no local chunks to embed falls

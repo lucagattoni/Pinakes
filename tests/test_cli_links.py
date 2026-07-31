@@ -323,3 +323,50 @@ def test_depth_is_honoured_not_merely_capped(linked: tuple[Kb, Kb]) -> None:
     assert 2 in {row["distance"] for row in two["neighbours"]}
     assert str(local.docs["gamma"]) in {row["doc_id"] for row in two["neighbours"]}
     assert str(local.docs["gamma"]) not in {row["doc_id"] for row in one["neighbours"]}
+
+
+def human_output(kb: Kb, document: str, **options: object) -> str:
+    """`pnk links` as a person reads it — stdout only, no `--json`."""
+    import contextlib
+    import io
+
+    from pinakes.cli import main
+
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        code = main(
+            [
+                "links",
+                document,
+                "--kb",
+                str(kb.root),
+                *[
+                    part
+                    for name, value in options.items()
+                    for part in (f"--{name.replace('_', '-')}", str(value))
+                ],
+            ]
+        )
+    assert code == 0, buffer.getvalue()
+    return buffer.getvalue()
+
+
+def test_the_human_output_names_each_direction_with_its_own_arrow(tmp_path: Path) -> None:
+    """`->` written here, `<-` pointing here, `<->` the same relation written from both ends.
+
+    `run_links`' human output had no assertion at all until this: mutating the arrow's fallback to
+    `<-` survived the whole suite, and so did deleting the `no links` line, which would leave an
+    unlinked document printing nothing and exiting 0.
+    """
+    kb = make_kb(tmp_path / "arrows", "arrows", ["alpha", "beta", "gamma", "orphan"])
+    kb.set_links("alpha", [(kb.uri("beta"), "related"), (kb.uri("gamma"), "mutual")])
+    kb.set_links("gamma", [(kb.uri("alpha"), "mutual")])
+    kb.set_links("beta", [(kb.uri("alpha"), "cites")])
+    run(kb)
+
+    out = human_output(kb, "docs/alpha.md")
+    assert "-> related: beta" in out, "written here"
+    assert "<- cites: beta" in out, "pointing here"
+    assert "<-> mutual: gamma" in out, "the same relation from both ends"
+
+    assert "no links" in human_output(kb, "docs/orphan.md"), "silence would read as success"

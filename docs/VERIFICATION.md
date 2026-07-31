@@ -153,7 +153,15 @@ test, or write **none** and say why in the same commit.
 | ...and one relation written from both ends is `both` | L5 | `tests/test_graph_present.py::test_one_relation_written_from_both_ends_is_both` |
 | an unknown `direction` is refused, not answered emptily | L5 | `tests/test_graph_present.py::test_an_unknown_direction_is_refused_rather_than_answered_emptily` |
 | `scored_by_query` says which scale `score` is on | L5 | `tests/test_graph_present.py::test_scored_by_query_says_which_scale_the_score_is_on` |
-| a score is rounded to four places | L5 | `tests/test_graph_present.py::test_a_score_is_rounded_to_four_places` |
+| a score is rounded to four places | L5 | `tests/test_graph_present.py::test_a_score_is_rounded_even_when_the_raw_value_is_long` |
+| ...over a real KB too | L5 | `tests/test_graph_present.py::test_a_score_is_rounded_to_four_places` |
+| `truncated` reports the caps that bit | L5 | `tests/test_graph_present.py::test_truncated_reports_the_caps_that_bit` |
+| a frontier entry carries the distance it was found at | L5 | `tests/test_graph_present.py::test_a_frontier_entry_carries_the_distance_it_was_found_at` |
+| a document whose links all dangle is not called unlinked | L5 | `tests/test_serve.py::test_a_document_whose_links_all_dangle_is_not_called_unlinked` |
+| a direction does not change with `depth` | L5 | `tests/test_graph_present.py::test_a_direction_does_not_change_with_depth` |
+| `present`'s key constants match the rows | L5 | `tests/test_graph_present.py::test_the_projections_key_sets_match_what_the_rows_carry` |
+| every argument that can empty an answer is named | L5 | `tests/test_graph_present.py::test_is_filtered_names_every_argument_that_can_empty_an_answer` |
+| each direction gets its own arrow in the human output | L5 | `tests/test_cli_links.py::test_the_human_output_names_each_direction_with_its_own_arrow` |
 | a local neighbour carries a title, a cross-KB one does not | L5 | `tests/test_graph_present.py::test_a_local_neighbour_carries_a_title_and_a_cross_kb_one_does_not` |
 | an unresolved row survives and carries the local `kb_id` | L5 | `tests/test_graph_present.py::test_an_unresolved_row_survives_and_carries_the_local_kb_id` |
 | every row shape is pinned by literal | L5 | `tests/test_graph_present.py::test_every_row_shape_is_pinned_by_literal` |
