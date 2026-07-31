@@ -121,14 +121,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `False` and written back as `false`, `shelf: 0755` became `493`, `confirmed: yes` became `true`
   and `duration: 1:30` became `90`. YAML 1.2 reads them as the strings they visibly are.
 
-  **Three breaking changes**, all consequences of the library. A **duplicate key** is now a hard
+  **Four breaking changes**, all consequences of the library. A **duplicate key** is now a hard
   error rather than silent last-wins — which of the two values was meant is not recoverable, and
   ruamel's own message ends with a URL for switching the check off that pinakes deliberately does
   not pass on. A **string field that YAML 1.2 resolves as a number** (`1e3`, `1E3`, `0o17` in
   `title`, `created`, `tags[]`, `links[].to`, `links[].rel`) is refused. And an **`!!str`-tagged
   value** is refused — the only *working* tag that changes behaviour; `!!int`, `!!float`, `!!bool`,
   `!!seq` and `!!map` still load to the same values they always did, though the tag itself is not
-  written back (`!!int 3` comes back as `3`).
+  written back (`!!int 3` comes back as `3`). And **a key that is not a string is refused** — the
+  index stores metadata as JSON, whose keys must be strings, and a sidecar with `1: a` at the top
+  level used to crash `pnk sync` from inside the index writer instead.
 
   **Separately, four shapes whose unhandled `TypeError` becomes a named error** — `!!binary`,
   `!!set`, `!!timestamp` and a bare date all crashed `pnk sync` out of `json.dumps` before, and are
