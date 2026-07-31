@@ -19,7 +19,7 @@ HIGH). **L1–L8 are implementable; G1–G6 are not yet.**
 > | | Scope | Breaking | Cut |
 > |---|---|---|---|
 > | **L5b** | The swap, and **everything needed to keep behaviour equivalent** — loader, round-trip, quoting, `ScalarBoolean` coercion, the JSON-encodability check (decision 26), stub, gates | **3**: duplicate keys, strings 1.2 resolves as numbers, `!!str` values. Plus four crashes that become named errors | **the interim MINOR** |
-> | **L5c** | The one refusal pinakes *chooses* — decision 19, non-string top-level keys | **1**: a non-string top-level key | none; rides L8 |
+> | ~~**L5c**~~ | **Delivered by L5b, unbuilt.** Decision 19 shipped as a side effect of the union JSON check | — | — |
 >
 > L5c is independently revertible and depends on nothing in L5b — it closes a `TypeError` live on
 > `main` today. **Assume both still have defects** — every pass so far has found something real, and each pass's worst finding was in the
@@ -1137,34 +1137,29 @@ the ClaudeKB corpus-realism check (decision 1); all three stay with L8.
 
 ---
 
-### L5c — refuse non-string top-level keys
+### L5c — ~~refuse non-string top-level keys~~ **delivered by L5b; nothing to build**
 
-**Decision 19 alone.** Separated from L5b because it is the one change that is *pinakes choosing to
-reject more*, rather than keeping behaviour equivalent across the library swap — so it is
-independently revertible, and it closes a bug that exists **today**, not one L5b creates.
+**Closed 20260731 11:30, unbuilt.** Decision 19 shipped inside 0.5.0 as a *consequence* of L5b's
+union JSON check, not as work anyone assigned. `_metadata()` always merges `extra` with the string
+keys `tags` and `provenance`, so any non-string top-level key makes the assembled mapping mixed and
+`sort_keys=True` refuses it. Verified against the **published wheel** and against `main`:
 
-**One breaking change:** a non-string top-level key (`123: v`) is refused. It works today, unless
-mixed types make `sorted()` raise — so the single-key case is the breaking one.
+```
+top-level int key    refused — SidecarError
+top-level bool key   refused — SidecarError
+nested int keys      accepted   (the documented residual)
+```
 
-**What lands.** Refuse non-string top-level keys at `read()`, before `Sidecar` is constructed. **Top
-level only**; nested user maps stay unconstrained, and L5b's `sort_keys=True` already catches nested
-non-string keys. The remedy names the offending key and says pinakes partitions top-level keys into
-its own and the user's, so each must be a string.
+**The release was true about something it did not claim** — the direction that misleads least, but
+still misleads. `CHANGELOG.md`'s `[0.5.0]` breaking list now says four, not three.
 
-**Why it is not in L5b.** It makes `extra: dict[str, Any]` honest and closes a `TypeError` live on
-`main` today — `id: X` plus `123: v` plus `abc: w` reads fine and dies in `sorted()`. Neither
-depends on ruamel. Reverting it leaves L5b correct.
+**The residual is real and belongs to neither increment.** A *uniformly* non-string-keyed **nested**
+mapping is accepted and silently coerced (`{1: a, 2: b}` → `{"1": "a", "2": "b"}`), because
+`sort_keys=True` catches only *mixed* keys and decision 19 was scoped to the top level. Identical
+under PyYAML today, so not a regression, and deliberately **not** given an increment: it is a
+recorded residual in `docs/MANIFEST.md`'s bound table, not a defect to fix.
 
-**Tests.** `test_sidecar.py::test_a_non_string_top_level_key_is_refused_with_a_remedy`;
-`::test_a_single_non_string_key_is_refused_too` (it writes back fine today);
-`test_doctor.py::test_a_non_string_top_level_key_is_reported_not_crashed`.
-
-**Mutation target.** Drop the string-key check → the non-string-key test fails.
-
-**Docs.** `docs/CLI.md` — `pnk doctor`'s new refusal class. · `MANIFEST.md`, `VERIFICATION.md`,
-`STATUS.md`. · A `changelog.d/` fragment carrying the one breaking line.
-
-**No cut** — L5b took the interim one. This rides the final cut at L8.
+**Nothing lands here.** The sequence from 0.5.0 is **L6 → L7 → L8**.
 
 ---
 
@@ -1748,7 +1743,7 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | `extra` is no longer corrupted by YAML 1.1 | decision-ruamel-yaml | L5b | `test_yaml_1_1_scalars_are_no_longer_corrupted` |
 | The user's key order survives a rewrite | decision-ruamel-yaml | L5b | `test_the_users_key_order_is_preserved_on_rewrite` |
 | A duplicate key is a hard error, not a silent last-wins | decision-ruamel-yaml | L5b | `test_a_duplicate_key_is_refused_without_ruamels_suppression_url` |
-| A non-string top-level key is refused | decision 19 | **L5c** | `test_a_non_string_top_level_key_is_refused_with_a_remedy`, `test_a_single_non_string_key_is_refused_too` |
+| A non-string top-level key is refused | decision 19 | **L5b** (shipped) | `test_a_non_string_top_level_key_is_refused_with_a_remedy`, `test_a_single_non_string_key_is_refused_too` |
 | `extra`/`provenance` values are JSON-encodable | decision 26 | **L5b** | `test_a_json_unencodable_extra_value_is_refused_with_a_remedy`, `test_a_tagged_sidecar_is_refused_at_read_not_crashed_in_json` |
 | Every scalar pinakes writes survives a 1.1 **and** a 1.2 reader | decision 23 | L5b, L6 | `test_a_minted_title_that_looks_like_a_boolean_is_quoted`, `test_a_rel_that_looks_like_a_boolean_is_quoted` |
 | A comment inside a nested known-key block survives | decision-ruamel-yaml | L5b | `test_a_comment_inside_provenance_extraction_survives_a_re_extraction` |
