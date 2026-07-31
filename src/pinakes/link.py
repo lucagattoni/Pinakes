@@ -228,8 +228,19 @@ def _document_in(root: Path, raw: str, *, kb: str) -> Path:
 
     Resolving the parent alone gets both: the directory chain is followed, so an escape through it
     is caught and a symlinked ancestor lands inside; the final component is left alone, so the
-    document's own symlink is irrelevant — which is right, because what decides membership is the
-    path under `[sources]`, and `Path.glob` does yield a symlinked *file*.
+    document's own symlink is irrelevant — which is right, because `Path.glob` does yield a
+    symlinked *file*, so `pnk sync` really does ingest one.
+
+    **The boundary is the KB root, not `[sources]`** — as the plan specifies, and as this code
+    actually does. Two earlier drafts of this docstring said `[sources]`, which was a rule the check
+    never implemented; the residual is real and stated rather than argued away. A document inside
+    the root but outside `[sources]` — `staging/notes.md` beside a `roots = ["docs/"]` — can be
+    linked, and the link will not resolve until that document is ingested. That is deliberate:
+    membership under `[sources]` is a question of `roots` *and* the `include`/`exclude` globs, so
+    answering it here means re-implementing `walk_sources` and refusing a "link it now, ingest it
+    next" order of work that costs nothing. The consequence is already reported honestly where it
+    shows — `pnk links` says *"links exist but resolve to nothing"*, and naming the target is L7's
+    job for `pnk doctor`.
 
     **`normpath` is not applied first, deliberately.** It would collapse
     `docs/link-to-elsewhere/../x.md` to `docs/x.md` textually, turning an escaping path into one
@@ -259,12 +270,12 @@ def _document_in(root: Path, raw: str, *, kb: str) -> Path:
         )
 
     path = sidecar_module.sidecar_path(document)
-    if not document.is_file():
+    if not _is_file(document, raw):
         raise PinakesError(
             f"{raw!r} is not a document in {kb}.",
             remedy="Give a path relative to that KB's root, as `pnk search` prints it.",
         )
-    if not path.is_file():
+    if not _is_file(path, raw):
         raise PinakesError(
             f"{raw!r} has no sidecar, so it has no ULID to link.",
             remedy=(
@@ -274,3 +285,22 @@ def _document_in(root: Path, raw: str, *, kb: str) -> Path:
             ),
         )
     return document
+
+
+def _is_file(path: Path, raw: str) -> bool:
+    """`path.is_file()`, with the errors it does *not* swallow turned into a `PinakesError`.
+
+    `pathlib` ignores `ENOENT`, `ENOTDIR`, `EBADF` and `ELOOP` — a missing file is `False`, not an
+    exception — but nothing else. An unreadable parent directory (`EACCES`) and an over-long name
+    (`ENAMETOOLONG`) both raise, and `OSError` is not a `PinakesError`, so both reached `cli.main`
+    as a traceback: the same class of escape that `expanduser()` was dropped for two commits ago,
+    left in place because only the one instance was looked at. `sync.py` catches `OSError` beside
+    `PinakesError` at its own document loop for exactly this reason.
+    """
+    try:
+        return path.is_file()
+    except OSError as exc:
+        raise PinakesError(
+            f"{raw!r} cannot be read: {exc.strerror}.",
+            remedy="Check the path and its directory's permissions.",
+        ) from exc

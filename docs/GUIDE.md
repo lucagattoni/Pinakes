@@ -434,8 +434,8 @@ which leaves:
 ```yaml
 # archive/docs/loans-outward.md.pnk.yaml
 links:
-  - to: pnk://01KYP11WY2ZGX9B2Q5V7PJ8DW1/01KYP8878AZWS2ZWEBD0KQYTXE
-    rel: counterpart
+- to: pnk://01KYP11WY2ZGX9B2Q5V7PJ8DW1/01KYP8878AZWS2ZWEBD0KQYTXE
+  rel: counterpart
 ```
 
 `museum:` is looked up in *this* manifest and never written down — what lands on disk is the pair of
@@ -455,13 +455,23 @@ It writes into the **source** document's sidecar and nothing else — the museum
 touched — and it refuses a document that has no sidecar yet, because the ULID a link needs is minted
 by `pnk sync`. [CLI](CLI.md#pnk-link) has the full grammar and the refusals.
 
-Write it by hand instead if you prefer — including the indented style shown above. Your comments,
-your quoting, your blank lines and your own key order all survive a rewrite, and values are never
-reinterpreted: `country: NO` stays the string `NO` rather than turning into `false`.
+Write it by hand instead if you prefer, in whatever style you like:
 
-The one thing that changes about *layout* is exactly this indentation — pinakes re-emits a block
-sequence as `- to:` at the left margin, once. [MANIFEST](MANIFEST.md#the-sidecar--filepnkyaml) lists
-the full set of bounds, including the `pnk://self/…` expansion you can see below.
+```yaml
+# archive/docs/loans-outward.md.pnk.yaml
+links:
+  - to: pnk://01KYP11WY2ZGX9B2Q5V7PJ8DW1/01KYP8878AZWS2ZWEBD0KQYTXE
+    rel: counterpart
+```
+
+Your comments, your quoting, your blank lines and your own key order all survive a rewrite, and
+values are never reinterpreted: `country: NO` stays the string `NO` rather than turning into
+`false`.
+
+The one thing that changes about *layout* is exactly that indentation — the first time anything
+rewrites the file, pinakes re-emits a block sequence as `- to:` at the left margin, which is why the
+output above is flush. It happens once. [MANIFEST](MANIFEST.md#the-sidecar--filepnkyaml) lists the
+full set of bounds, including the `pnk://self/…` expansion you can see below.
 
 `pnk sync` records that link, and also reads the *other* KB's committed sidecars to learn what
 points back:

@@ -313,6 +313,47 @@ def test_a_symlinked_directory_cannot_carry_a_link_out_of_the_kb(
     assert links_of(local, "alpha") == []
 
 
+def test_an_unreadable_directory_is_refused_rather_than_crashing(pair: tuple[Kb, Kb]) -> None:
+    """`Path.is_file()` swallows `ENOENT`/`ENOTDIR`/`EBADF`/`ELOOP` and nothing else, so `EACCES`
+    and `ENAMETOOLONG` came out of `cli.main` as tracebacks — the same escaping-non-`PinakesError`
+    class that `expanduser()` was dropped for, left behind because only that one was looked at."""
+    local, _partner = pair
+    locked = local.root / "docs" / "locked"
+    locked.mkdir()
+    locked.chmod(0o000)
+    try:
+        with pytest.raises(PinakesError) as caught:
+            add(load(local.root), source="docs/locked/x.md", target="docs/beta.md", rel="cites")
+        assert "cannot be read" in caught.value.message
+    finally:
+        locked.chmod(0o755)
+
+    with pytest.raises(PinakesError) as caught:
+        add(load(local.root), source=f"docs/{'a' * 300}.md", target="docs/beta.md", rel="cites")
+    assert "cannot be read" in caught.value.message
+
+
+def test_a_document_inside_the_root_but_outside_sources_can_be_linked(
+    pair: tuple[Kb, Kb],
+) -> None:
+    """The stated residual, pinned so it is a decision rather than an accident.
+
+    The boundary is the KB **root**, as the plan specifies; `[sources]` membership depends on the
+    `include`/`exclude` globs as well as `roots`, so answering it here means re-implementing
+    `walk_sources` and refusing a "link it now, ingest it next" order of work. The link simply does
+    not resolve until the document is ingested, which `pnk links` already reports honestly.
+    """
+    local, _partner = pair
+    staging = local.root / "staging"
+    staging.mkdir()
+    (staging / "notes.md").write_text("# notes\n", encoding="utf-8")
+    doc_id = mint_doc_id()
+    (staging / f"notes.md{SIDECAR_SUFFIX}").write_text(f"id: {doc_id}\n", encoding="utf-8")
+
+    assert link(local, "docs/alpha.md", "staging/notes.md", "cites")[0] == EXIT_OK
+    assert links_of(local, "alpha") == [(f"pnk://{local.kb_id}/{doc_id}", "cites")]
+
+
 def test_an_absolute_source_behind_a_symlinked_ancestor_is_accepted(
     pair: tuple[Kb, Kb], tmp_path: Path
 ) -> None:

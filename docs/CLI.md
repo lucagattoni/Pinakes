@@ -329,12 +329,14 @@ block's introduction. [MANIFEST](MANIFEST.md#the-sidecar--filepnkyaml) lists the
 same moment can lose one side's change — whichever writes last wins. Rename-atomicity prevents a
 *torn* file, not a lost update.
 
-Only one thing can actually collide with it: a **paid** extraction you started yourself, which is
-the one sync that rewrites an existing sidecar. The git hooks cannot — `post-commit` and
-`post-merge` run `--index-only` and never write into `docs/` at all, `pre-commit` only *mints*
-sidecars for documents that have none, and all three force the free extractor. So the window is a
-`pnk link` typed while your own `pnk sync` is paying to extract that same document; if it happens,
-re-run whichever change went missing.
+Only a sync you started yourself can collide with it. Two of them rewrite an *existing* sidecar: a
+paid extraction, and `--force` with an explicit free `--extract`, which clears the paid claim the
+sidecar was carrying. Everything else either mints a sidecar or does not enter `docs/` at all.
+
+The git hooks are none of those — `post-commit` and `post-merge` run `--index-only`, `pre-commit`
+only mints sidecars for documents that have none, all three force the free extractor, and no hook
+passes `--force`. So the window is a `pnk link` typed while your own `pnk sync` is rewriting that
+same document's sidecar; if it happens, re-run whichever change went missing.
 
 ---
 

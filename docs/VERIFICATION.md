@@ -206,6 +206,8 @@ test, or write **none** and say why in the same commit.
 | ...while `..` is still refused | L6 review | `tests/test_cli_link.py::test_a_dot_dot_escape_is_still_refused` |
 | ...and a symlinked *directory* cannot carry a link out of the KB | L6 review 2 | `tests/test_cli_link.py::test_a_symlinked_directory_cannot_carry_a_link_out_of_the_kb` |
 | an absolute source behind a symlinked ancestor is accepted | L6 review 2 | `tests/test_cli_link.py::test_an_absolute_source_behind_a_symlinked_ancestor_is_accepted` |
+| an unreadable or over-long path is refused, not a traceback | L6 review 3 | `tests/test_cli_link.py::test_an_unreadable_directory_is_refused_rather_than_crashing` |
+| the boundary is the KB root, not `[sources]` (stated residual) | L6 review 3 | `tests/test_cli_link.py::test_a_document_inside_the_root_but_outside_sources_can_be_linked` |
 | a `~` path is refused, not a `RuntimeError` traceback | L6 review | `tests/test_cli_link.py::test_a_home_relative_path_is_refused_rather_than_crashing` |
 | an empty `tags:`/`provenance:` is not normalised by a link | L6 review | `tests/test_cli_link.py::test_an_empty_tags_or_provenance_is_not_normalised_by_adding_a_link` |
 | a symlinked sidecar is written through, not replaced | L6 review | `tests/test_cli_link.py::test_a_symlinked_sidecar_is_written_through_not_replaced` |

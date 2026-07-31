@@ -213,12 +213,13 @@ Both writes are rename-atomic, which is a claim about *this* write and not about
 `pnk link` takes no lock, so a concurrent write to the same sidecar can lose one side's change.
 Atomicity prevents a torn file holding a permanent ULID; it does not order two writers.
 
-The exposure is narrow by construction rather than by luck. The only sync that rewrites an existing
-sidecar is a paid extraction, and a paid extraction is never automatic (§1): the git hooks force the
-free backend, and the two that run unattended are `--index-only` and do not enter `docs/` at all. So
-the collision needs one person running both halves at once, and the answer is to re-run the change
-that went missing. Taking the sync lock here would trade that for an interactive command blocked for
-as long as someone else's extraction takes to bill.
+The exposure is narrow by construction rather than by luck. A sync rewrites an *existing* sidecar in
+exactly two cases — a paid extraction, and the `--force`-plus-free-`--extract` override that clears
+the paid claim (§6.4) — and neither is ever automatic: the hooks force the free backend, none passes
+`--force`, and the two that run unattended are `--index-only`. So the collision needs one person
+running both halves at once, and the answer is to re-run the change that went missing. Taking the
+sync lock here would trade that for an interactive command blocked for as long as someone else's
+extraction takes to bill.
 
 ---
 
