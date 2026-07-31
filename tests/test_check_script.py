@@ -18,6 +18,11 @@ import sys
 from pathlib import Path
 
 CHECK_SH = Path(__file__).parent.parent / "check.sh"
+WORKFLOW = Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml"
+
+
+def _workflow() -> str:
+    return WORKFLOW.read_text(encoding="utf-8")
 
 
 def test_check_sh_declares_the_pdf_quality_guard() -> None:
@@ -92,9 +97,7 @@ def test_ci_runs_the_link_density_gate_and_proves_it_can_fail() -> None:
     """`ci.yml` never invokes `check.sh`, so a gate living only there runs only where someone
     remembers. The negative step matters as much as the positive one: a gate nobody has watched
     fail is a gate nobody knows works."""
-    workflow = (Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = _workflow()
     job = re.search(r"^  link-density:\n(?P<body>(?:    .*\n|\n)*)", workflow, re.MULTILINE)
     assert job is not None, "ci.yml has no link-density job"
     body = job.group("body")
@@ -113,12 +116,55 @@ def test_check_sh_declares_the_traversal_cap_gate() -> None:
 
 
 def test_ci_runs_the_traversal_cap_gate() -> None:
-    workflow = (Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = _workflow()
     job = re.search(r"^  traversal-caps:\n(?P<body>(?:    .*\n|\n)*)", workflow, re.MULTILINE)
     assert job is not None, "ci.yml has no traversal-caps job"
     body = job.group("body")
     assert "tools/traversal_cap_gate.py" in body
     assert "--expect-depth 99" in body, "the negative check is gone — nothing proves it gates"
     assert "the caps moved" in body, "the negative check no longer requires the stated reason"
+
+
+def test_check_sh_declares_the_eval_reproducibility_gate() -> None:
+    """G1. Same pinning as its three siblings: match the real invocation, never a substring that an
+    explanatory comment would also satisfy."""
+    text = CHECK_SH.read_text(encoding="utf-8")
+    assert re.search(
+        r"^uv run --frozen python3 tools/eval_reproducibility_gate\.py\s*$", text, re.MULTILINE
+    ), "check.sh no longer invokes the eval-reproducibility gate"
+
+
+def test_ci_runs_the_eval_reproducibility_gate_and_proves_it_can_fail() -> None:
+    workflow = _workflow()
+    job = re.search(r"^  eval-reproducibility:\n(?P<body>(?:    .*\n|\n)*)", workflow, re.MULTILINE)
+    assert job is not None, "ci.yml has no eval-reproducibility job"
+    body = job.group("body")
+    assert "tools/eval_reproducibility_gate.py" in body
+    assert "--inject-difference" in body, "the negative check is gone — nothing proves it gates"
+    assert "questions changed outcome" in body, (
+        "the negative check no longer requires the stated reason, so a crash would satisfy it"
+    )
+
+
+def test_ci_compares_per_question_outcomes_across_two_operating_systems() -> None:
+    """The half a single machine cannot answer (G1).
+
+    The point of the job is that the two legs are *different architectures*. A matrix that quietly
+    lost one of them would still be green, still upload an artifact, and prove nothing — so the two
+    runner names are asserted here rather than left to the reader of the workflow.
+    """
+    workflow = _workflow()
+    job = re.search(r"^  eval-cross-machine:\n(?P<body>(?:    .*\n|\n)*)", workflow, re.MULTILINE)
+    assert job is not None, "ci.yml has no eval-cross-machine job"
+    body = job.group("body")
+    assert "ubuntu-latest" in body and "macos-latest" in body, (
+        "the cross-machine comparison is down to one machine, which compares nothing"
+    )
+    assert "--record-outcomes" in body
+
+    compare = re.search(
+        r"^  eval-cross-machine-compare:\n(?P<body>(?:    .*\n|\n)*)", workflow, re.MULTILINE
+    )
+    assert compare is not None, "the two legs are recorded and never compared"
+    assert "diff" in compare.group("body")
+    assert "needs: eval-cross-machine" in compare.group("body")
