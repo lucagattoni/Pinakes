@@ -441,10 +441,6 @@ test, or write **none** and say why in the same commit.
 
 ## The evaluation is reproducible (G1)
 
-The graph release decides on an exact per-question sign test, so a question that changes its answer
-for any reason other than retrieval is not noise — it is a wrong answer. What was measured, and what
-did not move: [STATUS.md](STATUS.md#is-the-evaluation-reproducible--measured-20260801-0035).
-
 | What must be true | Increment | Where it is checked |
 |---|---|---|
 | the same index evaluated twice gives the same answers | G1 | `tests/test_search_reproducibility.py::test_outcomes_are_identical_across_repeated_runs` |
