@@ -215,6 +215,10 @@ test, or write **none** and say why in the same commit.
 | ...and a `pinakes.toml` that is a directory or a broken symlink says which | L6 review 9 | `tests/test_cli_link.py::test_a_pinakes_toml_that_is_not_a_regular_file_says_which` |
 | a partner `include` pattern reaching outside its KB is refused | L6 review 10 | `tests/test_sync_links.py::test_a_partner_include_pattern_outside_its_own_kb_is_refused` |
 | ...while a symlinked document *inside* a partner KB is still read | L6 review 10 | `tests/test_sync_links.py::test_a_symlinked_document_inside_a_partner_kb_is_still_read` |
+| ...refused **before** the glob, so the walk is bounded | L6 review 11 | `tests/test_sync_links.py::test_an_escaping_include_pattern_is_refused_without_walking` |
+| ...and an escape matching only sidecars is still reported | L6 review 11 | `tests/test_sync_links.py::test_an_escape_matching_only_sidecars_is_still_reported` |
+| one escaping pattern is one problem, however many roots | L6 review 11 | `tests/test_sync_links.py::test_one_escaping_pattern_is_one_problem_however_many_roots` |
+| `exclude` matches the path the partner wrote, not the resolved one | L6 review 11 | `tests/test_sync_links.py::test_an_exclude_rule_matches_the_path_the_partner_wrote_not_the_resolved_one` |
 | the boundary is the KB root, not `[sources]` (stated residual) | L6 review 3 | `tests/test_cli_link.py::test_a_document_inside_the_root_but_outside_sources_can_be_linked` |
 | a `~` path is refused, not a `RuntimeError` traceback | L6 review | `tests/test_cli_link.py::test_a_home_relative_path_is_refused_rather_than_crashing` |
 | an empty `tags:`/`provenance:` is not normalised by a link | L6 review | `tests/test_cli_link.py::test_an_empty_tags_or_provenance_is_not_normalised_by_adding_a_link` |

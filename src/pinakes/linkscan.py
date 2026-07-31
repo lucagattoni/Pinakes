@@ -294,19 +294,33 @@ def sidecars_under(
       yielded zero sidecars, which reads as "this partner has no inbound links" — and the caller
       then deletes every row it had. A partner renaming its own `docs/` silently destroyed the
       whole inbound picture and stamped the scan as fresh.
-    * **an `include` pattern that escapes the KB is refused too.** `include` is exactly as
-      partner-controlled as `roots`, and the check above was implemented for `roots` alone — so
-      `include = ["../../outside/*.md"]` walked out of the partner KB and this one recorded inbound
-      links from files the partner does not own. `candidate.relative_to(root)` did not catch it:
-      `relative_to` is purely lexical, so `docs/../../outside/planted.md` *is* relative to the root
-      as a string. The containment test has to resolve, and it is spelled exactly as
-      `link._document_in` spells it — parent resolved, final component not — so a symlinked
-      *document* inside the KB stays readable while a symlinked *directory* cannot carry the walk
-      out. Found in review 10 by testing this docstring's own argument against the code below it.
+    * **an `include` pattern that escapes the KB is refused too, in two halves.** `include` is
+      exactly as partner-controlled as `roots`, and the check above was implemented for `roots`
+      alone — so `include = ["../../outside/*.md"]` walked out of the partner KB and this one
+      recorded inbound links from files the partner does not own. `candidate.relative_to(root)` did
+      not catch it: `relative_to` is purely lexical, so `docs/../../outside/planted.md` *is*
+      relative to the root as a string. Containment has to resolve.
+
+      A `..` or absolute pattern is refused **before** globbing, because that is what bounds the
+      walk — checking each candidate afterwards refuses the results while still paying for the
+      enumeration, which was the whole point of the `roots` rule. What no static check can see is a
+      **symlinked directory**, so the per-candidate test remains, spelled as `link._document_in`
+      spells it (parent resolved, final component not) so a symlinked *document* inside the KB
+      stays readable — and it `break`s, which bounds that half.
+
+      Found in review 10 by testing this docstring's own argument against the code below it, and
+      completed in review 11 by testing the *fix's* argument the same way.
     """
     found: set[Path] = set()
     problems: list[str] = []
     anchor = root.resolve()
+    # One entry per *pattern*, collected across every root and reported once at the end. A hostile
+    # `../**` matches thousands of files under several roots, and a `LinkScanError` per match — or
+    # per (root, pattern) pair — would bury every other issue in the report.
+    escaping: set[str] = set()
+    # `parent.resolve()` is a syscall chain per candidate, and a large KB globs thousands of files
+    # out of a handful of directories.
+    resolved: dict[Path, Path] = {}
     for name in roots:
         base = (root / name).resolve()
         if not base.is_relative_to(anchor):
@@ -316,28 +330,50 @@ def sidecars_under(
             problems.append(f"[sources] roots entry {name!r} is not a directory")
             continue
         for pattern in include:
-            escaped = False
+            if pattern in escaping:
+                continue
+            # **Refused before globbing, which is what bounds the walk.** The per-candidate check
+            # below cannot: `glob` has already enumerated and stat'd the whole tree by the time the
+            # first match is inspected, so `include = ["../../../../**/*.md"]` walked the machine
+            # on every `post-commit` even though nothing was collected. The `roots` branch above
+            # gets this right by `continue`ing before it walks; presenting `include` as the same
+            # rule while checking it a step later delivered the refusal without the bound.
+            # `manifest._sources` spells the static half the same way for the local manifest.
+            parts = Path(pattern).parts
+            if Path(pattern).is_absolute() or ".." in parts:
+                escaping.add(pattern)
+                continue
             for candidate in base.glob(pattern):
+                parent = resolved.get(candidate.parent)
+                if parent is None:
+                    parent = candidate.parent.resolve()
+                    resolved[candidate.parent] = parent
+                # **Containment before the `is_file` skip**, not after: a pattern reaching outside
+                # that matched only sidecars or only directories was skipped by that `continue` and
+                # never recorded as an escape, so the walk left the KB and reported nothing.
+                if not (parent / candidate.name).is_relative_to(anchor):
+                    escaping.add(pattern)
+                    break  # bounds a symlinked-directory escape, which no static check can see
                 if not candidate.is_file() or candidate.name.endswith(SIDECAR_SUFFIX):
                     continue
-                inside = candidate.parent.resolve() / candidate.name
-                if not inside.is_relative_to(anchor):
-                    escaped = True
-                    continue
-                relative = inside.relative_to(anchor).as_posix()
+                # **`exclude` matches the *unresolved* path**, as it did before the containment
+                # check existed and as the partner's own `walk_sources` does. Matching the resolved
+                # one silently changed which rules fire — with `docs/alias -> docs/real` inside the
+                # KB, `exclude = ["docs/real/*"]` began excluding documents reached as
+                # `docs/alias/…`, and an excluded document is a dropped sidecar, which with
+                # `complete` true is a deleted inbound row. This KB must exclude exactly what the
+                # partner excludes; disagreeing in either direction is a wrong answer about someone
+                # else's KB.
+                relative = candidate.relative_to(anchor).as_posix()
                 if any(candidate.match(rule) or Path(relative).match(rule) for rule in exclude):
                     continue
-                sidecar = inside.with_name(inside.name + SIDECAR_SUFFIX)
+                sidecar = candidate.with_name(candidate.name + SIDECAR_SUFFIX)
                 if sidecar.is_file():
                     found.add(sidecar)
-            if escaped:
-                # One problem per *pattern*, not per file: a hostile `../**` matches thousands, and
-                # a `LinkScanError` per match would bury every other issue in the report. Recorded
-                # as a problem, so `complete` is false and the caller keeps the rows it already
-                # has — a manifest that reaches outside is not evidence about what is inside it.
-                problems.append(
-                    f"[sources] include pattern {pattern!r} matches files outside the KB"
-                )
+    problems.extend(
+        f"[sources] include pattern {pattern!r} reaches outside the KB"
+        for pattern in sorted(escaping)
+    )
     return sorted(found), problems
 
 

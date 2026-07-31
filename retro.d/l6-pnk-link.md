@@ -1,7 +1,15 @@
-## L6 — `pnk link` (20260731 21:34)
+## L6 — `pnk link` (20260731 21:28)
 
-Ten adversarial rounds, and every one found defects in the round before it — **four times the
-previous round's own fix or claim** (rounds 2, 8, 9b and 10) rather than something it had missed. What follows is the state after all of them, not a log:
+**Every review commit on this increment found defects in the one before it, and five of them found
+the previous commit's own fix or claim** rather than something it had missed: `3ce150e` (the
+containment fix had traded one defect for two), `9c8f667` (the totality fix re-anchored the walk on
+the working directory), `cdee8d8` (the test for an untested branch did not enter it), `dbebd8b` (a
+severity asserted, not measured) and this one (the escape refusal did not bound the walk).
+
+No total is given, deliberately. Three drafts stated one and all three were wrong, because it
+changes depending on whether `8b` and `9b` count as rounds of their own — and the last wrong figure
+was introduced *by the commit correcting the one before it*. `git log main..HEAD` is the answer, and
+it cannot go stale. What follows is the state after all of them, not a log:
 the rule is to rewrite to the current state rather than layer corrections, and earlier drafts of
 this fragment broke it four times — describing a concurrency
 scenario a later round had disproved, calling every self-link a typo after the fix for the other
