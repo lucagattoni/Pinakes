@@ -200,14 +200,24 @@ def why_unresolvable(root: Path, raw: str) -> str:
 def why_not_a_kb(path: Path) -> str:
     """Why `path` holds no readable `pinakes.toml`, in words that name the actual situation.
 
-    Three cases, not two. A two-way `is_dir()` split reported a `[[links.kb]] path` that points at
+    Five cases, not two. A two-way `is_dir()` split reported a `[[links.kb]] path` that points at
     an existing *regular file* as "no such directory", which is the one answer a person would check
     and find false — the path is right there.
+
+    **The last two are the same defect, one level down**, and the three-way split had it too: the
+    caller's probe is `is_file()`, so a `pinakes.toml` that exists but is a directory, or is a
+    symlink to nothing, was reported as "no pinakes.toml there" — with the file visible in `ls`.
+    Found in review 9 by reading this docstring's own justification against its code.
     """
     if not path.exists():
         return "no such directory"
     if not path.is_dir():
         return "not a directory"
+    manifest = path / MANIFEST_NAME
+    if manifest.is_symlink() and not manifest.exists():
+        return "the pinakes.toml there is a broken symlink"
+    if manifest.exists():
+        return "the pinakes.toml there is not a regular file"
     return "no pinakes.toml there"
 
 

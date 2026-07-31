@@ -271,13 +271,24 @@ def test_a_linked_kb_path_that_will_not_expand_is_unreachable_not_a_traceback(
 def test_an_unresolvable_linked_kb_path_is_never_resolved_through_the_working_directory(
     pair: tuple[Kb, Kb], tmp_path: Path
 ) -> None:
-    """The severe half of the same defect, because `pnk link` **writes a permanent ULID**.
+    """The `pnk link` half of review 8's finding — **a misleading refusal, not a bad write.**
 
     Review 7 made `resolve_path` answer the declared text when it cannot resolve. That text is
-    *relative*, and `_via_alias` uses it as the base it reads the partner's `pinakes.toml` and
-    documents from — so with a directory of that literal name in the working directory,
-    `pnk link partner:docs/one.md` reads a **decoy** KB's sidecar and writes its ULID into the real
-    sidecar, permanently, reporting success. There is no migration machinery to repair that.
+    *relative*, and `_via_alias` used it as the base it read the partner's `pinakes.toml` and
+    documents from, so with a directory of that literal name in the working directory the walk
+    re-anchored on the CWD and genuinely read the **decoy's** manifest.
+
+    **It stopped there**, and review 8's own account of this was wrong — corrected in review 9,
+    which reproduced it. `_document_in` compares an absolute `joined.parent.resolve()` against the
+    *relative* `root`, which can never be `is_relative_to`, so the refusal fires before any sidecar
+    is read: `'docs/one.md' is outside \\`partner\\`` — telling the user the path they typed
+    correctly is wrong, and naming neither the KB path nor the expansion failure that is the actual
+    fault. The severe outcome (a permanent ULID from the wrong KB) was asserted, not measured; the
+    row-deleting `pnk sync` half of the same finding is the one that is real.
+
+    The first assertion is therefore what discriminates. The two below it are defence in depth
+    against a future change that makes the decoy reachable — they were never reached under the
+    round-7 mutation, which is exactly how the overstatement survived a round.
 
     The decoy carries the partner's own `[kb] id`, so the id-mismatch refusal cannot be what
     catches it, and a `docs/one.md` whose ULID differs from the real partner's, so the wrong answer
@@ -335,6 +346,40 @@ def test_a_linked_kb_path_naming_a_regular_file_says_so(
     with pytest.raises(PinakesError) as caught:
         add(load(local.root), source="docs/alpha.md", target="partner:docs/one.md", rel="cites")
     assert "not a directory" in caught.value.message
+
+
+@pytest.mark.parametrize(
+    ("shape", "expected"),
+    [("directory", "not a regular file"), ("broken symlink", "broken symlink")],
+)
+def test_a_pinakes_toml_that_is_not_a_regular_file_says_which(
+    pair: tuple[Kb, Kb], tmp_path: Path, shape: str, expected: str
+) -> None:
+    """The same defect as the test above, one level down — and the three-way split had it too.
+
+    The caller's probe is `is_file()`, so a `pinakes.toml` that exists but is a *directory*, or is
+    a symlink to nothing, fell through to "no pinakes.toml there" — with the file plainly visible
+    in `ls`. That is the answer the docstring justifying the split calls the one a person would
+    check and find false, reproduced by the code beneath it.
+    """
+    local, _partner = pair
+    kb = tmp_path / "decoy"
+    kb.mkdir()
+    if shape == "directory":
+        (kb / "pinakes.toml").mkdir()
+    else:
+        (kb / "pinakes.toml").symlink_to(tmp_path / "nothing-here")
+
+    manifest = local.root / "pinakes.toml"
+    text = manifest.read_text(encoding="utf-8")
+    manifest.write_text(
+        text.replace(f'path = "{_declared_path(text)}"', f'path = "{kb}"'), encoding="utf-8"
+    )
+
+    with pytest.raises(PinakesError) as caught:
+        add(load(local.root), source="docs/alpha.md", target="partner:docs/one.md", rel="cites")
+    assert expected in caught.value.message
+    assert "no pinakes.toml there" not in caught.value.message
 
 
 def test_a_partner_with_a_malformed_kb_id_names_the_kb_it_came_from(pair: tuple[Kb, Kb]) -> None:

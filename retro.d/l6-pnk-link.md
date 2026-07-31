@@ -1,7 +1,7 @@
-## L6 — `pnk link` (20260731 17:35)
+## L6 — `pnk link` (20260731 20:48)
 
-Eight adversarial rounds, and every one found defects in the round before it — twice the *fix's own*
-defect rather than something it had missed. What follows is the state after all of them, not a log:
+Nine adversarial rounds, and every one found defects in the round before it — three times the
+*fix's own* defect rather than something it had missed. What follows is the state after all of them, not a log:
 the rule is to rewrite to the current state rather than layer corrections, and earlier drafts of
 this fragment broke it four times — describing a concurrency
 scenario a later round had disproved, calling every self-link a typo after the fix for the other
@@ -46,11 +46,27 @@ part worth keeping. `resolve_path` was made *total*: on text no filesystem call 
 on the process's **working directory**: the precise thing `resolve_path`'s own first paragraph says
 it exists to prevent, reintroduced four paragraphs below by the round that wrote it.
 
-Round 8 measured both halves. With a directory of that literal name in the CWD holding a readable
-`pinakes.toml`, `pnk sync` walked the decoy, found nothing, stamped the scan `complete` — and
-`replace_reverse_links` deleted every inbound row the real partner had, with `report.ok` true and
-no issue raised. On the same input `pnk link partner:docs/one.md` read the decoy's sidecar and
-would have written **its** ULID into the real document's `links[]`, permanently.
+With a directory of that literal name in the CWD holding a readable `pinakes.toml`, `pnk sync`
+walked the decoy, found nothing, stamped the scan `complete` — and `replace_reverse_links` deleted
+every inbound row the real partner had, with `report.ok` true and no issue raised. That is the real
+consequence, and it is silent data loss.
+
+**Round 8 also claimed `pnk link` would write the decoy's ULID into the real sidecar, permanently.
+It would not, and round 9 reproduced the refusal.** `_document_in` compares an absolute
+`joined.parent.resolve()` against the *relative* `root`, which can never be `is_relative_to`, so it
+fires before any sidecar is read — `'docs/one.md' is outside \`partner\``, which tells the user the
+path they typed correctly is wrong and names neither the KB path nor the expansion failure. A
+message defect, not corruption.
+
+Three things kept that overstatement alive for a round. The true account was already in the tree —
+`link.py`'s own comment describes the misleading refusal — so the increment carried both versions
+at once. The regression test's docstring asserted the severe reading, and under the round-7
+mutation it failed on its *first* assertion, so the two that encoded the severe claim were never
+reached: **a test that fails proves the mutation is caught, never that it is caught for the stated
+reason.** And the claim was written from the mechanism (a relative base re-anchors the walk →
+therefore the walk completes) rather than from running it. That is the same "prose written from the
+design" failure as the two documentation defects below, in a commit message and a retrospective —
+the two places where being wrong is hardest to notice later, because nothing executes them.
 
 The answer is `None`, not a fallback value: text that names no path yields no path, and pyright
 makes every caller say what it does instead — a type-checked obligation rather than a remembered
@@ -59,7 +75,8 @@ was always available as `linked.path`, which every caller already held. **A tota
 automatically a safe one** — totality only moves the failure from a raise to a return value, and a
 return value that is the wrong *kind* of thing is harder to notice than an exception.
 
-Both regression tests fail against the round-7 shape, verified by mutation.
+Four tests fail against the round-7 shape, verified by mutation — including the two written for
+it, though one of those for a different reason than its docstring gave (above).
 
 **A defect class is not closed until it has been searched for**, and the search is mechanical: list
 every call in the module that touches the filesystem and ask of each which errno it swallows.
@@ -213,8 +230,15 @@ still in mind. The rule already says green-before-review; what this adds is that
   declared path — reporting an unrelated readable directory for a failure that had nothing to do
   with it. Neither of the two tests written for that fix caught it: both asserted only the message
   prefix.
+- **`why_not_a_kb` reproduced, one level down, the defect its own docstring exists to record.** The
+  three-way split was added because an `is_dir()` split called an existing regular file "no such
+  directory" — *"the one answer a person would check and find false"*. But the caller's probe is
+  `is_file()`, so a `pinakes.toml` that exists and is a **directory**, or a symlink to nothing, fell
+  through to "no pinakes.toml there" with the file plainly visible in `ls`. Found in review 9 by
+  reading the docstring's justification against the code beneath it, which is a cheap check worth
+  running on any function whose comment argues for its shape.
 - **`pnk link` takes no lock**, so a concurrent write to the same sidecar can lose one side's change.
   Rename-atomicity prevents a torn file, not a lost update, and DESIGN §2.2 now says which.
-- **STATUS's *surface you can use today* table had no `pnk links` row at all**, three weeks after it
-  shipped in 0.5.0 — found while writing the increment by reading the neighbourhood rather than the
+- **STATUS's *surface you can use today* table had no `pnk links` row at all**, six hours after it
+  shipped in 0.5.0 (`20260731 11:27`) — found while writing the increment by reading the neighbourhood rather than the
   diff.

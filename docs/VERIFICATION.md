@@ -212,6 +212,7 @@ test, or write **none** and say why in the same commit.
 | ...and the same class inside `linkscan`, on a git hook | L6 review 5 | `tests/test_sync_links.py::test_a_linked_kb_that_raises_before_the_handling_is_still_only_an_issue` |
 | a partner with a malformed `[kb] id` names the KB it came from | L6 review 5 | `tests/test_cli_link.py::test_a_partner_with_a_malformed_kb_id_names_the_kb_it_came_from` |
 | a `[[links.kb]] path` naming a regular file says so | L6 review 5 | `tests/test_cli_link.py::test_a_linked_kb_path_naming_a_regular_file_says_so` |
+| ...and a `pinakes.toml` that is a directory or a broken symlink says which | L6 review 9 | `tests/test_cli_link.py::test_a_pinakes_toml_that_is_not_a_regular_file_says_which` |
 | the boundary is the KB root, not `[sources]` (stated residual) | L6 review 3 | `tests/test_cli_link.py::test_a_document_inside_the_root_but_outside_sources_can_be_linked` |
 | a `~` path is refused, not a `RuntimeError` traceback | L6 review | `tests/test_cli_link.py::test_a_home_relative_path_is_refused_rather_than_crashing` |
 | an empty `tags:`/`provenance:` is not normalised by a link | L6 review | `tests/test_cli_link.py::test_an_empty_tags_or_provenance_is_not_normalised_by_adding_a_link` |
