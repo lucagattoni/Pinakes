@@ -177,6 +177,17 @@ alias exits 1 with the same message. The declared-text fallback is pinned at
 
 ---
 
+## 10 · The local source walk escapes the KB — its own increment, not an item here
+
+Three measured defects in `sync.walk_sources` and `manifest._sources`, live on `main` in 0.5.0: a
+`..` in `[sources] include` walks out of the KB and mints sidecars outside it; an absolute `include`
+is an unhandled `NotImplementedError` traceback; and a symlinked directory carries the walk out with
+no `..` anywhere. Too large for this file — the build order, the two layers, the six tests and the
+release are in [`source-walk-containment.md`](source-walk-containment.md). **Not part of L6/L7/L8**,
+and it must not wait behind them.
+
+---
+
 ## Not to be fixed — recorded so nobody tries
 
 - **A sidecar carrying its own `%YAML 1.1` directive** is parsed at 1.1, so `country: NO` becomes

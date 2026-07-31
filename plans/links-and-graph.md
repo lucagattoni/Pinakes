@@ -148,6 +148,7 @@ earlier.
 | PPR, the `[ner]` extra, `pnk adopt`, `--deep`, federated query, a graph query language, migrations | Out | — |
 | `pnk unlink` | Out; fix a mistyped link by editing the sidecar | A user hits it |
 | Held-out eval splits | Out at this corpus size | The set is large enough that a holdout can still gate |
+| The **local** source walk escaping the KB (`sync.walk_sources`, `[sources] include`) | Out — L6 review 10 fixed the *partner* side (`linkscan.sidecars_under`) and left this deliberately. It is `sync.py` and `manifest.py`, which this plan does not touch | Its own increment and PATCH release: [`source-walk-containment.md`](source-walk-containment.md) |
 
 ---
 
