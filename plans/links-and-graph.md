@@ -191,7 +191,7 @@ earlier.
 | §2.1 | `[kb] requires_pinakes` | G4 |
 | §2.2 | The comment-preserving writer **delivered**; the PyYAML deferral sentence goes; an unknown key round-trips byte-identically | L5b |
 | §2.2 | An unknown key must also be **JSON-encodable** — a user-facing contract change | L5b |
-| §2.2 | `links[]` round-trips unknown per-link keys | L6 |
+| §2.2 | `links[]` round-trips unknown per-link keys | **L5b** (delivered; L6 must not break it) |
 | §3 | The node model, `nodes`/`edges`, `schema_version` 3 | G3 |
 | §4.1, new §4.8 | The graph channel | G5 |
 | §4.7 | Publishing a KB publishes the ULIDs and relations of every KB it links to | L1 |
@@ -1178,13 +1178,33 @@ fallback path: no `pyyaml` retry, no comment-loss warning, and
 sidecar only**, rename-atomically.
 
 **`<dst>` grammar:** a path relative to the local KB root; `pnk://<kb-ulid>/<doc-ulid>`; or
-`<alias>:<path>` where the alias is a `[[links.kb]]` name. Aliases and `self` resolve to ULIDs **on
-write**. An unresolvable `<dst>` is refused with a typed error and a remedy.
+`<alias>:<path>` where the alias is a `[[links.kb]]` name. Aliases and `self` in the `<dst>` **argument** resolve to ULIDs before the
+entry is written. Note this is a different moment from `read()`, which resolves `pnk://self/…`
+already on disk, and from `write()`, which matches on the **resolved** URI — three resolution points,
+easy to conflate. An unresolvable `<dst>` is refused with a typed error and a remedy.
 
-**Per-link unknown keys round-trip.** `Link` is a two-field frozen dataclass; top-level unknown keys
-survive via `extra`, per-link keys do not.
+**Per-link unknown keys already round-trip — L5b delivered this, do not re-implement it.** The
+paragraph here previously said they did *not*, contradicting its own heading and the DESIGN §2.2
+amendment. `Link` is still a two-field frozen dataclass, but `write()` assigns only `to` and `rel`
+into an existing entry and deletes nothing, so a user's own key inside a `links[]` entry survives —
+verified against the shipped 0.5.0 writer. L6's job is to **not break it**, and the test below is a
+regression guard rather than new behaviour.
+
+**The first link is the common case, and it is the one L5b just fixed a crash on.** A sidecar with
+`links:` and nothing under it — what a user has before their first link — read fine, then crashed
+`write()` with an unhandled `TypeError`. `pnk link` reaches that shape on almost every first
+invocation, so test it explicitly rather than relying on L5b's guard holding.
+
+**Deleting is out of scope, which is why `pnk link` is safe.** L5b's pinned limitation — removing an
+entry misattributes one comment and destroys another — is unreachable here: `pnk link` only appends.
+`pnk unlink` stays out (see *What this plan deliberately does NOT decide*); if it ever lands, that
+limitation becomes user-facing.
 
 **Tests.** `tests/test_cli_link.py::test_an_alias_is_resolved_to_a_ulid_on_write`;
+`::test_a_first_link_into_a_null_links_value_does_not_crash`;
+`::test_a_rel_that_looks_like_a_boolean_is_quoted` (decision 23 — `pnk link --rel no` writes into an
+**existing** sidecar, so a bare `rel: no` reads back as `False` under YAML 1.1; the verification
+table already assigns this test here, and L6's list omitted it);
 `::test_self_is_expanded_on_write`; `::test_each_dst_grammar_resolves`;
 `::test_an_unresolvable_dst_is_refused_with_its_remedy`;
 `::test_a_link_round_trips_through_sync_into_the_links_table`;
@@ -1196,13 +1216,18 @@ survive via `extra`, per-link keys do not.
 
 **Exit criteria.** `DESIGN_COMMANDS`, `IMPLEMENTED`, DESIGN §8's command list and CLAUDE.md's
 `docs/`-ownership amendment all land here.
-**Docs:** `docs/CLI.md`, `docs/GUIDE.md`, `docs/MANIFEST.md`, `docs/DESIGN.md` §2.2,
-`docs/STATUS.md`, a `changelog.d/` fragment.
+**Docs:** `docs/CLI.md`; `docs/GUIDE.md` — **diff its printed output against the real output**, not
+just run it (an L5 example survived a full increment because it ran fine and printed something else);
+`docs/MANIFEST.md` — specifically line ~241, *"It is the one place a machine writes into `docs/`"*,
+which `pnk link` falsifies and which an executor updating the field table would not notice;
+`docs/DESIGN.md` §2.2; `docs/STATUS.md` — the roadmap row moves *Cross-KB links* from **partly
+built** to built; a `changelog.d/` fragment.
 
-**Also lands.** `tests/free_path_run.py` gains `pnk link` — L8's verification step 4 checks that the
-gate covers it, and no earlier revision assigned the edit.
+**Also lands.** `tests/free_path_run.py` gains `pnk link`. Note L5b rewrote that file off PyYAML
+onto `pinakes.sidecar.read`/`write`, so it no longer looks as it did when this line was written.
 
-**Mutation targets.** The alias→ULID resolution; the per-link `extra` merge; the atomic rename.
+**Mutation targets.** The alias→ULID resolution; the per-link key preservation; the atomic rename;
+the `rel` quoting predicate.
 
 ---
 
