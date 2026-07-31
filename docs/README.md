@@ -102,11 +102,23 @@ is what stops the next plan from assuming a number that a parallel session has a
 - **Docs describe what ships.** Anything unbuilt is labelled with the increment or release that will
   bring it. Check by *running the commands a doc shows*, install line included — an audit at 0.1.2
   found four README claims contradicting the code while the CLI and CHANGELOG were correct.
-- **Editing a doc means auditing its neighbourhood, not its diff.** Before landing any docs change,
-  re-read the surrounding claims and ask four questions of each: is it **consistent** with the other
-  docs, does its **logic** still hold, has it been **superseded** by a decision taken since, and is
-  it **outdated** against the code, the index or the clock. Whatever made the line you came to fix
-  go stale almost certainly reached its neighbours too.
+- **Every change and every decision is audited for its neighbourhood, not its diff.** Before landing
+  it, re-read what surrounded or depended on it and ask four questions of each: is it **consistent**
+  with the other docs, does its **logic** still hold, has it been **superseded** by a decision taken
+  since, and is it **outdated** against the code, the index or the clock. Whatever made the line you
+  came to fix go stale almost certainly reached its neighbours too.
+
+  **A decision's neighbourhood is not prose.** It is every place that assumed the decision it
+  replaces: `plans/` decision tables, increment bodies, amendment tables, verification tables,
+  release structures, roadmap rows, `CLAUDE.md` invariants. A decision that supersedes another is
+  not landed until each is reconciled or explicitly recorded as unchanged. Superseding in the
+  record and leaving the tables is how a plan comes to say two things at once.
+
+  Worked example, 20260731 — the `ruamel.yaml` swap
+  ([`plans/decision-ruamel-yaml.md`](../plans/decision-ruamel-yaml.md)). Nine decisions across three
+  review layers; two of them (24, 25) were themselves superseded a pass later, and three rippled
+  into tables the deciding pass never opened — the release structure, the breaking-change count, and
+  the increment that owns the cut. An adversarial pass found them, not the pass that decided them.
 
   The cost of skipping it, measured 20260729: a one-line PyPI correction was asked for, and the
   same sweep found five more — a release still listed as unbuilt in two tables, an install block

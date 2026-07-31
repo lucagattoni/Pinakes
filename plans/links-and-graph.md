@@ -735,14 +735,18 @@ paid extraction).
 
 **Docs.** `docs/DESIGN.md` §2.2 (the deferral becomes a delivery, and §2.2 is where the *rationale*
 lives — `plans/` holds the historical record, `docs/README.md`'s routing table gives DESIGN the
-"why a decision was taken" fact); `docs/MANIFEST.md` (*"Your unknown keys round-trip untouched"* →
-byte-identically, with the exclusions); `CLAUDE.md` (the new invariant; *the sidecar-fidelity
-release* in the 🚫 table); `docs/VERIFICATION.md`; `docs/STATUS.md` (PyPI table, roadmap, the 🚫
-table); `src/pinakes/sidecar.py`'s module docstring and `Sidecar.extra`'s docstring; `docs/GUIDE.md`
+"why a decision was taken" fact); `docs/MANIFEST.md` — two sentences, not one: *"Your unknown keys round-trip untouched"* →
+byte-identically, with the exclusions, **and** the new bound that they must be JSON-encodable, which
+is a user-facing contract change, not a wording fix;
+`docs/CLI.md`'s `pnk doctor` section, which gains the new refusal classes it must report; `CLAUDE.md` (the new invariant; *the sidecar-fidelity
+release* in the 🚫 table); `docs/VERIFICATION.md`; `docs/STATUS.md` — the PyPI table, and the **roadmap row**, which describes the
+links release as a single cut and must now describe two; `src/pinakes/sidecar.py`'s module docstring and `Sidecar.extra`'s docstring; `docs/GUIDE.md`
 (its `links:` example at line ~407 uses an indentation pinakes never emits — and which ruamel
 **re-indents**, so it is also the counter-example to the byte-identity invariant, not a typo);
 `check.sh:109`'s *"it needs PyYAML"* comment and `ci.yml`'s link-density job comment, both of which
-item 5 falsifies; a `changelog.d/`
+item 5 falsifies; `check.sh:9`'s explanation of `--extra-search-path stubs`, which describes
+`pypdfium2` as the only stub and the reason as a missing `py.typed` — ruamel **ships** one, so the
+second stub exists for a different reason and the comment must say so; a `changelog.d/`
 fragment carrying **all four** breaking lines — duplicate keys, non-string top-level keys, string
 fields YAML 1.2 resolves as numbers (`1e3`, `0o17`), and `!!str`-tagged values — **and** the four
 shapes whose current unhandled `TypeError` becomes a named error (`!!binary`, `!!set`,
@@ -759,6 +763,19 @@ consistent with it, and should note that pinakes now carries two round-trip-pres
 
 **Deliberately not touched:** `plans/v0.1.md` and `plans/v0.2.md` name PyYAML and become stale.
 `CLAUDE.md` classes `plans/` as historical — they keep what they were written with.
+
+**A [`retro.d/`](../retro.d/README.md) fragment.** Two findings are worth keeping. The **stub
+hazard**: a hand-written stub overrides the real package, so pyright validated a fiction — declaring
+`DuplicateKeyError` in the wrong module gave 0 errors and an `ImportError` at runtime, twice, and it
+lives in `ruamel.yaml.constructor`. And a **third instance of the increment-shaped blind spot**
+CLAUDE.md already records from I5 and I6a: the pass that specified the comment-preservation tests
+wrote fixtures whose comments were all top-level, so every test passed on an implementation that
+destroyed nested ones — tests written by the reasoning that wrote the spec inherit its assumptions.
+
+**Verify, do not assume:** whether ruff's `per-file-ignores` glob `"stubs/*.pyi"` matches a nested
+`stubs/ruamel/yaml/__init__.pyi`. Python's `fnmatch` says yes; ruff uses globset, where `*` may not
+cross `/`. Run ruff. It matters only if a nested stub ever needs the `N802` exemption the flat
+`pypdfium2.pyi` has.
 
 **Release.** L5b cuts the **interim MINOR** of the links release (decision 27), carrying L1–L5 and
 this fix. There is no third release and no new name: a tag is a point on `main`, so this cut ships
@@ -840,7 +857,13 @@ WARN with the count; a malformed `pnk://` in a committed sidecar → FAIL; an ab
 
 ---
 
-### L8 — Verification of the whole, and the links release cut
+### L8 — Verification of the whole, and the links release's **final** cut
+
+**Two cuts, not one** (decision 27). L5b takes the **interim** cut and runs steps 1, 3–8 below; step
+2 needs `pnk link`, unbuilt at L5b, and L5b substitutes its own verification list. L8 takes the
+**final** cut and runs all eight. `tools/fragments.py --apply` runs at *each* cut and deletes what it
+consumes, so the interim cut's CHANGELOG section carries L1–L5b and the final one carries L6–L8 —
+neither carries both.
 
 **Verification** — run, not reasoned about:
 
