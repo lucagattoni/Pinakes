@@ -564,7 +564,11 @@ def test_resolve_path_never_raises_whatever_the_manifest_says() -> None:
     unresolvable = ("~nosuchuser12345/kb", "a\x00b", "~zzzznosuchuser/x", "kb\x00/x")
     for raw in unresolvable:
         assert resolve_path(root, raw) is None, raw
-        assert repr(raw) in why_unresolvable(root, raw)
+        reason = why_unresolvable(root, raw)
+        # **The reason alone, never the path** — `LinkedKbUnreachableError` interpolates that
+        # itself, and a first version stuttered it: `cannot be read at ~x/kb: '~x/kb' cannot be
+        # resolved to a path: …`. Same register as `why_not_a_kb`, which this sits beside.
+        assert reason and raw not in reason, raw
 
     for raw in ("../partner", "/abs/kb", "sub/kb", "~"):
         answer = resolve_path(root, raw)
@@ -648,8 +652,9 @@ def test_an_unresolvable_path_is_never_walked_from_the_working_directory(
     assert len(links_in(local, origin="reverse-scan")) == 1, "the decoy's empty walk deleted rows"
     assert len(report.link_scan) == 1
     _alias, message, _remedy = report.link_scan[0]
-    assert "cannot be resolved" in message
-    assert str(local.root) not in message  # names the declared text, not the local KB root
+    assert "cannot be expanded" in message  # the fault, not just "unreachable"
+    assert "~nosuchuser12345/kb" in message  # ...and the text the author wrote
+    assert str(local.root) not in message  # ...never the local KB root
     # `last_scan` is not stamped either: an unreachable partner must not suppress the retry.
     assert "partner" not in {alias for alias, *_ in report.links_scanned}
 

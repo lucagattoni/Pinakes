@@ -181,14 +181,20 @@ def _resolve(root: Path, raw: str) -> Path:
 def why_unresolvable(root: Path, raw: str) -> str:
     """Why `resolve_path` returned `None`, naming the actual fault rather than the category.
 
+    **The reason alone, no path** — the same register as `why_not_a_kb`, because
+    `LinkedKbUnreachableError` interpolates the path itself. A first version included it and read
+    `cannot be read at ~nosuchuser/kb: '~nosuchuser/kb' cannot be resolved to a path: …`.
+
     Shares `_resolve` with `resolve_path` rather than repeating its two lines, so the reason cannot
     drift from the rule it explains. Called only once the answer is already known to be `None`.
     """
     try:
         _resolve(root, raw)
-    except (RuntimeError, ValueError, OSError) as exc:
-        return f"{raw!r} cannot be resolved to a path: {exc}"
-    return f"{raw!r} cannot be resolved to a path"
+    except RuntimeError as exc:
+        return f"the `~` cannot be expanded: {exc}"
+    except (ValueError, OSError) as exc:
+        return f"not a usable path: {exc}"
+    return "not a usable path"
 
 
 def why_not_a_kb(path: Path) -> str:
