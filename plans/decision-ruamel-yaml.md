@@ -209,4 +209,63 @@ symbol it declares — a gate is only as true as the fiction it checks.
 | 19 | **Non-string top-level keys are refused at `read()`**, with a `SidecarError` and a remedy — top level only, since that is exactly the mapping pinakes partitions into `KNOWN_KEYS`/`extra`. It makes `extra: dict[str, Any]` honest, matches what `sidecar.py` already does with every other type violation, and closes behaviour 2 above at its cause. Separately, `test_malformed_sidecars_are_rejected`'s `{id: x, : }` fixture is **replaced by `{id: x`** (an unclosed flow map, which both libraries reject): that case exists to exercise the parse-error branch, and flipping its assertion would leave the branch untested |
 | 20 | **pyright is satisfied by a local stub plus an import-verification test**, not by inline suppressions — v0.1 rule 7 holds literally |
 | 21 | **A subprocess `sys.modules` gate proves `src/` never imports `pyyaml` again**, reusing `tests/free_path_run.py`'s technique. A grep would miss a lazy or indirect import, which is the lesson the paid-path gate already paid for |
-| 22 | **The release is MINOR — 0.5.0 — with the behaviour change called out explicitly** in `CHANGELOG.md`. Pre-1.0 SemVer carries breaking changes in MINOR, and 1.0.0 stays reserved for an actual surface freeze. Two lines belong in that breaking list: duplicate keys now hard-error, and a non-string top-level key now hard-errors |
+| 22 | **The release is MINOR — at whatever number is next when it is cut** — with the behaviour changes called out explicitly in `CHANGELOG.md`. Pre-1.0 SemVer carries breaking changes in MINOR, and 1.0.0 stays reserved for an actual surface freeze. *(A number is deliberately not written here: CLAUDE.md's 🚫 rule forbids numbering unbuilt work, and the first draft of this row broke it.)* |
+
+---
+
+## Adversarial review — 20260731 07:10
+
+Two independent reviewers, both reproducing every claim by running code. **Verdict: not implementable
+as written** — eight HIGH findings. Several corrected the *measurement review above*, which is why
+this section exists rather than an edit in place.
+
+### What the reviewers refuted in this document
+
+| Claim (above) | Measurement |
+|---|---|
+| *"PyYAML does not wrap"* | **Refuted.** PyYAML's emitter has `best_width = 80` and folds plain *and* single-quoted scalars. It declines only when the scalar offers no break opportunity — which is why an unbroken `"x" * 100` test fooled the first pass. Both libraries wrap a long *spaced* value, at different break points, so neither round-trips it at default width. `width = 4096` therefore **exceeds** PyYAML rather than restoring parity: a defensible choice, but a different one |
+| *"Minted output is byte-identical to PyYAML's"* | **Refuted as a general claim** — 49 of 57 shapes, not 7 of 7. `None`, an embedded newline, an empty key name, a long spaced value, and five 1.1-ambiguous scalars all differ. See decision 23 |
+| *"1.1 → 1.2 only ever turns a hard error into acceptance"* (decision body, *Known-key safety*) | **Refuted.** It runs both ways: `1e3` and `1E3` resolve to `float` and `0o17` to `int` under 1.2, where PyYAML 1.1 leaves all three as **strings**. `_optional_str` raises on a non-`str`, so `title: 1e3` and `created: 0o17` **sync today and hard-error after L5b** — a third breaking line |
+| *"A `cast` does not help"* | **Refuted as written.** Casting the *result* or the *bound method* fails, as stated. Casting the *instance* — `cast(Any, _yaml()).load(raw)` — reaches 0 errors with 0 suppressions and no stub. The stub is still the better engineering choice, because `cast(Any, …)` erases the whole surface rather than describing it; decision 20's *reason* was wrong |
+| *"An import-verification test closes the stub hazard"* | **Insufficient.** A stub declaring `load(self, stream, strict: bool = False)` is pyright-green, passes an importability check, and `TypeError`s at runtime. `stubs/pypdfium2.pyi` transcribes signatures via `inspect.signature`; this stub's gate must compare signatures, not just resolve names |
+| *"Deleting a commented key orphans its comment"* | **Understated.** Deleting `provenance` misattributes its leading comment to the next key **and silently deletes the following key's own comment**, because that comment is stored as `provenance`'s trailer. That is comment *loss*, not only misattribution |
+| *"The `eval.py` swap is inert"* | **Overreaches.** True of the two committed `questions.yaml`. `load_questions` (`eval.py:111`) has no `try/except`, so a duplicate key in a *user's* golden set goes from silent last-wins to an uncaught `DuplicateKeyError` out of `make eval` |
+| *"`compare=False` … or every equality assertion silently changes meaning"* | **Wording refuted, with a consequence that matters more.** `CommentedMap.__eq__` ignores comments, so including `original` would fail *loudly*, not silently. The consequence: **no equality assertion can ever detect comment loss** — every comment-preservation test must compare file **bytes** |
+| *"50/51 through pinakes' own read → write"* | **Already true on `main` today, under PyYAML.** It is a regression net against fixture churn, not evidence for ruamel |
+| *"51/51 … and still gives 51/51 at the tuned config"* | **Carries no information.** The corpus has zero comments, zero quote characters, zero lines over 80 columns and no unknown keys, so it exercises neither setting |
+| *"140 µs → 399 µs (2.8×)"* | **2.09×** (135 µs → 282 µs) when the `YAML()` instance is reused. 399 µs is reproducible only by constructing one per call — which `_yaml()` as sketched does |
+| *"115 KiB"* | Correct for the **wheel**; the installed footprint is 549.5 KiB. Every other part of the survey — MIT, `py3-none-any`, no compiled artifacts, empty required-dependency set, lighter than `jinja2` — confirmed exactly |
+
+### What the reviewers found that neither document had
+
+**An unknown YAML tag becomes an unhandled traceback out of `pnk sync`.** `shelf: !mytag A12` is
+refused today as a clean `SidecarError` (PyYAML's `ConstructorError` is a `YAMLError`). ruamel's
+round-trip loader accepts it as a `TaggedScalar`; `extra` carries it into `_metadata()`
+(`sync.py:1273`) and `store.dumps_metadata` → `json.dumps` raises `TypeError`. `sync.py` contains no
+`except TypeError` and no `except Exception`. See decision 24.
+
+**`write()`'s specification was under-determined, and the literal reading loses nested comments.**
+The known keys are currently rebuilt wholesale (`document["provenance"] = dict(...)`), so an executor
+who changes only *what `document` is* satisfies every word of the first draft and destroys any
+comment **inside** `provenance:` or `links:` — the one block the only existing rewrite path writes
+to. No test in the first draft's list would have caught it.
+
+**The `sys.modules` gate could not prove the claim attached to it.** `pinakes.eval` is not in the
+free CLI path's import graph (verified: `pinakes.template` is the only `pinakes.*` module the harness
+loads), so leaving `import yaml` in `eval.py` — one of the two modules L5b migrates — keeps the gate
+green.
+
+Also: a substring predicate false-positives on `pydantic_settings.sources.providers.yaml`, which the
+free-path module list really does contain (`tests/test_paid_path.py` already fixes this class of
+mistake for `google.protobuf`); `ruamel.yaml.safe_load()` is **removed** in 0.19 and fails as an
+`AttributeError`, not a warning; and `sorted()` crashes on `bool`, `None`, `float` and `date` keys
+too, while a **single** non-string key writes back fine today — so it is the single-key case that is
+the breaking one.
+
+### Decisions taken on the back of the review — 20260731 07:10 (the user)
+
+| # | Decision |
+|---|---|
+| 23 | **A minted sidecar quotes any scalar YAML 1.1 *or* 1.2 would resolve to a non-string.** `skeleton()` derives the title from the filename stem, so `NO.md` mints `title: NO`, which ruamel writes bare and every 1.1 reader — including `tools/link_density_gate.py` — reads back as `False`. Today PyYAML quotes it. Verified: single-quoting the union of both resolvers restores today's output on 23 of 26 shapes and makes the other three (`1e3`, `1E3`, `0o17`) *safer* than today, because a quoted value cannot become the third breaking line. Only what pinakes **writes** is covered; a hand-written bare `NO` round-trips as the user wrote it |
+| 24 | **A tagged node is refused at `read()`**, restoring today's behaviour exactly — PyYAML rejects `!mytag` on scalars, mappings and sequences alike. The detector must cover **both** shapes: `TaggedScalar` for a tagged scalar, and `node.tag.value is not None` for a tagged `CommentedMap`/`CommentedSeq`. A `TaggedScalar`-only check misses `shelf: !mymap {a: 1}` — which happens to serialise, so it is a silent widening rather than a crash |
+| 25 | **L5b cuts its own MINOR release, named — never numbered — *the sidecar-fidelity release***, added to the unbuilt-work tables in `CLAUDE.md` and `docs/STATUS.md`. Complete, breaking, self-contained work does not wait for L6–L8. The plan's *Two releases* section becomes three |
