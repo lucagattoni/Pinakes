@@ -201,26 +201,6 @@ for every source type beats two mechanisms that each work for half.
 `pnk link A B --rel cites` authors the sidecar; sync generates the skeleton; `pnk doctor` reports
 dangling links, orphaned sidecars and ID collisions.
 
-That authoring command is the **second** exception to "originals are the truth", and it is a
-narrower one than the paid extraction above rather than a widening of it. Sync's write is
-unattended — it happens on a git hook, so what it may touch is one key of one block. `pnk link`'s is
-the opposite: a person naming the file they mean, in the command they typed. Both write only a
-sidecar, only the one belonging to the document named. What neither may do is write into the *other*
-end of a link: a link is authored forward, and the KB it points at learns of it by reading committed
-sidecars (§6.2) — never by having its files edited by a machine it does not run.
-
-Both writes are rename-atomic, which is a claim about *this* write and not about two of them:
-`pnk link` takes no lock, so a concurrent write to the same sidecar can lose one side's change.
-Atomicity prevents a torn file holding a permanent ULID; it does not order two writers.
-
-The exposure is narrow by construction rather than by luck. A sync rewrites an *existing* sidecar in
-exactly two cases — a paid extraction, and the `--force`-plus-free-`--extract` override that clears
-the paid claim (§6.4) — and neither is ever automatic: the hooks force the free backend, none passes
-`--force`, and the two that run unattended are `--index-only`. So the collision needs one person
-running both halves at once, and the answer is to re-run the change that went missing. Taking the
-sync lock here would trade that for an interactive command blocked for as long as someone else's
-extraction takes to bill.
-
 ---
 
 ## 3. Storage
