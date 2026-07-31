@@ -1,7 +1,12 @@
 # Updating an existing KB — design note
 
-**Status: proposal. Decided 20260728 18:39, not built.** Its minimum — the `requires_pinakes` pre-pass — is now assigned to **G4** in [`plans/links-and-graph.md`](../plans/links-and-graph.md), which also records that `pnk upgrade` stays template-release work. Nothing here
-describes shipped behaviour; [STATUS.md](STATUS.md) is the authority on what exists.
+**Status: mostly proposal. Decided 20260728 18:39.** Its minimum — the `requires_pinakes` pre-pass
+(§4, §7) — **is built and on `main`, unreleased**, as G4 of
+[`plans/links-and-graph.md`](../plans/links-and-graph.md); every field rule is in
+[MANIFEST.md](MANIFEST.md) and the reasoning in [DESIGN §2.1](DESIGN.md#21-the-manifest--pinakestoml).
+Everything else here — `pnk upgrade`, the template-drift gate, doctor reporting drift — is still a
+proposal, and `pnk upgrade` stays template-release work. [STATUS.md](STATUS.md) is the authority on
+what exists.
 
 This note answers one question the build plans had not asked: **when pinakes changes, what happens
 to a KB somebody already has?**
@@ -25,7 +30,7 @@ detection at all — while v0.2 is actively changing what the template ships.
 | 1 | **Index schema** | `schema_version` mismatch → refuse to open, name `pnk sync --rebuild`. No migrations, by design (`store.py:205`) | ✅ shipped |
 | 2 | **Embedding model** | Index built by another model/revision → queries refuse rather than return garbage | ✅ shipped |
 | 3 | **PDF extractor** | Fingerprint mismatch → free backend refuses; paid marks `stale_extraction` and warns | ✅ shipped (I5) |
-| 4 | **Manifest + template** | — **nothing** — | ❌ **the gap** |
+| 4 | **Manifest + template** | `[kb] requires_pinakes`: a version floor read in a pre-pass, so a refusal can name the version needed (G4, unreleased). The template half — detecting and adopting drift — is still absent | ◐ **half closed** |
 
 Axes 1–3 share a shape: *detect, refuse, and point at a free remedy.* That works because the remedy
 is always "rebuild derived state", which costs nothing and destroys nothing.
@@ -75,7 +80,9 @@ and the message tells them they made a spelling mistake.
   one refuses, **naming the version required**. This makes explicit what `store.py` already does.
 - **Strictness is unchanged.** Unknown keys stay a hard error — the typo protection is worth more
   than graceful degradation, and cross-version sharing is not a goal.
-- **`[kb]` gains `requires_pinakes`**, e.g. `">=0.3"`, so the refusal can state the remedy:
+- **`[kb]` gains `requires_pinakes`** — **built in G4** — e.g. `">=0.3"`, so the refusal states the
+  remedy instead of the symptom. A floor only: `>=` is the sole operator, since the posture above
+  has no ceiling to express. Absence means no floor declared:
 
   ```
   error: this KB requires pinakes >= 0.3 (this build is 0.2.1)
@@ -156,7 +163,7 @@ Deliberately not assigned. The cheapest useful subset, in dependency order:
 | Bump the `notes` template version whenever its content changes | one line | Makes the shipped `doctor` check fire at all |
 | The template-drift CI gate (§6) | small | Makes that bump impossible to forget |
 | `doctor` reports manifest keys the installed template sets that this KB lacks | small | Closes the PDF-glob gap **without** writing to anyone's config |
-| `requires_pinakes` + pre-pass read (§4) | small | Turns a misleading refusal into an actionable one |
+| ~~`requires_pinakes` + pre-pass read (§4)~~ | small | **Built (G4).** Turns a misleading refusal into an actionable one |
 | `pnk upgrade` + `--apply` + `tomlkit` (§5) | medium | Existing KBs actually adopt new defaults |
 
-The first three would close the live gap in §3 without touching a user's manifest at all.
+The remaining three would close the live gap in §3 without touching a user's manifest at all. None is assigned.

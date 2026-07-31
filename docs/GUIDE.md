@@ -401,6 +401,8 @@ traversing them lands in the links release; the *schema* ships today precisely b
 | `no extractor for .pdf` | `[pdf]` extra missing | `uv add "pinakes[pdf]"` |
 | Queries refuse to run, naming a model mismatch | Embedding model changed since the index was built | `pnk sync --rebuild` — free |
 | Index refuses to open, naming `schema_version` | Index predates 0.2.0 | `pnk sync --rebuild`. There are no migrations, by design |
+| `this KB requires pinakes >=X (this build is Y)` | The KB was written by a newer pinakes and declares a floor | Upgrade: `uv add --upgrade pinakes`. Downgrading a KB is not supported — nothing rewrites a manifest you own |
+| `unknown key(s)` in a KB you did not edit | The same cause, on a KB that declares **no** floor, so the refusal can only report the symptom | Upgrade pinakes. Unknown keys stay a hard error by design ([MANIFEST](MANIFEST.md#requires_pinakes--the-compatibility-floor)) |
 | `confidence: unknown` on every search | No fitted `[retrieval.confidence]` | Expected. Calibrate against your own golden set ([above](#about-that-confidence-unknown)) |
 | Sync exits non-zero listing documents | Per-document failures, isolated by design | `pnk doctor` lists them with the error; the rest of the corpus indexed fine |
 | A sync seems stuck behind a lock | A killed sync, or another machine | `pnk doctor` reports the holder and age; `pnk sync --force-unlock` if it is not this host |

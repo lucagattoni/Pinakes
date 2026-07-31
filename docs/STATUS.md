@@ -74,8 +74,10 @@ every PDF into a failed document rather than a skipped one.
 ⚠️ **A template change reaches new KBs only.** The explanatory line above shipped in 0.2.2 and
 appears in no KB created before it, and nothing today detects or reports that divergence — so existing KBs stay PDF-blind
 permanently unless their owner edits the manifest by hand. That gap, and what to do about it, is
-worked through in [KB-UPDATES.md](KB-UPDATES.md) (a proposal; its `requires_pinakes` half is
-assigned to G4 in [`plans/links-and-graph.md`](../plans/links-and-graph.md), still unbuilt).
+worked through in [KB-UPDATES.md](KB-UPDATES.md). Its `requires_pinakes` half is **built (G4), on
+`main`, unreleased** — a manifest can now declare the oldest pinakes that can read it, so an
+out-of-date build says so instead of reporting a typo. That closes the *diagnosis*, not this gap:
+nothing yet detects template drift or adopts a new default into an existing manifest.
 
 ### Caveat: the `[light]` backend needs a manifest edit
 
@@ -249,8 +251,8 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.3.0** ✅ | Budget machinery, the opt-in paid Claude-vision extractor (I6–I7c) |
 | **0.4.0** ✅ | `path:page` citations on both surfaces, `pnk doctor` text yield (I8); the verification table and its gate (I9) |
 | **0.4.1** ✅ | A sidecar that will not parse is no longer overwritten by a freshly minted one, and no longer aborts the whole sync — data loss present since v0.1 |
-| **0.5.0** ✅ *(the links release, interim)* | `pnk links`, `pinakes_links`, reverse-scan and the sidecar round-trip fix — no `schema_version` bump, so no rebuild. **The release cuts twice** (decision 27): this is the interim MINOR at L5b; the final cut is at L8, and the name stays in the unbuilt-work table until then. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **L5b landed:** `ruamel.yaml` replaces `pyyaml` in the sidecar, so a rewrite preserves comments, quoting and blank lines — and `country: NO` stops becoming `false` ([decision](../plans/decision-ruamel-yaml.md)). **Next: L6**, the one refusal pinakes chooses, then L6–L8 |
-| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated |
+| **0.5.0** ✅ *(the links release, interim)* | `pnk links`, `pinakes_links`, reverse-scan and the sidecar round-trip fix — no `schema_version` bump, so no rebuild. **The release cuts twice** (decision 27): this is the interim MINOR at L5b; the final cut is at L8, and the name stays in the unbuilt-work table until then. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **L5b landed:** `ruamel.yaml` replaces `pyyaml` in the sidecar, so a rewrite preserves comments, quoting and blank lines — and `country: NO` stops becoming `false` ([decision](../plans/decision-ruamel-yaml.md)). **Next: L6** — `pnk link`, the authoring command; built and under adversarial review on its branch, not yet on `main`. Then L7 (`pnk doctor`'s link coverage) and L8's final cut |
+| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. **Two increments are on `main`, unreleased.** **G1:** the evaluation's reproducibility was measured and the tie-ordering defect it found was fixed ([above](#is-the-evaluation-reproducible--measured-20260801-0035)) — no number moved, no `schema_version` bump. **G4:** `[kb] requires_pinakes`, a compatibility floor read *before* strict validation, so a KB written by a newer pinakes names the version it needs instead of failing as a typo. If G2's headroom measurement fails, G3 and G5 do not start and G1/G2/G4 are cut as their own release, named at the cut |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
 | *the deep release* | `pnk ask --deep` |
 | *the template release* | Template ecosystem, `pnk upgrade` migrations, the `sqlite-vec` tier |
@@ -287,6 +289,36 @@ The false-confidence figure is fitted and scored on the same 41-question set (8 
 so treat it as a floor rather than an estimate. Publishing it is the point:
 [DESIGN §4.2](DESIGN.md#42-escalation--free-path-first) commits to measuring the heuristic's cost
 rather than assuming it away.
+
+### Is the evaluation reproducible? — measured 20260801 00:35
+
+The graph release gates on an exact per-question sign test, so it was worth knowing whether a
+question can change its answer for reasons that have nothing to do with retrieval. The golden set
+was run against the demo KB, a document edited, the index re-synced incrementally, then rebuilt,
+then built again from scratch — comparing **per-question outcomes**, not aggregates, at each step.
+
+| Comparison | Real `[light]` models | A low-dimensional tie-heavy fake |
+|---|---|---|
+| the same index, evaluated twice | identical | identical |
+| an incremental sync vs `--rebuild` | identical | **1 of 41 questions differed** |
+| `--rebuild` vs a from-scratch sync | identical | identical |
+
+**The shipped models were reproducible, and only by luck.** 384-dimensional cosines almost never
+tie exactly; underneath them every tiebreak in the pipeline resolved to `chunks.id`, the rowid,
+which the schema says outright has no identity across rebuilds. So the property held because the
+corpus did not exercise it, which is not a property at all.
+
+Ordering is now total on `(documents.path, chunks.ordinal)` at the three places that decide it —
+the vector array's row order, the BM25 cut, and hydration — plus a stable `argsort`, which covers a
+fourth case the others do not: NumPy's introsort partitions over the whole array, so adding
+documents reordered tied entries elsewhere in **500 of 500** random tie-heavy arrays.
+
+**The numbers above did not move.** The real-model golden set scores byte-identically to the
+committed baseline before and after, which is what a change that only breaks ties should do — and
+is why this increment rewrites no baseline. Held by `tools/eval_reproducibility_gate.py` (a
+`check.sh` gate and its own CI job, sweeping four kinds of corpus change),
+`tests/test_search_reproducibility.py`, and a CI job that diffs per-question outcomes between
+`ubuntu-latest` and `macos-latest` — the half a single machine cannot answer.
 
 ## Published on PyPI
 
