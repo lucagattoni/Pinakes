@@ -12,3 +12,8 @@
   four kinds of corpus change (a document edited, added, removed, renamed) offline in about a
   second, and CI diffs per-question outcomes between `ubuntu-latest` and `macos-latest`, which is
   the half of the question one machine cannot answer.
+
+- Making the BM25 cut a total order costs a join: **+11.5 ms** (23.9 → 35.4) on a synthetic
+  50k-chunk corpus where every chunk matches every query term, which is the worst case rather than a
+  typical one. `load_vectors`' new ordering costs nothing measurable — both query plans already
+  sorted through a temp B-tree.

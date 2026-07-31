@@ -7,17 +7,26 @@ evidence about *retrieval*, so any per-question movement caused by anything else
 is a wrong answer. Until G1 there was nothing standing behind that: every tiebreak in the pipeline
 resolved to `chunks.id`, the rowid, which `store.py` says outright has no identity across rebuilds.
 
-**What it adds over `tests/test_search_reproducibility.py`, which asserts the same property.** Two
-things. It sweeps **four** ways of reaching the same corpus state where the tests exercise one — a
-document edited, added, removed, and renamed all take different paths through `sync.py`, and only
-the first was covered. And it is independent of the test suite: a gate sharing a fixture with the
-thing it gates is one refactor away from vacuity, which is why its sibling gates build their own
-too.
+**What it adds over `tests/test_search_reproducibility.py`, which asserts the same property.** It
+sweeps four ways of reaching the same corpus state where the tests exercise one — a document
+edited, added, removed and renamed take different paths through `sync.py` — and it is independent
+of the test suite, a gate sharing a fixture with the thing it gates being one refactor away from
+vacuity.
+
+**Two of those four have never been observed to catch anything, and saying so is the point.** Swept
+against the genuine pre-G1 code at five embedding widths (the table under `DIM`), *added* and
+*removed* reported zero differences every time; only *edited* and *renamed* ever bit. They are kept
+because they cost half a second and exercise sync paths the others do not, but a reader must not
+count four independent probes here — there are two, plus two that are currently along for the ride.
+`--inject-difference` cannot tell the difference, since it corrupts every perturbation alike.
 
 **The predicate.** For each perturbation: sync the committed demo corpus, apply the change, sync
 incrementally, evaluate the committed golden set; then `--rebuild` the same tree and evaluate
 again. Both indexes describe byte-identical sources. The gate fails if any question's outcome —
-retrieved documents, their order, the confidence label, the hit rank — differs between the two.
+retrieved documents, their order, the confidence label, the hit rank — differs between the two. All
+four are compared for real: `_plant` rewrites `[retrieval.confidence]` as well as the model names,
+because thresholds fitted for a different reranker make `_confidence` return `unknown` for every
+question and quietly retire the field this sentence promises.
 
 The backend is a deliberately tie-heavy fake, and that is the point rather than a shortcut. Ties
 are the phenomenon: real 384-dimensional cosines almost never tie exactly, so the shipped models
@@ -64,20 +73,24 @@ DIM = 32
 """Chosen by measurement, not by taste — and the taste-driven answer was wrong.
 
 The first version used eight, reasoning that fewer dimensions mean more ties. Run against the
-pre-fix code it reported **zero** differences on all four perturbations: at eight dimensions the
-corpus collapses into so few distinct similarity values that the ordering underneath stops reaching
-the top-k at all. Swept 20260801 over the genuine pre-G1 code, differing questions per perturbation
-(edited / added / removed / renamed):
+pre-fix code it reported **zero** differences on all four perturbations: collapse the space far
+enough and every candidate ties, so the ordering underneath stops reaching the top-k at all. The
+relationship is not monotonic either. Swept 20260801 over the genuine pre-G1 code — differing
+questions per perturbation, edited / added / removed / renamed:
 
     dim   8: 0 0 0 0     <- vacuous
     dim  16: 0 0 0 0     <- vacuous
-    dim  32: 1 0 0 1
+    dim  32: 1 0 0 1     <- chosen
     dim  64: 1 0 0 0
     dim 128: 1 0 0 1
 
-Thirty-two catches the most. A gate that cannot observe the defect it was written for is worse than
-no gate, because it reports success; this number is why the sweep is recorded rather than the
-conclusion alone.
+Thirty-two catches the most. Re-run after the fixture's confidence thresholds were made live
+(`_plant`), which changed none of these numbers — worth knowing, since it means the defect shows up
+in *which documents came back*, not in the label attached to them.
+
+A gate that cannot observe the defect it was written for is worse than no gate, because it reports
+success. That is why the sweep is recorded here rather than its conclusion alone: the next person's
+intuition about dimension count will be the same as this one's, and it was wrong.
 """
 
 EDITED = "docs/storage-environment.md"
@@ -137,6 +150,19 @@ def _plant(destination: Path) -> Path:
         ('model    = "BAAI/bge-small-en-v1.5"', 'model    = "tying"'),
         ("dim      = 384", f"dim      = {DIM}"),
         ('model    = "BAAI/bge-reranker-base"', 'model    = "coarse-reranker"'),
+        # `fitted_for` too, and leaving it out made a field this gate claims to compare dead.
+        # `_confidence` short-circuits to `unknown` when the thresholds name a different reranker
+        # than the one in use, so every question scored `unknown` and the confidence label — the
+        # outcome field most sensitive to a tie, being one float against a threshold — could not
+        # move whatever the ordering did.
+        ('fitted_for = "BAAI/bge-reranker-base"', 'fitted_for = "coarse-reranker@v1"'),
+        # ...and thresholds that sit *inside* the fake reranker's range. The committed pair was
+        # fitted on a real cross-encoder's logits and lies below every score this one can emit, so
+        # naming the reranker alone bought a label that was constantly `high` instead of constantly
+        # `unknown` — still a field that cannot move, still unable to witness a tie flipping which
+        # passage lands on top.
+        ("low_below  = -5.4213", "low_below  = -1.0"),
+        ("high_above = -3.5016", "high_above = 1.0"),
     ):
         if before not in text:
             raise SystemExit(

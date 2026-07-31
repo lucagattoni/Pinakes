@@ -15,11 +15,16 @@ again from scratch; per-question outcomes were compared at each step.
 | an incremental sync vs a `--rebuild` | identical | **1 of 41 questions differed** |
 | a `--rebuild` vs a from-scratch sync | identical | identical |
 
+That first measurement used a 64-dimensional fake; **this module uses 32**, which a later sweep
+showed catches strictly more (see `DIM` below). The width is recorded in both places because the two
+numbers are not interchangeable — at 64 the renamed-document case does not reproduce.
+
 So the shipped pipeline was reproducible **on this corpus, with this model, by luck**:
 384-dimensional cosines rarely tie exactly, and *every* tiebreak underneath them resolved to
 `chunks.id` — the rowid, which `store.py`'s own schema comment says has no identity across
 rebuilds. A gate resting on "the model does not usually tie" is not a gate, so ordering was made
-total on `(documents.path, chunks.ordinal)` at the three sites that decide it.
+total on `(documents.path, chunks.ordinal)` at the three sites that decide it, plus a stable
+`argsort` for a fourth failure the other three do not cover.
 
 **Two levels of test, because neither is sufficient alone.** The end-to-end tests state the property
 G5 actually needs, over the real corpus and the committed questions — but they can only observe a
@@ -132,6 +137,19 @@ def corpus(tmp_path: Path) -> Iterator[Path]:
         ('model    = "BAAI/bge-small-en-v1.5"', 'model    = "tying"'),
         ("dim      = 384", f"dim      = {DIM}"),
         ('model    = "BAAI/bge-reranker-base"', 'model    = "coarse-reranker"'),
+        # `fitted_for` too, and leaving it out made a field these tests compare dead. `_confidence`
+        # short-circuits to `unknown` when the thresholds name a different reranker than the one in
+        # use, so all 41 questions scored `unknown` and the confidence label — the outcome field
+        # most sensitive to a tie, being one float against a threshold — could not move whatever
+        # the ordering did.
+        ('fitted_for = "BAAI/bge-reranker-base"', 'fitted_for = "coarse-reranker@v1"'),
+        # ...and thresholds that sit *inside* the fake reranker's range. The committed pair was
+        # fitted on a real cross-encoder's logits and lies below every score this one can emit, so
+        # naming the reranker alone bought a label that was constantly `high` instead of constantly
+        # `unknown` — still a field that cannot move, still unable to witness a tie flipping which
+        # passage lands on top.
+        ("low_below  = -5.4213", "low_below  = -1.0"),
+        ("high_above = -3.5016", "high_above = 1.0"),
     ):
         assert before in text, f"the demo manifest no longer contains {before!r}"
         text = text.replace(before, after)

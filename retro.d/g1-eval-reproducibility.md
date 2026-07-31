@@ -47,3 +47,49 @@ property G5 needs, over the committed corpus and questions; four site tests each
 decision directly and are the mutation targets — one mutation, one failing test, verified for all
 four. The two levels are not redundant: the end-to-end tests can only observe ties the corpus
 happens to contain, which is precisely how the defect survived three releases.
+
+### The adversarial pass over G1's own diff (20260801 01:25)
+
+Six findings, four of them real defects in work that was already green.
+
+**HIGH — a gate advertised a field it had retired.** `_plant` rewrote the reranker's *model* name
+and left `[retrieval.confidence] fitted_for` naming the real one, so `_confidence` short-circuited
+and all 41 questions scored `unknown`. Both the gate's docstring and the tests claimed to compare
+the confidence label. Naming the reranker was not enough either: the committed thresholds were
+fitted on a real cross-encoder's logits and sit below every score the fake can emit, so the label
+became a constant `high` — still unable to move. Thresholds inside the fake's range give
+35 medium / 5 high / 1 low, and the field is finally live. **The class of defect matters more than
+the instance:** a fixture that rewires half of a calibrated pair silently disables the thing it was
+calibrated for, and nothing fails.
+
+**HIGH — the plan still asserted what the measurement disproved.** Decision 15 says a final tiebreak
+would be *"a provable no-op"* because cross-document ties are totalised by `documents.path` and
+rowid order is ordinal order. Both premises are true about **writes** and irrelevant to the
+**output**: `documents.path` cannot separate two chunks of the same document, and an incremental
+sync by definition does not rewrite the files it did not touch, so rowid order stops matching corpus
+order at the first re-chunked file. The plan is an executor doc; leaving that cell intact would have
+licensed a G2–G5 executor to skip a tiebreak for a reason this increment measured to be false.
+
+**MEDIUM — half the gate's sweep has never observed anything.** Of its four perturbations, *added*
+and *removed* report zero differences against the genuine pre-fix code at every width swept
+(8/16/32/64/128), while *edited* and *renamed* bite. `--inject-difference` cannot reveal this: it
+corrupts all four alike. The gate now states it. **A gate's own justification is a claim like any
+other** — this one said "it sweeps four ways where the tests exercise one", and two of the four were
+along for the ride.
+
+**MEDIUM — the contract's file table was checked against the wrong question.** It compared the two
+tracks' *owned* files and never asked what a new gate touches. Every gate edits `check.sh`,
+`ci.yml` and `tests/test_check_script.py`, which both tracks append to at the end of the same
+regions; and G1 necessarily edits `search.py` and `store.py`, which the table lists under neither
+track, because reproducibility is a property of core retrieval. Widened, with the reason.
+
+**LOW, and recorded rather than fixed —** making the BM25 cut total costs a join: +11.5 ms on a
+50k-chunk corpus where every chunk matches every term. That is the worst case a planner can be
+given, the correctness is not optional, and the number now sits in `docs/STATUS.md` so a later
+change can argue with it.
+
+**What the pass confirmed, having tried to break it:** `bm25()` still resolves with the alias
+present and returns byte-identical rows; the join multiplies nothing (both sides unique); the
+`load_vectors` reordering costs nothing measurable; `graph/provider.py`, the other caller, reduces
+to a per-document max and is order-independent; the four site tests each fail against pre-fix code;
+and the artifact paths, cache keys and macOS wheels in the cross-machine job all resolve.

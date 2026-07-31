@@ -271,6 +271,7 @@ unverified.
 | false-abstain | 0.03 | 20260729 03:23 |
 | **false-confidence** | **0.25** | 20260729 03:23 — one no-answer question in four still gets a confident answer |
 | NumPy vector tier | 2.25 ms/query at 50k×384, 77 MB resident | 20260725 13:49 |
+| BM25 stage, worst case | 23.9 ms → **35.4 ms** at 50k chunks | 20260801 01:20 — the cost of G1's tiebreak (below). Worst case by construction: every chunk matches every query term, so the `LIMIT` sorts all 50k. `load_vectors` did **not** regress (196.9 → 195.5 ms; both plans already used a temp B-tree) |
 
 Per class, same run: `lexical` 1.00, `filter` 1.00, `no-answer` 1.00 (abstained correctly),
 `multi-hop` 1.00, `paraphrase` 0.75. **Paraphrase is the only class with room in it**, and
@@ -313,7 +314,10 @@ documents reordered tied entries elsewhere in **500 of 500** random tie-heavy ar
 
 **The numbers above did not move.** The real-model golden set scores byte-identically to the
 committed baseline before and after, which is what a change that only breaks ties should do — and
-is why this increment rewrites no baseline. Held by `tools/eval_reproducibility_gate.py` (a
+is why this increment rewrites no baseline. **Latency did move**, in one stage: making the BM25 cut
+total costs a join, measured at +11.5 ms on a 50k-chunk corpus where every chunk matches every term.
+That is the worst case the query planner can be given, not a typical one, and it is recorded above
+rather than left for someone to discover. Held by `tools/eval_reproducibility_gate.py` (a
 `check.sh` gate and its own CI job, sweeping four kinds of corpus change),
 `tests/test_search_reproducibility.py`, and a CI job that diffs per-question outcomes between
 `ubuntu-latest` and `macos-latest` — the half a single machine cannot answer.
