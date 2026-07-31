@@ -50,9 +50,15 @@ and a pre-call reservation makes a hard cap a real ceiling rather than an after-
 See [what is actually built](docs/STATUS.md).
 
 **KBs link to each other.** Sidecars carry `pnk://<kb-ulid>/<doc-ulid>` references, so links survive
-renames, moves, and being shared with someone else. The *addressing* ships today because IDs cannot
-be retrofitted; authoring and traversing those links is [the links
-release](docs/STATUS.md#release-roadmap).
+renames, moves, and being shared with someone else. `pnk links` and the `pinakes_links` tool walk
+them — bounded, and a neighbour in another KB is returned but never expanded, because this index
+holds that KB's links pointing *here* and not its own. `pnk sync --scan-links` learns what points
+back by reading the other KB's committed sidecars. Authoring one from the command line is [still to
+come](docs/STATUS.md#release-roadmap).
+
+**Your sidecars are yours.** They are read and written through a round-trip parser, so a rewrite
+keeps your comments, your quoting and your own key order — and a value is stored as you wrote it:
+`country: NO` stays `NO`.
 
 **Its limits are published, not hidden.** No vector tier is sublinear; cross-KB answers will be
 capped by how well your KBs are linked; and the confidence heuristic's measured false-confidence rate is

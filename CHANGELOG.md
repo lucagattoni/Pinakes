@@ -10,6 +10,150 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] — 20260731 11:27
+
+### Added
+
+- **A second synthetic corpus, sparse authored links across both, and a gate that keeps them
+  sparse** (L1 of the links release). `tests/partner-kb/` is a partner museum that transacts with
+  the archive in `tests/demo-kb/` — loans both ways, courier and condition reporting, a shared
+  emergency plan, a joint digitisation programme. 21 documents, its own KB ULID and manifest, and
+  no golden set: cross-KB behaviour is verified by traversing it, not by scoring it. Both corpora
+  gain forward-authored links (the demo KB had none), and `tools/link_density_gate.py` — in
+  `check.sh` and its own CI job — caps the share of documents carrying links, caps any one
+  document's degree separately (density alone permits a single hub wired to everything), and
+  requires at least one same-KB link per corpus. It reads the committed sidecars and never an
+  index, so it runs where no index exists and counts the same population `pnk doctor` reports.
+  Nothing about retrieval changes: the golden-set numbers are identical.
+
+- **`pinakes_links` on the MCP surface** (L5 of the links release) — the same traversal `pnk links`
+  performs, for the agent this project calls its primary caller. `depth` is capped at 3 server-side
+  and there is no query language, ever; `score` and `frontier` come back on every call, not only
+  when something interesting happened. **`confidence` is always `unknown`**: the signal is
+  calibrated per KB on the reranker score of a retrieved *passage*, a traversal neighbour is not
+  one, and a list spanning two KBs has no single manifest whose thresholds apply — reporting
+  low/medium/high would be an invented signal. A neighbour in a KB **this server was not pointed
+  at** is returned with `reachable: false`, its ids and a reason, because omitting it would hide a
+  link that exists; reachability is a property of the server invocation, not of a manifest. The
+  free-path gate's MCP handshake now **calls** the tool rather than only listing it — listing walks
+  signatures and docstrings, so a tool whose body imported a paid client would have listed
+  perfectly and never been seen.
+- **One traversal projection, shared by `pnk links --json` and `pinakes_links`**
+  (`pinakes.graph.present`). The two answered the same question through two hand-written copies of
+  the same dict literals and had already drifted — the MCP `frontier` carried a `distance` the CLI's
+  did not, `scored_by_query` reached only one of them, and `unresolved` dropped the `kb_id` its
+  sibling lists carried. Nothing failed, because nothing compared them. **`direction` is now keyed
+  by `(node, rel)` rather than by node**: given `a --related--> b` and `b --cites--> a`, asking about
+  `a` reported the citation as running *from* `a` — backwards, on both surfaces, since L4. One
+  relation written from both ends now reads `both`. **An unrecognised `direction` is refused**
+  (`TraversalError`) instead of running neither query and returning a confident empty answer;
+  `DIRECTIONS` had been defined and never enforced, and only `argparse` was catching it on the CLI.
+  **An empty answer now says whether your own arguments emptied it** — `direction="out"` on a
+  document whose only link is inbound used to advise "No links from here, search instead", which
+  tells an agent to stop traversing a graph it is standing in.
+- **A neighbour's `direction` no longer changes with `depth`.** The `both` merge is decided inside
+  one expansion and never across them: direction is relative to the node being expanded, so an edge
+  found while expanding an unrelated parent was rewriting a row already returned from the start
+  document. `pnk links` prints `<->` for a relation written from both ends. An unknown `direction`
+  is now refused *before* a query loads the embedding backend, rather than after cosining the whole
+  KB to answer a call that could never succeed. And a document whose links all point at documents
+  the KB no longer has is no longer told it has no links — the payload was listing them under
+  `unresolved` in the same breath — on both surfaces, and worded without a direction, because a
+  deleted document keeps its outbound `links` rows and "this document's links point at…" would
+  then credit a link to whichever end did not write it. When the caller also narrowed the walk,
+  the narrowing is reported first: a live neighbour may sit one dropped argument away, and sending
+  them to full-text search instead is the worse of the two wrong answers. `pnk links` says the same
+  three things in the same order, so a person and an agent get the same account of an empty walk.
+
+- **`pnk links` — what a document connects to, and what connects to it** (L4 of the links release),
+  over a SQLite provider for L3's traversal core. One query per hop in a Python loop, never a
+  recursive CTE: the caps live in the core, and a recursive query would have to re-implement depth,
+  fan-out and dedup in SQL to honour them. Takes a ULID or the path `pnk search` prints; filters by
+  `--rel` and `--direction`; `--depth` is server-capped at 3; `--query` ranks neighbours by
+  similarity instead of by edge, and is the only mode that loads a model at all. Every neighbour is
+  a document, and `kb_id` is always a ULID — never `[kb] name`, which is free to rename, and never a
+  `[[links.kb]]` alias, which means nothing elsewhere. A neighbour in another KB is **terminal**:
+  returned, never expanded, at any depth, and carrying no `title`, because this index holds that
+  KB's links and not its documents. Links whose target is missing come back under `unresolved` and
+  never as neighbours — the two lists are disjoint.
+
+- **`pnk sync` now records what other knowledge bases link *into* this one** (L2 of the links
+  release). For each `[[links.kb]]`, it reads that KB's **committed sidecars** — never its index,
+  which is gitignored, absent in a fresh clone, and unreadable without holding a second KB's lock —
+  and writes the entries targeting this KB as inbound rows, filling `kb_refs` for the first time
+  since the column existed. Only links targeting *this* KB are kept: a partner's link to a third KB
+  is discarded rather than recorded as a graph this index could never complete. A partner's own
+  `[kb] id` is what identifies it, and a mismatch with the `[[links.kb]] id` declared here scans
+  nothing rather than guessing which is right. Replacing a partner's rows is all-or-nothing and
+  happens only after a complete walk, so a sidecar that will not parse mid-scan leaves the
+  previously known edges alone instead of deleting them; a KB dropped from `[[links.kb]]` has its
+  rows and `kb_refs` entry removed, which nothing else would ever have done. The scan is bounded by
+  a one-hour freshness window because `pnk sync` runs on `post-commit` and `post-merge`, and
+  **`--scan-links`** ignores it. Every failure — unreachable path, id mismatch, unparseable
+  sidecar, a target this KB does not have — is reported with a remedy and **does not fail the
+  sync**: a partner that is simply not on this machine must not block every commit. The partner's
+  own `[sources]` is honoured in full — `exclude` included, which matters because the shipped
+  template stamps one — and a `roots` entry that has vanished, points outside the partner KB, or
+  uses a pattern the walker rejects is a reported failure rather than a walk that quietly finds
+  nothing and deletes what it had.
+
+- **The bounded traversal core** (L3 of the links release) — `pinakes.graph.traverse`, pure, with
+  no SQLite and no I/O of its own. Depth counts logical hops rather than physical edges; fan-out is
+  capped by the new `[retrieval] adjacent_k` (default 8) and applied **after** ranking, so a cap
+  never selects by whatever order the edge source happened to return; the response is capped on row
+  count and token budget **independently**, because the two have different remedies. Every bound is
+  clamped server-side — depth at 3, fan-out at 64 — and a new gate in `check.sh` and its own CI job
+  drives the shipped core at `depth=99, adjacent_k=10000` against a wide, deep fixture graph to keep
+  that true. Neighbours found but not expanded come back on a `frontier` carrying one of five
+  reasons in a stated precedence, and links whose target does not resolve are returned rather than
+  dropped. `adjacent_k` is settable but deliberately **not** stamped into the template: a manifest
+  carrying an unknown key cannot be read by an earlier pinakes at all.
+
+### Changed
+
+- **`ruamel.yaml` replaces `pyyaml` for reading and writing sidecars.** A rewrite now preserves
+  comments, quoting style, block scalars and blank lines, because `write()` reconciles the known
+  keys *into the document that was read* rather than rendering a fresh one. `pyyaml` leaves
+  `[project.dependencies]`; the dependency count is unchanged.
+
+  This also fixes a silent corruption that had nothing to do with comments. `Sidecar.extra` is
+  documented as *"round-tripped untouched"* and was not: under YAML 1.1, `country: NO` was read as
+  `False` and written back as `false`, `shelf: 0755` became `493`, `confirmed: yes` became `true`
+  and `duration: 1:30` became `90`. YAML 1.2 reads them as the strings they visibly are.
+
+  **Three breaking changes**, all consequences of the library. A **duplicate key** is now a hard
+  error rather than silent last-wins — which of the two values was meant is not recoverable, and
+  ruamel's own message ends with a URL for switching the check off that pinakes deliberately does
+  not pass on. A **string field that YAML 1.2 resolves as a number** (`1e3`, `1E3`, `0o17` in
+  `title`, `created`, `tags[]`, `links[].to`, `links[].rel`) is refused. And an **`!!str`-tagged
+  value** is refused — the only *working* tag that changes behaviour; `!!int`, `!!float`, `!!bool`,
+  `!!seq` and `!!map` still load to the same values they always did, though the tag itself is not
+  written back (`!!int 3` comes back as `3`).
+
+  **Separately, four shapes whose unhandled `TypeError` becomes a named error** — `!!binary`,
+  `!!set`, `!!timestamp` and a bare date all crashed `pnk sync` out of `json.dumps` before, and are
+  now refused at `read()` with a remedy. That is a fix, not a break.
+
+  **A documented widening:** a *custom*-tagged mapping or sequence (`!custom {a: 1}`) was a parse
+  error and is now accepted, because it serialises. Not `!!map`/`!!seq`, which were never refused.
+
+  **One regression, named rather than fixed.** A sidecar whose value contains a *self-referential*
+  anchor (`mine: &x` with `b: *x` inside it) used to crash `pnk sync` with `Circular reference
+  detected` when the index serialised it. It is now silently read as `null`, and the anchor and
+  alias do not survive the next write. Pathological input, and the only place this change trades a
+  loud failure for a quiet one — which is the direction that matters, so it is written down.
+
+  **A non-string key at the top level of a sidecar is now refused**, with a remedy. It used to crash
+  `pnk sync` from inside the index writer.
+
+  **A reused anchor name is refused**, as it was before the swap. The new parser accepts it and
+  resolves every alias to the *last* anchor of that name — so `a: &dup 1`, `b: &dup 2`, `c: *dup`
+  would have made `c` equal 2 — reporting it only as a warning on stderr.
+
+  **A `links:`, `tags:` or `provenance:` key with nothing under it no longer crashes a write.**
+  `links:` alone — what a sidecar carries before its first link is added — raised an unhandled
+  error out of `pnk sync`, including the write that follows a paid extraction.
+
 ## [0.4.1] — 20260729 07:48
 
 ### Changed
@@ -1671,7 +1815,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.5.0
 [0.4.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.4.1
 [0.4.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.4.0
 [0.3.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.3.0
