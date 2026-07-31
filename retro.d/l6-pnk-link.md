@@ -1,11 +1,55 @@
-## L6 — `pnk link` (20260731 13:45)
+## L6 — `pnk link` (20260731 17:09)
 
-Five adversarial rounds, and every one found defects in the round before it. What follows is the
+Seven adversarial rounds, and every one found defects in the round before it. What follows is the
 state after all of them, not a log: the rule is to rewrite to the current state rather than layer
-corrections, and earlier drafts of this fragment broke it three times — describing a concurrency
+corrections, and earlier drafts of this fragment broke it four times — describing a concurrency
 scenario a later round had disproved, calling every self-link a typo after the fix for the other
-case existed, and counting the rounds that had happened when it was written rather than the ones
-that had.
+case existed, counting the rounds that had happened when it was written rather than the ones that
+had, and asserting a safety property (*"`Path.resolve()` is safe at both call sites"*) that was
+wrong twice over: `strict=False` suppresses `OSError`, not the `ValueError` an embedded NUL raises,
+and there are four `Path.resolve()` sites across the two modules rather than two.
+
+### One defect class, six instances, and why fixing it at the call site produced them
+
+**HIGH.** `cli.main` catches `PinakesError`. Anything else is a traceback on a user's terminal — or
+on an unattended `post-commit` hook. Six calls in this increment's blast radius raised something
+else:
+
+1. `Path("~nosuchuser/x.md").expanduser()` raises `RuntimeError`, on `<source>` in `link.py`. It
+   bought nothing either: a `~` that *does* expand lands in `$HOME` and is refused by the
+   containment check on the next line. Copying a call across a boundary copies its justification
+   too, and `linkscan`'s need for it (a `[[links.kb]] path` may be `~/kbs/partner`) did not survive
+   the trip.
+2. `Path.is_file()` ignores `ENOENT`, `ENOTDIR`, `EBADF` and `ELOOP` and **raises everything else**
+   — so an unreadable parent directory (`EACCES`) and an over-long name (`ENAMETOOLONG`) on the
+   same source path.
+3. The `is_file()`/`is_dir()` pair one branch over, in `_via_alias`: a partner KB directory this
+   user cannot read raised `PermissionError`.
+4. `resolve_path`, on the line immediately above the `try` just added for (3).
+5. The same three, in the module `link.py` calls into. `linkscan.scan_one`'s docstring promises
+   *"Never raises: every failure comes back in `issues`"*, and all of them sat in the three lines
+   that ran before any handling did — so `pnk sync` on a hook became a traceback. There since L2.
+6. `resolve_path` again, bare in `scan()`'s freshness branch — which **plain `pnk sync` takes**, so
+   a partner path that stopped resolving crashed every `git commit` inside the TTL. The branch had
+   no test at all.
+
+Fixes 1–5 each wrapped the instance in front of them and stopped. What closed the class was making
+`resolve_path` **total** — it returns the declared text unresolved rather than raising — and the
+same reasoning then *removed* the wrappers fixes 4 and 5 had added, because a guarantee three call
+sites each have to remember is a function with the wrong contract. The message those wrappers were
+built to get right (name the path the author wrote, not the local KB root) comes from the fallback
+now, and both tests written for them still fail when the totality is removed. **A defect class is not closed until
+it has been searched for**, and the search is mechanical: list every call in the module that
+touches the filesystem and ask of each which errno it swallows.
+
+`Path.resolve()` belongs on that list and was wrongly excused twice. `strict=False` suppresses
+`OSError`; it does not suppress the `ValueError` raised for an embedded NUL, which `tomllib`
+accepts in a manifest and `pathlib` will not open. Enumerated rather than excused, there are four
+sites: `_document_in` resolves a path built from user text and is now guarded and tested;
+`resolve_path` is the totality fix above; the two in `sidecars_under` take partner-manifest text
+and were already inside the caller's `except (OSError, ValueError, NotImplementedError,
+PinakesError)`. The enumeration is the point — *"safe at both call sites"* named neither the
+number nor the reason, so it could not be checked without redoing the work.
 
 ### The containment check took three spellings, and the first two were each wrong in one direction
 
@@ -59,18 +103,27 @@ override falsifies, and which this increment's own edits to DESIGN, MANIFEST and
 the carve-out for. **A correction is a diff and earns the same verification as the line it
 replaces**; three rounds of unverified prose about the same paragraph is what happens otherwise.
 
-### A fixture that was representative rather than discriminating
+### Fixtures that were representative rather than discriminating
 
-**MEDIUM.** `test_no_line_outside_the_links_block_changes_when_a_link_is_added` used a sidecar with a
-*populated* `tags:` list, which `write()` short-circuits as unchanged and therefore never touches. It
-could not have failed. Meanwhile `tags:` and `provenance:` written with nothing under them were being
-rewritten to `tags: []` and `provenance: {}` on every `pnk link` — two lines changed outside the
-block, in the increment whose test says none are, against a promise stated as byte-identity.
+**MEDIUM, three times.** A test can be green because the code is right or because the input never
+reaches it, and the two look identical from the outside.
 
-Reachable before L6 only from a paid PDF extraction, which is why L5b's sweep missed it; `pnk link`
-reaches it on a *first* link, the common case. The sibling
-`test_a_known_key_with_a_null_value_does_not_crash_the_writer` parametrises exactly these three keys
-and asserts only `"id:" in text`: it pins the absence of a crash and nothing about the value.
+* `test_no_line_outside_the_links_block_changes_when_a_link_is_added` used a sidecar with a
+  *populated* `tags:` list, which `write()` short-circuits as unchanged and therefore never touches.
+  It could not have failed. Meanwhile `tags:` and `provenance:` written with nothing under them were
+  being rewritten to `tags: []` and `provenance: {}` on every `pnk link` — two lines changed outside
+  the block, in the increment whose test says none are, against a promise stated as byte-identity.
+  Reachable before L6 only from a paid PDF extraction, which is why L5b's sweep missed it; `pnk
+  link` reaches it on a *first* link, the common case. The sibling
+  `test_a_known_key_with_a_null_value_does_not_crash_the_writer` parametrises exactly these three
+  keys and asserts only `"id:" in text`: it pins the absence of a crash and nothing about the value.
+* The embedded-NUL test put its NUL in the *filename* — `docs/a\x00b.md` — where only the parent is
+  resolved, so it never reached the guard it was written for and passed against the ordinary "not a
+  document" refusal. Moved into a directory component. Caught by mutation, not by review.
+* `assert "outside" in message` against a fixture named `outside.md`, and `assert "partner" in
+  message` against a `tmp_path` ending in `/partner`. Both were satisfied by the interpolated path,
+  so the *reason* could have vanished from the wording with the test still green — proven by
+  rewording the error and watching all 29 pass. Fixtures renamed, phrases asserted.
 
 ### A docstring claiming a safety property its function cannot have
 
@@ -81,40 +134,6 @@ carrying the exact retargeting shape is byte-identical. The protection is real b
 `linkscan.scan_one`, which keeps the links it reads. A plausible rationale attached to the correct
 line is harder to catch than a wrong line, because reviewing it means re-deriving the claim rather
 than reading the code.
-
-### `expanduser()`, and the errno class it named but did not close
-
-**MEDIUM.** `Path("~nosuchuser/x.md").expanduser()` raises `RuntimeError`, which is not a
-`PinakesError`, so it left `cli.main` as a traceback — on the only command that called it. It bought
-nothing either: a `~` that does expand lands in `$HOME` and is refused by the containment check on
-the next line. Copying a call across a boundary copies its justification too, and `linkscan`'s need
-for it (a `[[links.kb]] path` may be `~/kbs/partner`) did not survive the trip.
-
-Its docstring then named the escaping-non-`PinakesError` class as the reason — and two more instances
-of that same class were left in the same function: `Path.is_file()` ignores `ENOENT`/`ENOTDIR`/
-`EBADF`/`ELOOP` and nothing else, so an unreadable parent directory (`EACCES`) and an over-long name
-(`ENAMETOOLONG`) both raised through `cli.main`.
-
-Fixing *those* left a third, one branch over: `_via_alias` probes a partner KB with `is_file()` and
-`is_dir()`, so a partner directory this user cannot read raised `PermissionError` out of `cli.main`.
-Fixing *that* left a fourth, on the line immediately above the `try` just added for it —
-`resolve_path`, which calls `expanduser()` because a `[[links.kb]] path` may legitimately be
-`~/kbs/partner`, and so raises `RuntimeError` on an unknown user.
-
-Four instances of one class in one increment, each fix closing the instance in front of it and
-stopping. **A defect class is not closed until it has been searched for**, and the search is
-mechanical: list every call in the module that touches the filesystem, and ask of each which errors
-it swallows. `is_file`, `is_dir` and `expanduser` swallow almost nothing — `is_file`/`is_dir` ignore
-`ENOENT`, `ENOTDIR`, `EBADF` and `ELOOP` and raise everything else. `Path.resolve()` is safe at both
-call sites here because `strict=False` suppresses and both bases are absolute; it is not safe in
-general, since a relative path calls `os.getcwd()`.
-
-The same search then found the class in the module `link.py` calls *into*. `linkscan.scan_one`'s
-docstring promises *"Never raises: every failure comes back in `issues`"*, and all three of these
-sat in the three lines that ran before any handling did — so an unreadable partner directory, or a
-`~` path that will not expand, turned `pnk sync` on a `post-commit` hook into a traceback. That is
-exactly the failure the promise exists to prevent, and it had been there since L2. Fixed with its
-own test, because a promise in a docstring that nothing checks is a comment.
 
 ### Mutation testing: a killed run poisons everything after it
 
@@ -131,14 +150,15 @@ useless in the increment's own worktree where the source is legitimately dirty. 
 modules under test, too: the full-suite run is what blew the timeout that caused this.
 
 Every fix in every round was mutation-tested against the test written for it, and all but one mutant
-was caught by exactly that test. (An earlier draft gave a total here; it was stale within a round and
-unverifiable afterwards, since the runs leave no artefact. The method is the durable part.)
+was caught. (An earlier draft gave a total here; it was stale within a round and unverifiable
+afterwards, since the runs leave no artefact. The method is the durable part.) The one escape was
+the NUL guard above — a test existed, and the mutation is what proved it never reached the line.
 
-The exception is genuinely equivalent — substituting the locally declared `[[links.kb]] id` for the
+One mutant is genuinely equivalent: substituting the locally declared `[[links.kb]] id` for the
 partner's own when writing an alias target changes nothing, because the refusal above has already
-established the two are equal. Saying so is part of the result: the rule is enforced by that refusal,
-which *is* caught, and the docstring records it so nobody simplifies the variable away on the grounds
-that they are the same.
+established the two are equal. Saying so is part of the result — the rule is enforced by that
+refusal, which *is* caught, and the docstring records it so nobody simplifies the variable away on
+the grounds that they are the same.
 
 ### Green expires at the next keystroke
 
@@ -147,13 +167,6 @@ was committed. Under `set -e` a failing `ruff check` means the eleven gates afte
 the increment's own verification stopped at gate two, unnoticed, because the earlier green run was
 still in mind. The rule already says green-before-review; what this adds is that the run has to be the
 *last* thing before the commit, including after an edit to a comment.
-
-### Assertions satisfied by the path rather than by the message
-
-**LOW, twice.** `assert "outside" in message` against a fixture named `outside.md`, and
-`assert "partner" in message` against a `tmp_path` ending in `/partner`. Both were satisfied by the
-interpolated path, so the *reason* could have vanished from the wording with the test still green —
-proven by rewording the error and watching all 29 pass. Fixture renamed, phrases asserted.
 
 ### Smaller things
 
@@ -166,6 +179,10 @@ proven by rewording the error and watching all 29 pass. Fixture renamed, phrases
   file elsewhere still holding the old text. `create()` guards this explicitly; `write()` did not, and
   `pnk link` is the first command a person points at a file of their own choosing. It now writes
   *through* the link.
+- **The error fallback named the local KB root** while the comment beside it claimed it named the
+  declared path — reporting an unrelated readable directory for a failure that had nothing to do
+  with it. Neither of the two tests written for that fix caught it: both asserted only the message
+  prefix.
 - **`pnk link` takes no lock**, so a concurrent write to the same sidecar can lose one side's change.
   Rename-atomicity prevents a torn file, not a lost update, and DESIGN §2.2 now says which.
 - **STATUS's *surface you can use today* table had no `pnk links` row at all**, three weeks after it

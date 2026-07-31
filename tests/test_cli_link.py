@@ -428,6 +428,27 @@ def test_an_unreadable_directory_is_refused_rather_than_crashing(pair: tuple[Kb,
     assert "cannot be read" in caught.value.message
 
 
+def test_a_path_with_an_embedded_nul_is_refused_rather_than_crashing(pair: tuple[Kb, Kb]) -> None:
+    """`Path.resolve()` raises `ValueError` — not an `OSError`, and not a `PinakesError` — on an
+    embedded NUL. Unreachable through `argv`, which cannot carry one, but `add()` is a library
+    entry point and `linkscan` reaches the same class from a manifest, so the guard is real.
+    Untested when written: the mutation that removes it was caught by nothing.
+
+    **The NUL has to be in a directory component**, because only the parent is resolved. A first
+    version of this test put it in the filename, where `parent.resolve()` never sees it and the
+    path falls through to an ordinary "not a document" refusal — a test for a guard, written with
+    an input that does not reach the guard.
+    """
+    local, _partner = pair
+    for source, target in (
+        ("docs/a\x00b/x.md", "docs/beta.md"),
+        ("docs/alpha.md", "docs/a\x00b/x.md"),
+    ):
+        with pytest.raises(PinakesError) as caught:
+            add(load(local.root), source=source, target=target, rel="cites")
+        assert "not a usable path" in caught.value.message
+
+
 def test_a_document_inside_the_root_but_outside_sources_can_be_linked(
     pair: tuple[Kb, Kb],
 ) -> None:

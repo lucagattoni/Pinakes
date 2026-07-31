@@ -21,7 +21,7 @@ from pinakes import store
 from pinakes.embed import EmbeddingBackend, ModelInfo, Vectors
 from pinakes.errors import SyncError
 from pinakes.ids import DocId, KbId, mint_doc_id, mint_kb_id
-from pinakes.linkscan import TTL_MINUTES, is_stale
+from pinakes.linkscan import TTL_MINUTES, is_stale, resolve_path
 from pinakes.manifest import load
 from pinakes.sidecar import SIDECAR_SUFFIX
 from pinakes.sync import SyncOptions, SyncReport, sync
@@ -542,6 +542,44 @@ def test_a_linked_kb_that_raises_before_the_handling_is_still_only_an_issue(
     _alias, message, _remedy = report.link_scan[0]
     assert "~nosuchuser12345/kb" in message
     assert str(local.root) not in message
+
+
+def test_resolve_path_never_raises_whatever_the_manifest_says() -> None:
+    """`[[links.kb]] path` is user-written text in a committed file, and two of the calls that
+    consume it reject some of it: `expanduser()` raises `RuntimeError` for an unknown user,
+    `resolve()` raises `ValueError` for an embedded NUL — which `tomllib` accepts and the manifest
+    parser does not filter. Neither is a `PinakesError`.
+
+    Pinned on the function rather than on its callers **because fixing it at call sites is what
+    produced six instances of it**: L6 wrapped this call in `_via_alias`, then in `scan_one`, and a
+    review pass still found it bare in `scan()`'s freshness branch.
+    """
+    root = Path("/tmp/somewhere")
+    for raw in ("~nosuchuser12345/kb", "a\x00b", "~zzzznosuchuser/x", "../partner", "/abs/kb"):
+        assert isinstance(resolve_path(root, raw), Path), raw
+
+
+def test_a_fresh_partner_with_an_unresolvable_path_does_not_crash_the_sync(
+    pair: tuple[Kb, Kb],
+) -> None:
+    """The freshness branch of `scan()` — which **plain `pnk sync` takes**, since `force` is only
+    set by `--scan-links`, and which every git hook therefore reaches.
+
+    The scenario is ordinary: a partner scans once (writing `last_scan`), then `[[links.kb]] path`
+    is edited to something that will not resolve — a typo, or a path valid on the machine the
+    manifest was committed from. Every commit inside the hour-long TTL was then a traceback. No
+    test touched this branch at all: `grep skipped_fresh tests/` returned nothing.
+    """
+    local, _partner = pair
+    run(local, now="20260730 12:00")  # writes kb_refs.last_scan
+
+    manifest = local.root / "pinakes.toml"
+    text = manifest.read_text(encoding="utf-8")
+    path_line = next(line for line in text.splitlines() if line.startswith("path = "))
+    manifest.write_text(text.replace(path_line, 'path = "~nosuchuser12345/kb"'), encoding="utf-8")
+
+    report = run(local, now="20260730 12:30")  # inside the TTL: the fresh branch, no force
+    assert report.ok
 
 
 # --- The TTL --------------------------------------------------------------------------------------

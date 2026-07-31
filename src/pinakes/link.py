@@ -167,36 +167,25 @@ def _via_alias(linked: LinkedKb, relative: str, *, local_root: Path) -> PnkUri:
             remedy=f"Give the path within that KB, for example `{linked.name}:docs/notes.md`.",
         )
 
-    # **`resolve_path` is inside the `try`, not above it.** It calls `expanduser()` — a
-    # `[[links.kb]] path` may legitimately be `~/kbs/partner` — which raises `RuntimeError` on an
-    # unknown user, and `RuntimeError` is not a `PinakesError`, so `cli.main` let it out as a
-    # traceback. That is the *fourth* instance of one class in this increment: `expanduser()` on
-    # `<source>`, `is_file()` on the source path, the two probes below, and this. Each earlier fix
-    # closed the instance in front of it and stopped; the search that finally worked was grepping
-    # the module for every call that touches the filesystem, this one included.
+    # Against the *local KB root*, never the working directory: a manifest is committed and shared,
+    # so `../partner-kb` has to mean the same place whatever directory `pnk` ran from.
     #
-    # `root` is bound before the `try` so the handler can name it, and the fallback is
-    # **`linked.path` as declared** — the string the user actually wrote. An earlier version bound
-    # `local_root` here, which reported a `~` that would not expand as "cannot be read at
-    # <the local KB root>": a real, readable directory with nothing to do with the failure, while
-    # the text they typed appeared nowhere. Once `resolve_path` succeeds this is overwritten with
-    # the resolved path, which is what every other failure should name.
-    root = Path(linked.path)
+    # **`resolve_path` is outside the `try`, because it is total** — see its docstring. An earlier
+    # fix put it inside, with `linked.path` pre-bound as a fallback so a `~` that would not expand
+    # named the text the user wrote rather than the local KB root; that shape was right about the
+    # message and wrong about where the guarantee belongs, and it was the fourth of six instances
+    # of one class fixed one call site at a time. `resolve_path` now hands back the declared text
+    # itself, so the message is the same and no caller has to remember.
+    root = resolve_path(local_root, linked.path)
     try:
-        # Against the *local KB root*, never the working directory: a manifest is committed and
-        # shared, so `../partner-kb` has to mean the same place whatever directory `pnk` ran from.
-        root = resolve_path(local_root, linked.path)
-        # `is_file()` and `is_dir()` swallow a missing path and nothing else, so a partner
-        # directory this user cannot read raises `PermissionError` here.
-        # `LinkedKbUnreachableError` is the right answer to all of it: a partner that cannot be
-        # read is unreachable, whether it is absent, locked, or named by a path that will not
-        # expand.
+        # `is_file()` swallows a missing path and nothing else, so a partner directory this user
+        # cannot read raises `PermissionError` here. `LinkedKbUnreachableError` is the right answer
+        # to all of it: a partner that cannot be read is unreachable, whether it is absent, locked,
+        # or named by a path that will not expand.
         if not (root / MANIFEST_NAME).is_file():
             raise LinkedKbUnreachableError(linked.name, root, reason=why_not_a_kb(root))
-    except (OSError, RuntimeError) as exc:
-        raise LinkedKbUnreachableError(
-            linked.name, root, reason=getattr(exc, "strerror", None) or str(exc)
-        ) from exc
+    except OSError as exc:
+        raise LinkedKbUnreachableError(linked.name, root, reason=exc.strerror or str(exc)) from exc
 
     try:
         # **`PinakesError` is in the tuple, matching `linkscan.scan_one`.** `partner_sources` parses
@@ -282,10 +271,21 @@ def _document_in(root: Path, raw: str, *, kb: str) -> Path:
     expanded `~` lands in `$HOME` and is refused by the very next line — it bought nothing and
     raised `RuntimeError`, which is not a `PinakesError`, straight out through `cli.main` as a
     traceback.
+
+    **`resolve()` is guarded, contrary to what an earlier draft of the retrospective asserted.**
+    `strict=False` suppresses `OSError`; it does not suppress the `ValueError` raised for an
+    embedded NUL, and `raw` is user-written text. Same class as the `expanduser()` defect above,
+    one line down from it.
     """
     given = Path(raw)
     joined = given if given.is_absolute() else root / given
-    document = joined.parent.resolve() / joined.name
+    try:
+        document = joined.parent.resolve() / joined.name
+    except (ValueError, OSError) as exc:
+        raise PinakesError(
+            f"{raw!r} is not a usable path: {exc}.",
+            remedy="Give a path relative to that KB's root, for example `docs/notes.md`.",
+        ) from exc
     if not document.is_relative_to(root):
         raise PinakesError(
             f"{raw!r} is outside {kb}.",

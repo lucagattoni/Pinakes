@@ -218,6 +218,9 @@ test, or write **none** and say why in the same commit.
 | a symlinked sidecar is written through, not replaced | L6 review | `tests/test_cli_link.py::test_a_symlinked_sidecar_is_written_through_not_replaced` |
 | `<alias>:` naming no document says so | L6 review | `tests/test_cli_link.py::test_an_alias_naming_no_document_says_so` |
 | ...and a manifest declaring no linked KBs says that | L6 review | `tests/test_cli_link.py::test_a_kb_declaring_no_linked_kbs_says_that_rather_than_listing_none` |
+| `resolve_path` is total — no manifest text makes it raise | L6 review 7 | `tests/test_sync_links.py::test_resolve_path_never_raises_whatever_the_manifest_says` |
+| ...so a fresh partner whose path will not resolve is an issue, not a crash | L6 review 7 | `tests/test_sync_links.py::test_a_fresh_partner_with_an_unresolvable_path_does_not_crash_the_sync` |
+| an embedded NUL in a path is refused, not a `ValueError` traceback | L6 review 7 | `tests/test_cli_link.py::test_a_path_with_an_embedded_nul_is_refused_rather_than_crashing` |
 
 ## The sidecar round-trip (L5b)
 

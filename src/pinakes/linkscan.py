@@ -86,7 +86,13 @@ class ScannedKb:
     alias: str
     declared_id: KbId
     path: Path
-    """Resolved against the local KB root — what `kb_refs.path` records."""
+    """Resolved against the local KB root — what `kb_refs.path` records.
+
+    Except on text no filesystem call will accept (`~someone/kb`, an embedded NUL), where
+    `resolve_path` hands back the declared string so the error names what the author wrote. Such a
+    row is never persisted: it always carries an issue and never `complete`, which is what `sync`
+    gates `record_kb_ref` on.
+    """
 
     kb_id: KbId | None = None
     """The partner's *own* `[kb] id`. `None` when it could not be established."""
@@ -127,11 +133,31 @@ def resolve_path(root: Path, raw: str) -> Path:
     committed and shared: `../partner-kb` has to mean the same thing whatever directory `pnk` was
     invoked from. An absolute path is honoured as given — and warned about by `pnk doctor` (L7),
     since a committed absolute path publishes a filesystem layout.
+
+    **Total: it never raises, whatever the manifest says.** `raw` is user-written text from a
+    committed file, and both calls below reject some of it — `expanduser()` raises `RuntimeError`
+    for an unknown user (`~someone/kb`), `resolve()` raises `ValueError` for an embedded NUL, which
+    `tomllib` accepts and `manifest.py` does not filter. Neither is a `PinakesError`, so both
+    reached `cli.main` as a traceback.
+
+    **Fixed here rather than at the call sites, because fixing it at call sites is what produced
+    six instances of it.** L6 wrapped this call in `_via_alias`, then in `scan_one`, and the seventh
+    review pass still found it bare in `scan()`'s freshness branch — which plain `pnk sync` takes,
+    so a `~` path that stops resolving turned every `git commit` inside the TTL into a traceback.
+    A function that three call sites each had to remember to guard is a function with the wrong
+    contract.
+
+    The fallback is the declared text, unresolved: downstream that fails the `pinakes.toml` probe
+    and is reported as *"no such directory: ~someone/kb"*, naming what the author actually wrote.
+    Callers keep their own handlers for the *probes* (`is_file`, `is_dir`), which still raise.
     """
-    expanded = Path(raw).expanduser()
-    # `.resolve()` on both branches: `kb_refs.path` is shown to a person and compared by later
-    # increments, and `/a/b/../c` is the same place as `/a/c` written two ways.
-    return (expanded if expanded.is_absolute() else root / expanded).resolve()
+    try:
+        expanded = Path(raw).expanduser()
+        # `.resolve()` on both branches: `kb_refs.path` is shown to a person and compared by later
+        # increments, and `/a/b/../c` is the same place as `/a/c` written two ways.
+        return (expanded if expanded.is_absolute() else root / expanded).resolve()
+    except (RuntimeError, ValueError, OSError):
+        return Path(raw)
 
 
 def why_not_a_kb(path: Path) -> str:
@@ -251,37 +277,29 @@ def scan_one(
     missing document would be blaming the partner for our failure. The rows are still recorded;
     they come from the partner's sidecars and owe nothing to our local state.
     """
-    # **All three probes inside the `try`, because "never raises" was not true of any of them.**
-    # `resolve_path` calls `expanduser()`, which raises `RuntimeError` on an unknown user; `is_file`
-    # and `is_dir` swallow a missing path and nothing else, so an unreadable partner directory
-    # raises `PermissionError`. Every one of those turned `pnk sync` on a `post-commit` hook into a
-    # traceback — the exact failure this module's "nothing here raises" promise exists to prevent,
-    # broken by the three lines that ran before any of the handling did. Found by grepping the
-    # module for calls that touch the filesystem, after the same class had been fixed four times
-    # one instance at a time in `link.py` (L6).
-    # `linked.path` as declared, not `local_root`: when `resolve_path` is what failed there is no
-    # resolved path to show, and naming the local KB root points the reader at a readable directory
-    # with nothing to do with the failure. Overwritten with the resolved path the moment there is
-    # one. `ScannedKb.path` normally records the resolved form, and a row that reaches here is
-    # never persisted — `sync` gates `record_kb_ref` on `complete`, which this is not.
-    path = Path(linked.path)
+    # **The probe goes inside the `try`, because "never raises" was not true of it.** `is_file` and
+    # `is_dir` swallow a missing path and nothing else, so an unreadable partner directory raises
+    # `PermissionError` — which turned `pnk sync` on a `post-commit` hook into a traceback, the
+    # exact failure this module's promise exists to prevent, from the lines that ran before any of
+    # the handling did. Found by grepping the module for calls that touch the filesystem, after the
+    # same class had been fixed four times one instance at a time in `link.py` (L6).
+    # `resolve_path` sits *outside* the `try` because it is total (see its docstring): the earlier
+    # fix wrapped it here and pre-bound a declared-text fallback, which the class's sixth instance
+    # showed to be the wrong shape — the guarantee belongs to the function, not to each caller. On
+    # a path it cannot resolve it hands back the declared text, so the failure below names what the
+    # author wrote rather than the local KB root.
+    path = resolve_path(local_root, linked.path)
+    base = ScannedKb(alias=linked.name, declared_id=linked.id, path=path)
     try:
-        path = resolve_path(local_root, linked.path)
-        base = ScannedKb(alias=linked.name, declared_id=linked.id, path=path)
         if not (path / MANIFEST_NAME).is_file():
             return _with(
                 base,
                 issues=(LinkedKbUnreachableError(linked.name, path, reason=why_not_a_kb(path)),),
             )
-    except (OSError, RuntimeError) as exc:
-        base = ScannedKb(alias=linked.name, declared_id=linked.id, path=path)
+    except OSError as exc:
         return _with(
             base,
-            issues=(
-                LinkedKbUnreachableError(
-                    linked.name, path, reason=getattr(exc, "strerror", None) or str(exc)
-                ),
-            ),
+            issues=(LinkedKbUnreachableError(linked.name, path, reason=exc.strerror or str(exc)),),
         )
 
     try:
