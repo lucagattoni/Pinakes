@@ -223,7 +223,7 @@ earlier.
 | *"`docs/` belongs to the user … never any other key"* | A second, narrower exception: **a user-invoked authoring command** writing `links[]` to the source document's own sidecar | L6 |
 | The "🚫 Unbuilt work is named" table (**not** the "Naming (fixed…)" table) in `CLAUDE.md` **and** `docs/STATUS.md` | Both files' links-release rows gain `pnk links`. **Reconcile the two tables** — `CLAUDE.md` still carries the paid-extraction row that 0.4.0 retired and `docs/STATUS.md` has already dropped. Assigned to L4, which landed without doing it; **reassigned to L5b**, the cutting increment | L4 → **L5b** |
 | *Landing work: always push, always release* | A release that **cuts more than once** keeps its name in the 🚫 unbuilt-work table until the **final** cut; the roadmap row carries both tags. CLAUDE.md today says to drop the name when the roadmap row is ticked, which at an interim cut deletes a name L8 needs back — the churn decision 27 was chosen to avoid | L5b |
-| *Invariants that must not be broken* | A new one: **an unknown key in a sidecar round-trips byte-identically** — stronger and more testable than "untouched", and false until L5b. It excludes what pinakes normalises by design (`pnk://self/…` expansion; canonical ordering **on a minted sidecar only** — an existing file keeps the user's order), what **ruamel** normalises (block-sequence and nested-mapping **indentation**, which follows the dumper settings rather than the source; the non-specific `!` tag), and what YAML itself does not carry (CRLF, a BOM, `---`/`...` markers) | L5b |
+| *Invariants that must not be broken* | A new one: **an unknown key in a sidecar round-trips byte-identically** — stronger and more testable than "untouched", and false until L5b. It excludes what pinakes normalises by design (`pnk://self/…` expansion; canonical ordering **on a minted sidecar only** — an existing file keeps the user's order), what **ruamel** normalises (block-sequence and nested-mapping **indentation**, which follows the dumper settings rather than the source; the non-specific `!` tag; and a **recursive anchor**, whose anchor and alias are destroyed and whose value is nulled), and what YAML itself does not carry (CRLF, a BOM, `---`/`...` markers) | L5b |
 
 ---
 
@@ -589,6 +589,13 @@ measurements and decisions 19–27. This section is instructions only.
 **Precondition met** — L5 merged at `d40e305`. Branch `YYYYMMDD_HHMM-l5b-ruamel-sidecar`, from the
 clock, own worktree.
 
+**Precondition, with a pass criterion.** Before writing anything, re-run the prototype against the
+current tree. The 871/872 figure predates L5 and the suite now collects **1027**. It passes when
+**N-1 of N** pass and the single failure is `test_malformed_sidecars_are_rejected`'s `{id: x, : }`
+case — ruamel parses that fixture to `{'id': 'x', None: None}`, `_id` then raises *"is not a ULID"*,
+so the `"is not valid YAML"` assertion goes red. Any other failure means something is wrong before
+you start. Record the new denominator.
+
 **Every decision below is made. Nothing here is delegated** — if a sentence reads as a question,
 treat it as a defect in this plan and say so rather than choosing.
 
@@ -632,9 +639,16 @@ widened acceptance becoming a crash.
        node that already exists. One level is not enough: `with_extraction_provenance` builds a plain
        `dict` for `extraction`, and ruamel stores a comment as the **preceding key's** trailer, so a
        comment describing a *sibling* of `extraction` lives inside that node and dies with it.
-     - **`links` reconciles by `to`, never by position.** Match each existing entry to the new one
-       with the same `to` URI and update its `rel` in place; append entries whose `to` is new;
-       delete entries whose `to` is gone. Positional matching silently **misattributes the user's
+     - **`links` reconciles by `(to, rel)`, never by position and never by `to` alone.** That pair
+       is the index's own identity (`store.py:110`'s
+       `PRIMARY KEY (src_kb_id, src_doc_id, dst_kb_id, dst_doc_id, rel)`). Two links may share a
+       `to` with different `rel`s — `_links()` accepts it and the index stores two rows — so keying
+       on `to` alone is undefined there, and the natural `{e["to"]: e}` implementation overwrites
+       one with the other, reproducing exactly the comment misattribution this rule exists to
+       prevent (measured: `rel: cites  # why it cites` became
+       `rel: supersedes  # why it cites`). Match on the pair, falling back to position among equal
+       pairs; append new pairs; delete gone ones.
+       `::test_two_links_sharing_a_to_keep_their_own_rel_and_comment`. Positional matching silently **misattributes the user's
        comments onto different links** when the list is reordered, and deletes them when it shrinks —
        measured, and worse than the mapping-key limitation below because the prose then describes
        the wrong data. `tags` reconciles **by value**, the same shape: match, append, delete
@@ -656,7 +670,13 @@ widened acceptance becoming a crash.
        write does not modify. Scalars are safe either way — reassigning the same string keeps its
        trailing comment, verified — but sequences and mappings are not.
      - **Nested deletion has two rules, and they differ.** Inside `provenance`, a key absent from
-       the new mapping **is deleted** — `without_extraction_provenance` returns a provenance without
+       the new mapping **is deleted — at depth 1 only**. That is all
+       `without_extraction_provenance` needs (it removes `extraction` from `provenance`'s top
+       level). Recursing the delete rule into `provenance.extraction` would strip the user's own
+       keys from it, because `with_extraction_provenance` builds a plain four-key replacement —
+       measured, `note: mine` and its comment vanish — and CLAUDE.md's invariant says a paid
+       extraction rewrites the sidecar **additively**, *"never any other key"*. Below depth 1,
+       merge without deleting — `without_extraction_provenance` returns a provenance without
        `extraction`, and an assign-and-recurse merge would leave the stale paid claim in place,
        silently failing the `--force` reversal DESIGN §2.2 treats as an invariant. Inside a
        `links[]` entry, **nothing is deleted**: only `to` and `rel` are assigned, because `_links()`
@@ -672,7 +692,10 @@ widened acceptance becoming a crash.
        its **preceding** key, so the comment introducing that unknown key would end up above
        `provenance` instead. A larger diff is preferable to a misplaced comment in the increment
        whose purpose is not to misplace comments.
-       `test_provenance_first_appearing_is_appended_and_moves_no_comment`.
+       `test_provenance_first_appearing_is_appended_and_moves_no_comment` — **the fixture must carry a
+       comment after the last key**, or the test is green on the broken case: measured, a
+       document-trailing note ends up introducing pinakes's new `provenance:` block. That is a
+       **second pinned limitation**, not a fixed one.
    - **The user's key order is untouched.** Canonical ordering is for minting only.
    - **Quote ambiguous scalars pinakes writes** (decision 23), keyed on *the value being
      assigned*, never on `original is None`. Predicate: `ruamel.yaml.resolver.VersionedResolver`
@@ -711,8 +734,18 @@ widened acceptance becoming a crash.
      (`ConstructorError` is a `YAMLError`); ruamel accepts it, so without this check L5b alone turns
      that clean error into an unhandled `TypeError` from `json.dumps` out of `pnk sync` — measured.
      Use **exactly the call `store.dumps_metadata` makes** — `json.dumps(value, sort_keys=True,
-     ensure_ascii=False)` — so the check and the thing it protects cannot disagree.
-     `ValueError` is **not** reachable here: a self-referencing anchor raises
+     ensure_ascii=False)` — so it encodes the same assembled mapping
+     `_metadata()` builds. (Not "cannot disagree": item 3's `ScalarBoolean` coercion happens at the
+     `_metadata()` boundary, so `dumps_metadata` receives a mapping `read()` never saw. No crash
+     divergence was found, but the absolute is unsupported.)
+     **A recursive anchor is a silent regression, and it is not in the exclusion list.** Measured:
+     `mine: &x\n  b: *x` round-trips to `mine:\n  b:\n` — the anchor and alias are destroyed and
+     the value nulled, so **byte-identity is violated and the indexed value changes**, where PyYAML
+     raises `ValueError: Circular reference detected` out of `pnk sync` today. A loud crash becomes
+     silent corruption, in the increment whose thesis is behaviour equivalence. Add it to the
+     invariant's exclusion list **and** to the changelog as what it is; refuse it at `read()` if
+     that is unacceptable.
+     `ValueError` is **not** otherwise reachable here: a self-referencing anchor raises
      `Circular reference detected` under `typ="safe"` and PyYAML, but the **round-trip** loader
      returns `None` for the self-reference, so it encodes as `null` and never raises — verified
      against the implementation. Catching it is harmless insurance, not a requirement; the earlier
@@ -741,9 +774,14 @@ widened acceptance becoming a crash.
      the JSON check three bullets above will pass it — and lands in the index as `1` where PyYAML wrote `true`. Map
      `ScalarBoolean` → `bool`; leave `ScalarInt`/`ScalarFloat`/`ScalarString`, which already encode
      as their base types. **Build a new structure; never mutate in place.** `dict()` and `**` are shallow, so everything
-     below one level is still `original`'s live node — an in-place walk strips the anchors out of
-     the user's file (measured: `&n`, `&l` and `*l` all vanish), and the "assign only when changed"
-     rule cannot help, because the node was mutated rather than reassigned.
+     below one level is still `original`'s live node — an in-place walk strips **the anchor on the
+     coerced boolean itself, and every alias to it**, out of the user's file — measured; anchors on
+     the *enclosing* nodes survive. The "assign only when changed" rule cannot help, because the
+     node was mutated rather than reassigned. **Not reachable from a file today** — every
+     `write_sidecar` in `_index_document` (`sync.py:1659`, `:1681`) runs before `_metadata()`
+     (`:1719`) — so this is defence against a future ordering, not a live bug. A mutation test must
+     assert on the **coerced boolean's own** anchor; asserting on an enclosing one is green on the
+     defective version.
      **Walk mappings and sequences recursively, and coerce keys as well as values** — an anchored
      boolean *key* is uniformly typed, so `sort_keys=True` never trips it and it lands as `"1"`
      where PyYAML wrote `"true"`. `_metadata()`
@@ -773,8 +811,9 @@ widened acceptance becoming a crash.
 6. **`tests/free_path_run.py` migrates.** It does `import yaml` at `:146` and **writes a sidecar**
    through `yaml.safe_dump` at `:160`. Measured, the harness's module list already contains
    `['yaml', 'yaml._yaml', 'yaml.composer', …]`, so item 8's runtime gate is **red on day one**; and it is the only PyYAML
-   sidecar writer **inside the free-path run's own process**. (Not in the repo: fifteen
-   `safe_dump` sites across eight test files survive the swap, and by item 5's own
+   sidecar writer **inside the free-path run's own process**. (Not in the repo: fifteen `safe_dump`
+   sites across **seven** test files survive the swap (sixteen across eight before item 6 migrates
+   this one; `tools/link_density_gate.py` has no `safe_dump` at all, only `safe_load`), and by item 5's own
    "gate, not a fixture writer" distinction they are fixture writers and stay.) Replace the three `safe_load`/`safe_dump` calls with
    `pinakes.sidecar.read`, `write`, **`resolve_link`** and **`dataclasses.replace`** — `Sidecar` is
    frozen with slots and `Link.to` is a `PnkUri`, not a `str`, so `read`/`write` alone cannot do it.
@@ -791,11 +830,11 @@ widened acceptance becoming a crash.
    `SingleQuotedScalarString`, `VersionedResolver`, **`ScalarBoolean`** (item 3's coercion needs
    `isinstance`; re-exported from `ruamel.yaml.constructor`) and **`ScalarNode`**
    (`VersionedResolver.resolve` is `(self, kind, value, implicit)` and `kind` is a node class;
-   re-exported from `ruamel.yaml.resolver`). **Not** `Resolver` — item 3 forbids importing it.
+   re-exported from `ruamel.yaml.resolver`). **Not** `ruamel.yaml.resolver.Resolver` — it exists, but item 7's rule is *declare only what is used*. (Item 3 forbids PyYAML's `yaml.resolver.Resolver`, a different class.)
    Declare only what is used; a symbol declared in the wrong module is pyright-green and an
    `ImportError` at runtime, which is why item 8's signature test exists.
 
-8. **Three pytest gates, in two named files** — plus a fourth at wheel level, verification step 3. Neither gate alone suffices: the AST scan sees lazy and
+8. **Three pytest gates, in two named files** — plus a fourth at wheel level, verification step 3. No one gate suffices: the AST scan sees lazy and
    function-scoped imports but not dynamic ones; the runtime check sees transitive and dynamic
    imports but only what the run actually executes.
    - `tests/test_packaging.py::test_no_module_under_src_imports_pyyaml` — walk every `.py` under
@@ -810,6 +849,12 @@ widened acceptance becoming a crash.
      `test_packaging.py`**: it already owns `FREE_PATH_RUN` and the subprocess harness. Predicate
      `name == "yaml" or name.startswith("yaml.")`, never a substring — the module list contains
      `pydantic_settings.sources.providers.yaml`.
+     **No `skipif`, and this is not optional.** Both existing callers of `_free_path_modules`
+     (`tests/test_paid_path.py:325`, `:339`) carry `@pytest.mark.skipif(_NO_CLIENT, …)` where
+     `_NO_CLIENT = find_spec("anthropic") is None` (`:266`). Copying the neighbouring decorator
+     silences this gate on `[light]` and `[light,pdf]` — two of three CI legs — for a reason that
+     has nothing to do with PyYAML, which is a dev-group dependency present on every leg.
+     **Mutation target:** add the decorator → the gate must be seen to stop running.
    - `tests/test_packaging.py::test_every_symbol_the_ruamel_stub_declares_matches_inspect_signature`
      — import each declared symbol from the module the stub declares it in, and compare **callables**
      against `inspect.signature`. `preserve_quotes` and `width` are *instance* attributes, not class
@@ -833,7 +878,9 @@ assignment against `del`);
 **sequence** shape, not only its mapping shape);
 `::test_an_unchanged_known_key_is_not_reassigned` (the general rule — assert the node object is the
 same, not merely that the bytes match);
-`::test_comments_survive_a_rewrite`;
+`::test_comments_survive_a_rewrite` (L6's `test_comments_in_the_sidecar_survive_a_rewrite` is the
+**same property** — L6 asserts it against `pnk link` rather than `write()`; keep both names, and do
+not let a third appear);
 `::test_quoting_style_survives_a_rewrite`;
 `::test_a_value_with_spaces_past_eighty_columns_is_not_folded`;
 `::test_block_scalars_and_blank_lines_survive_a_rewrite`;
@@ -913,9 +960,11 @@ comment to whatever precedes it, so:
 lives. Read `docs/KB-UPDATES.md` §5 first: it already argues for `tomlkit` in core on this same
 trade. · `MANIFEST.md` — *"unknown keys round-trip untouched"* → byte-identically, with the
 exclusions. · `CLAUDE.md` — **all three amendments assigned to L5b**: the new byte-identity invariant; the
-*Landing work* rule gaining the multi-cut exception above; and the 🚫-table reconciliation (drop the
-paid-extraction row 0.4.0 retired, add `pnk links` to both files' links-release rows — assigned to
-L4, which landed without doing it). · `VERIFICATION.md`. · `STATUS.md`. · `GUIDE.md` —
+*Landing work* rule gaining the multi-cut exception above; and the 🚫-table reconciliation — **only
+`CLAUDE.md`'s 🚫 table needs the paid-extraction row dropped**; `docs/STATUS.md` already dropped it,
+and **both** 🚫 tables already carry `pnk links`. The row that lacks it is
+`docs/STATUS.md`'s *roadmap* table, which the amendment explicitly scopes itself away from —
+check each before editing rather than applying the instruction blind. · `VERIFICATION.md`. · `STATUS.md`. · `GUIDE.md` —
 its `links:` example (`docs/GUIDE.md:426-428`) uses an indentation ruamel **re-indents**, so it is the counter-example
 to the invariant, not a typo. · `check.sh:109` — the comment says *"it needs PyYAML"*; item 5
 falsifies it, but the `uv run` invocation stays, because ruamel is a dependency too. ·
@@ -944,9 +993,6 @@ historical.
 
 **Verification before the interim cut.**
 
-0. **Re-run the prototype against the current tree first**, before writing anything. The 871/872
-   figure predates L5 and the suite now collects 1027; this increment's one falsifiable exit
-   criterion rests on that denominator. Record the new one.
 1. `./check.sh` green — including `ty check`, which behaves differently from pyright on stubs; 0
    pyright errors with **no suppression added anywhere**.
 2. Green on all three CI legs — this changes `[project.dependencies]` and `uv.lock`.
@@ -1671,3 +1717,4 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 | 20260731 08:00 | **Independent review of L5b — five findings, one of which changed the code.** Decision 26's check was specified over *values*; measured, a per-value check **accepts** `{123: v, abc: w}` and the `TypeError` survives, because the failure is a comparison *between* keys. It now encodes the **assembled mapping**, mirroring what `_metadata()` hands `store.dumps_metadata`. Three were false claims headed for the changelog: `sort_keys=True` catches **mixed**-type keys only — a *uniformly* int-keyed mapping is accepted and silently coerced at any depth, covered by neither increment and now a stated residual; `!!str` is the only **working** tag that breaks, not the only tag that works (`!!int`, `!!float`, `!!bool`, `!!seq`, `!!map` all survive); and the documented widening is for **custom**-tagged collections, since `!!map` and `!!seq` were never refused. The record's decision 23 still named `yaml.resolver.Resolver` two commits after the plan removed it — the exact neighbourhood miss the convention added this morning exists to catch. Also: `ScalarBoolean` arrives via an **alias** as well as an anchor, so the coercion test asserts both |
 | 20260731 08:12 | **Pass 4 — 6 HIGH, but the seam and L5c both cleared.** The reviewer enumerated every shape under both libraries and confirmed **no shape regresses at L5b** and that reverting L5c leaves L5b correct; it **found nothing wrong in L5c**. What it found in L5b was worse than a wording defect: **`tests/free_path_run.py` already imports PyYAML and writes a sidecar with `yaml.safe_dump` at `:160`**, so the runtime gate is red on day one and, after the swap, that line is the only PyYAML sidecar writer left in the repo — the exact divergence the gate exists to forbid. The section had reasoned carefully about false positives and never checked the true positive. **The `ScalarBoolean` coercion was one level deep**, and `_metadata()` is a shallow spread, so a nested or `provenance`-held anchored boolean still indexes as `1`; both the named test and the mutation target passed on the defect — the third instance of the same increment-shaped blind spot in one section. The stub list was declared *complete* and omitted `ScalarBoolean` and `ScalarNode`, both of which the increment's own code needs. Item 5's divergence paragraph still attributed L5b's changes to L5c. And the interim cut — the project's first cut of this release, publishing to PyPI — claimed L8 steps it never listed: the GUIDE install line (which this increment changes), `SCHEMA_VERSION == 2`, and `pnk doctor` exiting 0 on both corpora, plus no cut procedure and no three-document stale sweep. Also: the verification table named a renamed test, and `tests/test_verification.py` hard-fails on an unresolvable one; the 871/872 figure predates L5 and the suite now collects **1027**, so the one falsifiable exit criterion rested on a number from a different tree |
 | 20260731 08:32 | **Pass 5 — 7 HIGH, and the calibration point is that a *person* found what five agent passes did not.** The `tags`-comment defect (a comment on a `tags` entry, destroyed by the "replaced wholesale" rule justified with a fabricated claim that such comments do not exist) was found by the user testing, not by any review. Of pass 5's own seven: the pass-4 fix commit **corrupted two rows of the verification table it was editing** — one lost a column, one gained a fifth holding the neighbouring row's test, and `tests/test_verification.py` would have caught only the first; the item renumber left **four dangling `item N` references**, one of them written *by that same commit and wrong on arrival*; two "the only/the last PyYAML site" claims were false (fifteen `safe_dump` sites across eight test files survive, and item 5's own "gate, not a fixture writer" distinction argues the other way); the new runtime gate was placed in a file where **every neighbouring caller carries a `skipif` on `anthropic`**, so an executor copying the convention would disable it on two of three CI legs for an unrelated reason; the 871/872 correction was written into a commit message and a log row and **never landed in the plan body** — recording a finding is not fixing it; the cut procedure instructed the exact 🚫-table churn decision 27 exists to prevent, 685 lines from the amendment forbidding it, while two of L5b's three CLAUDE.md amendments had no landing instruction at all; and *"the check and the thing it protects cannot disagree"* was false — `_metadata()` builds a **union**, so a key-type collision created *by the merge* passes a separate-mapping check and then `TypeError`s. Also measured: an in-place coercion walk **strips the user's anchors out of the file**, and a self-referencing anchor raises `ValueError`, not `TypeError`, making it a fifth crash shape the check must catch |
+| 20260731 08:50 | **Pass 6 — 7 HIGH, five of them inside pass 5's fix, and one repeat offence.** The pass-5 commit's message said *"It now says explicitly: no skipif"*; a grep found the word in the iteration log and **nowhere in the plan body** — the second time an edit of mine silently failed to match, on the very finding that had named *"written into a commit message and a log row and never landed"* as the failure mode. Every edit in this pass was applied through a harness that reports which patterns matched; it caught one immediately. The withdrawn `ValueError` claim was hiding a real regression underneath it: measured, `mine: &x\n  b: *x` round-trips to `mine:\n  b:\n` — anchor and alias destroyed, value nulled — where PyYAML raises `Circular reference detected` out of `pnk sync`. **A loud crash becomes silent corruption**, in the increment whose thesis is behaviour equivalence, and it was in no exclusion list. Three specification defects: `links` keyed on `to` alone is undefined when two links share a `to` with different `rel`s, which `_links()` accepts and the index stores as two rows — reproduced, one link overwrote the other and its comment came with it; the `provenance` delete-what-is-missing rule was unbounded in depth, so it would strip a user's own keys out of `provenance.extraction`, against CLAUDE.md's *"additively … never any other key"*; and "append at the end" misplaces a **document-trailing** comment, which the named test's fixture could not detect. Also: the 🚫-table instruction told the executor to add `pnk links` where both tables already have it while missing the roadmap row that lacks it; the in-place-anchor measurement was wrong in its specifics (only the coerced boolean's *own* anchor vanishes) and unreachable today; verification step 0 had no pass criterion and is now a precondition with one |
