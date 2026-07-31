@@ -115,6 +115,17 @@ uv run --frozen python3 tools/traversal_cap_gate.py
 # refuses.) Unlike the paid-path gate, nothing has to run this before the package is installed.
 uv run --frozen python3 tools/link_density_gate.py
 
+# eval-reproducibility (G1): the golden set answers the same way however the index was built. The
+# graph release's gate reads per-question movement as evidence about *retrieval*, so movement caused
+# by a rebuild is not noise, it is a wrong answer — and until G1 every tiebreak in the pipeline
+# resolved to `chunks.id`, the rowid, which store.py says has no identity across rebuilds. Measured
+# then: one golden-set question in 41 already differed between an incremental sync and a --rebuild.
+#
+# Offline and about a second, on a deliberately tie-heavy fake backend, so it needs no weights and
+# no network. It sweeps four ways of reaching the same corpus state — a document edited, added,
+# removed, renamed — because each takes a different path through sync.py and the tests cover one.
+uv run --frozen python3 tools/eval_reproducibility_gate.py
+
 # changelog/retrospective fragments are well-formed. Cheap, offline, and it fails *here* rather
 # than at release time — `--apply` deletes the fragments it consumed, so a malformed one found then
 # would be found with the evidence already gone.

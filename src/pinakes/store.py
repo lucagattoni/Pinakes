@@ -259,6 +259,14 @@ def load_vectors(
     Returns chunk ids in the array's row order, so a row index maps straight back to a chunk. A
     stored vector whose width disagrees with the manifest is a hard error: a silently reshaped or
     truncated embedding would return plausible, wrong neighbours.
+
+    **Ordered by `(documents.path, chunks.ordinal)`, never by `chunks.id`** (G1). This row order is
+    what breaks ties in the caller's `argsort`, so it decides which of two equally-similar chunks is
+    retrieved — and `chunks.id` is the rowid, which this module's own schema comment says has no
+    identity across rebuilds. Measured 20260801: an incremental sync appends a re-chunked
+    document's rows at the end while a `--rebuild` writes them in walk order, and one golden-set
+    question in 41 retrieved a different document as a result. `(path, ordinal)` survives both —
+    `documents.path` is `UNIQUE` and an ordinal is a position inside a document.
     """
     source = (
         "FROM embeddings e JOIN chunks c ON c.id = e.chunk_id JOIN documents d ON d.id = c.doc_id "
@@ -273,7 +281,8 @@ def load_vectors(
 
     chunk_ids: list[int] = []
     rows = connection.execute(
-        f"SELECT e.chunk_id AS chunk_id, e.vector AS vector {source}{where}ORDER BY e.chunk_id"
+        f"SELECT e.chunk_id AS chunk_id, e.vector AS vector {source}{where}"
+        "ORDER BY d.path, c.ordinal"
     )
     for row in rows:
         vector = unpack_vector(bytes(row["vector"]))

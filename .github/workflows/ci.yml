@@ -185,6 +185,107 @@ jobs:
           uv run --frozen python tools/link_density_gate.py --max-degree 0 2>&1 \
             | grep -q "above the degree cap of 0"
 
+  eval-reproducibility:
+    # G1. Its own job for the same reason link-density and traversal-caps have one: `ci.yml` never
+    # invokes `check.sh`, so a gate living only there runs only on the machine of whoever remembers
+    # to run it. Needs no models and no extras — the tie-heavy fake lives inside the gate, which is
+    # what keeps it a second long and able to run on core alone.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      - name: The golden set answers the same way however the index was built
+        run: uv run --frozen python tools/eval_reproducibility_gate.py
+
+      - name: The gate can still fail
+        # Corrupts one question's outcome and requires the gate to notice, exit non-zero and name
+        # the question. A bare non-zero exit is also what a crash, a missing corpus or `uv` falling
+        # over produce, so the printed reason is asserted too.
+        run: |
+          if uv run --frozen python tools/eval_reproducibility_gate.py --inject-difference; then
+            echo "eval-reproducibility passed with a difference injected — it is not gating" >&2
+            exit 1
+          fi
+          uv run --frozen python tools/eval_reproducibility_gate.py --inject-difference 2>&1 \
+            | grep -q "questions changed outcome"
+
+  eval-cross-machine:
+    # The half one machine cannot answer (G1). The gate above drives a deliberately tie-heavy fake,
+    # which is what makes ordering observable at all but says nothing about the real model — where a
+    # different CPU, ONNX build or BLAS could reorder equally-scored passages. So the real [light]
+    # models run on two operating systems and the per-question outcomes are diffed.
+    #
+    # Outcomes, not metrics: two machines can agree on `recall@k` to four decimal places while
+    # disagreeing about which documents came back, and the graph release's gate reads the latter.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen --extra light
+
+      # Keyed per runner OS as well as per model: one cache shared between two architectures would
+      # be a download saved and a measurement lost.
+      - name: Cache model weights
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ runner.os }}-${{ hashFiles('tests/demo-kb/pinakes.toml') }}
+          restore-keys: hf-${{ runner.os }}-
+
+      - name: Index the demo KB
+        run: uv run --frozen pnk sync --kb tests/demo-kb
+
+      - name: Record per-question outcomes
+        run: |
+          uv run --frozen python tools/eval_reproducibility_gate.py \
+            --record-outcomes outcomes.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: outcomes-${{ matrix.os }}
+          path: outcomes.json
+
+  eval-cross-machine-compare:
+    needs: eval-cross-machine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: outcomes-*
+          path: outcomes
+
+      - name: Both machines answered every question the same way
+        # `diff` rather than a hash: when this fails the useful output is *which* questions moved,
+        # and a mismatched digest says only that something did.
+        run: |
+          set -e
+          test -f outcomes/outcomes-ubuntu-latest/outcomes.json
+          test -f outcomes/outcomes-macos-latest/outcomes.json
+          if ! diff -u outcomes/outcomes-ubuntu-latest/outcomes.json \
+                      outcomes/outcomes-macos-latest/outcomes.json; then
+            echo "::error::the two machines disagree about per-question outcomes. The golden set is"\
+                 "not reproducible across architectures, and the graph release's sign test reads"\
+                 "exactly this movement as evidence about retrieval."
+            exit 1
+          fi
+          echo "both machines produced identical per-question outcomes"
+
   build:
     runs-on: ubuntu-latest
     steps:

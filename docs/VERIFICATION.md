@@ -439,6 +439,21 @@ test, or write **none** and say why in the same commit.
 | a dangling link inside the KB is a warning | I9 | `tests/test_doctor.py::test_a_dangling_link_inside_this_kb_is_a_warning_naming_how_many` |
 | a cross-KB link is counted and declared unchecked | I9 | `tests/test_doctor.py::test_a_cross_kb_link_is_counted_and_declared_unchecked` |
 
+## The evaluation is reproducible (G1)
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| the same index evaluated twice gives the same answers | G1 | `tests/test_search_reproducibility.py::test_outcomes_are_identical_across_repeated_runs` |
+| an incremental sync and a `--rebuild` agree question by question | G1 | `tests/test_search_reproducibility.py::test_outcomes_survive_an_incremental_sync_and_rebuild`, and `check.sh`'s `eval-reproducibility` gate over four kinds of corpus change |
+| ...and so does a first sync of a fresh clone | G1 | `tests/test_search_reproducibility.py::test_outcomes_survive_a_sync_from_scratch` |
+| the two sync paths really do assign different rowids, so the rows above are not vacuous | G1 | `tests/test_search_reproducibility.py::test_the_two_sync_paths_really_do_assign_different_rowids` |
+| the vector array is ordered on something a rebuild preserves | G1 | `tests/test_search_reproducibility.py::test_load_vectors_returns_corpus_order_not_rowid_order` |
+| a BM25 tie is cut the same way every time | G1 | `tests/test_search_reproducibility.py::test_the_lexical_cut_keeps_the_same_chunk_when_scores_tie` |
+| hydration orders two chunks of the *same* document, which the `p.path` tiebreak cannot | G1 | `tests/test_search_reproducibility.py::test_hydration_returns_corpus_order_whatever_order_it_is_asked_in` |
+| adding a document does not reorder tied results elsewhere | G1 | `tests/test_search_reproducibility.py::test_a_tied_ranking_is_unmoved_by_documents_added_elsewhere` |
+| two machines answer every question the same way | G1 | CI's `eval-cross-machine` and `eval-cross-machine-compare` jobs; `tests/test_check_script.py::test_ci_compares_per_question_outcomes_across_two_operating_systems` asserts both legs are still there |
+| the gate is invoked, and can still fail | G1 | `tests/test_check_script.py::test_check_sh_declares_the_eval_reproducibility_gate`, `tests/test_check_script.py::test_ci_runs_the_eval_reproducibility_gate_and_proves_it_can_fail` |
+
 ## Release machinery
 
 | What must be true | Increment | Where it is checked |

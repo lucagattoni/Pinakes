@@ -215,9 +215,16 @@ def _lexical(
     expression = escape_fts(query)
     if not expression:
         return []
+    # `ORDER BY score` alone is not a total order, and BM25 ties are ordinary rather than exotic:
+    # two chunks matching the same terms over the same lengths score identically. SQLite then
+    # returns them in whatever order it pleases, the `LIMIT` cuts one of the two, and which one
+    # survives follows the rowid — which an incremental sync and a `--rebuild` of the same corpus
+    # assign differently (G1). `(path, ordinal)` is the same stable identity `load_vectors` orders
+    # on, and the join it needs is over keys the row already carries.
     rows = connection.execute(
-        "SELECT rowid AS chunk_id, bm25(chunks_fts) AS score FROM chunks_fts "
-        "WHERE chunks_fts MATCH ? ORDER BY score LIMIT ?",
+        "SELECT f.rowid AS chunk_id, bm25(chunks_fts) AS score FROM chunks_fts f "
+        "JOIN chunks c ON c.id = f.rowid JOIN documents d ON d.id = c.doc_id "
+        "WHERE chunks_fts MATCH ? ORDER BY score, d.path, c.ordinal LIMIT ?",
         (expression, limit * 4),
     )
     ranked = [int(row["chunk_id"]) for row in rows]
@@ -242,7 +249,13 @@ def _vector(
         return []
 
     similarities = _normalise(matrix) @ _normalise(embedded)[0]
-    order = np.argsort(-similarities)
+    # `kind="stable"` and `load_vectors`' `(path, ordinal)` order are two halves of one fix, and
+    # each needs its own test because they fail differently (G1). The array order is what a
+    # *rebuild* moved. The sort kind is what *growing the corpus* moves: NumPy's introsort
+    # partitions over the whole array, so adding documents reorders tied entries that neither
+    # gained nor lost anything — measured 20260801 at 500 of 500 random tie-heavy arrays. A stable
+    # sort keeps ties in the array's own order, which the line above makes corpus order.
+    order = np.argsort(-similarities, kind="stable")
 
     ranked: list[int] = []
     for position in order:
@@ -318,6 +331,12 @@ def search(
 
     lexical_positions = {chunk_id: rank for rank, chunk_id in enumerate(lexical)}
     vector_positions = {chunk_id: rank for rank, chunk_id in enumerate(vector)}
+    # This `sorted` decides which candidates survive the `fusion_top_k` cut, and equal fused scores
+    # are common — two chunks found at the same rank by one retriever and by neither the other score
+    # identically. `sorted` is stable, so ties keep `fused`'s insertion order: the lexical ranking
+    # then the vector one, both of which are now total and rebuild-stable (G1). It is deliberately
+    # not re-sorted on a tiebreak here, because the only key in scope is the rowid that caused the
+    # problem.
     rows = _hydrate(connection, sorted(fused, key=lambda cid: -fused[cid])[: settings.fusion_top_k])
 
     passages = [
@@ -382,7 +401,12 @@ def _hydrate(connection: sqlite3.Connection, chunk_ids: Sequence[int]) -> list[_
         "SELECT c.id, c.doc_id, c.text, c.char_start, c.char_end, c.heading_path, "
         "c.page_start, c.page_end, d.path, d.title "
         "FROM chunks c JOIN documents d ON d.id = c.doc_id "
-        f"WHERE c.id IN ({placeholders})",
+        f"WHERE c.id IN ({placeholders}) "
+        # The caller sorts these by fused score and then by rerank score, both with `list.sort`,
+        # which is stable — so this order decides every tie those two do not. Their `p.path`
+        # tiebreak cannot separate two chunks of the *same* document, and unordered, that left the
+        # answer to SQLite's chosen plan for `WHERE c.id IN (…)` (G1).
+        "ORDER BY d.path, c.ordinal",
         list(chunk_ids),
     )
     return [
