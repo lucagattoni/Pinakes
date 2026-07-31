@@ -17,6 +17,30 @@ Severity follows the design review's scale: **HIGH** — wrong behaviour or fals
 The seven **pre-implementation** design review passes are at the foot of this file:
 [Design review passes 1–7](#design-review-passes-17-pre-implementation).
 
+## Start here — by what you are about to touch
+
+Added 20260801 01:11. Forty-odd sections in date order is an archive, not something anyone reads
+before starting work — so this table is the way in. It is keyed on **what you are about to do**, not
+on when the lesson was learned, and it is deliberately short: only the classes that have recurred.
+A rule that hardened into a standing instruction lives in [`CLAUDE.md`](../CLAUDE.md); this file is
+where the evidence for it is.
+
+| About to… | Read | Because |
+|---|---|---|
+| **write a test** | I2, L3–L4, L5, L5b | The recurring defect of this whole project: *an assertion satisfied by something other than the property it names*. A test that could not fail; a field with no assertion is a field that can be a constant; a tidy fixture defeats a mutation test; test the **discriminating** case, not the two sides separately; a fixture can be right for the wrong reason and hide the defect it was written for |
+| **claim a test is mutation-verified** | L5b, L3–L4 | *"Mutation-verified" is a per-assertion claim, never a per-commit one.* A failing test proves the mutant is caught, never that it is caught for the stated reason — under `-x`, or when the failure lands on an earlier assertion, the one encoding the claim never runs |
+| **touch a sidecar or any YAML** | I5, L5b | Writes must be rename-atomic. An explicit empty value was silently deleted on round-trip. Swapping a YAML library is not a swap; `existing[:] = keep` wipes ruamel's comment metadata outright; a comment before a sequence entry belongs to the entry **above** it; a warning is not an error, and a library that downgrades one is changing behaviour |
+| **add a gate or a check** | I7a, L3–L4, the eval-harness section | A gate that has never been shown to fail is a claim, not a check. A gate that never reads the artifact it guards is checking a copy. The free-path gate was defeated by its own harness. The exit criterion was the thing nobody ran |
+| **write an error message** | L3–L4, I8 | An error message is part of the interface; a remedy inside one is a **claim**, and it was false. A fix applied to one surface is half a fix |
+| **change retrieval** | I9, the eval-harness section, I6 | Three defects under one green suite. Overlap could push a chunk past `max_tokens`; heading text landed in no chunk at all |
+| **edit a doc, a plan or an exclusion list** | L5b, I9, the shared-file section | An exclusion list is a set of claims, and claims rot. A fix instruction can carry its own defects. Four silent `str.replace` no-ops in one session — an edit that does not match is an edit that did not happen. A clean auto-merge is not a correct merge |
+| **cut a release** | the post-v0.1 housekeeping section | A CHANGELOG entry and a `__version__` are only claims: 0.1.0 had both for two days with no tag, no release and nothing published. Verify with `git tag -l`, `gh release list`, and the index itself |
+| **trust CI** | the cross-platform scanned-fixture section | `main` was CI-red for three pushes and nobody noticed. Green proves the tests ran, never that they can detect the defect |
+
+**The pattern across all of them**, and the reason this file is worth keeping: the worst finding of a
+review pass is usually inside the *previous* pass's fix. That has held from I5 through L6's thirteen
+rounds, and it is why a fix is re-reviewed rather than assumed.
+
 ## I1 — Package skeleton, errors, CLI dispatch (20260725 13:40)
 
 **MEDIUM — `PinakesError` could not be pickled, so an error crossing a process boundary raised
@@ -1886,7 +1910,9 @@ of an existing one and produced a nonsense symbol. It is the same failure `conft
 to refuse, met in editing rather than in a fixture. Non-trivial edits now go through a tool that
 errors when its anchor does not match.
 
-### The defect was in the field nobody thought to assert (L5, the links release)
+## L5 — `pinakes_links` on the MCP surface (20260731 11:29)
+
+### The defect was in the field nobody thought to assert
 
 L5's own mutation pass killed all three of the targets the plan named. An adversarial review then
 mutated **eight more** payload fields and watched every one survive the full 887-test suite. Two of
@@ -1991,7 +2017,9 @@ that dangles and an inbound one that is live. The assertion that named the defec
 where both branches are eligible; a fixture that satisfies one at a time asserts the wording of each
 and the order of neither.
 
-### Swapping a YAML library is not a swap (L5b, the links release)
+## L5b — `ruamel.yaml` replaces `pyyaml` in the sidecar (20260731 11:29)
+
+### Swapping a YAML library is not a swap
 
 **The plan predicted three failures precisely, and all three landed as written** — which is worth
 recording because it is the first increment in this project where that happened. It named the 872nd
