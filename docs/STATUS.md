@@ -297,7 +297,7 @@ verified 20260729 01:01 by installing the published wheel into an empty venv and
 | | |
 |---|---|
 | Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1 and 0.5.0.** 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
-| First upload | 20260728 17:16 UTC · latest 20260729 03:37 UTC (0.4.0) |
+| First upload | 20260728 17:16 UTC · latest 20260731 09:34 UTC (0.5.0) |
 | Extras available | `st`, `light`, `pdf`, `claude` — all four |
 | `requires-python` | `>=3.13` |
 
