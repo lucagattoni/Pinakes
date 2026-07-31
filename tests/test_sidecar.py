@@ -985,3 +985,122 @@ def test_an_unchanged_provenance_node_survives_a_rewrite_intact(
     write(path, parsed)
     assert parsed.original["provenance"]["extraction"]["backend"] is before
     assert "# the file's hash when this extraction ran" in path.read_text(encoding="utf-8")
+
+
+def test_two_links_sharing_a_to_keep_their_own_rel_and_comment(tmp_path: Path, owner: KbId) -> None:
+    """Reconciled on the **(to, rel) pair**, which is the index's own identity — its `links` primary
+    key includes `rel`, and `_links()` accepts two entries pointing at one document with different
+    relations.
+
+    Keyed on `to` alone the pair collapses. Measured on the version that did: dropping an
+    *unrelated* third link rewrote the first link's `rel` to the second's and deleted the second
+    outright, leaving one row carrying the wrong relation under the other's comment.
+    """
+    kb, shared, other = mint_kb_id(), mint_doc_id(), mint_doc_id()
+    path = tmp_path / f"y.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\nlinks:\n"
+        f"# why it is a counterpart\n- to: pnk://{kb}/{shared}\n  rel: counterpart\n"
+        f"# why it supersedes\n- to: pnk://{kb}/{shared}\n  rel: supersedes\n"
+        f"- to: pnk://{kb}/{other}\n  rel: related\n",
+        encoding="utf-8",
+    )
+    parsed = read(path, owner=owner)
+    assert len(parsed.links) == 3, "both relations to the same document are real links"
+
+    write(path, replace(parsed, links=parsed.links[:2]))  # drop the unrelated third
+    after = path.read_text(encoding="utf-8")
+    lines = after.splitlines()
+
+    assert after.count("rel:") == 2, "both surviving links are still there"
+    assert lines[lines.index("# why it is a counterpart") + 2] == "  rel: counterpart"
+    assert lines[lines.index("# why it supersedes") + 2] == "  rel: supersedes"
+    assert str(other) not in after
+
+
+def test_a_user_key_inside_provenance_extraction_survives_a_re_extraction(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """Deletion of missing keys is bounded to the **top level** of `provenance`.
+
+    It is required there — `without_extraction_provenance` must actually remove `extraction`, or
+    the `--force` reversal silently leaves a false paid claim behind. Recursing with it strips the
+    user's own keys from *inside* `extraction`, because `with_extraction_provenance` builds a plain
+    four-key replacement; CLAUDE.md says that write is additive, "never any other key".
+    """
+    path = tmp_path / f"z.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\nprovenance:\n  extraction:\n    backend: claude-vision\n"
+        "    fingerprint: fp-1\n    extracted: '20260725 18:00'\n    content_hash: abc\n"
+        "    reviewed_by: me   # checked against the register\n",
+        encoding="utf-8",
+    )
+    write(
+        path,
+        with_extraction_provenance(
+            read(path, owner=owner),
+            backend="claude-vision",
+            fingerprint="fp-2",
+            extracted="20260726 09:00",
+            content_hash="def",
+        ),
+    )
+    after = path.read_text(encoding="utf-8")
+
+    assert "reviewed_by: me" in after, "a paid extraction rewrites additively, never any other key"
+    assert "# checked against the register" in after
+    assert "fingerprint: fp-2" in after and "fp-1" not in after
+
+
+def test_a_document_trailing_comment_is_captured_by_an_appended_key(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """**A second pinned limitation.** A comment at the end of the document belongs to nothing in
+    particular, and appending `provenance` after it makes it read as that block's introduction.
+
+    Inserting at the canonical position instead would misplace a *different* comment — the one
+    introducing the first unknown key — so this is a choice between two misplacements, not a bug
+    with a fix. Pinned so the choice stays visible.
+    """
+    path = tmp_path / f"aa.md{SIDECAR_SUFFIX}"
+    path.write_text(
+        f"id: {mint_doc_id()}\nshelf: A12\n# a note about the whole document\n", encoding="utf-8"
+    )
+    write(
+        path,
+        with_extraction_provenance(
+            read(path, owner=owner),
+            backend="claude-vision",
+            fingerprint="fp-1",
+            extracted="20260726 09:00",
+            content_hash="abc",
+        ),
+    )
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    assert lines[lines.index("# a note about the whole document") + 1] == "provenance:"
+
+
+def test_a_self_referential_anchor_is_nulled_rather_than_refused(
+    tmp_path: Path, owner: KbId
+) -> None:
+    """**A pinned exclusion, and the one place this increment is not behaviour-equivalent.**
+
+    `mine: &x\\n  b: *x` is a mapping containing itself. PyYAML built the cycle and `json.dumps`
+    then raised `Circular reference detected` out of `pnk sync` — loud, and at the right moment.
+    ruamel resolves the alias to `None` instead, so the value silently changes, the anchor and
+    alias are dropped from the file, and nothing raises: `json.dumps({'b': None})` is perfectly
+    valid, so the JSON check cannot see it either.
+
+    Pathological input, and pinned rather than fixed — but recorded as a real regression from a
+    crash to a silent change, which is the direction that matters.
+    """
+    path = tmp_path / f"bb.md{SIDECAR_SUFFIX}"
+    path.write_text(f"id: {mint_doc_id()}\nmine: &x\n  b: *x\n", encoding="utf-8")
+
+    parsed = read(path, owner=owner)
+    assert parsed.extra["mine"] == {"b": None}, "the self-reference becomes null"
+
+    write(path, parsed)
+    after = path.read_text(encoding="utf-8")
+    assert "&x" not in after and "*x" not in after, "the anchor and alias do not survive"

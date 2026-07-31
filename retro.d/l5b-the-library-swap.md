@@ -33,3 +33,17 @@ walk; the honest thing is a docstring saying no mutation of it can fail, not a t
 **`-x` makes a mutation look like it was caught by the wrong test.** Two links mutations appeared to
 be killed only by an unrelated pre-existing test; without `-x` both were also killed by the test
 written for them. Run the mutation pass without early exit, or the report is about test ordering.
+
+**A merge key must be the identity the storage layer already uses.** Reconciling `links` on `to`
+alone looked sufficient and is undefined the moment two links point at one document with different
+relations — which `_links()` accepts and the index stores as two rows, its primary key including
+`rel`. Measured on the version that had it: dropping an *unrelated* third link rewrote the first
+link's `rel` to the second's and deleted the second, leaving one row carrying the wrong relation
+under the other's comment. The index's own `PRIMARY KEY` was the answer, and it was already written
+down in `store.py`.
+
+**A recursive rule needs a depth bound as much as a base case.** "A key absent from the new mapping
+is deleted" is required at the top of `provenance` — or `--force` leaves a false paid claim behind —
+and destructive one level down, where `with_extraction_provenance` builds a plain four-key
+replacement and the user's own `reviewed_by` sits beside `content_hash`. One sentence, two opposite
+correct answers, distinguished only by depth.

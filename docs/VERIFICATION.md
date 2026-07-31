@@ -203,6 +203,10 @@ test, or write **none** and say why in the same commit.
 | a custom-tagged mapping is accepted (documented widening) | L5b | `tests/test_sidecar.py::test_a_tagged_mapping_is_accepted_because_it_serialises` |
 | a uniformly non-string-keyed mapping is a stated residual | L5b | `tests/test_sidecar.py::test_a_uniformly_non_string_keyed_mapping_is_a_stated_residual` |
 | ruamel's sequence reindentation is a documented exclusion | L5b | `tests/test_sidecar.py::test_a_two_space_indented_sequence_is_reindented` |
+| two links sharing a `to` keep their own `rel` and comment | L5b | `tests/test_sidecar.py::test_two_links_sharing_a_to_keep_their_own_rel_and_comment` |
+| a user key inside `provenance.extraction` survives a re-extraction | L5b | `tests/test_sidecar.py::test_a_user_key_inside_provenance_extraction_survives_a_re_extraction` |
+| a document-trailing comment is captured by an appended key (pinned) | L5b | `tests/test_sidecar.py::test_a_document_trailing_comment_is_captured_by_an_appended_key` |
+| a self-referential anchor is nulled rather than refused (pinned) | L5b | `tests/test_sidecar.py::test_a_self_referential_anchor_is_nulled_rather_than_refused` |
 | the deletion limitation is pinned, not fixed | L5b | `tests/test_sidecar.py::test_deleting_a_commented_key_loses_one_comment_and_misattributes_another` |
 | `original` is excluded from equality | L5b | `tests/test_sidecar.py::test_the_original_document_is_excluded_from_equality` |
 | an anchored or aliased boolean indexes as `true`, at every depth | L5b | `tests/test_sync.py::test_an_anchored_boolean_is_indexed_as_true_not_one` |

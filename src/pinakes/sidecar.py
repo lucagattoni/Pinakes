@@ -243,7 +243,7 @@ def read(path: Path, *, owner: KbId) -> Sidecar:
     )
 
 
-def _merge_mapping(existing: Any, incoming: dict[str, Any]) -> None:
+def _merge_mapping(existing: Any, incoming: dict[str, Any], *, delete_missing: bool = True) -> None:
     """Merge `incoming` into `existing` in place, key by key, **at every depth**.
 
     Never replaces a mapping node that already exists, because ruamel binds a comment to the
@@ -252,16 +252,21 @@ def _merge_mapping(existing: Any, incoming: dict[str, Any]) -> None:
     `with_extraction_provenance` builds a plain `dict` for `extraction`, and assigning that whole
     dict over the loaded node takes the comment with it.
 
-    A key absent from `incoming` **is deleted**. That is required rather than incidental:
-    `without_extraction_provenance` returns a provenance with no `extraction`, and a merge that only
-    assigns would leave the stale paid claim in place — silently failing the `--force` reversal
-    DESIGN §2.2 treats as an invariant.
+    A key absent from `incoming` **is deleted at the top level only** — `delete_missing` is not
+    passed down. The deletion is required there: `without_extraction_provenance` returns a
+    provenance with no `extraction`, and a merge that only assigns would leave the stale paid claim
+    in place, silently failing the `--force` reversal DESIGN §2.2 treats as an invariant. Recursing
+    with it would strip the user's own keys from *inside* `extraction`, because
+    `with_extraction_provenance` builds a plain four-key replacement — and CLAUDE.md says a paid
+    extraction rewrites that block additively, "never any other key". Measured: a `reviewed_by: me`
+    written beside `content_hash` was destroyed by the unbounded version.
     """
-    for key in [key for key in existing if key not in incoming]:
-        del existing[key]
+    if delete_missing:
+        for key in [key for key in existing if key not in incoming]:
+            del existing[key]
     for key, value in incoming.items():
         if isinstance(value, dict) and isinstance(existing.get(key), dict):
-            _merge_mapping(existing[key], cast(dict[str, Any], value))
+            _merge_mapping(existing[key], cast(dict[str, Any], value), delete_missing=False)
         else:
             existing[key] = value
 
@@ -277,7 +282,13 @@ def _merge_links(existing: Any, links: tuple[Link, ...]) -> None:
     `_links()` surfaces those two fields alone, so a delete-what-is-missing merge would destroy the
     unknown per-link keys DESIGN §2.2 requires to round-trip.
     """
-    by_uri = {str(link.to): link for link in links}
+    # Keyed on the **(to, rel) pair**, which is the index's own identity
+    # (`store.py`'s `PRIMARY KEY (src_kb_id, src_doc_id, dst_kb_id, dst_doc_id, rel)`). Two links
+    # may share a `to` with different `rel`s — `_links()` accepts it and the index stores two rows —
+    # so `{to: link}` collapses them: measured, dropping an *unrelated* third link then rewrote the
+    # first link's `rel` and deleted the second, leaving one row carrying the wrong relation under
+    # the other's comment. Exactly the misattribution this rule exists to prevent.
+    wanted = {(str(link.to), link.rel) for link in links}
     # **Deleted by index, highest first — never by slice assignment.** `existing[:] = keep` wipes
     # `CommentedSeq.ca.items` outright, taking every comment in the sequence with it; `del` shifts
     # the surviving indices and their comments along with them. Measured: after a slice assignment
@@ -291,14 +302,15 @@ def _merge_links(existing: Any, links: tuple[Link, ...]) -> None:
             del existing[index]
             continue
         entry = cast(dict[str, Any], raw_entry)
-        uri = str(entry.get("to"))
-        if uri in by_uri:
-            entry["rel"] = _authored(by_uri.pop(uri).rel)
+        pair = (str(entry.get("to")), str(entry.get("rel")))
+        if pair in wanted:
+            wanted.discard(pair)  # matched in place; its `rel` already says what it should
         else:
             del existing[index]
     for link in links:
-        if str(link.to) in by_uri:  # never seen in the document — append it
+        if (str(link.to), link.rel) in wanted:  # never seen in the document — append it
             existing.append(CommentedMap(to=_authored(str(link.to)), rel=_authored(link.rel)))
+            wanted.discard((str(link.to), link.rel))
 
 
 def _unchanged(existing: object, incoming: object) -> bool:

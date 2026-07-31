@@ -22,3 +22,9 @@
 
   **A documented widening:** a *custom*-tagged mapping or sequence (`!custom {a: 1}`) was a parse
   error and is now accepted, because it serialises. Not `!!map`/`!!seq`, which were never refused.
+
+  **One regression, named rather than fixed.** A sidecar whose value contains a *self-referential*
+  anchor (`mine: &x` with `b: *x` inside it) used to crash `pnk sync` with `Circular reference
+  detected` when the index serialised it. It is now silently read as `null`, and the anchor and
+  alias do not survive the next write. Pathological input, and the only place this change trades a
+  loud failure for a quiet one — which is the direction that matters, so it is written down.
