@@ -216,6 +216,8 @@ test, or write **none** and say why in the same commit.
 | a partner `include` pattern reaching outside its KB is refused | L6 review 10 | `tests/test_sync_links.py::test_a_partner_include_pattern_outside_its_own_kb_is_refused` |
 | ...while a symlinked document *inside* a partner KB is still read | L6 review 10 | `tests/test_sync_links.py::test_a_symlinked_document_inside_a_partner_kb_is_still_read` |
 | ...refused **before** the glob, so the walk is bounded | L6 review 11 | `tests/test_sync_links.py::test_an_escaping_include_pattern_is_refused_without_walking` |
+| ...while a `..` that stays *inside* the KB is not refused | L6 review 12 | `tests/test_sync_links.py::test_a_dot_dot_pattern_that_stays_inside_the_kb_is_not_refused` |
+| ...and a symlinked escape stops at the first match | L6 review 12 | `tests/test_sync_links.py::test_a_symlinked_escape_stops_at_the_first_match` |
 | ...and an escape matching only sidecars is still reported | L6 review 11 | `tests/test_sync_links.py::test_an_escape_matching_only_sidecars_is_still_reported` |
 | one escaping pattern is one problem, however many roots | L6 review 11 | `tests/test_sync_links.py::test_one_escaping_pattern_is_one_problem_however_many_roots` |
 | `exclude` matches the path the partner wrote, not the resolved one | L6 review 11 | `tests/test_sync_links.py::test_an_exclude_rule_matches_the_path_the_partner_wrote_not_the_resolved_one` |

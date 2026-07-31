@@ -314,9 +314,9 @@ def sidecars_under(
     found: set[Path] = set()
     problems: list[str] = []
     anchor = root.resolve()
-    # One entry per *pattern*, collected across every root and reported once at the end. A hostile
-    # `../**` matches thousands of files under several roots, and a `LinkScanError` per match — or
-    # per (root, pattern) pair — would bury every other issue in the report.
+    # One entry per *pattern*, collected across every root and reported once at the end: a partner
+    # with two roots reported the same escape twice. Not "per match" — the `break` below already
+    # yields at most one per (root, pattern), and a `..` pattern never reaches it at all.
     escaping: set[str] = set()
     # `parent.resolve()` is a syscall chain per candidate, and a large KB globs thousands of files
     # out of a handful of directories.
@@ -331,16 +331,34 @@ def sidecars_under(
             continue
         for pattern in include:
             if pattern in escaping:
-                continue
+                continue  # an optimisation only — `escaping` is a set, which is what dedupes
             # **Refused before globbing, which is what bounds the walk.** The per-candidate check
             # below cannot: `glob` has already enumerated and stat'd the whole tree by the time the
             # first match is inspected, so `include = ["../../../../**/*.md"]` walked the machine
             # on every `post-commit` even though nothing was collected. The `roots` branch above
-            # gets this right by `continue`ing before it walks; presenting `include` as the same
-            # rule while checking it a step later delivered the refusal without the bound.
-            # `manifest._sources` spells the static half the same way for the local manifest.
-            parts = Path(pattern).parts
-            if Path(pattern).is_absolute() or ".." in parts:
+            # gets this right by `continue`ing before it walks.
+            #
+            # **What is tested is where the pattern's fixed prefix lands, not whether it contains
+            # `..`.** A first version refused any `..`, which refuses `../notes/*.md` — a pattern
+            # that stays *inside* the KB and that the partner's own `walk_sources` ingests. This KB
+            # then called a legitimate manifest an escape, and because that sets `complete` false
+            # it never wrote `last_scan`, so the partner was re-read, re-refused and never
+            # refreshed on every sync forever. Disagreeing with the partner about its own KB is
+            # wrong in this direction too — the rule review 11 stated for `exclude` and broke one
+            # branch above it.
+            #
+            # Resolving the prefix costs one `resolve()` and no enumeration, so the bound survives.
+            if Path(pattern).is_absolute():
+                # `glob` raises `NotImplementedError` on this anyway, and `scan_one` catches it —
+                # named here only so the report says which pattern rather than which exception.
+                escaping.add(pattern)
+                continue
+            fixed: list[str] = []
+            for part in Path(pattern).parts:
+                if any(char in part for char in "*?["):
+                    break
+                fixed.append(part)
+            if not base.joinpath(*fixed).resolve().is_relative_to(anchor):
                 escaping.add(pattern)
                 continue
             for candidate in base.glob(pattern):

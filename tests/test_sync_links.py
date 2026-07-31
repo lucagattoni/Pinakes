@@ -22,7 +22,13 @@ from pinakes import store
 from pinakes.embed import EmbeddingBackend, ModelInfo, Vectors
 from pinakes.errors import SyncError
 from pinakes.ids import DocId, KbId, mint_doc_id, mint_kb_id
-from pinakes.linkscan import TTL_MINUTES, is_stale, resolve_path, why_unresolvable
+from pinakes.linkscan import (
+    TTL_MINUTES,
+    is_stale,
+    resolve_path,
+    sidecars_under,
+    why_unresolvable,
+)
 from pinakes.manifest import load
 from pinakes.sidecar import SIDECAR_SUFFIX
 from pinakes.sync import SyncOptions, SyncReport, sync
@@ -968,16 +974,99 @@ def test_an_escaping_include_pattern_is_refused_without_walking(pair: tuple[Kb, 
     assert any("reaches outside the KB" in message for _, message, _ in report.link_scan)
 
 
+def test_a_dot_dot_pattern_that_stays_inside_the_kb_is_not_refused(pair: tuple[Kb, Kb]) -> None:
+    """The static refusal tests **where the pattern's fixed prefix lands**, not whether it contains
+    `..`.
+
+    A first version refused any `..`, which refuses `../notes/*.md` — a pattern that stays inside
+    the KB and that the partner's own `walk_sources` ingests. This KB then called a legitimate
+    manifest an escape; and because an escape sets `complete` false, it never wrote `last_scan`, so
+    the partner was re-read, re-refused and never refreshed on every sync, permanently. Refusing a
+    partner's valid configuration is the same defect as accepting an invalid one — both are this KB
+    disagreeing with the partner about the partner's own KB.
+    """
+    local, partner = pair
+    notes = partner.root / "notes"
+    notes.mkdir()
+    (notes / "n.md").write_text("# n\n\nText.\n", encoding="utf-8")
+    (notes / f"n.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump(
+            {"id": str(mint_doc_id()), "links": [{"to": local.uri("beta"), "rel": "from-notes"}]},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    manifest = partner.root / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]', 'include = ["**/*.md", "../notes/*.md"]'
+        ),
+        encoding="utf-8",
+    )
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    assert not [m for _, m, _ in report.link_scan if "outside the KB" in m]
+    rels = {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
+    assert "from-notes" in rels
+
+
+def test_a_symlinked_escape_stops_at_the_first_match(
+    pair: tuple[Kb, Kb], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The **dynamic** half has to bound the walk too, and its `break` had no test.
+
+    A symlinked directory named under a *glob* component is invisible to the static check — the
+    fixed prefix of `*/*.md` is empty, so it lands on the root and passes — and that pattern still
+    reaches `glob`. If the escape only `continue`d, the whole outside tree was enumerated before
+    anything was refused, which is the defect the commit exists to close, in the half it kept.
+    Mutating `break` to `continue` left all 96 tests green.
+
+    The pattern must not name the symlink in its fixed part (`sneak/*.md`), or the static check
+    refuses it first and the dynamic half is never reached — a fixture that does not arrive at the
+    guard it was written for, which this increment has now shipped three times.
+
+    **Counting `resolve()` cannot see this** — the parent cache collapses it to one call either
+    way. What differs is how many entries are pulled from the generator, so that is what is
+    counted.
+    """
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    for index in range(40):
+        (outside / f"f{index}.md").write_text("x\n", encoding="utf-8")
+    _local, partner = pair
+    (partner.root / partner.docs_dir / "sneak").symlink_to(outside)
+
+    consumed = 0
+    real_glob = Path.glob
+
+    def counting_glob(self: Path, pattern: str, **kwargs: Any) -> Any:
+        nonlocal consumed
+        for item in real_glob(self, pattern, **kwargs):
+            consumed += 1
+            yield item
+
+    monkeypatch.setattr(Path, "glob", counting_glob)
+    _found, problems = sidecars_under(partner.root, ["docs/"], ["*/*.md"], [])
+    monkeypatch.undo()
+
+    assert problems, "the symlinked escape was not detected at all"
+    assert consumed == 1, f"the walk consumed {consumed} of 40 matches before refusing"
+
+
 def test_an_escape_matching_only_sidecars_is_still_reported(
     pair: tuple[Kb, Kb], tmp_path: Path
 ) -> None:
     """Containment is checked **before** the `is_file`/sidecar skip, not after.
 
     A pattern that reaches outside but matches only sidecars — or only directories — hit that
-    `continue` first and was never recorded as an escape: the walk left the KB and reported
-    nothing. It needs a *symlinked directory* to reach, because a `..` pattern is refused
-    statically before any of this, which is precisely why the ordering had no test until the
-    mutation showed the fix could be undone with all 92 still green.
+    `continue` first and was never recorded as an escape: the walk left the KB and reported nothing.
+
+    **The pattern has to reach the dynamic half**, which means a symlinked directory named under a
+    *glob* component: a `..` is refused on the pattern text, and so is a symlink named in the fixed
+    prefix. This fixture has been retargeted twice for exactly that reason — first when the static
+    refusal was added, then again when it learned to resolve the prefix — and each time the
+    mutation, not the reading, is what showed the test had stopped reaching its guard.
     """
     local, partner = pair
     outside = tmp_path / "outside"
@@ -988,7 +1077,7 @@ def test_an_escape_matching_only_sidecars_is_still_reported(
     manifest = partner.root / "pinakes.toml"
     manifest.write_text(
         manifest.read_text(encoding="utf-8").replace(
-            'include = ["**/*.md"]', f'include = ["**/*.md", "sneak/*{SIDECAR_SUFFIX}"]'
+            'include = ["**/*.md"]', f'include = ["**/*.md", "*/*{SIDECAR_SUFFIX}"]'
         ),
         encoding="utf-8",
     )

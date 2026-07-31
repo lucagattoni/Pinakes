@@ -1,10 +1,12 @@
-## L6 — `pnk link` (20260731 21:28)
+## L6 — `pnk link` (20260801 00:10)
 
-**Every review commit on this increment found defects in the one before it, and five of them found
-the previous commit's own fix or claim** rather than something it had missed: `3ce150e` (the
-containment fix had traded one defect for two), `9c8f667` (the totality fix re-anchored the walk on
-the working directory), `cdee8d8` (the test for an untested branch did not enter it), `dbebd8b` (a
-severity asserted, not measured) and this one (the escape refusal did not bound the walk).
+**Every review commit on this increment found defects in the one before it, and most of them found
+the previous commit's own fix or claim** rather than something it had missed — `986faf3` (round 2's
+containment fix was right; its stated justification was not), `3ce150e` (that fix had traded one
+defect for two), `7b3f0a3` (the escaping-error class sat one line above the `try` added for it),
+`9c8f667` (the totality fix re-anchored the walk on the working directory), `cdee8d8` (the test for
+an untested branch entered it, but its assertion held either way), `dbebd8b` (a severity asserted,
+not measured), and the last two, which took three goes at one containment rule.
 
 No total is given, deliberately. Three drafts stated one and all three were wrong, because it
 changes depending on whether `8b` and `9b` count as rounds of their own — and the last wrong figure
@@ -176,6 +178,12 @@ reaches it, and the two look identical from the outside.
   message` against a `tmp_path` ending in `/partner`. Both were satisfied by the interpolated path,
   so the *reason* could have vanished from the wording with the test still green — proven by
   rewording the error and watching all 29 pass. Fixtures renamed, phrases asserted.
+* **A fixture stops reaching its guard when a later fix gets there first, and nothing says so.**
+  The ordering test for the containment check was retargeted twice — once when the static refusal
+  was added, once when that learned to resolve the prefix — because each fix caught its input
+  earlier, leaving the test green and its guard unexercised. Both times the mutation found it and
+  the reading did not. **Re-run the whole mutation battery after every fix, not only a mutant for
+  the fix itself**: a fix can silently disarm a test written for something else.
 * The test written for the freshness branch — the branch a finding had just called untested —
   asserted only `report.ok`, which holds whether that branch runs or not. Proven by forcing
   `is_stale` to return `True`: the branch never ran and the test still passed. A skipped-fresh row
@@ -241,16 +249,39 @@ string, returning `docs/../../outside/planted.md` rather than raising. A `..` is
 resolving, which is what the `roots` branch does one block above and this one did not. Two spellings
 of the same rule, ten lines apart, one of them not implementing it.
 
-The fix resolves the parent and leaves the final component — `link._document_in`'s spelling, for
-`_document_in`'s reason — so a symlinked *document* inside the partner KB is still read while a
-symlinked *directory* cannot carry the walk out. Both directions are tested, because tightening this
-into "resolve the whole path" would silently drop legitimate documents, and a dropped document is a
-deleted inbound row.
+**The fix then took three goes, and each one is the same lesson at a different aim.** Resolving
+each candidate — parent resolved, final component left alone, `link._document_in`'s spelling for
+`_document_in`'s reason — refuses the escape while keeping a symlinked *document* readable. But it
+refused only the **results**: `glob` has already enumerated and stat'd the whole tree by the time
+the first match is inspected, so `include = ["../../../../**/*.md"]` still walked the machine on
+every `post-commit`, and since an escape sets `complete` false, no `last_scan` was written and the
+TTL could not suppress the retry either. The `roots` branch had always got this right by refusing
+*before* it walked; presenting `include` as the same rule while checking it a step later delivered
+the refusal without the bound.
+
+Adding a static pre-glob refusal fixed the bound and broke the *other* direction: refusing any
+pattern containing `..` refuses `../notes/*.md`, which stays inside the KB and which the partner's
+own `walk_sources` ingests — so this KB called a legitimate manifest an escape, and `complete` false
+meant it re-read, re-refused and never refreshed that partner on every sync, permanently. Refusing a
+partner's valid configuration is the same defect as accepting an invalid one; both are this KB
+disagreeing with the partner about the partner's own KB, which is the rule the `exclude` finding
+below states and the branch above it broke.
+
+What is checked is **where the pattern's fixed prefix lands** — one `resolve()`, no enumeration, so
+the bound survives and `../notes/*.md` passes. A symlinked directory named under a *glob* component
+is invisible to any static check, so the per-candidate test stays, and it `break`s.
+
+Three tests, because the three cases are independent and each was found by mutating the fix that
+came before: the escape is refused; a `..` that stays inside is not; and the dynamic half stops at
+the first match. That last one cannot be observed by counting `resolve()` calls — the parent cache
+collapses it either way — so it counts entries pulled from the generator instead.
 
 **`sync.walk_sources` has the identical shape for the *local* manifest** and is not fixed here: it
 is the user's own configuration rather than a partner's, and changing the engine's document walk is
-not this increment's to do. Reported instead — it wants its own increment, since `pnk sync` mints
-sidecars for what it ingests, so a stray `../` in a local `include` writes files outside the KB.
+not this increment's to do. Reported instead, and now scoped as its own increment and PATCH release
+in `plans/source-walk-containment.md` — which measured a third defect this pass had not: an
+**absolute** local `include` is a raw `NotImplementedError` out of `cli.main`, the same escaping-
+error class L6 spent four passes closing on the partner side.
 
 ### Smaller things
 
