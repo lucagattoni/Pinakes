@@ -326,6 +326,24 @@ def sidecars_under(
     # `parent.resolve()` is a syscall chain per candidate, and a large KB globs thousands of files
     # out of a handful of directories.
     resolved: dict[Path, Path] = {}
+    # **`exclude` is validated once, before any root is walked.** `Path.match("")` raises
+    # `ValueError`, and an empty entry is exactly the shape a hand-edited manifest produces. It
+    # escaped to `scan_one` and reported the whole partner unreachable with `[sources] empty
+    # pattern` — naming neither the key nor the value, and worse than the message the `include`
+    # side had just been given. The comment on the `next` guard below cited this very case as its
+    # reason for scoping tightly, and then left it unhandled.
+    #
+    # A rule that cannot be applied is a *problem*, never a quiet drop: dropping it would make this
+    # KB record links from documents the partner's own KB excludes, which is the one thing this
+    # function must not do. Recorded, so `complete` is false and nothing is replaced.
+    usable_exclude: list[str] = []
+    for rule in exclude:
+        try:
+            Path("probe").match(rule)
+        except ValueError as exc:
+            problems.append(f"[sources] exclude rule {rule!r} cannot be used: {exc}")
+        else:
+            usable_exclude.append(rule)
     for name in roots:
         base = (root / name).resolve()
         if not base.is_relative_to(anchor):
@@ -379,8 +397,25 @@ def sidecars_under(
             # yielded. Dropping it is exactly right rather than merely conservative: each component
             # `**` expands to is one a following `..` then pops, so the zero-expansion is the
             # highest the walk can reach, and that is what has to be inside the KB.
-            probe = base.joinpath(*(part for part in Path(pattern).parts if part != "**"))
-            if not (probe.parent.resolve() / probe.name).is_relative_to(anchor):
+            #
+            # The final component is resolved too when it is `..`, which the leave-the-last-one-
+            # alone rule otherwise lets through: `Path("/kb/..").is_relative_to("/kb")` is *true*
+            # lexically, so `include = ["../.."]` named the KB's parent and was not reported. The
+            # exemption exists so a symlinked *document* stays readable, and `..` is never one.
+            #
+            # `resolve()` raises on an embedded NUL, and `tomllib` accepts one — so this is guarded
+            # like the `glob` call below, and for the same reason: one bad pattern is one problem,
+            # not the end of the partner. It was left unguarded by the commit that wrote that rule
+            # two lines further down.
+            try:
+                probe = base.joinpath(*(part for part in Path(pattern).parts if part != "**"))
+                inside = (
+                    probe.resolve() if probe.name == ".." else probe.parent.resolve() / probe.name
+                )
+            except (ValueError, OSError) as exc:
+                unusable.append(f"[sources] include pattern {pattern!r} cannot be walked: {exc}")
+                continue
+            if not inside.is_relative_to(anchor):
                 escaping.add(pattern)
                 continue
             # **One unusable pattern is one problem, not the end of the partner.** `glob` raises
@@ -435,7 +470,9 @@ def sidecars_under(
                 # partner excludes; disagreeing in either direction is a wrong answer about someone
                 # else's KB.
                 relative = candidate.relative_to(anchor).as_posix()
-                if any(candidate.match(rule) or Path(relative).match(rule) for rule in exclude):
+                if any(
+                    candidate.match(rule) or Path(relative).match(rule) for rule in usable_exclude
+                ):
                     continue
                 sidecar = candidate.with_name(candidate.name + SIDECAR_SUFFIX)
                 if sidecar.is_file():

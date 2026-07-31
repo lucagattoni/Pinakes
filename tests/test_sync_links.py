@@ -1162,6 +1162,74 @@ def test_the_walk_raising_is_an_issue_not_a_traceback(
     assert "[sources]" in message
 
 
+@pytest.mark.parametrize(
+    ("include", "exclude", "expected"),
+    [
+        # A NUL in a non-final component reaches `probe.parent.resolve()`, which was outside any
+        # handler — one line above the `glob` guard written to stop exactly this outcome.
+        (["**/*.md", "a\x00b/x.md"], [], "include pattern 'a\\x00b/x.md' cannot be walked"),
+        # ...and in the final component it reaches `next()`, whose guard no test exercised: the
+        # `""`/`"."` fixtures written for it raise at the `glob()` *call*, not at the step.
+        (["**/*.md", "sub/\x00"], [], "include pattern 'sub/\\x00' cannot be walked"),
+        # `Path.match("")` raises too. The comment on the `next` guard cited this very case as its
+        # reason for scoping tightly, and then left it unhandled.
+        (["**/*.md"], [""], "exclude rule '' cannot be used"),
+    ],
+)
+def test_one_bad_sources_entry_is_one_problem_not_the_end_of_the_partner(
+    pair: tuple[Kb, Kb], include: list[str], exclude: list[str], expected: str
+) -> None:
+    """Each of these raised out of `sidecars_under` into `scan_one`'s coarse handler, which reports
+    the **whole** partner unreachable: every other `include` entry discarded, `complete` false
+    forever, and a message naming neither the key nor the value.
+
+    An unusable `exclude` is a *problem*, never a quiet drop — dropping it would make this KB record
+    links from documents the partner's own KB excludes, which is the one thing this function must
+    not do.
+    """
+    _local, partner = pair
+    found, problems = sidecars_under(partner.root, ["docs/"], include, exclude)
+    assert len(found) == 2, "the valid entries stopped being walked"
+    assert len(problems) == 1, problems
+    assert problems[0].startswith(f"[sources] {expected}: "), problems[0]
+
+
+def test_a_trailing_dot_dot_include_is_refused(pair: tuple[Kb, Kb]) -> None:
+    """`Path("/kb/..").is_relative_to("/kb")` is **true** lexically, so leaving the final component
+    unresolved let `include = ["../.."]` name the KB's parent unreported. That exemption exists so a
+    symlinked *document* stays readable, and `..` is never a document."""
+    _local, partner = pair
+    _found, problems = sidecars_under(partner.root, ["docs/"], ["../.."], [])
+    assert problems == ["[sources] include pattern '../..' reaches outside the KB"]
+
+
+def test_only_double_star_is_dropped_from_the_probe(pair: tuple[Kb, Kb]) -> None:
+    """`*` matches exactly **one** component, so a following `..` cancels it and the probe is right
+    to keep it. Dropping `*` as well would refuse `*/../../docs/*.md`, which stays inside the KB —
+    and a wrongly refused pattern sets `complete` false, freezing that partner's inbound rows
+    permanently. Nothing pinned the boundary until this test."""
+    _local, partner = pair
+    (partner.root / partner.docs_dir / "sub").mkdir()
+    _found, problems = sidecars_under(partner.root, ["docs/"], ["*/../../docs/*.md"], [])
+    assert problems == []
+
+
+def test_a_partner_document_without_a_sidecar_contributes_nothing(pair: tuple[Kb, Kb]) -> None:
+    """The common case in a real KB, and `if sidecar.is_file()` was pinned by nothing: mutating it
+    to `if True` left every test green. A regression would mint a phantom sidecar path per bare
+    document, one `LinkedSidecarUnreadableError` each, and `complete=False` permanently."""
+    _local, partner = pair
+    (partner.root / partner.docs_dir / "bare.md").write_text("# bare\n", encoding="utf-8")
+
+    found, problems = sidecars_under(partner.root, ["docs/"], ["**/*.md"], [])
+
+    assert problems == []
+    assert {path.name for path in found} == {
+        f"one.md{SIDECAR_SUFFIX}",
+        f"two.md{SIDECAR_SUFFIX}",
+    }
+
+
 def test_an_absolute_include_says_it_is_absolute_not_that_it_escapes(pair: tuple[Kb, Kb]) -> None:
     """An absolute pattern cannot be walked at all — `glob` raises `NotImplementedError` on one
     even when it names this KB's own `docs/`. It gets its own message, because the escape wording

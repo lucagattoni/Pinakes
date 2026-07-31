@@ -224,6 +224,10 @@ test, or write **none** and say why in the same commit.
 | ...and `**` before a `..` does not defeat the refusal | L6 review 14 | `tests/test_sync_links.py::test_a_double_star_before_a_dot_dot_does_not_defeat_the_refusal` |
 | one unusable include pattern does not discard the others | L6 review 14 | `tests/test_sync_links.py::test_one_unusable_include_pattern_does_not_discard_the_others` |
 | the walk raising is an issue, never a traceback | L6 review 14 | `tests/test_sync_links.py::test_the_walk_raising_is_an_issue_not_a_traceback` |
+| ...for a bad `include` **or** `exclude` entry, without discarding the rest | L6 review 15 | `tests/test_sync_links.py::test_one_bad_sources_entry_is_one_problem_not_the_end_of_the_partner` |
+| a trailing `..` in an include is refused | L6 review 15 | `tests/test_sync_links.py::test_a_trailing_dot_dot_include_is_refused` |
+| only `**` is dropped from the containment probe | L6 review 15 | `tests/test_sync_links.py::test_only_double_star_is_dropped_from_the_probe` |
+| a partner document with no sidecar contributes nothing | L6 review 15 | `tests/test_sync_links.py::test_a_partner_document_without_a_sidecar_contributes_nothing` |
 | ...and an escape matching only sidecars is still reported | L6 review 11 | `tests/test_sync_links.py::test_an_escape_matching_only_sidecars_is_still_reported` |
 | one escaping pattern is one problem, however many roots | L6 review 11 | `tests/test_sync_links.py::test_one_escaping_pattern_is_one_problem_however_many_roots` |
 | `exclude` matches the path the partner wrote, not the resolved one | L6 review 11 | `tests/test_sync_links.py::test_an_exclude_rule_matches_the_path_the_partner_wrote_not_the_resolved_one` |

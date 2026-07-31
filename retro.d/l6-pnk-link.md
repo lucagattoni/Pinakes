@@ -1,4 +1,4 @@
-## L6 — `pnk link` (20260801 00:52)
+## L6 — `pnk link` (20260801 01:20)
 
 **Every review commit on this increment found defects in the one before it, and most of them found
 the previous commit's own fix or claim** rather than something it had missed — `3ce150e` (review 1's
@@ -216,10 +216,17 @@ snapshot taken before the first mutation and asserted after every restore** — 
 useless in the increment's own worktree where the source is legitimately dirty. Scope the run to the
 modules under test, too: the full-suite run is what blew the timeout that caused this.
 
-Every fix in every round was mutation-tested against the test written for it, and all but one mutant
-was caught. (An earlier draft gave a total here; it was stale within a round and unverifiable
-afterwards, since the runs leave no artefact. The method is the durable part.) The one escape was
-the NUL guard above — a test existed, and the mutation is what proved it never reached the line.
+Every fix was mutation-tested against the test written for it, and **three escaped**, each in a
+different way that "green" could not distinguish. The NUL guard had a test whose input never
+reached the line. The containment-ordering test stopped reaching its branch twice, when a later fix
+caught its fixture earlier. And review 14's `next()` guard had no test at all: the `""` and `"."`
+written for it raise at the `glob()` *call*, not at the step, so the guard one line down was never
+executed — which review 14's own commit message called "eleven mutants, each killed by the right
+test", and this paragraph called "all but one".
+
+(No total is given for the battery either. An early draft gave one; it was stale within a round and
+is unverifiable afterwards, since the runs leave no artefact. The method is the durable part, and
+the method is now: mutate every behaviour in the function, not the ones the diff touched.)
 
 One mutant is genuinely equivalent: substituting the locally declared `[[links.kb]] id` for the
 partner's own when writing an alias target changes nothing, because the refusal above has already
@@ -309,7 +316,23 @@ mutating behaviours *this increment never touched*.
 
 So the rule is stronger than "re-run the battery after every fix": **the battery is over the whole
 function, not the diff** — and a promise worth a guard is pinned directly (here, by making the walk
-raise) rather than through an input that some later fix can intercept.
+raise) rather than through an input that some later fix can intercept. Running it that way in the
+next round found three more unpinned behaviours in code this increment never wrote: the sidecar
+existence check, the `*`/`**` boundary in the probe, and the `next()` guard added the round before.
+
+**The fix for "one bad entry is not the end of the partner" was itself incomplete, one line either
+side of where it landed.** `probe.parent.resolve()` sat above it unguarded, so an embedded NUL in
+any but a pattern's final component still raised out of the function; and `Path.match("")` sat
+below it, so an empty `exclude` entry did the same — a case the new guard's own comment cited by
+name as its reason for being scoped tightly, and then did not handle. Both produced the outcome the
+commit had just declared impossible. **A guard placed by reasoning about one call is a guard for
+one call**; the same mechanical sweep that closes an escaping-error class — list every call that
+can raise, ask what each does with bad input — is what this needed, and it is the third time in
+this increment that lesson has been relearned rather than applied.
+
+One more from the same sweep: the containment predicate was fooled by a trailing `..`, because
+`Path("/kb/..").is_relative_to("/kb")` is lexically *true*. The final component is left unresolved
+so a symlinked *document* stays readable, and `..` is never a document.
 
 **`sync.walk_sources` has the identical shape for the *local* manifest** and is not fixed here: it
 is the user's own configuration rather than a partner's, and changing the engine's document walk is
