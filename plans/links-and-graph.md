@@ -1099,8 +1099,11 @@ historical.
 5. `make eval` unchanged.
 6. Each new gate fails when its protection is removed.
 7. `fragments.py --apply` splices L1–L5b's fragments; the CHANGELOG section covers all of them.
-8. **Every command in `docs/GUIDE.md` runs as written** — verified against the **built wheel**, not
-   PyPI. `docs/GUIDE.md:33`'s `uvx --from "pinakes[light]" pnk --version` resolves from the index,
+8. **Every command in `docs/GUIDE.md` runs as written, and its printed output is diffed against the
+   real output** — not eyeballed. A command can run cleanly and print something else: L5 changed
+   `pnk links` to print `<-> counterpart:` for a relation written from both ends, and L5b's re-run
+   found the GUIDE still showing `-> counterpart:` in two blocks, one increment later. Verified
+   against the **built wheel**, not PyPI. `docs/GUIDE.md:33`'s `uvx --from "pinakes[light]" pnk --version` resolves from the index,
    so run pre-cut it validates the *previous* release, not this build. Use
    `uv build && uv run --isolated --no-project --with dist/*.whl …`, which is where verification 3's
    `find_spec("yaml") is None` assertion belongs too. No extra changes here — `pyproject`'s
