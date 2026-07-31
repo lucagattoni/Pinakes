@@ -693,18 +693,30 @@ widened acceptance becoming a crash.
    - **Refuse an `extra` or `provenance` mapping that will not JSON-encode** (decision 26), at
      `read()`. **Encode the assembled mapping, not each value separately** — measured, a per-value
      check accepts `{123: v, abc: w}` and the `sorted()`-equivalent `TypeError` survives, because
-     the failure is a comparison *between* keys. Encode **the assembled mapping `_metadata()` actually builds** —
+     the failure is a comparison *between* keys. **One call, on the union.** Encode **the assembled mapping `_metadata()` actually builds** —
      `json.dumps({"tags": list(tags), "provenance": dict(provenance), **extra}, sort_keys=True,
      ensure_ascii=False)`. Checking `extra` and `provenance` as two *separate* mappings is not the
      same thing and cannot see a key-type collision created **by the merge**: measured, a sidecar
-     carrying `1: a` passes a separate-mapping check and then `TypeError`s in `dumps_metadata`. **This is
+     carrying `1: a` passes a separate-mapping check and then `TypeError`s in `dumps_metadata`:
+
+     ```
+     id: X / 1: a  ->  read OK, then TypeError: '<' not supported between 'int' and 'str'
+     ```
+
+     **Observed in the first implementation** (20260731 08:40): the helper's docstring stated the
+     union reasoning correctly and the code still called it twice, once per mapping. Two calls on
+     the parts is not one call on the whole — `{1: a}` is uniformly keyed and encodes fine alone;
+     only merging it with `tags` and `provenance` makes the key types mixed. **This is
      equivalence, not a new choice:** PyYAML refuses an unknown tag today as a clean `SidecarError`
      (`ConstructorError` is a `YAMLError`); ruamel accepts it, so without this check L5b alone turns
      that clean error into an unhandled `TypeError` from `json.dumps` out of `pnk sync` — measured.
      Use **exactly the call `store.dumps_metadata` makes** — `json.dumps(value, sort_keys=True,
      ensure_ascii=False)` — so the check and the thing it protects cannot disagree.
-     The check must also catch **`ValueError`**, not only `TypeError`: a self-referencing anchor
-     (`selfref: &x\n  b: *x`) raises `Circular reference detected`. Do not add
+     `ValueError` is **not** reachable here: a self-referencing anchor raises
+     `Circular reference detected` under `typ="safe"` and PyYAML, but the **round-trip** loader
+     returns `None` for the self-reference, so it encodes as `null` and never raises — verified
+     against the implementation. Catching it is harmless insurance, not a requirement; the earlier
+     claim that it was a fifth crash shape was measured on the wrong loader. Do not add
      `allow_nan=False`: the store does not, and a stricter check would refuse what the index would
      have accepted. The remedy names the key and the offending type, and says the index stores
      metadata as JSON.
@@ -833,8 +845,9 @@ same, not merely that the bytes match);
 **through PyYAML**); `::test_a_duplicate_key_is_refused_without_ruamels_suppression_url`;
 `::test_a_string_field_that_yaml_1_2_resolves_as_a_number_is_refused`;
 `::test_a_json_unencodable_extra_value_is_refused_with_a_remedy` (`!!binary`, `!!set`,
-`!!timestamp`, bare date, unknown tag, tagged **key**, and **`{1: a, b: c}` — a nested mixed-key
-mapping, which only `sort_keys=True` catches**); `::test_a_double_bang_str_value_is_refused`;
+`!!timestamp`, bare date, unknown tag, tagged **key**; `{1: a, b: c}` — a nested mixed-key mapping,
+which only `sort_keys=True` catches; **and `1: a` alone — a *uniformly* keyed `extra`, which the
+mixed fixture cannot distinguish and which passes unless the check runs on the union**); `::test_a_double_bang_str_value_is_refused`;
 `::test_a_tagged_scalar_in_a_known_field_is_refused_with_a_remedy` (it bypasses the JSON check and
 would otherwise surface as ``"`title` must be a string, found TaggedScalar"`` — a ruamel class name
 with no remedy);

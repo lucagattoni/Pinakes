@@ -64,9 +64,8 @@ carrying an anchor returns `ScalarBoolean`, an `int` subclass, which encodes as 
 wrote `true` — hence the coercion in L5b item 3. `isinstance(doc, dict)` and the `str` checks hold
 against `CommentedMap`.
 
-**Four breaking changes** (three in L5b, one in L5c), and separately **five crashes that become named
-errors** — the fifth being a self-referencing anchor, which raises `ValueError: Circular reference
-detected` rather than `TypeError`, so the check must catch both — `!!binary`,
+**Four breaking changes** (three in L5b, one in L5c), and separately **four crashes that become named
+errors** — `!!binary`,
 `!!set`, `!!timestamp` and a bare date all raise an unhandled `TypeError` from `json.dumps` today.
 
 | Breaking | Was |
