@@ -384,17 +384,22 @@ and needs **one manifest edit before it can sync**: `pnk init` stamps
 `provider = "sentence-transformers"` whatever extras you have, so a `[light]` install fails with
 *"the `sentence-transformers` backend is not installed"* until `provider` is changed to
 `"fastembed"` — the edit [README.md](../README.md) and the [Guide](GUIDE.md#choosing-a-backend)
-both call out. Verified 20260801 11:10 against **0.6.0** from the index (`uvx --from "pinakes[light]==0.6.0" pnk --version` → `pinakes 0.6.0`): `init` → edit → `sync` →
+both call out. Verified 20260801 12:43 against **0.7.0** from the index (`uvx --refresh --from "pinakes[light]==0.7.0" pnk --version` → `pinakes 0.7.0`): `init` → edit → `sync` →
 `search` returns the document. The earlier claim that it worked unedited was wrong.
 
 | | |
 |---|---|
-| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0 and 0.6.0.** 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
-| First upload | 20260728 17:16 UTC · latest 20260801 09:03 UTC (0.6.0) |
+| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0 and 0.7.0.** 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
+| First upload | 20260728 17:16 UTC · latest 20260801 10:43 UTC (0.7.0) |
 | Extras available | `st`, `light`, `pdf`, `claude` — all four |
 | `requires-python` | `>=3.13` |
 
 `PUBLISH_TO_PYPI` is now `true` (set 20260728 17:15 UTC), so **every tag publishes from here on**.
+**Two caches sit between a successful publish and seeing it**, and both read as "the upload
+failed": `https://pypi.org/pypi/pinakes/json` is CDN-cached and still named 0.6.0 minutes after
+0.7.0's files were listed on `https://pypi.org/simple/pinakes/`, and **uv keeps its own index
+cache** — `uvx --from "pinakes[light]==0.7.0"` reported the version unresolvable until
+`--refresh`. Check `/simple/`, and add `--refresh` before concluding anything (20260801 12:43).
 Tagging stays safe by construction: version/tag agreement, the build and an isolated wheel smoke
 test all run before the upload step is reached.
 
