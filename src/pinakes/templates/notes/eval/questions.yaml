@@ -1,10 +1,19 @@
 # A golden set: questions with known-correct sources. Add your own — retrieval tuning without a
 # scoreboard is guessing (docs/DESIGN.md §7).
 #
+# This file ships empty on purpose, and `make eval` **skips** rather than fails while it is: the
+# template scaffolds an empty `docs/`, so any question it shipped would name a document that does
+# not exist. The skip prints its reason.
+#
 # Each entry:
+#   id:       a short stable name, yours to choose. It is what pairs a question's result in one run
+#             with the same question's result in the next, so never reuse one and never renumber.
+#             Omit it and one is derived from the question text — which moves when you reword it.
 #   question: what someone would actually ask
 #   expect:   paths (relative to the KB root) that should be retrieved
-#   kind:     lexical | paraphrase | filter | multi-hop | no-answer
+#   kind:     lexical | simple-lookup | paraphrase | filter | multi-hop | no-answer
+#             Required, and checked against that list — an unrecognised or missing kind is an
+#             error, not a silent `lexical`, because `kind` is what per-class scoring groups on.
 #
 # `no-answer` entries matter most: the correct behaviour is to abstain, and without them a system
 # that answers everything confidently scores perfectly.

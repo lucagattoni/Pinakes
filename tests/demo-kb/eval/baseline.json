@@ -1,16 +1,17 @@
 {
-  "questions": 41,
-  "recall_at_k": 0.9091,
-  "mrr": 0.8116,
-  "rerank_precision": 0.7576,
-  "false_abstain": 0.0303,
+  "questions": 74,
+  "recall_at_k": 0.9394,
+  "mrr": 0.8806,
+  "rerank_precision": 0.8485,
+  "false_abstain": 0.0152,
   "false_confidence": 0.25,
   "confidence_coverage": 1.0,
   "by_kind": {
     "filter": 1.0,
     "lexical": 1.0,
-    "multi-hop": 1.0,
+    "multi-hop": 0.9444,
     "no-answer": 1.0,
-    "paraphrase": 0.75
+    "paraphrase": 0.75,
+    "simple-lookup": 1.0
   }
 }

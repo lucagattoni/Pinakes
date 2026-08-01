@@ -288,6 +288,83 @@ def _fuse(lexical: Sequence[int], vector: Sequence[int]) -> dict[int, float]:
     return scores
 
 
+@dataclass(frozen=True, slots=True)
+class Fused:
+    """The fused candidate list, before hydration and before reranking.
+
+    Exposed because the fused top-*k* is a stage other code legitimately needs and `search` does not
+    return: it is what a graph channel takes as its roots, and what the reachability probe measures
+    from (G2). One implementation, so a measurement of the funnel cannot drift from the funnel.
+    """
+
+    order: tuple[int, ...]
+    """Chunk ids, best first, already cut to `fusion_top_k`."""
+
+    scores: dict[int, float]
+    lexical_rank: dict[int, int]
+    vector_rank: dict[int, int]
+    reason: str | None = None
+    """Why `order` is empty, when it is. The two cases are reported differently: nothing survived
+    the filters at all, versus neither retriever matched anything."""
+
+
+def fused_candidates(
+    connection: sqlite3.Connection,
+    manifest: Manifest,
+    query: str,
+    *,
+    backend: EmbeddingBackend,
+    filters: Filters | None = None,
+) -> Fused:
+    """Filter, BM25, vectors, RRF — every stage up to the `fusion_top_k` cut.
+
+    **`check_coherence` is the caller's,** and `search` is where it runs. This is a stage, not an
+    entry point: calling it on an index built by a different embedding model compares the query
+    against vectors that mean something else and returns confident nonsense (§4.4). Anything
+    reaching for it directly runs the gate itself first.
+    """
+    filters = filters or Filters()
+    settings = manifest.retrieval
+
+    allowed = _allowed_chunks(connection, filters)
+    if not allowed:
+        return Fused((), {}, {}, {}, reason="nothing matched the filters")
+
+    lexical = _lexical(connection, query, allowed, settings.candidates_per_source)
+    vector = _vector(
+        connection,
+        backend,
+        query,
+        allowed,
+        dim=manifest.embedding.dim,
+        limit=settings.candidates_per_source,
+    )
+
+    fused = _fuse(lexical, vector)
+    if not fused:
+        return Fused((), {}, {}, {}, reason="no candidates")
+
+    # This `sorted` decides which candidates survive the `fusion_top_k` cut, and equal fused scores
+    # are common — two chunks found at the same rank by one retriever and by neither the other score
+    # identically. `sorted` is stable, so ties keep `fused`'s insertion order: the lexical ranking
+    # then the vector one, both of which are now total and rebuild-stable (G1). It is deliberately
+    # not re-sorted on a tiebreak here, because the only key in scope is the rowid that caused the
+    # problem.
+    return Fused(
+        order=tuple(sorted(fused, key=lambda cid: -fused[cid])[: settings.fusion_top_k]),
+        scores=fused,
+        lexical_rank={chunk_id: rank for rank, chunk_id in enumerate(lexical)},
+        vector_rank={chunk_id: rank for rank, chunk_id in enumerate(vector)},
+    )
+
+
+def unit_vectors(
+    matrix: "np.ndarray[Any, np.dtype[np.float32]]",
+) -> "np.ndarray[Any, np.dtype[np.float32]]":
+    """Row-normalised, zero rows left alone — the cosine basis `_vector` ranks on."""
+    return _normalise(matrix)
+
+
 def _coverage(text: str, query: str) -> float:
     terms = {word.lower() for word in _WORD.findall(query)}
     if not terms:
@@ -308,36 +385,14 @@ def search(
 ) -> SearchResult:
     stale_paid = check_coherence(connection, manifest)
     filters = filters or Filters()
-    settings = manifest.retrieval
-    final_k = limit or settings.final_k
+    final_k = limit or manifest.retrieval.final_k
 
-    allowed = _allowed_chunks(connection, filters)
-    if not allowed:
-        return SearchResult(query, (), UNKNOWN, "nothing matched the filters", 0, filters)
+    candidates = fused_candidates(connection, manifest, query, backend=backend, filters=filters)
+    if not candidates.order:
+        reason = candidates.reason or "no candidates"
+        return SearchResult(query, (), UNKNOWN, reason, 0, filters)
 
-    lexical = _lexical(connection, query, allowed, settings.candidates_per_source)
-    vector = _vector(
-        connection,
-        backend,
-        query,
-        allowed,
-        dim=manifest.embedding.dim,
-        limit=settings.candidates_per_source,
-    )
-
-    fused = _fuse(lexical, vector)
-    if not fused:
-        return SearchResult(query, (), UNKNOWN, "no candidates", 0, filters)
-
-    lexical_positions = {chunk_id: rank for rank, chunk_id in enumerate(lexical)}
-    vector_positions = {chunk_id: rank for rank, chunk_id in enumerate(vector)}
-    # This `sorted` decides which candidates survive the `fusion_top_k` cut, and equal fused scores
-    # are common — two chunks found at the same rank by one retriever and by neither the other score
-    # identically. `sorted` is stable, so ties keep `fused`'s insertion order: the lexical ranking
-    # then the vector one, both of which are now total and rebuild-stable (G1). It is deliberately
-    # not re-sorted on a tiebreak here, because the only key in scope is the rowid that caused the
-    # problem.
-    rows = _hydrate(connection, sorted(fused, key=lambda cid: -fused[cid])[: settings.fusion_top_k])
+    rows = _hydrate(connection, candidates.order)
 
     passages = [
         Passage(
@@ -348,9 +403,9 @@ def search(
             text=row.text,
             char_start=row.char_start,
             char_end=row.char_end,
-            lexical_rank=lexical_positions.get(row.id),
-            vector_rank=vector_positions.get(row.id),
-            fused_score=fused[row.id],
+            lexical_rank=candidates.lexical_rank.get(row.id),
+            vector_rank=candidates.vector_rank.get(row.id),
+            fused_score=candidates.scores[row.id],
             rerank_score=None,
             stale_extraction=stale_paid.get(row.doc_id),
             page_start=row.page_start,
@@ -364,7 +419,7 @@ def search(
     passages.sort(key=lambda p: (-p.fused_score, -_coverage(p.text, query), p.path))
     considered = len(passages)
 
-    if settings.rerank == "local" and reranker is not None and passages:
+    if manifest.retrieval.rerank == "local" and reranker is not None and passages:
         scores = reranker.score(query, [passage.text for passage in passages])
         passages = [
             replace(passage, rerank_score=score)

@@ -1,106 +1,230 @@
 # Golden set for the synthetic demo KB (docs/DESIGN.md §7).
 #
-# Five kinds, deliberately:
-#   lexical    — the answer shares words with the question; BM25 alone should find it
-#   paraphrase — no meaningful word overlap; only the dense half can find it
-#   filter     — needs a metadata filter to be answerable precisely
-#   multi-hop  — the answer needs two retrievals, scripted here as `hops`
-#   no-answer  — nothing in the corpus answers it, and abstaining is the correct behaviour
+# Six kinds, deliberately:
+#   lexical       — the answer shares words with the question; BM25 alone should find it
+#   simple-lookup — an ordinary factual question, phrased the way a reader would ask it
+#   paraphrase    — no meaningful word overlap; only the dense half can find it
+#   filter        — needs a metadata filter to be answerable precisely
+#   multi-hop     — the answer needs two retrievals, scripted here as `hops`
+#   no-answer     — nothing in the corpus answers it, and abstaining is the correct behaviour
+#
+# `simple-lookup` is the *control* class (PINAKES_APPROACH §9). One study in the GraphRAG-Bench
+# line measured a graph channel costing ~13% accuracy on plain factual lookup while helping
+# multi-hop, and an aggregate hides that trade exactly. These questions are therefore not authored
+# to be hard, and not authored to share words with their document the way `lexical` is: they are
+# authored to be *normal*, so that a change paying for multi-hop out of ordinary retrieval shows up
+# as a per-class drop instead of a rounding error.
+#
+# `id` is what pairs a before row with an after row in `eval/outcomes.json`. It is stable and
+# hand-written: the loader will derive one from the question text when it is absent, but a derived
+# id moves the moment the wording does, which silently drops the question from every comparison.
+# Never reuse an id for a different question, and never renumber.
 #
 # `expect` lists the documents that *should* be retrieved. A no-answer question has none: it scores
 # by whether the system abstains, which is why the corpus has to contain plausible near-misses.
 
 questions:
   # --- lexical --------------------------------------------------------------------------------
-  - question: How long do items stay in quarantine?
+  - id: lex-quarantine-length
+    question: How long do items stay in quarantine?
     kind: lexical
     expect: [docs/accession-workflow.md]
-  - question: What temperature and humidity are the stacks held at?
+  - id: lex-stack-conditions
+    question: What temperature and humidity are the stacks held at?
     kind: lexical
     expect: [docs/storage-environment.md]
-  - question: What resolution are master images captured at?
+  - id: lex-master-resolution
+    question: What resolution are master images captured at?
     kind: lexical
     expect: [docs/digitisation-standards.md]
-  - question: How often is fixity checked?
+  - id: lex-fixity-interval
+    question: How often is fixity checked?
     kind: lexical
     expect: [docs/digital-preservation.md]
-  - question: What is the format of a catalogue number?
+  - id: lex-number-format
+    question: What is the format of a catalogue number?
     kind: lexical
     expect: [docs/catalogue-numbers-format.md]
-  - question: When is the reading room open?
+  - id: lex-reading-room-hours
+    question: When is the reading room open?
     kind: lexical
     expect: [docs/opening-hours.md]
-  - question: How often does the acquisitions committee meet?
+  - id: lex-committee-frequency
+    question: How often does the acquisitions committee meet?
     kind: lexical
     expect: [docs/acquisitions-committee.md]
-  - question: How often are pest traps checked?
+  - id: lex-trap-frequency
+    question: How often are pest traps checked?
     kind: lexical
     expect: [docs/pest-management.md]
-  - question: What are the levels of catalogue description?
+  - id: lex-description-levels
+    question: What are the levels of catalogue description?
     kind: lexical
     expect: [docs/catalogue-hierarchy.md]
-  - question: How long does reader registration last?
+  - id: lex-registration-length
+    question: How long does reader registration last?
     kind: lexical
     expect: [docs/reader-registration.md]
-  - question: What does a conservation assessment record?
+  - id: lex-assessment-records
+    question: What does a conservation assessment record?
     kind: lexical
     expect: [docs/conservation-assessment.md]
-  - question: When was the reading room added?
+  - id: lex-reading-room-added
+    question: When was the reading room added?
     kind: lexical
     expect: [docs/building-history.md]
 
+  # --- simple-lookup --------------------------------------------------------------------------
+  # The control class. Ordinary questions, ordinary phrasing, one document each.
+  - id: sl-authority-record-subjects
+    question: Which kinds of name get an authority record of their own?
+    kind: simple-lookup
+    expect: [docs/authority-records.md]
+  - id: sl-enquiry-charged
+    question: When does an enquiry become a paid service?
+    kind: simple-lookup
+    expect: [docs/enquiry-service.md]
+  - id: sl-volunteer-tasks
+    question: What kind of work do volunteers do here?
+    kind: simple-lookup
+    expect: [docs/volunteer-programme.md]
+  - id: sl-annual-closure
+    question: Is the building ever shut for a whole week?
+    kind: simple-lookup
+    expect: [docs/opening-hours.md]
+  - id: sl-gloves-for-paper
+    question: Are gloves worn for handling paper?
+    kind: simple-lookup
+    expect: [docs/reading-room-rules.md]
+  - id: sl-two-items-at-once
+    question: Can a reader have two items on the desk at the same time?
+    kind: simple-lookup
+    expect: [docs/reading-room-rules.md]
+  - id: sl-uncertain-dates
+    question: How is a date recorded when nobody is sure of it?
+    kind: simple-lookup
+    expect: [docs/metadata-minimum.md]
+  - id: sl-item-level-only
+    question: What goes wrong if a collection is described only at item level?
+    kind: simple-lookup
+    expect: [docs/catalogue-hierarchy.md]
+  - id: sl-inward-loan-insurance
+    question: Who arranges the insurance on an incoming loan?
+    kind: simple-lookup
+    expect: [docs/loans-inward.md]
+  - id: sl-duplicates-kept
+    question: When is a second copy of something worth keeping?
+    kind: simple-lookup
+    expect: [docs/appraisal-criteria.md]
+  - id: sl-project-funding-covers
+    question: What does project funding pay for?
+    kind: simple-lookup
+    expect: [docs/funding-sources.md]
+  - id: sl-freezing-window
+    question: How quickly does wet paper have to be frozen?
+    kind: simple-lookup
+    expect: [docs/emergency-plan.md]
+  - id: sl-copy-refused
+    question: When would a request for a copy be turned down?
+    kind: simple-lookup
+    expect: [docs/copying-service.md]
+  - id: sl-access-copies-derived
+    question: Are access copies photographed separately from the master?
+    kind: simple-lookup
+    expect: [docs/digitisation-standards.md]
+  - id: sl-building-origin
+    question: What was the building used for before the Institute had it?
+    kind: simple-lookup
+    expect: [docs/building-history.md]
+  - id: sl-trustee-referral
+    question: Which offers have to go to the trustees?
+    kind: simple-lookup
+    expect: [docs/acquisitions-committee.md]
+  - id: sl-keeper-responsibilities
+    question: What is the keeper responsible for?
+    kind: simple-lookup
+    expect: [docs/staff-keeper.md]
+  - id: sl-numbers-padded
+    question: Are running numbers padded with zeroes?
+    kind: simple-lookup
+    expect: [docs/catalogue-numbers-format.md]
+  - id: sl-restriction-review
+    question: How often is a restriction looked at again?
+    kind: simple-lookup
+    expect: [docs/access-restrictions.md]
+  - id: sl-verbal-assurance
+    question: Is something a donor said out loud binding on the Institute?
+    kind: simple-lookup
+    expect: [docs/donor-agreements.md]
+
   # --- paraphrase -----------------------------------------------------------------------------
-  - question: Why can a number never be handed to a different object later?
+  - id: par-number-never-reissued
+    question: Why can a number never be handed to a different object later?
     kind: paraphrase
     expect: [docs/catalogue-policy.md]
-  - question: Why keep a copy somewhere that is not connected to anything?
+  - id: par-offline-copy
+    question: Why keep a copy somewhere that is not connected to anything?
     kind: paraphrase
     expect: [docs/digital-preservation.md]
-  - question: Why is a steady climate better than hitting the ideal figure sometimes?
+  - id: par-stability-over-target
+    question: Why is a steady climate better than hitting the ideal figure sometimes?
     kind: paraphrase
     expect: [docs/storage-environment.md]
-  - question: Why should a summary of what a thing is about never be left out?
+  - id: par-scope-note
+    question: Why should a summary of what a thing is about never be left out?
     kind: paraphrase
     expect: [docs/metadata-minimum.md]
-  - question: What happens to something too fragile to stand on a shelf?
+  - id: par-too-fragile-to-shelve
+    question: What happens to something too fragile to stand on a shelf?
     kind: paraphrase
     expect: [docs/conservation-assessment.md]
-  - question: Why is putting something in a freezer only a delaying tactic?
+  - id: par-freezing-delays
+    question: Why is putting something in a freezer only a delaying tactic?
     kind: paraphrase
     expect: [docs/emergency-plan.md]
-  - question: Why is it wrong to hide an entire folder because one sheet is sensitive?
+  - id: par-partial-restriction
+    question: Why is it wrong to hide an entire folder because one sheet is sensitive?
     kind: paraphrase
     expect: [docs/access-restrictions.md]
-  - question: Why must a duplicate of a page carry its reference?
+  - id: par-copy-carries-reference
+    question: Why must a duplicate of a page carry its reference?
     kind: paraphrase
     expect: [docs/copying-service.md]
-  - question: Why is being interesting not enough to keep something?
+  - id: par-interest-not-enough
+    question: Why is being interesting not enough to keep something?
     kind: paraphrase
     expect: [docs/appraisal-criteria.md]
-  - question: Why record a trap count when nothing was caught?
+  - id: par-zero-count-is-data
+    question: Why record a trap count when nothing was caught?
     kind: paraphrase
     expect: [docs/pest-management.md]
-  - question: Why not let a restriction run forever?
+  - id: par-no-endless-restriction
+    question: Why not let a restriction run forever?
     kind: paraphrase
     expect: [docs/donor-agreements.md, docs/access-restrictions.md]
-  - question: Why does the old building keep its climate without machinery?
+  - id: par-thick-walls
+    question: Why does the old building keep its climate without machinery?
     kind: paraphrase
     expect: [docs/building-history.md]
 
   # --- filter ---------------------------------------------------------------------------------
-  - question: What are the rules for lending material out?
+  - id: flt-lending-out
+    question: What are the rules for lending material out?
     kind: filter
     expect: [docs/loans-outward.md]
     filters: {path_prefix: docs/loans-}
-  - question: What happens to material coming in on loan?
+  - id: flt-lending-in
+    question: What happens to material coming in on loan?
     kind: filter
     expect: [docs/loans-inward.md]
     filters: {path_prefix: docs/loans-}
-  - question: Who is responsible for signing off a withdrawal?
+  - id: flt-withdrawal-signoff
+    question: Who is responsible for signing off a withdrawal?
     kind: filter
     expect: [docs/staff-keeper.md, docs/deaccession-policy.md]
     filters: {path_prefix: docs/staff-}
-  - question: Which role responds to an environmental alert?
+  - id: flt-environmental-alert
+    question: Which role responds to an environmental alert?
     kind: filter
     expect: [docs/staff-conservator.md]
     filters: {path_prefix: docs/staff-}
@@ -113,7 +237,16 @@ questions:
   # document by its own query — the whole point of the class. Until 20260729 it named one document
   # and the scorer ignored `hops` entirely, so two of these five asked about one document and
   # demanded another, and the class measured single-shot retrieval of the last hop's query.
-  - question: Why may material bought with the public grant not be sold?
+  #
+  # The thirteen added in G2 are authored from corpus *structure*: a pair of documents that between
+  # them answer one question and share no vocabulary on the thing that joins them, with the second
+  # hop phrased in the first document's words — which is how a reader would actually ask it, and
+  # why the second hop is the one that can miss. They were authored once, before the reachability
+  # probe was run, and are not re-authored on the strength of what it reported: fitting the question
+  # set to the edge set is the circularity decision 14 removed by cutting cross-KB questions, and it
+  # would be undetectable afterwards.
+  - id: mh-public-grant-sale
+    question: Why may material bought with the public grant not be sold?
     kind: multi-hop
     expect: [docs/deaccession-policy.md, docs/funding-sources.md]
     hops:
@@ -121,7 +254,8 @@ questions:
         expect: docs/deaccession-policy.md
       - query: Where does the Institute's core funding come from?
         expect: docs/funding-sources.md
-  - question: Who decides on an offer that comes with a fifteen-year embargo?
+  - id: mh-fifteen-year-embargo
+    question: Who decides on an offer that comes with a fifteen-year embargo?
     kind: multi-hop
     expect: [docs/donor-agreements.md, docs/acquisitions-committee.md]
     hops:
@@ -129,7 +263,8 @@ questions:
         expect: docs/donor-agreements.md
       - query: Which body refers long embargoes to the trustees?
         expect: docs/acquisitions-committee.md
-  - question: Who can stop a digitisation session, and why would they?
+  - id: mh-halt-digitisation
+    question: Who can stop a digitisation session, and why would they?
     kind: multi-hop
     expect: [docs/conservation-assessment.md, docs/staff-conservator.md]
     hops:
@@ -137,7 +272,8 @@ questions:
         expect: docs/conservation-assessment.md
       - query: Who may halt a process touching an item in active deterioration?
         expect: docs/staff-conservator.md
-  - question: Why did the conservation backlog shorten in 2025?
+  - id: mh-backlog-shortened
+    question: Why did the conservation backlog shorten in 2025?
     kind: multi-hop
     expect: [docs/annual-report-2025.md, docs/conservation-assessment.md]
     hops:
@@ -145,7 +281,8 @@ questions:
         expect: docs/annual-report-2025.md
       - query: What is done instead of rebinding for brittle paper?
         expect: docs/conservation-assessment.md
-  - question: What must a borrower provide before an item can travel?
+  - id: mh-borrower-requirements
+    question: What must a borrower provide before an item can travel?
     kind: multi-hop
     expect: [docs/loans-outward.md, docs/storage-environment.md]
     hops:
@@ -153,30 +290,155 @@ questions:
         expect: docs/loans-outward.md
       - query: What environment does the Institute hold its own stacks at?
         expect: docs/storage-environment.md
+  - id: mh-overnight-drift
+    question: Who has to be called out if the stacks drift out of tolerance overnight?
+    kind: multi-hop
+    expect: [docs/storage-environment.md, docs/staff-conservator.md]
+    hops:
+      - query: How long may a reading sit outside tolerance before an alert is raised?
+        expect: docs/storage-environment.md
+      - query: Which rotating post answers that, and what is it allowed to stop?
+        expect: docs/staff-conservator.md
+  - id: mh-infestation-found-in-quarantine
+    question: What happens if the wait before shelving turns up an infestation?
+    kind: multi-hop
+    expect: [docs/accession-workflow.md, docs/pest-management.md]
+    hops:
+      - query: How long does an arrival wait before it can go to the accessions desk?
+        expect: docs/accession-workflow.md
+      - query: Is the whole building treated when something is found, or only part of it?
+        expect: docs/pest-management.md
+  - id: mh-fragile-volume-storage
+    question: Why is a fragile volume photographed rather than copied, and how is it kept?
+    kind: multi-hop
+    expect: [docs/copying-service.md, docs/conservation-assessment.md]
+    hops:
+      - query: What is offered instead when a volume will not open flat?
+        expect: docs/copying-service.md
+      - query: How is such a volume stored, and why is it not simply rebound?
+        expect: docs/conservation-assessment.md
+  - id: mh-withdrawn-collection-register
+    question: What is left behind in the register when a whole collection goes?
+    kind: multi-hop
+    expect: [docs/catalogue-numbers-format.md, docs/deaccession-policy.md]
+    hops:
+      - query: Are the three letters of a reference ever given to another collection?
+        expect: docs/catalogue-numbers-format.md
+      - query: What is recorded against something that has been taken out of the collection?
+        expect: docs/deaccession-policy.md
+  - id: mh-colour-target-then-storage
+    question: Where does a file with a colour target in frame end up?
+    kind: multi-hop
+    expect: [docs/digitisation-standards.md, docs/digital-preservation.md]
+    hops:
+      - query: What is placed in frame when a master image is captured?
+        expect: docs/digitisation-standards.md
+      - query: Why is one of the three stored copies kept disconnected from the network?
+        expect: docs/digital-preservation.md
+  - id: mh-salvage-at-three-in-the-morning
+    question: Who takes charge of a flood at three in the morning?
+    kind: multi-hop
+    expect: [docs/emergency-plan.md, docs/staff-conservator.md]
+    hops:
+      - query: How are salvage priorities listed, and why not by perceived importance?
+        expect: docs/emergency-plan.md
+      - query: Which rotating post leads that, and how often does it change hands?
+        expect: docs/staff-conservator.md
+  - id: mh-1878-walls-conditions
+    question: What conditions do the 1878 walls actually deliver?
+    kind: multi-hop
+    expect: [docs/building-history.md, docs/storage-environment.md]
+    hops:
+      - query: Why does the older part of the building stay cool without machinery?
+        expect: docs/building-history.md
+      - query: What figures is that held to, and what matters more than the figure itself?
+        expect: docs/storage-environment.md
+  - id: mh-registered-then-admitted
+    question: What may somebody carry to the desk once they have registered?
+    kind: multi-hop
+    expect: [docs/reader-registration.md, docs/reading-room-rules.md]
+    hops:
+      - query: What must someone show to register, and how long does that hold?
+        expect: docs/reader-registration.md
+      - query: What is left in the lockers by the entrance?
+        expect: docs/reading-room-rules.md
+  - id: mh-closure-without-an-end
+    question: Why can a closure period not simply run on for ever?
+    kind: multi-hop
+    expect: [docs/access-restrictions.md, docs/donor-agreements.md]
+    hops:
+      - query: What tends to happen to a restriction with no review date?
+        expect: docs/access-restrictions.md
+      - query: What does the deposit paperwork say about one with no end?
+        expect: docs/donor-agreements.md
+  - id: mh-second-copy-disposal
+    question: Who signs before a superfluous copy leaves the building?
+    kind: multi-hop
+    expect: [docs/appraisal-criteria.md, docs/deaccession-policy.md]
+    hops:
+      - query: When is a second copy of something worth keeping?
+        expect: docs/appraisal-criteria.md
+      - query: Who has to sign before the other one leaves, and what must be written down?
+        expect: docs/deaccession-policy.md
+  - id: mh-scope-note-level
+    question: At which level of description is a summary of contents written?
+    kind: multi-hop
+    expect: [docs/metadata-minimum.md, docs/catalogue-hierarchy.md]
+    hops:
+      - query: What makes a record findable by someone who does not already know it exists?
+        expect: docs/metadata-minimum.md
+      - query: Which of the four levels should carry it, and why not all of them?
+        expect: docs/catalogue-hierarchy.md
+  - id: mh-volunteer-contribution
+    question: How does unpaid work show up in the year's figures?
+    kind: multi-hop
+    expect: [docs/volunteer-programme.md, docs/annual-report-2025.md]
+    hops:
+      - query: Why is every session on the listing programme written down?
+        expect: docs/volunteer-programme.md
+      - query: How many items were accessioned and catalogued last year?
+        expect: docs/annual-report-2025.md
+  - id: mh-borrowed-item-wait
+    question: How long is a borrowed item held before it is put away separately?
+    kind: multi-hop
+    expect: [docs/loans-inward.md, docs/accession-workflow.md]
+    hops:
+      - query: Where is a borrowed item kept once it has cleared its wait?
+        expect: docs/loans-inward.md
+      - query: How many working days is that wait, and what is it for?
+        expect: docs/accession-workflow.md
 
   # --- no-answer ------------------------------------------------------------------------------
   # Every one of these is close enough to the corpus to be plausible. Abstaining is correct.
-  - question: What is the Institute's parking policy?
+  - id: na-parking
+    question: What is the Institute's parking policy?
     kind: no-answer
     expect: []
-  - question: How much does a reader's ticket cost?
+  - id: na-ticket-price
+    question: How much does a reader's ticket cost?
     kind: no-answer
     expect: []
-  - question: Which software does the catalogue run on?
+  - id: na-catalogue-software
+    question: Which software does the catalogue run on?
     kind: no-answer
     expect: []
-  - question: What is the salary of the keeper?
+  - id: na-keeper-salary
+    question: What is the salary of the keeper?
     kind: no-answer
     expect: []
-  - question: How many staff does the Institute employ?
+  - id: na-headcount
+    question: How many staff does the Institute employ?
     kind: no-answer
     expect: []
-  - question: What is the wifi password for the reading room?
+  - id: na-wifi-password
+    question: What is the wifi password for the reading room?
     kind: no-answer
     expect: []
-  - question: Which bus routes stop outside the building?
+  - id: na-bus-routes
+    question: Which bus routes stop outside the building?
     kind: no-answer
     expect: []
-  - question: What is the Institute's policy on photography by drone?
+  - id: na-drone-photography
+    question: What is the Institute's policy on photography by drone?
     kind: no-answer
     expect: []

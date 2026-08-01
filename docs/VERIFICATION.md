@@ -578,6 +578,23 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | an unparseable `__version__` skips the check instead of crashing every command | G4 | `tests/test_manifest_compat.py::test_an_unparseable_own_version_skips_the_check_rather_than_crashing` |
 | `pnk init` stamps no floor | G4 | `tests/test_manifest_compat.py::test_the_template_does_not_stamp_a_floor` |
 
+## The golden set, per question (G2)
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| the committed golden set is well formed, and its two decisive classes are the size the plan set | G2 | `tests/test_eval.py::test_the_committed_golden_set_is_well_formed` |
+| per-question outcomes exist as an artifact, and re-score to the same aggregates | G2 | `tests/test_eval.py::test_per_question_outcomes_round_trip` |
+| every field a row carries reaches a metric | G2 | `tests/test_eval.py::test_a_row_carries_everything_every_metric_needs` |
+| the committed artifact and the committed baseline describe one run | G2 | `tests/test_eval.py::test_the_committed_artifact_describes_the_committed_baseline` |
+| growing the set moved no question already in it | G2 | `tests/test_eval.py::test_the_committed_41_score_exactly_their_pre_growth_values` |
+| an unknown or absent `kind` is refused, never defaulted | G2 | `tests/test_eval.py::test_an_unknown_kind_is_refused` |
+| a repeated id is refused, and an absent one is derived | G2 | `tests/test_eval.py::test_a_repeated_id_is_refused`, `tests/test_eval.py::test_an_absent_id_is_derived_from_the_question` |
+| an empty question set skips with a printed reason instead of failing | G2 | `tests/test_eval.py::test_an_empty_question_set_skips_with_a_reason` |
+| a file whose `questions` key is missing is still refused, so the skip cannot swallow a typo | G2 | `tests/test_eval.py::test_a_file_with_no_questions_key_is_still_refused` |
+| a row missing a field is refused by name, never a bare `KeyError` | G2 | `tests/test_eval.py::test_a_row_missing_a_field_is_refused_by_name` |
+| the channel-reachable ceiling is measured before the schema bumps | G2 | `tests/test_eval.py::test_the_reachable_ceiling_probe_needs_no_index_schema_change` |
+| the probe answers to the edge set, rather than reporting the same number whatever the graph holds | G2 | `tests/test_eval.py::test_the_reachable_ceiling_probe_answers_to_the_edge_set` |
+
 ## Release machinery
 
 | What must be true | Increment | Where it is checked |
