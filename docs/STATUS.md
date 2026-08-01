@@ -329,13 +329,13 @@ and needs **one manifest edit before it can sync**: `pnk init` stamps
 `provider = "sentence-transformers"` whatever extras you have, so a `[light]` install fails with
 *"the `sentence-transformers` backend is not installed"* until `provider` is changed to
 `"fastembed"` — the edit [README.md](../README.md) and the [Guide](GUIDE.md#choosing-a-backend)
-both call out. Verified 20260731 12:10 against **0.5.0** from the index: `init` → edit → `sync` →
+both call out. Verified 20260801 11:10 against **0.6.0** from the index (`uvx --from "pinakes[light]==0.6.0" pnk --version` → `pinakes 0.6.0`): `init` → edit → `sync` →
 `search` returns the document. The earlier claim that it worked unedited was wrong.
 
 | | |
 |---|---|
-| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1 and 0.5.0.** 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
-| First upload | 20260728 17:16 UTC · latest 20260731 09:34 UTC (0.5.0) |
+| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0 and 0.6.0.** 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
+| First upload | 20260728 17:16 UTC · latest 20260801 09:03 UTC (0.6.0) |
 | Extras available | `st`, `light`, `pdf`, `claude` — all four |
 | `requires-python` | `>=3.13` |
 
