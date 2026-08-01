@@ -1,6 +1,7 @@
 """`pnk doctor`: the checks that make the design's stated limits visible instead of mysterious."""
 
 import re
+import shutil
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
@@ -70,6 +71,32 @@ def kb(tmp_path: Path) -> Path:
 
 def checks(root: Path) -> dict[str, tuple[Status, str]]:
     return {c.name: (c.status, c.detail) for c in diagnose(load(root)).checks}
+
+
+def _document_ids(root: Path, where: str = "state = 'active'") -> list[str]:
+    """Read document ULIDs and **close the connection** — a generator expression over
+    `connect_ro(...).execute(...)` leaks one, which pytest raises as an unraisable exception."""
+    connection = store.connect_ro(root / ".pinakes" / "index.db")
+    try:
+        return [
+            str(row["id"]) for row in connection.execute(f"SELECT id FROM documents WHERE {where}")
+        ]
+    finally:
+        connection.close()
+
+
+def _remedy(root: Path, name: str) -> str:
+    """Every new WARN must carry one, and `test_every_problem_carries_a_remedy` cannot see these:
+    it runs on a fixture that declares no `[[links.kb]]` and authors no link, where both new
+    checks are `OK` and carry no problem.
+
+    **Returns it for the caller to assert content against.** Asserting `is not None` here matched
+    `""` — measured: four of the five new remedies could be blanked with the whole suite green,
+    while the meta-guard this stands in for asserts truthiness.
+    """
+    remedy = next(c.remedy for c in diagnose(load(root)).checks if c.name == name)
+    assert remedy, f"{name} warned without a remedy"
+    return remedy
 
 
 def test_a_fresh_kb_reports_no_index_yet(kb: Path) -> None:
@@ -948,14 +975,456 @@ def test_the_extensions_check_explains_that_it_only_gates_an_unshipped_tier(kb: 
         assert "available" in detail
 
 
-def test_link_coverage_is_reported_even_when_nothing_is_linked(kb: Path) -> None:
+def test_a_kb_with_no_authored_links_nudges(kb: Path) -> None:
     """Link coverage is the ceiling on cross-KB answers (§6.2), so zero is a number worth printing
-    rather than a check that stays quiet."""
+    rather than a check that stays quiet — and now a WARN, because a KB where nothing links to
+    anything gives `pnk links` nothing to traverse.
+
+    **KB-wide, never per-document.** L1's ≤ 35% density cap guarantees a per-document rule would
+    fire on both committed corpora by construction, which is a check that cannot pass.
+    """
     sync(load(kb), options=SyncOptions(), now="20260729 05:31")
     status, detail = checks(kb)["links"]
-    assert status is Status.OK
+    assert status is Status.WARN
     assert "none authored" in detail
-    assert "of 1 documents linked" in detail
+    assert "0 of 1 documents linked (0%)" in detail
+    assert "pnk link" in _remedy(kb, "links")
+
+
+def _link_to(kb: Path, uri: str, *, rel: str = "cites") -> None:
+    """Author one link by hand and re-sync, so the index has it."""
+    sidecar = kb / "docs" / f"a.md{SIDECAR_SUFFIX}"
+    body = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+    body["links"] = [{"to": uri, "rel": rel}]
+    sidecar.write_text(yaml.safe_dump(body), encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:32")
+
+
+def _declare_partner(kb: Path, *, name: str, kb_id: str, path: str) -> None:
+    manifest = kb / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8")
+        + f'\n[[links.kb]]\nname = "{name}"\nid   = "{kb_id}"\npath = "{path}"\n',
+        encoding="utf-8",
+    )
+
+
+def _partner(tmp_path: Path, name: str) -> Path:
+    """A second real KB with one document, synced, so its index can answer."""
+    result = init(tmp_path / name, now="20260725 17:30")
+    text = (result.root / "pinakes.toml").read_text(encoding="utf-8")
+    text = text.replace('provider = "sentence-transformers"', 'provider = "fake"')
+    text = text.replace('model    = "BAAI/bge-small-en-v1.5"', 'model    = "fake-model"')
+    text = text.replace("dim      = 384", f"dim      = {DIM}")
+    text = text.replace('model    = "BAAI/bge-reranker-base"', 'model    = "fake-reranker"')
+    (result.root / "pinakes.toml").write_text(text, encoding="utf-8")
+    (result.root / "docs" / "p.md").write_text("# P\n\nText.\n", encoding="utf-8")
+    sync(load(result.root), options=SyncOptions(), now="20260729 05:30")
+    return result.root
+
+
+def test_link_coverage_reports_the_ratio_not_the_edge_count(kb: Path) -> None:
+    """DESIGN §6.2 promises *"linked docs / total docs"*, and the shipped check printed an edge
+    count — `16 links, 4 cross-KB` — with a ratio only in the branch where it is zero.
+
+    The two are different numbers: on `tests/demo-kb` those 16 edges come from 8 of 30 documents,
+    so the 27% ceiling the §6.2 row is tabled against was never printed. Two links out of one
+    document is the same shape in miniature: 1 of 1 linked, 2 links.
+    """
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    kb_id = load(kb).kb.id
+    (kb / "docs" / "b.md").write_text("# B\n\nMore.\n", encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:32")
+    b_id = _document_ids(kb, "path LIKE '%b.md'")[0]
+    sidecar = kb / "docs" / f"a.md{SIDECAR_SUFFIX}"
+    body = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+    body["links"] = [
+        {"to": f"pnk://{kb_id}/{b_id}", "rel": "cites"},
+        {"to": f"pnk://{kb_id}/{b_id}", "rel": "supersedes"},
+    ]
+    sidecar.write_text(yaml.safe_dump(body), encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:33")
+
+    status, detail = checks(kb)["links"]
+    assert status is Status.OK
+    assert "1 of 2 documents linked (50%)" in detail
+    assert "2 links" in detail  # ...and the edge count is still there, as a second number
+    assert "as of the last sync" in detail  # it counts index rows, not sidecar files
+
+
+def test_link_coverage_counts_authored_links_only(kb: Path) -> None:
+    """`origin = 'sidecar'` — the filter shipped in v0.1 and is verified here, not rebuilt.
+
+    Coverage means *links this KB's authors wrote*. Anything else — a reverse-scanned row, or a
+    derived edge a later release adds — would report a ceiling nobody raised.
+
+    **The row has to carry this KB's own `src_kb_id`**, or it never reaches the `origin` filter:
+    the `src_kb_id = ?` clause excludes it first, and the test passes with the filter deleted. A
+    reverse-scan row does carry a partner's id, which is exactly why one makes a *worse* fixture
+    than it looks — it exercises the wrong clause. Measured: with a partner's id, dropping
+    `origin = 'sidecar'` leaves every test green.
+    """
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    kb_id = load(kb).kb.id
+    local_doc = _document_ids(kb)[0]
+    connection = store.connect_rw(kb / ".pinakes" / "index.db")
+    try:
+        connection.execute(
+            "INSERT INTO links (src_kb_id, src_doc_id, dst_kb_id, dst_doc_id, rel, origin) "
+            "VALUES (?, ?, ?, ?, 'cites', 'reverse-scan')",
+            (str(kb_id), local_doc, str(kb_id), str(mint_doc_id())),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    status, detail = checks(kb)["links"]
+    assert status is Status.WARN, "a reverse-scanned row was counted as authored coverage"
+    assert "none authored (0 of 1 documents linked (0%))" in detail
+
+
+def test_a_dangling_cross_kb_target_warns_with_a_reason(kb: Path, tmp_path: Path) -> None:
+    """A cross-KB target whose own KB **is** here and does not have the document.
+
+    This is the case that can be checked, so it is the only one that warns: the KB resolved, its
+    index answered, and the document is not in it.
+    """
+    partner = _partner(tmp_path, "partner")
+    partner_id = load(partner).kb.id
+    _declare_partner(kb, name="partner", kb_id=str(partner_id), path="../partner")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    _link_to(kb, f"pnk://{partner_id}/{mint_doc_id()}")
+
+    status, detail = checks(kb)["links"]
+    assert status is Status.WARN
+    assert "1 cross-KB unresolved" in detail
+    assert "Re-sync that KB" in _remedy(kb, "links")
+
+
+def test_a_cross_kb_target_that_its_own_kb_does_have_is_not_unresolved(
+    kb: Path, tmp_path: Path
+) -> None:
+    """The other half of the same check — without this, `unresolved` counting *every* cross-KB
+    target would pass the test above just as well."""
+    partner = _partner(tmp_path, "partner")
+    partner_id = load(partner).kb.id
+    real = _document_ids(partner)[0]
+    _declare_partner(kb, name="partner", kb_id=str(partner_id), path="../partner")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    _link_to(kb, f"pnk://{partner_id}/{real}")
+
+    status, detail = checks(kb)["links"]
+    assert status is Status.OK, detail
+    assert "1 cross-KB" in detail
+    assert "unresolved" not in detail
+
+
+def test_a_deleted_document_leaves_the_coverage_ratio_honest(kb: Path) -> None:
+    """A soft delete keeps the links. `sync`'s `SoftDelete` sets `state = 'deleted'` and drops the
+    chunks; it never deletes that document's `origin = 'sidecar'` rows.
+
+    So an unjoined numerator counted a population the denominator did not: two documents linking to
+    each other, delete one, and the check reported **`2 of 1 documents linked (200%)`** — the
+    headline metric of this increment, above 100%.
+    """
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    kb_id = load(kb).kb.id
+    (kb / "docs" / "b.md").write_text("# B\n\nMore.\n", encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:32")
+    a_id, b_id = (
+        _document_ids(kb, "path LIKE '%a.md'")[0],
+        _document_ids(kb, "path LIKE '%b.md'")[0],
+    )
+    for name, target in (("a", b_id), ("b", a_id)):
+        sidecar = kb / "docs" / f"{name}.md{SIDECAR_SUFFIX}"
+        body = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+        body["links"] = [{"to": f"pnk://{kb_id}/{target}", "rel": "cites"}]
+        sidecar.write_text(yaml.safe_dump(body), encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:33")
+    assert "2 of 2 documents linked (100%)" in checks(kb)["links"][1]
+
+    (kb / "docs" / "b.md").unlink()
+    (kb / "docs" / f"b.md{SIDECAR_SUFFIX}").unlink()
+    sync(load(kb), options=SyncOptions(), now="20260729 05:34")
+
+    status, detail = checks(kb)["links"]
+    assert "1 of 1 documents linked (100%)" in detail, detail
+    assert "200%" not in detail
+    assert "2 links" not in detail, "a deleted document's links were still counted"
+    # The *other* side of the same interaction: `a` still points at the deleted `b`, and a target
+    # that is soft-deleted is dangling. `known` filters on `state = 'active'` for this reason.
+    assert status is Status.WARN
+    assert "1 dangling inside this KB" in detail
+    assert "no longer exists here" in _remedy(kb, "links")
+
+
+def test_a_cross_kb_target_is_resolved_against_the_partners_own_id(
+    kb: Path, tmp_path: Path
+) -> None:
+    """The declared `[[links.kb]] id` is not evidence of which KB sits at that path.
+
+    `linkscan.scan_one` refuses a mismatch with `LinkedKbIdMismatchError` because trusting the
+    manifest files another KB's links under this alias. Keying on `linked.id` did exactly that:
+    with a manifest declaring `X` over a partner whose real id is `Y`, a `pnk://X/...` target was
+    resolved against `Y`'s documents — silently OK for one that did not exist there, and WARN for
+    one that did.
+
+    Nothing at `X` is on this machine, so the honest answer is to say nothing about it.
+    """
+    partner = _partner(tmp_path, "partner")
+    declared = mint_kb_id()  # not the partner's own id
+    assert str(declared) != str(load(partner).kb.id)
+    _declare_partner(kb, name="partner", kb_id=str(declared), path="../partner")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    _link_to(kb, f"pnk://{declared}/{mint_doc_id()}")
+
+    status, detail = checks(kb)["links"]
+    assert status is Status.OK, detail
+    assert "unresolved" not in detail
+
+
+def test_a_partner_is_found_by_its_own_id_even_when_the_manifest_declares_another(
+    kb: Path, tmp_path: Path
+) -> None:
+    """The other direction of the same rule, and the one that *misses* rather than misattributes.
+
+    Filtering the walk on the **declared** `[[links.kb]] id` skips a partner whose real id is the
+    one actually wanted — so a genuinely dangling target goes unreported. Here the manifest declares
+    `X` over a partner whose own id is `Y`, and the link targets `Y`: the partner is on this
+    machine, its sidecars answer, and the target is not among them.
+    """
+    partner = _partner(tmp_path, "partner")
+    partner_id = load(partner).kb.id
+    _declare_partner(kb, name="partner", kb_id=str(mint_kb_id()), path="../partner")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    _link_to(kb, f"pnk://{partner_id}/{mint_doc_id()}")
+
+    status, detail = checks(kb)["links"]
+    assert status is Status.WARN, detail
+    assert "1 cross-KB unresolved" in detail
+
+
+def test_a_partner_whose_sources_are_unusable_is_not_used_as_evidence(
+    kb: Path, tmp_path: Path
+) -> None:
+    """`sidecars_under` reports a problem rather than raising when a partner's `[sources]` cannot
+    be walked — an `include` reaching outside its KB, for instance. The walk that produced it is
+    not exhaustive, so its document set is a subset of the truth and cannot show a target absent.
+    """
+    partner = _partner(tmp_path, "partner")
+    partner_id = load(partner).kb.id
+    manifest = partner / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md", "**/*.txt"]', 'include = ["**/*.md", "../../outside/*.md"]'
+        ),
+        encoding="utf-8",
+    )
+    _declare_partner(kb, name="partner", kb_id=str(partner_id), path="../partner")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    _link_to(kb, f"pnk://{partner_id}/{mint_doc_id()}")
+
+    status, detail = checks(kb)["links"]
+    assert status is Status.OK, detail
+    assert "unresolved" not in detail
+
+
+def test_a_partner_roots_entry_that_cannot_be_resolved_is_not_a_traceback(
+    kb: Path, tmp_path: Path
+) -> None:
+    """The second guard in `_unresolved_cross_kb`, around `sidecars_under`.
+
+    `tomllib` accepts a `\\u0000` escape and `Path.resolve()` does not, so a partner `roots` entry
+    carrying one raises `ValueError` out of the walk. Partner-controlled input reaching a
+    diagnostic command must not become a traceback.
+    """
+    partner = _partner(tmp_path, "partner")
+    partner_id = load(partner).kb.id
+    manifest = partner / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'roots   = ["docs/"]', 'roots   = ["docs/", "\\u0000bad"]'
+        ),
+        encoding="utf-8",
+    )
+    _declare_partner(kb, name="partner", kb_id=str(partner_id), path="../partner")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    _link_to(kb, f"pnk://{partner_id}/{mint_doc_id()}")
+
+    status, detail = checks(kb)["links"]
+    assert status is Status.OK, detail
+    assert "unresolved" not in detail
+
+
+def test_an_unreadable_linked_kb_path_is_a_warning_not_a_traceback(
+    kb: Path, tmp_path: Path
+) -> None:
+    """`why_not_a_kb` raises `OSError` on an unreadable parent, and its docstring names this command
+    as the third caller needing the same `try` that `linkscan.scan_one` and `link._via_alias` have.
+
+    A diagnostic command reporting a traceback is the one outcome `pnk doctor` may not have.
+    """
+    locked = tmp_path / "locked"
+    (locked / "kb").mkdir(parents=True)
+    walled_id = mint_kb_id()
+    _declare_partner(kb, name="walled", kb_id=str(walled_id), path=str(locked / "kb"))
+    # **A cross-KB link, so `_unresolved_cross_kb` actually runs.** Without one, `wanted` is empty
+    # and it returns before touching the partner — so this test, named for "the third caller
+    # needing the same `try`", reached only `_linked_kbs`'s guard and neither of the two in the
+    # function the review added. Same class as the fixtures L6 kept shipping.
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    _link_to(kb, f"pnk://{walled_id}/{mint_doc_id()}")
+    locked.chmod(0o000)
+    try:
+        report = {c.name: (c.status, c.detail) for c in diagnose(load(kb)).checks}
+    finally:
+        locked.chmod(0o755)
+
+    status, detail = report["linked KBs"]
+    assert status is Status.WARN
+    assert "walled" in detail
+    assert report["links"][0] is Status.OK, "an unreadable partner was used as evidence of absence"
+
+
+def test_a_partner_whose_sidecars_cannot_all_be_read_is_not_used_as_evidence(
+    kb: Path, tmp_path: Path
+) -> None:
+    """An incomplete walk proves nothing — the rule `ScannedKb.complete` encodes for the delete.
+
+    If one of the partner's sidecars is unreadable, its document set is a subset of the truth, and
+    reporting a target "missing" on that basis reports absence of evidence as evidence of absence.
+    """
+    partner = _partner(tmp_path, "partner")
+    partner_id = load(partner).kb.id
+    real = _document_ids(partner)[0]
+    (partner / "docs" / "broken.md").write_text("# broken\n", encoding="utf-8")
+    (partner / "docs" / f"broken.md{SIDECAR_SUFFIX}").write_text(
+        "id: not-a-ulid\n", encoding="utf-8"
+    )
+    _declare_partner(kb, name="partner", kb_id=str(partner_id), path="../partner")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    _link_to(kb, f"pnk://{partner_id}/{mint_doc_id()}")
+
+    status, detail = checks(kb)["links"]
+    assert status is Status.OK, detail
+    assert "unresolved" not in detail
+    assert real  # the readable sidecar exists; the point is that a partial set is not used
+
+
+def test_doctor_writes_nothing_into_a_partner_kb(kb: Path, tmp_path: Path) -> None:
+    """DESIGN §6.2: a partner's index is *"not"* what cross-KB questions are answered from, *"and
+    which could not be read without holding a second KB's lock"*.
+
+    Reading it with `mode=ro` is not enough — measured, SQLite materialises `index.db-shm` and
+    `index.db-wal` inside the partner's `.pinakes/` and a read-only connection cannot checkpoint
+    them away on close. A diagnostic command must not write into a KB it was asked to look at.
+    """
+    partner = _partner(tmp_path, "partner")
+    partner_id = load(partner).kb.id
+    _declare_partner(kb, name="partner", kb_id=str(partner_id), path="../partner")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    _link_to(kb, f"pnk://{partner_id}/{mint_doc_id()}")
+    before = sorted(p.name for p in (partner / ".pinakes").iterdir())
+
+    assert checks(kb)["links"][0] is Status.WARN  # the check really ran and found the target absent
+
+    assert sorted(p.name for p in (partner / ".pinakes").iterdir()) == before
+
+
+def test_a_partner_without_an_index_still_answers(kb: Path, tmp_path: Path) -> None:
+    """Committed sidecars, not the index — so a freshly cloned partner with no `.pinakes/` at all
+    answers exactly as well. That is the case §6.2 gives as the reason for the rule."""
+    partner = _partner(tmp_path, "partner")
+    partner_id = load(partner).kb.id
+    real = _document_ids(partner)[0]
+    _declare_partner(kb, name="partner", kb_id=str(partner_id), path="../partner")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    shutil.rmtree(partner / ".pinakes")
+
+    _link_to(kb, f"pnk://{partner_id}/{mint_doc_id()}")
+    assert "1 cross-KB unresolved" in checks(kb)["links"][1]
+
+    _link_to(kb, f"pnk://{partner_id}/{real}")
+    detail = checks(kb)["links"][1]
+    assert "unresolved" not in detail, detail
+
+
+def test_an_internal_link_is_not_counted_as_cross_kb(kb: Path) -> None:
+    """`0 cross-KB` is the assertion that stops the count meaning "every authored link"."""
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    _link_to(kb, f"pnk://{load(kb).kb.id}/{mint_doc_id()}")
+
+    assert "0 cross-KB" in checks(kb)["links"][1]
+
+
+def test_a_tilde_linked_kb_path_is_warned_as_absolute(kb: Path) -> None:
+    """`Path("~/kb").is_absolute()` is `False`, but `linkscan._resolve` expands first and *then*
+    takes the absolute branch — so a `~` path is never resolved relative to the KB root, which is
+    the property this warning defends. Checking the unexpanded string let every `~` path through."""
+    _declare_partner(kb, name="home", kb_id=str(mint_kb_id()), path="~/definitely-not-here-xyz")
+
+    status, detail = checks(kb)["linked KBs"]
+    assert status is Status.WARN
+    assert "absolute: home" in detail
+
+
+def test_a_linked_kb_absent_from_this_machine_warns(kb: Path) -> None:
+    """A fact about this machine, not about the KB — so a WARN, never a FAIL: `cli.py`'s `doctor`
+    exits non-zero only on `Status.FAIL`, and a partner you have not cloned is not a broken KB."""
+    _declare_partner(kb, name="ghost", kb_id=str(mint_kb_id()), path="../not-cloned")
+
+    status, detail = checks(kb)["linked KBs"]
+    assert status is Status.WARN
+    assert "ghost (no such directory)" in detail
+    assert "Clone it" in _remedy(kb, "linked KBs")
+
+
+def test_a_linked_kb_path_that_resolves_to_nothing_warns_with_the_reason(kb: Path) -> None:
+    """`resolve_path` answers `None` for text that names no path at all, and `why_unresolvable`
+    gives the reason — the fault, not the category."""
+    _declare_partner(kb, name="broken", kb_id=str(mint_kb_id()), path="~nosuchuser12345/kb")
+
+    status, detail = checks(kb)["linked KBs"]
+    assert status is Status.WARN
+    assert "broken (the `~` cannot be expanded" in detail
+    assert str(kb) not in detail  # names what the author wrote, never the local KB root
+    assert "names no path at all" in _remedy(kb, "linked KBs")
+    # ...and not *also* reported absolute: `expanduser()` raises for an unknown user, and a path
+    # that names nothing is unresolvable rather than escaping. A documented decision needs a test.
+    assert "absolute" not in detail
+
+
+def test_an_absolute_linked_kb_path_warns(kb: Path, tmp_path: Path) -> None:
+    """Reported **whether or not it resolves**: a committed absolute path publishes one machine's
+    filesystem layout to everyone who clones the KB, and stops working the moment anyone checks it
+    out elsewhere. Here it resolves and the KB is really there, so nothing else fires."""
+    partner = _partner(tmp_path, "partner")
+    _declare_partner(kb, name="abs", kb_id=str(load(partner).kb.id), path=str(partner))
+
+    status, detail = checks(kb)["linked KBs"]
+    assert status is Status.WARN
+    assert "absolute: abs" in detail
+    assert "not here" not in detail
+    assert "publishes this machine's" in _remedy(kb, "linked KBs")
+
+
+def test_a_kb_declaring_no_linked_kbs_still_produces_the_check(kb: Path) -> None:
+    """**One `Check`, always.** `test_every_doctor_check_is_exercised_by_a_test` builds its set
+    from `diagnose()` on a fixture that declares no `[[links.kb]]`, so a check that disappears
+    there is one the coverage guard cannot see. Returning it unconditionally exposes this check to
+    that guard instead of exempting it via the `conditional` map."""
+    status, detail = checks(kb)["linked KBs"]
+    assert status is Status.OK
+    assert detail == "none declared"
+
+
+def test_the_linked_kbs_check_runs_without_an_index(kb: Path) -> None:
+    """It lives outside `_index`, which returns at its first branch when `.pinakes/` is absent —
+    and a freshly cloned KB with no index is exactly when a committed absolute path matters."""
+    assert not (kb / ".pinakes" / "index.db").exists()
+    _declare_partner(kb, name="ghost", kb_id=str(mint_kb_id()), path="../not-cloned")
+
+    assert checks(kb)["linked KBs"][0] is Status.WARN
 
 
 def test_a_dangling_link_inside_this_kb_is_a_warning_naming_how_many(kb: Path) -> None:
@@ -972,9 +1441,15 @@ def test_a_dangling_link_inside_this_kb_is_a_warning_naming_how_many(kb: Path) -
     assert "1 dangling inside this KB" in detail
 
 
-def test_a_cross_kb_link_is_counted_and_declared_unchecked(kb: Path) -> None:
-    """Nothing resolves a link into another KB until the links release, and the check says so
-    rather than counting it as healthy."""
+def test_a_cross_kb_link_into_a_kb_not_here_is_counted_but_not_called_unresolved(
+    kb: Path,
+) -> None:
+    """A target in a KB this machine does not have is **not** evidence of anything.
+
+    `graph/provider.py` refuses to call one `unresolved` for exactly this reason, and doctor may
+    not assert what the index has no standing to know either. It is counted as cross-KB and left
+    at OK; the absent KB itself is `_linked_kbs`'s business, as a fact about this machine.
+    """
     sync(load(kb), options=SyncOptions(), now="20260729 05:31")
     sidecar = kb / "docs" / f"a.md{SIDECAR_SUFFIX}"
     body = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
@@ -984,4 +1459,6 @@ def test_a_cross_kb_link_is_counted_and_declared_unchecked(kb: Path) -> None:
 
     status, detail = checks(kb)["links"]
     assert status is Status.OK
-    assert "1 cross-KB (unchecked until the links release)" in detail
+    assert "1 cross-KB" in detail
+    assert "unresolved" not in detail
+    assert "unchecked until the links release" not in detail

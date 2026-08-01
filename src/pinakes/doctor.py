@@ -11,6 +11,7 @@ orphaned sidecars, after printing every path it is about to remove (§6.4).
 """
 
 import sqlite3
+import tomllib
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -53,6 +54,14 @@ from pinakes.extract import cache as extract_cache
 from pinakes.extract.floors import load_floors
 from pinakes.hooks import FREE_BACKEND_FLAG, HOOKS, hooks_dir
 from pinakes.ids import DocId
+from pinakes.linkscan import (
+    MANIFEST_NAME,
+    partner_sources,
+    resolve_path,
+    sidecars_under,
+    why_not_a_kb,
+    why_unresolvable,
+)
 from pinakes.lock import LOCK_NAME, read_holder
 from pinakes.manifest import Manifest
 from pinakes.search import check_coherence
@@ -100,6 +109,7 @@ def diagnose(manifest: Manifest) -> Report:
     checks: list[Check] = []
     checks.extend(_environment())
     checks.append(_template(manifest))
+    checks.append(_linked_kbs(manifest))
     checks.extend(_backends(manifest))
     checks.append(_extraction(manifest))
 
@@ -654,31 +664,233 @@ def _calibration(manifest: Manifest) -> Check:
 
 
 def _links(connection: sqlite3.Connection, manifest: Manifest, active: int) -> Check:
-    """Link coverage is the ceiling on cross-KB answers, so it is reported, not hidden (§6.2)."""
+    """Link coverage is the ceiling on cross-KB answers, so it is reported, not hidden (§6.2).
+
+    **The ratio, not the edge count.** §6.2 promises "linked docs / total docs", and the shipped
+    check printed `16 links, 4 cross-KB` — an edge count, with a ratio only in the branch where it
+    is zero. On `tests/demo-kb` those 16 edges come from 8 of 30 documents, so the 27% ceiling the
+    §6.2 row is tabled against was never printed. `COUNT(DISTINCT src_doc_id)` over the same
+    `origin = 'sidecar'` filter is the metric; the filter itself was already right.
+
+    **This number is as of the last sync**, because it counts index rows where L1's
+    `tools/link_density_gate.py` counts sidecar files. One `pnk link` without a re-sync makes them
+    disagree — measured on a copy of the committed corpus: gate 17, doctor 16. The detail line says
+    so rather than pretending they cannot differ.
+    """
+    # **Joined to `documents`, because a soft delete leaves the links behind.** `sync`'s
+    # `SoftDelete` sets `state = 'deleted'` and drops the chunks; it never deletes that document's
+    # `origin = 'sidecar'` rows. `active` counts active documents only, so an unjoined numerator
+    # came from a different population than its denominator — measured at `2 of 1 documents linked
+    # (200%)` after deleting one of two documents that linked to each other.
     rows = connection.execute(
-        "SELECT dst_kb_id, dst_doc_id FROM links WHERE src_kb_id = ? AND origin = 'sidecar'",
+        "SELECT l.src_doc_id, l.dst_kb_id, l.dst_doc_id FROM links l "
+        "JOIN documents d ON d.id = l.src_doc_id AND d.state = 'active' "
+        "WHERE l.src_kb_id = ? AND l.origin = 'sidecar'",
         (manifest.kb.id,),
     )
-    targets = [(str(row["dst_kb_id"]), DocId(str(row["dst_doc_id"]))) for row in rows]
-    if not targets:
-        return Check("links", Status.OK, f"none authored (0 of {active} documents linked)")
+    authored = [
+        (DocId(str(row["src_doc_id"])), str(row["dst_kb_id"]), DocId(str(row["dst_doc_id"])))
+        for row in rows
+    ]
+    linked = len({src for src, _, _ in authored})
+    share = f"{linked} of {active} documents linked ({linked / active:.0%})" if active else "0 of 0"
+
+    if not authored:
+        # **A nudge, KB-wide.** Not per-document: L1's ≤ 35% cap guarantees a per-document rule
+        # would fire on both committed corpora by construction, which is a check that cannot pass.
+        return Check(
+            "links",
+            Status.WARN,
+            f"none authored ({share})",
+            "Nothing links to anything, so `pnk links` has nothing to traverse and a cross-KB "
+            "answer has no path to follow. `pnk link <source> <target> --rel <relation>` "
+            "authors one.",
+        )
 
     known = {
         DocId(str(row["id"]))
         for row in connection.execute("SELECT id FROM documents WHERE state = 'active'")
     }
-    dangling = [doc for kb_id, doc in targets if kb_id == manifest.kb.id and doc not in known]
-    external = sum(1 for kb_id, _ in targets if kb_id != manifest.kb.id)
+    dangling = [doc for _, kb_id, doc in authored if kb_id == manifest.kb.id and doc not in known]
+    external = [(kb_id, doc) for _, kb_id, doc in authored if kb_id != manifest.kb.id]
+    unresolved = _unresolved_cross_kb(manifest, external)
 
-    detail = f"{len(targets)} links, {external} cross-KB (unchecked until the links release)"
+    detail = f"{share}, {len(authored)} links, {len(external)} cross-KB (as of the last sync)"
+    remedies: list[str] = []
     if dangling:
-        return Check(
-            "links",
-            Status.WARN,
-            f"{detail}; {len(dangling)} dangling inside this KB",
-            "A dangling link points at a document that no longer exists here.",
+        detail += f"; {len(dangling)} dangling inside this KB"
+        remedies.append("A dangling link points at a document that no longer exists here.")
+    if unresolved:
+        detail += f"; {len(unresolved)} cross-KB unresolved"
+        remedies.append(
+            "A cross-KB target names a document its own KB does not have. Re-sync that KB, or "
+            "the link was written against a document since removed."
         )
+    if remedies:
+        return Check("links", Status.WARN, detail, " ".join(remedies))
     return Check("links", Status.OK, detail)
+
+
+def _unresolved_cross_kb(
+    manifest: Manifest, external: list[tuple[str, DocId]]
+) -> list[tuple[str, DocId]]:
+    """Cross-KB targets whose own KB is on this machine and does not have the document.
+
+    **The partner's committed sidecars, never its index** — DESIGN §6.2, verbatim: reverse links
+    come from the other KB's sidecars, *"not its index, which is gitignored and simply absent in a
+    fresh clone, and which could not be read without holding a second KB's lock"*. The first
+    version of this function opened `<partner>/.pinakes/index.db` read-only, which breaks that rule
+    two ways: measured, a `mode=ro` connection still materialises `index.db-shm` and `index.db-wal`
+    inside the partner's `.pinakes/` and cannot checkpoint them away on close, so a *diagnostic*
+    command writes into a KB it was only asked to look at.
+
+    **Keyed on the partner's own `[kb] id`, never the local declaration.** `linkscan.scan_one`
+    refuses a mismatch with `LinkedKbIdMismatchError` because trusting the manifest files another
+    KB's links under this alias; the first version keyed on `linked.id` and so resolved targets
+    against whichever KB happened to sit at that path — measured both ways, it silently resolved a
+    target that did not exist and reported one that did.
+
+    **An incomplete walk proves nothing.** If any sidecar cannot be read, or `[sources]` reports a
+    problem, that partner is skipped rather than treated as "does not have it" — the same rule
+    `ScannedKb.complete` encodes for the delete, for the same reason: absence of evidence here
+    would be reported to a user as evidence of absence.
+
+    **Only KBs that resolved.** A target in a KB not checked out here is not evidence of anything —
+    `graph/provider.py` refuses to call one `unresolved` for exactly this reason, and doctor may not
+    assert what it has no standing to know either. Absent KBs are `_linked_kbs`'s business, as a
+    fact about this machine.
+
+    **`owner=partner_id` is the correct value and is unobservable**, measured: only `.id` is kept,
+    and `owner` reaches nothing but `resolve_link`, which expands `pnk://self/…` in links that are
+    then discarded. Substituting the local id is caught by no test and changes no output. It stays
+    because it is what this argument means, and because a later reader keeping the links — which is
+    the shape `linkscan` exists to get right — would need it. Recorded so nobody re-derives it.
+
+    **Cost: linear in the partner's corpus, uncached, on every `pnk doctor`.** Measured at
+    ~0.38ms per sidecar, dominated by `read_sidecar`: 100 documents 0.04s, 1 000 0.38s, 5 000 1.9s.
+    `linkscan.scan` amortises the identical walk behind `TTL_MINUTES`; this has no equivalent
+    because a diagnostic is expected to be current, and caching a health check is how a health
+    check comes to report yesterday's health. Acceptable at the sizes pinakes targets — the
+    corpus-size warning fires at 50k *chunks* — and stated here rather than discovered later.
+    """
+    wanted = {kb_id for kb_id, _ in external}
+    if not wanted:
+        return []
+
+    have: dict[str, set[DocId]] = {}
+    for linked in manifest.links:
+        root = resolve_path(manifest.root, linked.path)
+        if root is None:
+            continue
+        try:
+            partner_id, roots, include, exclude = partner_sources(root)
+        except (OSError, ValueError, tomllib.TOMLDecodeError, PinakesError):
+            continue
+        if str(partner_id) not in wanted:
+            continue
+        try:
+            sidecars, problems = sidecars_under(root, roots, include, exclude)
+        except (OSError, ValueError, NotImplementedError, PinakesError):
+            continue
+        if problems:
+            continue  # `[sources]` itself is unusable — the walk cannot have been exhaustive
+        ids: set[DocId] = set()
+        for path in sidecars:
+            try:
+                ids.add(read_sidecar(path, owner=partner_id).id)
+            except PinakesError:
+                break
+        else:
+            have[str(partner_id)] = ids
+
+    return [(kb, doc) for kb, doc in external if kb in have and doc not in have[kb]]
+
+
+def _is_absolute_once_expanded(raw: str) -> bool:
+    """Whether a `[[links.kb]] path` escapes the KB root — after `~` expansion, as `resolve_path`
+    does it.
+
+    `Path("~/kb").is_absolute()` is `False`, but `linkscan._resolve` expands first and *then* takes
+    the absolute branch, so `~/kb` is never resolved relative to the KB root — which is the property
+    this warning defends. Checking the unexpanded string let every `~` path through.
+
+    `expanduser()` raises `RuntimeError` for an unknown user; that path is unresolvable and reported
+    as such by the caller, so it is not additionally absolute.
+    """
+    try:
+        return Path(raw).expanduser().is_absolute()
+    except RuntimeError:
+        return False
+
+
+def _linked_kbs(manifest: Manifest) -> Check:
+    """Every `[[links.kb]]` entry: is its path usable, and is that KB actually here?
+
+    **One `Check`, always** — `OK, "none declared"` when there are none, never an absent check.
+    `test_every_doctor_check_is_exercised_by_a_test` builds its set from `diagnose()` on a fixture
+    that declares no linked KB, so a check that disappears there is a check the coverage guard
+    cannot see. Returning one unconditionally exposes this to that guard rather than exempting it.
+
+    **Outside `_index`,** which returns at its first branch when `.pinakes/` is absent. This needs
+    only the manifest, and a freshly cloned KB with no index is exactly when a committed absolute
+    path matters most.
+
+    **Nothing here is FAIL.** `cli.py`'s `doctor` exits non-zero only on `Status.FAIL`, and none of
+    these is a broken KB — a partner not checked out on this machine is a fact about the machine.
+    """
+    if not manifest.links:
+        return Check("linked KBs", Status.OK, "none declared")
+
+    unresolvable: list[str] = []
+    absent: list[str] = []
+    absolute: list[str] = []
+    resolvable = 0
+
+    for linked in manifest.links:
+        if _is_absolute_once_expanded(linked.path):
+            # Reported whether or not it resolves: a committed absolute path publishes one
+            # machine's filesystem layout to everyone who clones the KB, and stops working the
+            # moment anyone checks it out elsewhere.
+            absolute.append(linked.name)
+        root = resolve_path(manifest.root, linked.path)
+        if root is None:
+            unresolvable.append(f"{linked.name} ({why_unresolvable(manifest.root, linked.path)})")
+            continue
+        try:
+            if (root / MANIFEST_NAME).is_file():
+                resolvable += 1
+            else:
+                absent.append(f"{linked.name} ({why_not_a_kb(root)})")
+        except OSError as exc:
+            # `why_not_a_kb` raises on an unreadable parent (`~root` is mode 0700 on macOS) and on
+            # ENAMETOOLONG, and so does the probe. Its docstring names this as its third caller
+            # needing the same `try` that `linkscan.scan_one` and `link._via_alias` have: a
+            # diagnostic command reporting a traceback is the one outcome `pnk doctor` may not have.
+            absent.append(f"{linked.name} ({exc.strerror or exc})")
+
+    detail = f"{len(manifest.links)} declared, {resolvable} resolvable"
+    remedies: list[str] = []
+    if unresolvable:
+        detail += f"; unresolvable: {', '.join(unresolvable)}"
+        remedies.append(
+            "A `[[links.kb]] path` that names no path at all cannot be read on any machine. "
+            "Correct it in `pinakes.toml`."
+        )
+    if absent:
+        detail += f"; not here: {', '.join(absent)}"
+        remedies.append(
+            "That KB is not on this machine, so its inbound links cannot be read. Clone it to "
+            "the declared path, or drop the `[[links.kb]]` entry."
+        )
+    if absolute:
+        detail += f"; absolute: {', '.join(absolute)}"
+        remedies.append(
+            "An absolute `path` is committed to `pinakes.toml` and publishes this machine's "
+            "layout. Make it relative to the KB root, for example `../partner-kb`."
+        )
+    if remedies:
+        return Check("linked KBs", Status.WARN, detail, " ".join(remedies))
+    return Check("linked KBs", Status.OK, detail)
 
 
 def _lock(manifest: Manifest) -> Check:

@@ -521,9 +521,27 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | a disabled reranker is reported as configured, not as missing | I9 | `tests/test_doctor.py::test_the_reranker_check_says_when_reranking_is_off_rather_than_loading_one` |
 | the model cache check names where weights resolve | I9 | `tests/test_doctor.py::test_the_model_cache_check_names_the_directory_weights_resolve_under` |
 | an unavailable extension loader says what it does *not* affect | I9 | `tests/test_doctor.py::test_the_extensions_check_explains_that_it_only_gates_an_unshipped_tier` |
-| link coverage is reported even when it is zero | I9 | `tests/test_doctor.py::test_link_coverage_is_reported_even_when_nothing_is_linked` |
 | a dangling link inside the KB is a warning | I9 | `tests/test_doctor.py::test_a_dangling_link_inside_this_kb_is_a_warning_naming_how_many` |
-| a cross-KB link is counted and declared unchecked | I9 | `tests/test_doctor.py::test_a_cross_kb_link_is_counted_and_declared_unchecked` |
+| link coverage is the **ratio**, not the edge count | L7 | `tests/test_doctor.py::test_link_coverage_reports_the_ratio_not_the_edge_count` |
+| ...counting authored links only, never reverse-scanned rows | L7 | `tests/test_doctor.py::test_link_coverage_counts_authored_links_only` |
+| a KB with no authored links nudges | L7 | `tests/test_doctor.py::test_a_kb_with_no_authored_links_nudges` |
+| a dangling cross-KB target warns, when its KB is here to ask | L7 | `tests/test_doctor.py::test_a_dangling_cross_kb_target_warns_with_a_reason` |
+| ...and one its own KB does have is not unresolved | L7 | `tests/test_doctor.py::test_a_cross_kb_target_that_its_own_kb_does_have_is_not_unresolved` |
+| ...while a KB absent from this machine is counted, not judged | L7 | `tests/test_doctor.py::test_a_cross_kb_link_into_a_kb_not_here_is_counted_but_not_called_unresolved` |
+| a linked KB absent from this machine warns | L7 | `tests/test_doctor.py::test_a_linked_kb_absent_from_this_machine_warns` |
+| ...one whose path resolves to nothing warns with the reason | L7 | `tests/test_doctor.py::test_a_linked_kb_path_that_resolves_to_nothing_warns_with_the_reason` |
+| ...and an absolute path warns even when it resolves | L7 | `tests/test_doctor.py::test_an_absolute_linked_kb_path_warns` |
+| the linked-KBs check exists even with none declared, so the coverage guard sees it | L7 | `tests/test_doctor.py::test_a_kb_declaring_no_linked_kbs_still_produces_the_check` |
+| ...and runs without an index, when an absolute path matters most | L7 | `tests/test_doctor.py::test_the_linked_kbs_check_runs_without_an_index` |
+| a soft-deleted document does not inflate the coverage ratio | L7 review | `tests/test_doctor.py::test_a_deleted_document_leaves_the_coverage_ratio_honest` |
+| doctor writes nothing into a partner KB (§6.2) | L7 review | `tests/test_doctor.py::test_doctor_writes_nothing_into_a_partner_kb` |
+| ...and answers from a partner with no index at all | L7 review | `tests/test_doctor.py::test_a_partner_without_an_index_still_answers` |
+| a cross-KB target resolves against the partner's **own** `[kb] id` | L7 review | `tests/test_doctor.py::test_a_cross_kb_target_is_resolved_against_the_partners_own_id`, `::test_a_partner_is_found_by_its_own_id_even_when_the_manifest_declares_another` |
+| an incomplete partner walk is never used as evidence of absence | L7 review | `tests/test_doctor.py::test_a_partner_whose_sidecars_cannot_all_be_read_is_not_used_as_evidence`, `::test_a_partner_whose_sources_are_unusable_is_not_used_as_evidence` |
+| an internal link is not counted as cross-KB | L7 review | `tests/test_doctor.py::test_an_internal_link_is_not_counted_as_cross_kb` |
+| a `~` linked-KB path is warned as absolute | L7 review | `tests/test_doctor.py::test_a_tilde_linked_kb_path_is_warned_as_absolute` |
+| an unreadable linked-KB path is a warning, not a traceback | L7 review | `tests/test_doctor.py::test_an_unreadable_linked_kb_path_is_a_warning_not_a_traceback` |
+| ...and an unusable partner `roots` entry likewise | L7 review 2 | `tests/test_doctor.py::test_a_partner_roots_entry_that_cannot_be_resolved_is_not_a_traceback` |
 
 ## The evaluation is reproducible (G1)
 
