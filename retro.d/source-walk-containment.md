@@ -55,3 +55,36 @@ skip: a pattern reaching outside that matched only directories or only sidecars 
 escape through a symlinked directory, because `pathlib`'s recursive `**` skips them. Any user who
 writes a non-recursive pattern loses that, which is exactly the shape of a guarantee nobody knows
 they are relying on. Stated in `walk_sources`' docstring rather than left as folklore.
+
+### Mutation round — three survivors, two of them defects (20260801 13:38)
+
+Eleven guards broken on purpose. Eight were caught immediately. The three that survived were worth
+more than the eight:
+
+**HIGH — the per-root skip copied from `linkscan` was data loss here.** `sidecars_under` does
+`if pattern in escaping: continue`, so a pattern known to escape contributes nothing under any later
+root — correct there, where a dropped candidate costs one inbound link and a partner's `[sources]`
+is one statement about one KB. Copied into `walk_sources` it means something else entirely: the
+escapes *this* loop can see are **symlinks**, which are a property of one directory rather than of
+the pattern, and a dropped candidate here is a **deleted index row and an orphaned sidecar**. So
+`docs/escape -> /outside` silently stopped `*/*.md` collecting anything under an unrelated second
+root. Removed, with a test. "Copy the predicate, do not re-derive it" was the right instruction and
+this was still the wrong thing to copy — the predicate and the policy around it are different
+decisions.
+
+**MEDIUM — the containment check ran before `is_file()`, and no test could tell.** Every symlink
+test matched a *file*, so moving the check after the skip changed nothing observable. The case the
+ordering exists for is a pattern that matches only a **directory** (or only sidecars): it hits that
+`continue` first, and the walk leaves the KB reporting nothing. `*/*` against a symlinked directory
+containing a subdirectory is that case, and it now has a test.
+
+**MEDIUM — the `break` bounded nothing, because `sorted()` had already drained the generator.** The
+plan carried `break`, not `continue`, on a 360× measurement from `linkscan` review 12 — where the
+loop is lazy. Written here as `for candidate in sorted(root.glob(pattern))` the enumeration a
+symlinked escape triggers has *already happened* by the time the first candidate is inspected, so
+the `break` saved only the loop body, and the `resolved` cache made even that one dict lookup. This
+is the shape of a guard inherited with its justification and without the property the justification
+rested on. The loop is now lazy; output order does not depend on it, because `walk_sources` sorts
+what it returns and the per-root sort only decided which of two candidates sharing one key won —
+and they describe the same file with the same hash. Measured: **301 entries enumerated before, 1
+after**, and both the `break` and a reversion to `sorted()` are caught by that number.

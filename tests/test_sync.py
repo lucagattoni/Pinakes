@@ -1644,3 +1644,80 @@ def test_one_file_reached_by_two_legal_spellings_is_one_document(kb: Path) -> No
     # The unmatched sweep compares against these same keys, so a `..` in one made an *indexed*
     # document look like a file no pattern had picked up.
     assert report.unmatched == ()
+
+
+def test_an_escaping_pattern_that_matches_only_a_directory_is_still_caught(kb: Path) -> None:
+    """Containment runs *before* the `is_file()` skip, and this is the case that proves it.
+
+    A pattern reaching outside that matches only directories — or only sidecars — hits one of the
+    `continue`s below the check first, so with the order reversed the walk leaves the KB and reports
+    nothing at all. Every other symlink test here matches a file, where the ordering is invisible.
+    """
+    outside = kb.parent / "outside"
+    (outside / "sub").mkdir(parents=True)
+    (kb / "docs" / "escape").symlink_to(outside, target_is_directory=True)
+    _set_include(kb, "*/*")  # matches `docs/escape/sub`, a directory, and nothing else
+
+    report = run(kb)
+
+    assert report.escaping_patterns == ("*/*",), "an escape matching no file is still an escape"
+
+
+def test_an_escape_under_one_root_does_not_drop_documents_under_another(kb: Path) -> None:
+    """A symlink is a property of one directory, never of the pattern — so it may not drop files.
+
+    `linkscan.sidecars_under` skips a known-escaping pattern under every later root, and copying
+    that here would be data loss rather than caution: a dropped document is a deleted index row and
+    an orphaned sidecar, where a dropped partner candidate is one missing inbound link.
+    """
+    outside = kb.parent / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("# Secret\n\nNot ours.\n", encoding="utf-8")
+    (kb / "docs" / "escape").symlink_to(outside, target_is_directory=True)
+    other = kb / "other" / "sub"
+    other.mkdir(parents=True)
+    (other / "keep.md").write_text("# Keep\n\nA document about retrieval.\n", encoding="utf-8")
+    text = (kb / "pinakes.toml").read_text(encoding="utf-8")
+    (kb / "pinakes.toml").write_text(
+        text.replace('roots = ["docs/"]', 'roots = ["docs/", "other/"]'), encoding="utf-8"
+    )
+    _set_include(kb, "*/*.md")
+
+    report = run(kb)
+
+    assert report.escaping_patterns == ("*/*.md",)
+    assert {row["path"] for row in index(kb)} == {"other/sub/keep.md"}, (
+        "an escape under one root must not stop the same pattern collecting under another"
+    )
+
+
+def test_a_symlinked_escape_stops_the_walk_rather_than_enumerating_the_tree(kb: Path) -> None:
+    """The `break`'s only justification — and it has one only because the loop is lazy.
+
+    Layer 1 cannot pre-empt a symlinked escape (it exists on disk, not in the manifest), so this
+    loop is the only thing bounding it. Written as `sorted(root.glob(pattern))` the generator is
+    drained before the first candidate is inspected, and the `break` then saves nothing at all:
+    the enumeration it exists to stop has already run.
+    """
+    outside = kb.parent / "outside"
+    outside.mkdir()
+    for number in range(300):
+        (outside / f"f{number:03d}.md").write_text("# F\n\nText.\n", encoding="utf-8")
+    (kb / "docs" / "escape").symlink_to(outside, target_is_directory=True)
+    _set_include(kb, "*/*.md")
+
+    pulled = 0
+    real_glob = Path.glob
+
+    def counting_glob(self: Path, pattern: str, **kwargs: Any) -> Iterator[Path]:
+        nonlocal pulled
+        for entry in real_glob(self, pattern, **kwargs):
+            pulled += 1
+            yield entry
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(Path, "glob", counting_glob)
+        report = run(kb)
+
+    assert report.escaping_patterns == ("*/*.md",)
+    assert pulled < 50, f"the escape enumerated {pulled} of 300 entries before stopping"

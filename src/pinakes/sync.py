@@ -478,9 +478,23 @@ def walk_sources(
         if not root.is_dir():
             continue
         for pattern in manifest.sources.include:
-            if pattern in escaping:
-                continue
-            for candidate in sorted(root.glob(pattern)):
+            # **Deliberately *not* `if pattern in escaping: continue`**, which is what
+            # `linkscan.sidecars_under` does and what this was first written as. There, skipping a
+            # known-escaping pattern under every later root is right: a partner's `[sources]` is one
+            # statement about one KB, and the cost of dropping a candidate is one inbound link.
+            # Here the cost is a **document** — a dropped file is a deleted index row and an
+            # orphaned sidecar. The escapes this loop can see are symlinks, which are a property of
+            # one directory rather than of the pattern, so `docs/escape -> /outside` would have
+            # silently stopped `*/*.md` from collecting anything under an unrelated second root.
+            # The `break` below bounds each root's walk; that is the whole bound needed.
+            # **Iterated lazily, so the `break` below actually bounds something.** `sorted(...)`
+            # drains the generator before the first candidate is inspected, which means the
+            # enumeration a symlinked escape triggers has already happened by the time it is
+            # noticed — and layer 1 cannot pre-empt that one, because the escape exists only on
+            # disk. Output order does not depend on this: `walk_sources` sorts what it returns, and
+            # the only thing the per-root sort decided was which of two candidates sharing one key
+            # won — they describe the same file and carry the same hash.
+            for candidate in root.glob(pattern):
                 # **Containment before the `is_file` skip**, not after: a pattern reaching outside
                 # that matched only directories, or only sidecars, hit one of the `continue`s below
                 # first — so the walk left the KB and reported nothing at all.
