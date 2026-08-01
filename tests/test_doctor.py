@@ -9,7 +9,7 @@ from types import ModuleType
 import numpy as np
 import pytest
 import yaml
-from conftest import pdf_extraction_runnable, permissions_are_enforced
+from conftest import pdf_extraction_runnable
 
 from pinakes import store
 from pinakes.budget.prices import Prices, load_prices
@@ -1257,17 +1257,13 @@ def test_a_partner_roots_entry_that_cannot_be_resolved_is_not_a_traceback(
 
 
 def test_an_unreadable_linked_kb_path_is_a_warning_not_a_traceback(
-    kb: Path, tmp_path: Path
+    kb: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`why_not_a_kb` raises `OSError` on an unreadable parent, and its docstring names this command
     as the third caller needing the same `try` that `linkscan.scan_one` and `link._via_alias` have.
 
     A diagnostic command reporting a traceback is the one outcome `pnk doctor` may not have.
     """
-    if not permissions_are_enforced(tmp_path):
-        pytest.skip(
-            "this process bypasses directory permissions (root); the fixture cannot be built"
-        )
     locked = tmp_path / "locked"
     (locked / "kb").mkdir(parents=True)
     walled_id = mint_kb_id()
@@ -1278,11 +1274,21 @@ def test_an_unreadable_linked_kb_path_is_a_warning_not_a_traceback(
     # function the review added. Same class as the fixtures L6 kept shipping.
     sync(load(kb), options=SyncOptions(), now="20260729 05:31")
     _link_to(kb, f"pnk://{walled_id}/{mint_doc_id()}")
-    locked.chmod(0o000)
-    try:
-        report = {c.name: (c.status, c.detail) for c in diagnose(load(kb)).checks}
-    finally:
-        locked.chmod(0o755)
+
+    # **Injected, not chmod'd.** `chmod(0o000)` is not a portable way to deny a read: root ignores
+    # it, and CI's runner produced a stat that neither succeeded nor raised, so two runs of `main`
+    # went red on fixtures that could not build their own precondition. What is under test is that
+    # an `OSError` from the probe becomes a WARN rather than a traceback — so raise one.
+    real_is_file = Path.is_file
+
+    def denied(self: Path) -> bool:
+        if self.is_relative_to(locked):
+            raise PermissionError(13, "Permission denied")
+        return real_is_file(self)
+
+    monkeypatch.setattr(Path, "is_file", denied)
+    report = {c.name: (c.status, c.detail) for c in diagnose(load(kb)).checks}
+    monkeypatch.undo()
 
     status, detail = report["linked KBs"]
     assert status is Status.WARN
