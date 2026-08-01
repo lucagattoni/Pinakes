@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from conftest import permissions_are_enforced
 from test_sync_links import Kb, links_in, make_kb, run
 
 from pinakes.cli import EXIT_FAILURE, EXIT_OK, main
@@ -221,7 +222,7 @@ def test_a_kb_declaring_no_linked_kbs_says_that_rather_than_listing_none(
 
 
 def test_a_partner_kb_that_cannot_be_read_is_unreachable_not_a_traceback(
-    pair: tuple[Kb, Kb],
+    pair: tuple[Kb, Kb], tmp_path: Path
 ) -> None:
     """A partner directory this user cannot read raised `PermissionError` out of `cli.main`.
 
@@ -230,6 +231,10 @@ def test_a_partner_kb_that_cannot_be_read_is_unreachable_not_a_traceback(
     left the rest — a defect class is not closed until it has been searched for.
     """
     local, partner = pair
+    if not permissions_are_enforced(tmp_path):
+        pytest.skip(
+            "this process bypasses directory permissions (root); the fixture cannot be built"
+        )
     partner.root.chmod(0o000)
     try:
         with pytest.raises(PinakesError) as caught:
@@ -494,11 +499,17 @@ def test_a_symlinked_directory_cannot_carry_a_link_out_of_the_kb(
     assert links_of(local, "alpha") == []
 
 
-def test_an_unreadable_directory_is_refused_rather_than_crashing(pair: tuple[Kb, Kb]) -> None:
+def test_an_unreadable_directory_is_refused_rather_than_crashing(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
     """`Path.is_file()` swallows `ENOENT`/`ENOTDIR`/`EBADF`/`ELOOP` and nothing else, so `EACCES`
     and `ENAMETOOLONG` came out of `cli.main` as tracebacks — the same escaping-non-`PinakesError`
     class that `expanduser()` was dropped for, left behind because only that one was looked at."""
     local, _partner = pair
+    if not permissions_are_enforced(tmp_path):
+        pytest.skip(
+            "this process bypasses directory permissions (root); the fixture cannot be built"
+        )
     locked = local.root / "docs" / "locked"
     locked.mkdir()
     locked.chmod(0o000)
