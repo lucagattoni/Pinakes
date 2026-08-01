@@ -17,7 +17,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-from conftest import permissions_are_enforced
 from test_sync_links import Kb, links_in, make_kb, run
 
 from pinakes.cli import EXIT_FAILURE, EXIT_OK, main
@@ -222,7 +221,7 @@ def test_a_kb_declaring_no_linked_kbs_says_that_rather_than_listing_none(
 
 
 def test_a_partner_kb_that_cannot_be_read_is_unreachable_not_a_traceback(
-    pair: tuple[Kb, Kb], tmp_path: Path
+    pair: tuple[Kb, Kb], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A partner directory this user cannot read raised `PermissionError` out of `cli.main`.
 
@@ -231,20 +230,28 @@ def test_a_partner_kb_that_cannot_be_read_is_unreachable_not_a_traceback(
     left the rest — a defect class is not closed until it has been searched for.
     """
     local, partner = pair
-    if not permissions_are_enforced(tmp_path):
-        pytest.skip(
-            "this process bypasses directory permissions (root); the fixture cannot be built"
-        )
-    partner.root.chmod(0o000)
-    try:
-        with pytest.raises(PinakesError) as caught:
-            add(load(local.root), source="docs/alpha.md", target="partner:docs/one.md", rel="cites")
-        assert caught.value.message.startswith("linked KB `partner` ")
-        # The errno text, not just the class. Asserting only the prefix left the `strerror`
-        # extraction unpinned — blanking the reason kept all 42 tests green.
-        assert "Permission denied" in caught.value.message
-    finally:
-        partner.root.chmod(0o755)
+    # **The refusal is injected, not built out of filesystem permissions.** Two CI runs failed here
+    # while passing on macOS: `chmod(0o000)` is not a portable way to make a directory unreadable —
+    # root ignores it outright, and CI's runner produced a stat that neither succeeded nor raised
+    # `EACCES`, so `is_file()` answered `False` and the KB was reported as having no manifest.
+    # Skipping when the precondition cannot be built leaves the guard untested exactly where it
+    # broke. Raising the errno the guard exists for tests the guard on every platform.
+    real_is_file = Path.is_file
+
+    def denied(self: Path) -> bool:
+        if self.is_relative_to(partner.root):
+            raise PermissionError(13, "Permission denied")
+        return real_is_file(self)
+
+    monkeypatch.setattr(Path, "is_file", denied)
+    with pytest.raises(PinakesError) as caught:
+        add(load(local.root), source="docs/alpha.md", target="partner:docs/one.md", rel="cites")
+    monkeypatch.undo()
+
+    assert caught.value.message.startswith("linked KB `partner` ")
+    # The errno text, not just the class. Asserting only the prefix left the `strerror` extraction
+    # unpinned — blanking the reason kept all 42 tests green.
+    assert "Permission denied" in caught.value.message
 
 
 def test_a_linked_kb_path_that_will_not_expand_is_unreachable_not_a_traceback(
@@ -500,25 +507,29 @@ def test_a_symlinked_directory_cannot_carry_a_link_out_of_the_kb(
 
 
 def test_an_unreadable_directory_is_refused_rather_than_crashing(
-    pair: tuple[Kb, Kb], tmp_path: Path
+    pair: tuple[Kb, Kb], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`Path.is_file()` swallows `ENOENT`/`ENOTDIR`/`EBADF`/`ELOOP` and nothing else, so `EACCES`
     and `ENAMETOOLONG` came out of `cli.main` as tracebacks — the same escaping-non-`PinakesError`
     class that `expanduser()` was dropped for, left behind because only that one was looked at."""
     local, _partner = pair
-    if not permissions_are_enforced(tmp_path):
-        pytest.skip(
-            "this process bypasses directory permissions (root); the fixture cannot be built"
-        )
+    # Injected for the same reason as the partner case above: `chmod(0o000)` is not portable, and
+    # the guard under test is "`is_file()` raises something that is not `ENOENT`", which is exactly
+    # what this raises.
     locked = local.root / "docs" / "locked"
     locked.mkdir()
-    locked.chmod(0o000)
-    try:
-        with pytest.raises(PinakesError) as caught:
-            add(load(local.root), source="docs/locked/x.md", target="docs/beta.md", rel="cites")
-        assert "cannot be read" in caught.value.message
-    finally:
-        locked.chmod(0o755)
+    real_is_file = Path.is_file
+
+    def denied(self: Path) -> bool:
+        if self.is_relative_to(locked):
+            raise PermissionError(13, "Permission denied")
+        return real_is_file(self)
+
+    monkeypatch.setattr(Path, "is_file", denied)
+    with pytest.raises(PinakesError) as caught:
+        add(load(local.root), source="docs/locked/x.md", target="docs/beta.md", rel="cites")
+    monkeypatch.undo()
+    assert "cannot be read" in caught.value.message
 
     with pytest.raises(PinakesError) as caught:
         add(load(local.root), source=f"docs/{'a' * 300}.md", target="docs/beta.md", rel="cites")
