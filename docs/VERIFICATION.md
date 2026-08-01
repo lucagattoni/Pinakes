@@ -521,9 +521,18 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | a disabled reranker is reported as configured, not as missing | I9 | `tests/test_doctor.py::test_the_reranker_check_says_when_reranking_is_off_rather_than_loading_one` |
 | the model cache check names where weights resolve | I9 | `tests/test_doctor.py::test_the_model_cache_check_names_the_directory_weights_resolve_under` |
 | an unavailable extension loader says what it does *not* affect | I9 | `tests/test_doctor.py::test_the_extensions_check_explains_that_it_only_gates_an_unshipped_tier` |
-| link coverage is reported even when it is zero | I9 | `tests/test_doctor.py::test_link_coverage_is_reported_even_when_nothing_is_linked` |
 | a dangling link inside the KB is a warning | I9 | `tests/test_doctor.py::test_a_dangling_link_inside_this_kb_is_a_warning_naming_how_many` |
-| a cross-KB link is counted and declared unchecked | I9 | `tests/test_doctor.py::test_a_cross_kb_link_is_counted_and_declared_unchecked` |
+| link coverage is the **ratio**, not the edge count | L7 | `tests/test_doctor.py::test_link_coverage_reports_the_ratio_not_the_edge_count` |
+| ...counting authored links only, never reverse-scanned rows | L7 | `tests/test_doctor.py::test_link_coverage_counts_authored_links_only` |
+| a KB with no authored links nudges | L7 | `tests/test_doctor.py::test_a_kb_with_no_authored_links_nudges` |
+| a dangling cross-KB target warns, when its KB is here to ask | L7 | `tests/test_doctor.py::test_a_dangling_cross_kb_target_warns_with_a_reason` |
+| ...and one its own KB does have is not unresolved | L7 | `tests/test_doctor.py::test_a_cross_kb_target_that_its_own_kb_does_have_is_not_unresolved` |
+| ...while a KB absent from this machine is counted, not judged | L7 | `tests/test_doctor.py::test_a_cross_kb_link_into_a_kb_not_here_is_counted_but_not_called_unresolved` |
+| a linked KB absent from this machine warns | L7 | `tests/test_doctor.py::test_a_linked_kb_absent_from_this_machine_warns` |
+| ...one whose path resolves to nothing warns with the reason | L7 | `tests/test_doctor.py::test_a_linked_kb_path_that_resolves_to_nothing_warns_with_the_reason` |
+| ...and an absolute path warns even when it resolves | L7 | `tests/test_doctor.py::test_an_absolute_linked_kb_path_warns` |
+| the linked-KBs check exists even with none declared, so the coverage guard sees it | L7 | `tests/test_doctor.py::test_a_kb_declaring_no_linked_kbs_still_produces_the_check` |
+| ...and runs without an index, when an absolute path matters most | L7 | `tests/test_doctor.py::test_the_linked_kbs_check_runs_without_an_index` |
 
 ## The evaluation is reproducible (G1)
 
