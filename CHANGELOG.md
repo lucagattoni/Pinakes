@@ -10,6 +10,51 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] — 20260801 12:40
+
+**The graph release's gate was measured and cannot be reached on this corpus.** The expansion
+channel defaults on only if enough multi-hop golden-set questions *improve*, and an improvement can
+only come from one that fails today: 7 were needed, **1 fails**. So the structural edge set and its
+`schema_version` 3 bump do not start, and this release is the evaluation work that measured it.
+Numbers, and the two findings behind them, in
+[`docs/STATUS.md`](docs/STATUS.md#can-the-graph-releases-gate-be-reached--measured-20260801-1214).
+
+### Added
+
+- **Per-question evaluation outcomes are a committed artifact.** `python -m pinakes.eval <kb>
+  --write-baseline` now writes `eval/outcomes.json` beside `eval/baseline.json` — one row per
+  question (`id`, `kind`, `hit`, `hit_rank`, `confidence`) under a header recording the models and
+  retrieval settings the run used. `eval.score_rows` recomputes every metric from those rows alone,
+  so a golden set's per-question history is checkable offline, with no weights and no network. Six
+  aggregates cannot say *which* questions moved, and that is what a paired before/after comparison
+  needs.
+- **Questions carry a stable `id`.** Hand-written in the golden set and derived from the question
+  text when absent, so an existing `questions.yaml` still loads. A repeated id is refused: it is
+  what pairs a before row with an after row, so a duplicate silently drops a question from every
+  comparison.
+- **A `simple-lookup` class, and the golden set grows from 41 questions to 74.** Twenty ordinary
+  factual questions as the control class a graph channel must not damage, and thirteen further
+  single-KB multi-hop questions authored from corpus structure. The demo KB's baseline is rewritten
+  once for the growth; the previous one is preserved as `eval/baseline-pre-growth.json`, and a test
+  re-scores the committed artifact to prove the questions already in the set score exactly what
+  they scored before.
+
+### Changed
+
+- **A golden set's `kind` is validated against the known set instead of defaulting to `lexical`.**
+  An absent or unrecognised `kind` is now an error naming the six that exist. A silent default is a
+  claim about how a question was authored, and a wrong one puts it into a class whose per-class
+  score then measures two different things.
+- **An empty golden set skips the evaluation with a printed reason, rather than failing it.** The
+  `notes` template ships `questions: []` and scaffolds an empty `docs/`, so it cannot ship
+  questions naming documents that do not exist — which made `make eval` fail by construction on
+  every freshly `pnk init`ed KB. The committed golden set is still asserted to be non-empty, so an
+  *emptied* one cannot pass quietly.
+- **`pinakes.search.fused_candidates` exposes the fused candidate list** — the stage between
+  retrieval and reranking. It is what a graph channel takes as its roots and what the reachability
+  probe measures from; `search()` now calls it, so there is one implementation of the funnel rather
+  than a measurement that can drift from it.
+
 ## [0.6.0] — 20260801 10:51
 
 ### Added
@@ -1914,7 +1959,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.7.0
 [0.6.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.6.0
 [0.5.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.5.0
 [0.4.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.4.1

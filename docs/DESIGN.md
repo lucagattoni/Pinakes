@@ -897,14 +897,35 @@ A git hook can fire while an MCP server is answering. The policy:
 
 ## 7. Quality
 
-A golden set of questions, each with known-correct source chunks, lives with the demo KB and with
-each template. CI scores **recall@k, MRR, rerank precision, and the false-abstain / false-confidence
-rates of the §4.2 signal**, and fails the build on regression beyond a small tolerance.
+A golden set of questions, each with known-correct source chunks, lives with the demo KB. CI
+scores **recall@k, MRR, rerank precision, and the false-abstain / false-confidence rates of the
+§4.2 signal**, and fails the build on regression beyond a small tolerance.
+
+**A template ships no golden set**, and `make eval` **skips** with a printed reason rather than
+failing when it finds none. A template scaffolds an empty `docs/`, so any question it shipped would
+name a document that does not exist — an earlier version of this section said a golden set lives
+"with each template" while every committed template shipped `questions: []` against a harness that
+rejected it, which made a freshly scaffolded KB fail its own evaluation by construction. What keeps
+the skip from blessing an *emptied* golden set is that the committed one is asserted non-empty and
+a file whose `questions` key is merely misspelled is still an error.
 
 **Per class, not only in aggregate** — and the question count is itself a gated number. An aggregate
 hides a trade: a change that lifts one kind of question and pays for it out of another moves the
 headline rates by almost nothing, which is precisely the shape a graph channel has. A golden set
 that *shrank* is caught the same way, because losing its hard questions improves every rate.
+
+**And per question, not only per class.** Every run can emit `eval/outcomes.json` beside the
+baseline — one row per question (`id`, `kind`, `hit`, `hit_rank`, `confidence`) under a header
+naming the models and retrieval settings that produced it, because two artifacts from two
+configurations are otherwise indistinguishable on inspection. Six aggregates cannot say *which*
+questions moved, which is what a paired before/after comparison needs. The whole scoreboard is a
+function of those five fields, so a committed artifact is re-scorable offline with no weights and
+no network. Questions therefore carry a stable `id`: it is the only thing that pairs a before row
+with an after row, and a repeated one silently drops a question from every comparison.
+
+**A question's `kind` is validated, never defaulted.** An absent or unrecognised kind is an error
+naming the six that exist. Defaulting it is a claim about how the question was authored, and a
+wrong one puts it into a class whose score then measures two different things.
 
 **A scripted multi-hop question is scored on every hop**: it counts as found only when each hop's
 own query retrieves the document that hop names, so its `expect` is exactly the union of those
@@ -914,10 +935,22 @@ This is what makes fusion weights, chunk sizes and reranker choices *decidable* 
 superstitious. It is also unglamorous work that must not be deferred: retrieval tuning without a
 scoreboard is guessing, and guessing at the foundation is expensive later.
 
-**The demo KB is synthetic** — ~30 Markdown documents written for the purpose, with ≥40 golden
-questions deliberately spanning: lexical-only hits, paraphrase-only hits, filter interactions,
-multi-hop chains, and **questions with no answer in the corpus** (where the correct behaviour is to
-abstain). Zero licensing risk, and better test signal than found text.
+**The demo KB is synthetic** — ~30 Markdown documents written for the purpose, with ≥70 golden
+questions deliberately spanning: lexical-only hits, **simple factual lookup**, paraphrase-only
+hits, filter interactions, multi-hop chains, and **questions with no answer in the corpus** (where
+the correct behaviour is to abstain). Zero licensing risk, and better test signal than found text.
+
+**`simple-lookup` is the control class.** One study in the GraphRAG-Bench line measured a graph
+channel *costing* ~13% accuracy on plain factual lookup while helping multi-hop, so the set carries
+a body of ordinary questions — not authored to be hard, and not authored to share words with their
+document the way `lexical` is — whose only job is to make that trade visible as a per-class drop
+instead of a rounding error.
+
+**Stated limit, measured rather than suspected:** at this corpus size the multi-hop class is nearly
+saturated. Thirty short, topically disjoint documents make "retrieve 5 of 30" an undemanding task,
+and a set authored from corpus structure scores 17 of 18. A class with no failures in it can only
+ever show damage, so no channel should be tuned against this corpus until it is larger and its
+documents are less separable.
 
 **A second synthetic corpus exists to be linked to**, not to be scored: a partner museum that
 transacts with the archive — loans both ways, courier and condition reporting, a shared emergency
