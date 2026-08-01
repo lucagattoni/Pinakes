@@ -8,6 +8,7 @@ half-read walk — only exist when there is a second manifest to disagree with.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,11 +18,17 @@ import numpy as np
 import pytest
 import yaml
 
-from pinakes import store
+from pinakes import linkscan, store
 from pinakes.embed import EmbeddingBackend, ModelInfo, Vectors
 from pinakes.errors import SyncError
 from pinakes.ids import DocId, KbId, mint_doc_id, mint_kb_id
-from pinakes.linkscan import TTL_MINUTES, is_stale
+from pinakes.linkscan import (
+    TTL_MINUTES,
+    is_stale,
+    resolve_path,
+    sidecars_under,
+    why_unresolvable,
+)
 from pinakes.manifest import load
 from pinakes.sidecar import SIDECAR_SUFFIX
 from pinakes.sync import SyncOptions, SyncReport, sync
@@ -507,6 +514,157 @@ def test_an_unreachable_linked_kb_does_not_fail_the_sync(tmp_path: Path) -> None
     assert len(report.link_scan) == 1
 
 
+def test_a_linked_kb_that_raises_before_the_handling_is_still_only_an_issue(
+    pair: tuple[Kb, Kb],
+) -> None:
+    """*"Nothing here raises"* was false of the three lines that ran before any handling did.
+
+    `resolve_path` calls `expanduser()`, which raises `RuntimeError` on an unknown user; `is_file`
+    and `is_dir` swallow a missing path and nothing else, so an unreadable partner directory raises
+    `PermissionError`. Both escaped `scan_one` entirely and turned `pnk sync` on a `post-commit`
+    hook into a traceback — the precise failure the promise exists to prevent. Found by grepping
+    the module for calls that touch the filesystem, after L6 had fixed the same class in
+    `link.py` four times, one instance at a time.
+    """
+    local, partner = pair
+
+    partner.root.chmod(0o000)
+    try:
+        report = run(local, now="20260730 12:00")
+    finally:
+        partner.root.chmod(0o755)
+    assert report.ok  # an unreadable partner is a fact about this machine, never a sync failure
+    assert len(report.link_scan) == 1
+
+    manifest = local.root / "pinakes.toml"
+    text = manifest.read_text(encoding="utf-8")
+    path_line = next(line for line in text.splitlines() if line.startswith("path = "))
+    manifest.write_text(text.replace(path_line, 'path = "~nosuchuser12345/kb"'), encoding="utf-8")
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+    assert report.ok
+    assert len(report.link_scan) == 1
+    # The path reported is the one declared, not the local KB root — which is a readable directory
+    # with nothing to do with the failure, and was what an earlier version named.
+    _alias, message, _remedy = report.link_scan[0]
+    assert "~nosuchuser12345/kb" in message
+    assert str(local.root) not in message
+
+
+def test_resolve_path_never_raises_whatever_the_manifest_says() -> None:
+    """`[[links.kb]] path` is user-written text in a committed file, and two of the calls that
+    consume it reject some of it: `expanduser()` raises `RuntimeError` for an unknown user,
+    `resolve()` raises `ValueError` for an embedded NUL — which `tomllib` accepts and the manifest
+    parser does not filter. Neither is a `PinakesError`.
+
+    Pinned on the function rather than on its callers **because fixing it at call sites is what
+    produced six instances of it**: L6 wrapped this call in `_via_alias`, then in `scan_one`, and a
+    review pass still found it bare in `scan()`'s freshness branch.
+
+    **The answer is an *absolute* path or `None` — never a relative one.** An earlier version of
+    this test asserted only `isinstance(…, Path)`, which the declared-text fallback satisfied while
+    handing five filesystem call sites a path anchored on the working directory. The type was never
+    the property worth pinning; where the path points is.
+    """
+    root = Path("/tmp/somewhere")
+    unresolvable = ("~nosuchuser12345/kb", "a\x00b", "~zzzznosuchuser/x", "kb\x00/x")
+    for raw in unresolvable:
+        assert resolve_path(root, raw) is None, raw
+        reason = why_unresolvable(root, raw)
+        # **The reason alone, never the path** — `LinkedKbUnreachableError` interpolates that
+        # itself, and a first version stuttered it: `cannot be read at ~x/kb: '~x/kb' cannot be
+        # resolved to a path: …`. Same register as `why_not_a_kb`, which this sits beside.
+        assert reason and raw not in reason, raw
+
+    for raw in ("../partner", "/abs/kb", "sub/kb", "~"):
+        answer = resolve_path(root, raw)
+        assert answer is not None and answer.is_absolute(), raw
+
+
+def test_an_unresolvable_path_is_reported_rather_than_fresh_skipped(
+    pair: tuple[Kb, Kb],
+) -> None:
+    """The freshness branch of `scan()` — which **plain `pnk sync` takes**, since `force` is only
+    set by `--scan-links`, and which every git hook therefore reaches.
+
+    The scenario is ordinary: a partner scans once (writing `last_scan`), then `[[links.kb]] path`
+    is edited to something that will not resolve — a typo, or a path valid on the machine the
+    manifest was committed from. Every commit inside the hour-long TTL was then a traceback. No
+    test touched this branch at all: `grep skipped_fresh tests/` returned nothing.
+
+    **The assertion that discriminates is `link_scan`, not `report.ok`.** A first version asserted
+    only `ok`, which holds whether the branch runs or not — the increment's own recurring class,
+    inside the fix for a finding that said the branch had no test. A skipped-fresh row carries no
+    issue, so a non-empty `link_scan` is the proof this path was *not* silently skipped. The
+    freshness branch proper is pinned by `test_a_fresh_kb_refs_entry_skips_the_walk`; both
+    directions are mutation-verified.
+    """
+    local, _partner = pair
+    run(local, now="20260730 12:00")  # writes kb_refs.last_scan
+
+    manifest = local.root / "pinakes.toml"
+    text = manifest.read_text(encoding="utf-8")
+    path_line = next(line for line in text.splitlines() if line.startswith("path = "))
+    manifest.write_text(text.replace(path_line, 'path = "~nosuchuser12345/kb"'), encoding="utf-8")
+
+    report = run(local, now="20260730 12:30")  # inside the TTL: the fresh branch, no force
+    assert report.ok
+    # And it is **not** silently fresh-skipped: a path naming nothing is a broken manifest, and the
+    # TTL exists to skip re-reading a partner that was fine an hour ago — not to withhold the reason
+    # for the rest of the hour.
+    assert len(report.link_scan) == 1
+    _alias, message, _remedy = report.link_scan[0]
+    assert "~nosuchuser12345/kb" in message
+
+
+def test_an_unresolvable_path_is_never_walked_from_the_working_directory(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """The declared-text fallback review 7 added was a **relative** path, and five call sites use
+    `ScannedKb.path` as a filesystem base — so the walk re-anchored on the process's working
+    directory, the one thing `resolve_path`'s first paragraph says it exists to prevent.
+
+    The consequence is not a crash but silent data loss, which is why it survived a round: with a
+    directory of that literal name in the CWD holding a readable `pinakes.toml`, the walk succeeds,
+    finds no sidecars, stamps itself `complete` — and `replace_reverse_links` then deletes every
+    inbound row the real partner had, with `report.ok` true and no issue raised.
+
+    The decoy carries the *partner's own* `[kb] id`, because the id-mismatch refusal would
+    otherwise catch it first and hide the defect behind the wrong guard.
+    """
+    local, partner = pair
+    run(local, now="20260730 12:00")
+    assert len(links_in(local, origin="reverse-scan")) == 1
+
+    manifest = local.root / "pinakes.toml"
+    text = manifest.read_text(encoding="utf-8")
+    path_line = next(line for line in text.splitlines() if line.startswith("path = "))
+    manifest.write_text(text.replace(path_line, 'path = "~nosuchuser12345/kb"'), encoding="utf-8")
+
+    workdir = tmp_path / "workdir"
+    decoy = workdir / "~nosuchuser12345" / "kb"
+    (decoy / "docs").mkdir(parents=True)
+    (decoy / "pinakes.toml").write_text(
+        (partner.root / "pinakes.toml").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    here = os.getcwd()
+    os.chdir(workdir)
+    try:
+        report = run(local, now="20260730 14:00", scan_links=True)
+    finally:
+        os.chdir(here)
+
+    assert len(links_in(local, origin="reverse-scan")) == 1, "the decoy's empty walk deleted rows"
+    assert len(report.link_scan) == 1
+    _alias, message, _remedy = report.link_scan[0]
+    assert "cannot be expanded" in message  # the fault, not just "unreachable"
+    assert "~nosuchuser12345/kb" in message  # ...and the text the author wrote
+    assert str(local.root) not in message  # ...never the local KB root
+    # `last_scan` is not stamped either: an unreachable partner must not suppress the retry.
+    assert "partner" not in {alias for alias, *_ in report.links_scanned}
+
+
 # --- The TTL --------------------------------------------------------------------------------------
 
 
@@ -734,7 +892,550 @@ def test_a_partner_root_outside_its_own_kb_is_refused(pair: tuple[Kb, Kb], tmp_p
 
     rels = {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
     assert "smuggled" not in rels
+    # **`roots entry`, not just "outside the KB".** Deleting this guard entirely left all 101
+    # tests green: the outside root was globbed and the *per-candidate* check then emitted
+    # "include pattern … reaches outside the KB", which satisfied a bare substring assertion.
+    # That check is not a substitute — it fires only once `glob` is already walking, which is
+    # exactly what this rule exists to prevent (`roots = ["/"]` on a `post-commit` hook).
+    assert any("roots entry" in message for _, message, _ in report.link_scan)
+
+
+@pytest.mark.parametrize(
+    ("pattern", "via_symlink"),
+    [
+        ("../../outside/docs/*.md", False),
+        ("../../**/*.md", False),
+        # A symlinked *directory* under the partner's own root, which plain `**/*.md` does not
+        # reach — `Path.glob` does not recurse one — so it needs a pattern that names it.
+        ("sneak/*.md", True),
+    ],
+)
+def test_a_partner_include_pattern_outside_its_own_kb_is_refused(
+    pair: tuple[Kb, Kb], tmp_path: Path, pattern: str, via_symlink: bool
+) -> None:
+    """The same containment rule as the test above, for the input it was never applied to.
+
+    `include` is exactly as partner-controlled as `roots`, and the check existed for `roots` alone
+    — so a pattern reaching out of the KB walked wherever it pointed and this KB recorded inbound
+    links from files the partner does not own, with `complete` true so they were persisted.
+
+    **`candidate.relative_to(root)` did not catch it.** `relative_to` is purely lexical, so
+    `docs/../../outside/smuggled.md` *is* relative to the root as a string — measured, it returns
+    `docs/../../outside/smuggled.md` rather than raising. Containment has to resolve.
+    """
+    local, partner = pair
+    outside = partner.root.parent / "outside" / "docs"
+    outside.mkdir(parents=True)
+    (outside / "smuggled.md").write_text("# s\n\nText.\n", encoding="utf-8")
+    (outside / f"smuggled.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump(
+            {"id": str(mint_doc_id()), "links": [{"to": local.uri("beta"), "rel": "smuggled"}]},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    if via_symlink:
+        (partner.root / partner.docs_dir / "sneak").symlink_to(outside)
+    manifest = partner.root / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]', f'include = ["**/*.md", "{pattern}"]'
+        ),
+        encoding="utf-8",
+    )
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    rels = {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
+    assert "smuggled" not in rels
     assert any("outside the KB" in message for _, message, _ in report.link_scan)
+
+
+def test_an_escaping_include_pattern_is_refused_without_walking(pair: tuple[Kb, Kb]) -> None:
+    """**The refusal has to happen before the glob, or it does not bound anything.**
+
+    Checking each candidate refuses the *results* while still paying for the enumeration — so
+    `include = ["../../../../**/*.md"]` walked the machine on every `post-commit`, collected
+    nothing, and (because the escape sets `complete` false) never stamped `last_scan`, so the TTL
+    could not suppress the retry either. The `roots` rule gets this right by refusing before it
+    walks; presenting `include` as the same rule while checking it a step later delivered the
+    refusal without the bound.
+
+    **The discriminator is a path that does not exist.** A per-candidate check sees no candidates
+    and reports nothing; a static one refuses the pattern on its text. That is deterministic, where
+    asserting on elapsed time is not.
+    """
+    local, partner = pair
+    manifest = partner.root / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]', 'include = ["**/*.md", "../../no-such-directory/*.md"]'
+        ),
+        encoding="utf-8",
+    )
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    assert any("reaches outside the KB" in message for _, message, _ in report.link_scan)
+
+
+def test_a_dot_dot_pattern_that_stays_inside_the_kb_is_not_refused(pair: tuple[Kb, Kb]) -> None:
+    """The static refusal tests **where the pattern's fixed prefix lands**, not whether it contains
+    `..`.
+
+    A first version refused any `..`, which refuses `../notes/*.md` — a pattern that stays inside
+    the KB and that the partner's own `walk_sources` ingests. This KB then called a legitimate
+    manifest an escape; and because an escape sets `complete` false, it never wrote `last_scan`, so
+    the partner was re-read, re-refused and never refreshed on every sync, permanently. Refusing a
+    partner's valid configuration is the same defect as accepting an invalid one — both are this KB
+    disagreeing with the partner about the partner's own KB.
+    """
+    local, partner = pair
+    notes = partner.root / "notes"
+    notes.mkdir()
+    (notes / "n.md").write_text("# n\n\nText.\n", encoding="utf-8")
+    (notes / f"n.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump(
+            {"id": str(mint_doc_id()), "links": [{"to": local.uri("beta"), "rel": "from-notes"}]},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    manifest = partner.root / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]', 'include = ["**/*.md", "../notes/*.md"]'
+        ),
+        encoding="utf-8",
+    )
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    assert not [m for _, m, _ in report.link_scan if "outside the KB" in m]
+    rels = {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
+    assert "from-notes" in rels
+
+
+def test_a_leading_glob_does_not_defeat_the_static_refusal(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """`*/../../outside/*.md` — the escape sits behind a glob component.
+
+    A version that tested only the prefix *before the first glob component* had an empty prefix
+    here, so it passed unconditionally and the `..` ran inside `glob`: unbounded again, and
+    reporting nothing when the outside tree held no match. The whole pattern is joined instead, and
+    a glob component is simply a name that does not exist, which `resolve()` collapses lexically.
+    """
+    local, partner = pair
+    outside = partner.root.parent / "outside"
+    outside.mkdir()
+    (outside / "smuggled.md").write_text("# s\n\nText.\n", encoding="utf-8")
+    (outside / f"smuggled.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump(
+            {"id": str(mint_doc_id()), "links": [{"to": local.uri("beta"), "rel": "smuggled"}]},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    manifest = partner.root / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]', 'include = ["**/*.md", "*/../../../outside/*.md"]'
+        ),
+        encoding="utf-8",
+    )
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    assert "smuggled" not in {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
+    assert any("outside the KB" in message for _, message, _ in report.link_scan)
+
+
+def test_a_fixed_include_naming_a_symlinked_document_agrees_with_the_glob_spelling(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """One file, two spellings of the include that names it, and they must answer the same.
+
+    Joining the pattern and resolving it *whole* follows the final symlink, so
+    `include = ["linked.md"]` was refused as an escape while `include = ["*.md"]` — reaching the
+    same document — was accepted. The containment rule is `parent.resolve() / name` in all three
+    places that implement it (`link._document_in`, the candidate loop, and here); writing it a
+    fourth way is what produced three wrong versions in three rounds.
+    """
+    _local, partner = pair
+    real = tmp_path / "elsewhere"
+    real.mkdir()
+    (real / "linked.md").write_text("# linked\n\nText.\n", encoding="utf-8")
+    (real / f"linked.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump({"id": str(mint_doc_id())}, sort_keys=False), encoding="utf-8"
+    )
+    docs = partner.root / partner.docs_dir
+    (docs / "linked.md").symlink_to(real / "linked.md")
+    (docs / f"linked.md{SIDECAR_SUFFIX}").symlink_to(real / f"linked.md{SIDECAR_SUFFIX}")
+
+    # Not a count — `*.md` legitimately reaches the fixture's other documents too. What has to
+    # agree is whether *this* document is reached, and whether either spelling is refused.
+    for spelling in ("linked.md", "*.md"):
+        found, problems = sidecars_under(partner.root, ["docs/"], [spelling], [])
+        assert problems == [], f"{spelling!r} was refused: {problems}"
+        assert {path.name for path in found} >= {f"linked.md{SIDECAR_SUFFIX}"}, (
+            f"{spelling!r} did not reach the symlinked document"
+        )
+
+
+def test_a_double_star_before_a_dot_dot_does_not_defeat_the_refusal(
+    pair: tuple[Kb, Kb],
+) -> None:
+    """`**` matches **zero** or more components, while `Path.parts` counts it as one.
+
+    So a probe that kept `**` let a following `..` cancel it and landed one level *below* where the
+    walk actually goes: `**/../../**/*.md` probed inside the KB and walked the directory containing
+    it, recursively — measured linear in the outside tree, and reporting nothing, because an escape
+    is only noticed once a candidate is yielded and this pattern matched none.
+
+    Dropping `**` from the probe is exact rather than merely conservative: every component `**`
+    expands to is one a following `..` then pops, so the zero-expansion is the highest the walk can
+    reach, and that is what has to be inside the KB.
+    """
+    _local, partner = pair
+    outside = partner.root.parent / "outside"
+    outside.mkdir()
+    for index in range(40):
+        (outside / f"dir{index}").mkdir()
+
+    for pattern in ("**/../../outside/*.md", "**/../../**/*.md"):
+        _found, problems = sidecars_under(partner.root, ["docs/"], [pattern], [])
+        assert problems, f"{pattern!r} was not refused"
+        assert "reaches outside the KB" in problems[0]
+
+    found, problems = sidecars_under(partner.root, ["docs/"], ["**/*.md"], [])
+    assert problems == [], "an ordinary `**` was caught by the escape rule"
+    assert len(found) == 2
+
+
+def test_one_unusable_include_pattern_does_not_discard_the_others(pair: tuple[Kb, Kb]) -> None:
+    """`Path.glob("")` raises `ValueError`, and that reached `scan_one`, which reported the whole
+    partner unreachable: every other `include` entry was discarded, `complete` stayed false
+    forever, and the message named `'.'` for a pattern the author wrote as `""`.
+
+    One pattern is one problem — the precedent the absolute case sets one branch above. Both the
+    `glob()` call and each `next()` are guarded, because `""` raises at the call while a pattern
+    that turns unacceptable partway raises from the step; the first version of this fix guarded
+    only the step, and `""` still escaped.
+    """
+    _local, partner = pair
+    for bad in ("", "."):
+        found, problems = sidecars_under(partner.root, ["docs/"], ["**/*.md", bad], [])
+        assert len(found) == 2, f"{bad!r} discarded the valid include entries"
+        assert problems == [
+            f"[sources] include pattern {bad!r} cannot be walked: "
+            "Unacceptable pattern: PosixPath('.')"
+        ]
+
+
+def test_the_walk_raising_is_an_issue_not_a_traceback(
+    pair: tuple[Kb, Kb], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`scan_one` promises *"Never raises: every failure comes back in `issues`"*, and its guard
+    around `sidecars_under` had stopped being exercised by anything.
+
+    The input that used to reach it — `include = ["/etc/**/*.md"]` — is now answered by the
+    absolute branch and never reaches `glob`, so the test written for it passes on the new message
+    while the guard it was written for is dead. That is the third time in this increment a later
+    fix has quietly disarmed an older test, so the promise is pinned directly here instead of
+    through an input that a future fix can intercept.
+    """
+    local, _partner = pair
+
+    def exploding(
+        _root: Path, _roots: list[str], _include: list[str], _exclude: list[str]
+    ) -> tuple[list[Path], list[str]]:
+        raise OSError(5, "io")
+
+    monkeypatch.setattr(linkscan, "sidecars_under", exploding)
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    assert report.ok
+    assert len(report.link_scan) == 1
+    _alias, message, _remedy = report.link_scan[0]
+    assert "[sources]" in message
+
+
+@pytest.mark.parametrize(
+    ("include", "exclude", "expected"),
+    [
+        # A NUL in a non-final component reaches `probe.parent.resolve()`, which was outside any
+        # handler — one line above the `glob` guard written to stop exactly this outcome.
+        (["**/*.md", "a\x00b/x.md"], [], "include pattern 'a\\x00b/x.md' cannot be walked"),
+        # ...and in the final component it reaches `next()`, whose guard no test exercised: the
+        # `""`/`"."` fixtures written for it raise at the `glob()` *call*, not at the step.
+        (["**/*.md", "sub/\x00"], [], "include pattern 'sub/\\x00' cannot be walked"),
+        # `Path.match("")` raises too. The comment on the `next` guard cited this very case as its
+        # reason for scoping tightly, and then left it unhandled.
+        (["**/*.md"], [""], "exclude rule '' cannot be used"),
+    ],
+)
+def test_one_bad_sources_entry_is_one_problem_not_the_end_of_the_partner(
+    pair: tuple[Kb, Kb], include: list[str], exclude: list[str], expected: str
+) -> None:
+    """Each of these raised out of `sidecars_under` into `scan_one`'s coarse handler, which reports
+    the **whole** partner unreachable: every other `include` entry discarded, `complete` false
+    forever, and a message naming neither the key nor the value.
+
+    An unusable `exclude` is a *problem*, never a quiet drop — dropping it would make this KB record
+    links from documents the partner's own KB excludes, which is the one thing this function must
+    not do.
+    """
+    _local, partner = pair
+    found, problems = sidecars_under(partner.root, ["docs/"], include, exclude)
+    assert len(found) == 2, "the valid entries stopped being walked"
+    assert len(problems) == 1, problems
+    assert problems[0].startswith(f"[sources] {expected}: "), problems[0]
+
+
+def test_a_pattern_that_escapes_under_one_root_collects_under_none(pair: tuple[Kb, Kb]) -> None:
+    """A pattern can escape under one root and be legal under another — `roots = ["docs/",
+    "docs/sub/"]` with `include = ["../../x/*.md"]`, where `x/` is inside the KB.
+
+    The `pattern in escaping` skip is what stops the second root collecting from a pattern the
+    first reported as an escape, and its comment called it "an optimisation". Removing it collects
+    the document *and* reports the escape, in one report. A partner's `[sources]` is one statement
+    about one KB, not a per-root negotiation.
+    """
+    _local, partner = pair
+    (partner.root / partner.docs_dir / "sub").mkdir()
+    inside = partner.root / "x"
+    inside.mkdir()
+    (inside / "in.md").write_text("# in\n\nText.\n", encoding="utf-8")
+    (inside / f"in.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump({"id": str(mint_doc_id())}, sort_keys=False), encoding="utf-8"
+    )
+
+    found, problems = sidecars_under(partner.root, ["docs/", "docs/sub/"], ["../../x/*.md"], [])
+
+    assert found == [], "a pattern refused under one root was collected under another"
+    assert problems == ["[sources] include pattern '../../x/*.md' reaches outside the KB"]
+
+
+def test_a_trailing_dot_dot_include_is_refused(pair: tuple[Kb, Kb]) -> None:
+    """`Path("/kb/..").is_relative_to("/kb")` is **true** lexically, so leaving the final component
+    unresolved let `include = ["../.."]` name the KB's parent unreported. That exemption exists so a
+    symlinked *document* stays readable, and `..` is never a document."""
+    _local, partner = pair
+    _found, problems = sidecars_under(partner.root, ["docs/"], ["../.."], [])
+    assert problems == ["[sources] include pattern '../..' reaches outside the KB"]
+
+
+def test_only_double_star_is_dropped_from_the_probe(pair: tuple[Kb, Kb]) -> None:
+    """`*` matches exactly **one** component, so a following `..` cancels it and the probe is right
+    to keep it. Dropping `*` as well would refuse `*/../../docs/*.md`, which stays inside the KB —
+    and a wrongly refused pattern sets `complete` false, freezing that partner's inbound rows
+    permanently. Nothing pinned the boundary until this test."""
+    _local, partner = pair
+    (partner.root / partner.docs_dir / "sub").mkdir()
+    _found, problems = sidecars_under(partner.root, ["docs/"], ["*/../../docs/*.md"], [])
+    assert problems == []
+
+
+def test_a_partner_document_without_a_sidecar_contributes_nothing(pair: tuple[Kb, Kb]) -> None:
+    """The common case in a real KB, and `if sidecar.is_file()` was pinned by nothing: mutating it
+    to `if True` left every test green. A regression would mint a phantom sidecar path per bare
+    document, one `LinkedSidecarUnreadableError` each, and `complete=False` permanently."""
+    _local, partner = pair
+    (partner.root / partner.docs_dir / "bare.md").write_text("# bare\n", encoding="utf-8")
+
+    found, problems = sidecars_under(partner.root, ["docs/"], ["**/*.md"], [])
+
+    assert problems == []
+    assert {path.name for path in found} == {
+        f"one.md{SIDECAR_SUFFIX}",
+        f"two.md{SIDECAR_SUFFIX}",
+    }
+
+
+def test_an_absolute_include_says_it_is_absolute_not_that_it_escapes(pair: tuple[Kb, Kb]) -> None:
+    """An absolute pattern cannot be walked at all — `glob` raises `NotImplementedError` on one
+    even when it names this KB's own `docs/`. It gets its own message, because the escape wording
+    is simply false for that case, and that is what the branch used to say."""
+    _local, partner = pair
+    inside = partner.root / partner.docs_dir
+    _found, problems = sidecars_under(partner.root, ["docs/"], [f"{inside}/*.md"], [])
+    assert problems == [
+        f"[sources] include pattern '{inside}/*.md' is absolute; patterns are relative to a root"
+    ]
+
+
+def test_a_symlinked_escape_stops_at_the_first_match(
+    pair: tuple[Kb, Kb], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The **dynamic** half has to bound the walk too, and its `break` had no test.
+
+    A symlinked directory named under a *glob* component is invisible to the static check — the
+    fixed prefix of `*/*.md` is empty, so it lands on the root and passes — and that pattern still
+    reaches `glob`. If the escape only `continue`d, the whole outside tree was enumerated before
+    anything was refused, which is the defect the commit exists to close, in the half it kept.
+    Mutating `break` to `continue` left all 96 tests green.
+
+    The pattern must not name the symlink in its fixed part (`sneak/*.md`), or the static check
+    refuses it first and the dynamic half is never reached — a fixture that does not arrive at the
+    guard it was written for, which this increment has now shipped three times.
+
+    **Counting `resolve()` cannot see this** — the parent cache collapses it to one call either
+    way. What differs is how many entries are pulled from the generator, so that is what is
+    counted.
+    """
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    for index in range(40):
+        (outside / f"f{index}.md").write_text("x\n", encoding="utf-8")
+    _local, partner = pair
+    (partner.root / partner.docs_dir / "sneak").symlink_to(outside)
+
+    consumed = 0
+    real_glob = Path.glob
+
+    def counting_glob(self: Path, pattern: str, **kwargs: Any) -> Any:
+        nonlocal consumed
+        for item in real_glob(self, pattern, **kwargs):
+            consumed += 1
+            yield item
+
+    monkeypatch.setattr(Path, "glob", counting_glob)
+    _found, problems = sidecars_under(partner.root, ["docs/"], ["*/*.md"], [])
+    monkeypatch.undo()
+
+    assert problems, "the symlinked escape was not detected at all"
+    assert consumed == 1, f"the walk consumed {consumed} of 40 matches before refusing"
+
+
+def test_an_escape_matching_only_sidecars_is_still_reported(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """Containment is checked **before** the `is_file`/sidecar skip, not after.
+
+    A pattern that reaches outside but matches only sidecars — or only directories — hit that
+    `continue` first and was never recorded as an escape: the walk left the KB and reported nothing.
+
+    **The pattern has to reach the dynamic half**, which means a symlinked directory named under a
+    *glob* component: a `..` is refused on the pattern text, and so is a symlink named in the fixed
+    prefix. This fixture has been retargeted twice for exactly that reason — first when the static
+    refusal was added, then again when it learned to resolve the prefix — and each time the
+    mutation, not the reading, is what showed the test had stopped reaching its guard.
+    """
+    local, partner = pair
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / f"orphan.md{SIDECAR_SUFFIX}").write_text("id: whatever\n", encoding="utf-8")
+    (partner.root / partner.docs_dir / "sneak").symlink_to(outside)
+
+    manifest = partner.root / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]', f'include = ["**/*.md", "*/*{SIDECAR_SUFFIX}"]'
+        ),
+        encoding="utf-8",
+    )
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    assert any("outside the KB" in message for _, message, _ in report.link_scan)
+
+
+def test_one_escaping_pattern_is_one_problem_however_many_roots(pair: tuple[Kb, Kb]) -> None:
+    """The flag was per `(root, pattern)` while its comment argued per *pattern*, so a partner with
+    two roots reported the same escape twice — and the reason the comment gives for collapsing it
+    (not burying every other issue in the report) applies to the duplicate just as much."""
+    local, partner = pair
+    (partner.root / "notes").mkdir()
+    manifest = partner.root / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8")
+        .replace('roots   = ["docs/"]', 'roots   = ["docs/", "notes/"]')
+        .replace('include = ["**/*.md"]', 'include = ["**/*.md", "../../elsewhere/*.md"]'),
+        encoding="utf-8",
+    )
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    escapes = [m for _, m, _ in report.link_scan if "reaches outside the KB" in m]
+    assert len(escapes) == 1, escapes
+
+
+def test_an_exclude_rule_matches_the_path_the_partner_wrote_not_the_resolved_one(
+    pair: tuple[Kb, Kb],
+) -> None:
+    """The containment fix changed `relative` from the unresolved path to the resolved one, which
+    silently changed which `exclude` rules fire.
+
+    With `docs/alias -> docs/real` *inside* the KB, `exclude = ["docs/real/*"]` began excluding a
+    document reached as `docs/alias/…`. An excluded document is a dropped sidecar, and a dropped
+    sidecar with `complete` true is a **deleted inbound row** — the failure the whole `complete`
+    machinery exists to prevent, reintroduced by a fix for a different problem.
+
+    The rule is not "resolved or unresolved" but *"whatever the partner's own `walk_sources` does"*:
+    this KB must exclude exactly what the partner excludes, and disagreeing in either direction is
+    a wrong answer about someone else's KB.
+    """
+    local, partner = pair
+    docs = partner.root / partner.docs_dir
+    (docs / "real").mkdir()
+    (docs / "real" / "kept.md").write_text("# kept\n\nText.\n", encoding="utf-8")
+    (docs / "real" / f"kept.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump(
+            {"id": str(mint_doc_id()), "links": [{"to": local.uri("beta"), "rel": "via-alias"}]},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (docs / "alias").symlink_to(docs / "real")
+
+    manifest = partner.root / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]',
+            'include = ["**/*.md", "alias/*.md"]\nexclude = ["docs/real/*"]',
+        ),
+        encoding="utf-8",
+    )
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    assert report.ok
+    rels = {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
+    assert "via-alias" in rels, "an exclude rule fired on the resolved path, dropping the document"
+
+
+def test_a_symlinked_document_inside_a_partner_kb_is_still_read(
+    pair: tuple[Kb, Kb], tmp_path: Path
+) -> None:
+    """The other direction of the containment fix, so it cannot be tightened into a refusal.
+
+    The check resolves the *parent* and leaves the final component alone — `link._document_in`'s
+    spelling — because `Path.glob` does yield a symlinked file, and the partner's own `pnk sync`
+    indexes one. Resolving the whole path would drop a legitimate document from the walk, and a
+    dropped document is a deleted inbound row.
+    """
+    local, partner = pair
+    real = tmp_path / "elsewhere"
+    real.mkdir()
+    (real / "linked.md").write_text("# linked\n\nText.\n", encoding="utf-8")
+    (real / f"linked.md{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump(
+            {"id": str(mint_doc_id()), "links": [{"to": local.uri("beta"), "rel": "via-symlink"}]},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    docs = partner.root / partner.docs_dir
+    (docs / "linked.md").symlink_to(real / "linked.md")
+    (docs / f"linked.md{SIDECAR_SUFFIX}").symlink_to(real / f"linked.md{SIDECAR_SUFFIX}")
+
+    report = run(local, now="20260730 14:00", scan_links=True)
+
+    rels = {rel for _, _, _, _, rel in links_in(local, origin="reverse-scan")}
+    assert "via-symlink" in rels, "a symlinked document inside the KB was dropped from the walk"
+    assert not any("outside the KB" in message for _, message, _ in report.link_scan)
 
 
 def test_a_failed_local_run_does_not_blame_the_partner(pair: tuple[Kb, Kb]) -> None:

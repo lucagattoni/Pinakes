@@ -86,10 +86,23 @@ class ScannedKb:
     alias: str
     declared_id: KbId
     path: Path
-    """Resolved against the local KB root — what `kb_refs.path` records."""
+    """Resolved against the local KB root — what `kb_refs.path` records.
+
+    **Always absolute, on every row.** The one exception is the row `scan_one` returns when
+    `resolve_path` answers `None`: there this is the declared text, for the message alone, and that
+    row carries an issue and never `complete`, so `sync` cannot persist it. Review 7 made that the
+    *general* fallback and review 8 measured the consequence — a relative path walked from the
+    working directory. Keep it absolute: five call sites use it as a filesystem base.
+    """
 
     kb_id: KbId | None = None
-    """The partner's *own* `[kb] id`. `None` when it could not be established."""
+    """The partner's *own* `[kb] id` — except on a `skipped_fresh` row, where nothing was read and
+    this is the locally declared `[[links.kb]] id`. `None` when it could not be established.
+
+    The exception is safe only because `sync` `continue`s on `skipped_fresh` before reading it. A
+    reader that does not (L7's `pnk doctor` is the obvious next one) would be taking the local
+    declaration for the partner's own — the confusion rule 1 of the module docstring exists to
+    prevent."""
 
     rows: tuple[ReverseRow, ...] = ()
     issues: tuple[LinkScanError, ...] = ()
@@ -120,18 +133,100 @@ class ScanResult:
         return tuple(issue for kb in self.scanned for issue in kb.issues)
 
 
-def resolve_path(root: Path, raw: str) -> Path:
-    """`[[links.kb]] path` → an absolute path. Relative to the *KB root*, with `~` expanded.
+def resolve_path(root: Path, raw: str) -> Path | None:
+    """`[[links.kb]] path` → an absolute path, or `None` when the text names no path at all.
 
     Relative to the KB root rather than the process's working directory, because a manifest is
     committed and shared: `../partner-kb` has to mean the same thing whatever directory `pnk` was
     invoked from. An absolute path is honoured as given — and warned about by `pnk doctor` (L7),
     since a committed absolute path publishes a filesystem layout.
+
+    **It never raises, whatever the manifest says.** `raw` is user-written text from a committed
+    file, and both calls below reject some of it — `expanduser()` raises `RuntimeError` for an
+    unknown user (`~someone/kb`), `resolve()` raises `ValueError` for an embedded NUL, which
+    `tomllib` accepts and `manifest.py` does not filter. Neither is a `PinakesError`, so both
+    reached `cli.main` as a traceback.
+
+    **Handled here rather than at the call sites, because fixing it at call sites is what produced
+    six instances of it.** L6 wrapped this call in `_via_alias`, then in `scan_one`, and the seventh
+    review pass still found it bare in `scan()`'s freshness branch — which plain `pnk sync` takes,
+    so a `~` path that stops resolving turned every `git commit` inside the TTL into a traceback.
+    A function that three call sites each had to remember to guard is a function with the wrong
+    contract.
+
+    **`None`, never the declared text as a fallback.** The seventh round returned `Path(raw)` so an
+    error could name what the author wrote, and that value is *relative* — every consumer uses it
+    as a filesystem base (`(path / MANIFEST_NAME).is_file()`, `why_not_a_kb`, `partner_sources`,
+    `sidecars_under`, `_doc_id_of`), so the walk silently re-anchored on the **working directory**:
+    the one thing the paragraph above says this function exists to prevent. Measured in review 8 —
+    with a directory of that literal name in the CWD holding a `pinakes.toml`, `pnk sync` walked
+    it, found nothing, stamped the scan `complete` and deleted every inbound row the real partner
+    had. `None` cannot be walked, and pyright makes each caller say what it does instead. The
+    declared text stays available for the *message* — it is `linked.path`, which every caller
+    already holds.
     """
+    try:
+        return _resolve(root, raw)
+    except (RuntimeError, ValueError, OSError):
+        return None
+
+
+def _resolve(root: Path, raw: str) -> Path:
     expanded = Path(raw).expanduser()
     # `.resolve()` on both branches: `kb_refs.path` is shown to a person and compared by later
     # increments, and `/a/b/../c` is the same place as `/a/c` written two ways.
     return (expanded if expanded.is_absolute() else root / expanded).resolve()
+
+
+def why_unresolvable(root: Path, raw: str) -> str:
+    """Why `resolve_path` returned `None`, naming the actual fault rather than the category.
+
+    **The reason alone, no path** — the same register as `why_not_a_kb`, because
+    `LinkedKbUnreachableError` interpolates the path itself. A first version included it and read
+    `cannot be read at ~nosuchuser/kb: '~nosuchuser/kb' cannot be resolved to a path: …`.
+
+    Shares `_resolve` with `resolve_path` rather than repeating its two lines, so the reason cannot
+    drift from the rule it explains. Called only once the answer is already known to be `None`.
+    """
+    try:
+        _resolve(root, raw)
+    except RuntimeError as exc:
+        return f"the `~` cannot be expanded: {exc}"
+    except (ValueError, OSError) as exc:
+        return f"not a usable path: {exc}"
+    return "not a usable path"
+
+
+def why_not_a_kb(path: Path) -> str:
+    """Why `path` holds no readable `pinakes.toml`, in words that name the actual situation.
+
+    Five cases, not two. A two-way `is_dir()` split reported a `[[links.kb]] path` that points at
+    an existing *regular file* as "no such directory", which is the one answer a person would check
+    and find false — the path is right there.
+
+    **The last two are the same defect, one level down**, and the three-way split had it too: the
+    caller's probe is `is_file()`, so a `pinakes.toml` that exists but is a directory, or is a
+    symlink to nothing, was reported as "no pinakes.toml there" — with the file visible in `ls`.
+    Found in review 9 by reading this docstring's own justification against its code.
+
+    **Unlike `resolve_path`, this one may raise, and the callers guard it.** `exists()`,
+    `is_symlink()` and `is_dir()` raise on an unreadable parent (`~root` on macOS is mode 0700) and
+    on `ENAMETOOLONG`. Both call sites place it inside their `except OSError`, verified. Stated
+    rather than fixed: the totality argument that applies to `resolve_path` does not, because there
+    is no answer this function could return for "I could not tell" that a caller would not have to
+    branch on anyway — and every caller is already branching. L7's `pnk doctor` will be the third
+    caller; it needs the same `try`.
+    """
+    if not path.exists():
+        return "no such directory"
+    if not path.is_dir():
+        return "not a directory"
+    manifest = path / MANIFEST_NAME
+    if manifest.is_symlink() and not manifest.exists():
+        return "the pinakes.toml there is a broken symlink"
+    if manifest.exists():
+        return "the pinakes.toml there is not a regular file"
+    return "no pinakes.toml there"
 
 
 def partner_sources(root: Path) -> tuple[KbId, list[str], list[str], list[str]]:
@@ -199,27 +294,204 @@ def sidecars_under(
       yielded zero sidecars, which reads as "this partner has no inbound links" — and the caller
       then deletes every row it had. A partner renaming its own `docs/` silently destroyed the
       whole inbound picture and stamped the scan as fresh.
+    * **an `include` pattern that escapes the KB is refused too, in two halves.** `include` is
+      exactly as partner-controlled as `roots`, and the check above was implemented for `roots`
+      alone — so `include = ["../../outside/*.md"]` walked out of the partner KB and this one
+      recorded inbound links from files the partner does not own. `candidate.relative_to(root)` did
+      not catch it: `relative_to` is purely lexical, so `docs/../../outside/planted.md` *is*
+      relative to the root as a string. Containment has to resolve.
+
+      The pattern is joined onto the root and tested **before** globbing, because that is what
+      bounds the walk — checking each candidate afterwards refuses the results while still paying
+      for the enumeration, which was the whole point of the `roots` rule. What that cannot see is a
+      **symlinked directory** reached under a glob component, so the per-candidate test remains,
+      and it `break`s, which bounds that half. An absolute pattern is refused separately, because
+      `glob` cannot walk one wherever it points.
+
+      Found in review 10 by testing this docstring's own argument against the code below it. The
+      rule then took three more attempts, each wrong in a different way, and every one of them came
+      from spelling it differently from `link._document_in` — which had it right the whole time.
+      Retrospective: *A containment rule argued in prose and implemented for half its inputs*.
     """
     found: set[Path] = set()
     problems: list[str] = []
+    anchor = root.resolve()
+    # One entry per *pattern*, collected across every root and reported once at the end: a partner
+    # with two roots reported the same escape twice. Sets, plus the end-of-loop emission, are what
+    # collapse it — the `pattern in escaping` skip below is an optimisation that happens to do the
+    # same thing, and removing either alone leaves the count right.
+    escaping: set[str] = set()
+    absolute: set[str] = set()
+    unusable: list[str] = []
+    # `parent.resolve()` is a syscall chain per candidate, and a large KB globs thousands of files
+    # out of a handful of directories.
+    resolved: dict[Path, Path] = {}
+    # **`exclude` is validated once, before any root is walked.** `Path.match("")` raises
+    # `ValueError`, and an empty entry is exactly the shape a hand-edited manifest produces. It
+    # escaped to `scan_one` and reported the whole partner unreachable with `[sources] empty
+    # pattern` — naming neither the key nor the value, and worse than the message the `include`
+    # side had just been given. The comment on the `next` guard below cited this very case as its
+    # reason for scoping tightly, and then left it unhandled.
+    #
+    # A rule that cannot be applied is a *problem*, never a quiet drop: dropping it would make this
+    # KB record links from documents the partner's own KB excludes, which is the one thing this
+    # function must not do. Recorded, so `complete` is false and nothing is replaced.
+    usable_exclude: list[str] = []
+    for rule in exclude:
+        try:
+            Path("probe").match(rule)
+        except ValueError as exc:
+            problems.append(f"[sources] exclude rule {rule!r} cannot be used: {exc}")
+        else:
+            usable_exclude.append(rule)
     for name in roots:
         base = (root / name).resolve()
-        if not base.is_relative_to(root.resolve()):
+        if not base.is_relative_to(anchor):
             problems.append(f"[sources] roots entry {name!r} points outside the KB")
             continue
         if not base.is_dir():
             problems.append(f"[sources] roots entry {name!r} is not a directory")
             continue
         for pattern in include:
-            for candidate in base.glob(pattern):
+            # **Not an optimisation — this decides what is collected.** A pattern can escape under
+            # one root and be legal under another (`roots = ["docs/", "docs/sub/"]` with
+            # `include = ["../../x/*.md"]`), and without this skip the second root collects from it
+            # while the first reports it as an escape. Once a pattern is known to reach outside the
+            # KB, it contributes nothing anywhere: a partner's `[sources]` is one statement about
+            # one KB, not a per-root negotiation.
+            if pattern in escaping or pattern in absolute:
+                continue
+            if Path(pattern).is_absolute():
+                # Refused for being absolute, not for where it points: `glob` raises
+                # `NotImplementedError` on any absolute pattern, so even one naming this KB's own
+                # `docs/` cannot be walked. Its own message, because "reaches outside the KB" is
+                # false for that one and was what this branch used to say.
+                absolute.add(pattern)
+                continue
+            # **Refused before globbing, which is what bounds the walk.** The per-candidate check
+            # below cannot: `glob` has already enumerated and stat'd the whole tree by the time the
+            # first match is inspected, so `include = ["../../../../**/*.md"]` walked the machine on
+            # every `post-commit` even though nothing was collected. The `roots` branch above gets
+            # this right by `continue`ing before it walks.
+            #
+            # **The whole pattern is joined and the rule is spelled once.** Three attempts got this
+            # wrong in three different ways, each by spelling the rule differently from the two
+            # places that already had it right:
+            #
+            # * refusing any `..` also refuses `../notes/*.md`, which stays inside the KB and which
+            #   the partner's own `walk_sources` ingests — and an escape sets `complete` false, so
+            #   that partner was re-read, re-refused and never refreshed, on every sync, forever;
+            # * testing only the prefix *before the first glob component* is defeated by a pattern
+            #   that starts with one: `*/../../../outside/**/*.md` has an empty prefix, so the
+            #   check passed unconditionally and the `..` ran inside `glob`;
+            # * resolving the joined path *whole* follows a final symlink, so a fixed pattern naming
+            #   a symlinked document (`include = ["alpha.md"]`) was refused while `*.md` — the same
+            #   file — was accepted.
+            #
+            # `parent.resolve() / name` is the spelling `link._document_in` uses and the candidate
+            # loop below uses, for the same reason in all three: the directory chain is followed, so
+            # `..` collapses and an escape through a symlinked ancestor is caught, while the final
+            # component is left alone, so a symlinked *document* stays readable. A `*`, `?` or `[…]`
+            # component is just a name that does not exist, which `resolve()` handles lexically — so
+            # one `resolve()`, no enumeration, and the bound survives.
+            #
+            # **`**` is dropped, because it matches *zero* or more components while `Path.parts`
+            # counts it as one.** Keeping it let a following `..` cancel it, so the probe landed one
+            # level below where the walk actually goes: `**/../../**/*.md` probed inside the KB and
+            # walked the directory *containing* it, recursively — measured linear in the outside
+            # tree and reported nothing, because the escape is only noticed when a candidate is
+            # yielded. Dropping it is exactly right rather than merely conservative: each component
+            # `**` expands to is one a following `..` then pops, so the zero-expansion is the
+            # highest the walk can reach, and that is what has to be inside the KB.
+            #
+            # The final component is resolved too when it is `..`, which the leave-the-last-one-
+            # alone rule otherwise lets through: `Path("/kb/..").is_relative_to("/kb")` is *true*
+            # lexically, so `include = ["../.."]` named the KB's parent and was not reported. The
+            # exemption exists so a symlinked *document* stays readable, and `..` is never one.
+            #
+            # `resolve()` raises on an embedded NUL, and `tomllib` accepts one — so this is guarded
+            # like the `glob` call below, and for the same reason: one bad pattern is one problem,
+            # not the end of the partner. It was left unguarded by the commit that wrote that rule
+            # two lines further down.
+            try:
+                probe = base.joinpath(*(part for part in Path(pattern).parts if part != "**"))
+                inside = (
+                    probe.resolve() if probe.name == ".." else probe.parent.resolve() / probe.name
+                )
+            except (ValueError, OSError) as exc:
+                unusable.append(f"[sources] include pattern {pattern!r} cannot be walked: {exc}")
+                continue
+            if not inside.is_relative_to(anchor):
+                escaping.add(pattern)
+                continue
+            # **One unusable pattern is one problem, not the end of the partner.** `glob` raises
+            # `ValueError` on `""` and `"."` ("Unacceptable pattern"), and that escaped to
+            # `scan_one`, which reported the *whole* KB unreachable: the partner's other, valid
+            # `include` entries were discarded, `complete` stayed false forever, and the message
+            # named `'.'` for a pattern the author had written as `""`. Caught here for the same
+            # reason the absolute case is answered above — the report should say which pattern,
+            # not which exception.
+            #
+            # Wrapped around `next`, not around the loop body, and never `list(...)`: materialising
+            # the generator would discard the `break` below, which is the only thing bounding a
+            # symlinked-directory escape. Scoped this tightly because the body raises `ValueError`
+            # too — `Path.match("")` does, for a partner's empty `exclude` entry — and reporting
+            # that as an unwalkable *include* would name the wrong key.
+            # Both the call and each step: `Path.glob("")` raises immediately, while a pattern that
+            # only becomes unacceptable partway raises from `next`. Guarding one and not the other
+            # is how `""` still escaped after the first version of this fix.
+            try:
+                candidates = base.glob(pattern)
+            except (ValueError, NotImplementedError) as exc:
+                unusable.append(f"[sources] include pattern {pattern!r} cannot be walked: {exc}")
+                continue
+            while True:
+                try:
+                    candidate = next(candidates)
+                except StopIteration:
+                    break
+                except (ValueError, NotImplementedError) as exc:
+                    unusable.append(
+                        f"[sources] include pattern {pattern!r} cannot be walked: {exc}"
+                    )
+                    break
+                parent = resolved.get(candidate.parent)
+                if parent is None:
+                    parent = candidate.parent.resolve()
+                    resolved[candidate.parent] = parent
+                # **Containment before the `is_file` skip**, not after: a pattern reaching outside
+                # that matched only sidecars or only directories was skipped by that `continue` and
+                # never recorded as an escape, so the walk left the KB and reported nothing.
+                if not (parent / candidate.name).is_relative_to(anchor):
+                    escaping.add(pattern)
+                    break  # bounds a symlinked-directory escape, which no static check can see
                 if not candidate.is_file() or candidate.name.endswith(SIDECAR_SUFFIX):
                     continue
-                relative = candidate.relative_to(root).as_posix()
-                if any(candidate.match(rule) or Path(relative).match(rule) for rule in exclude):
+                # **`exclude` matches the *unresolved* path**, as it did before the containment
+                # check existed and as the partner's own `walk_sources` does. Matching the resolved
+                # one silently changed which rules fire — with `docs/alias -> docs/real` inside the
+                # KB, `exclude = ["docs/real/*"]` began excluding documents reached as
+                # `docs/alias/…`, and an excluded document is a dropped sidecar, which with
+                # `complete` true is a deleted inbound row. This KB must exclude exactly what the
+                # partner excludes; disagreeing in either direction is a wrong answer about someone
+                # else's KB.
+                relative = candidate.relative_to(anchor).as_posix()
+                if any(
+                    candidate.match(rule) or Path(relative).match(rule) for rule in usable_exclude
+                ):
                     continue
                 sidecar = candidate.with_name(candidate.name + SIDECAR_SUFFIX)
                 if sidecar.is_file():
                     found.add(sidecar)
+    problems.extend(
+        f"[sources] include pattern {pattern!r} reaches outside the KB"
+        for pattern in sorted(escaping)
+    )
+    problems.extend(
+        f"[sources] include pattern {pattern!r} is absolute; patterns are relative to a root"
+        for pattern in sorted(absolute)
+    )
+    problems.extend(sorted(set(unusable)))
     return sorted(found), problems
 
 
@@ -237,12 +509,42 @@ def scan_one(
     missing document would be blaming the partner for our failure. The rows are still recorded;
     they come from the partner's sidecars and owe nothing to our local state.
     """
-    path = resolve_path(local_root, linked.path)
-    base = ScannedKb(alias=linked.name, declared_id=linked.id, path=path)
+    # **The probe goes inside the `try`, because "never raises" was not true of it.** `is_file` and
+    # `is_dir` swallow a missing path and nothing else, so an unreadable partner directory raises
+    # `PermissionError` — which turned `pnk sync` on a `post-commit` hook into a traceback, the
+    # exact failure this module's promise exists to prevent, from the lines that ran before any of
+    # the handling did. Found by grepping the module for calls that touch the filesystem, after the
+    # same class had been fixed four times one instance at a time in `link.py` (L6).
+    # `resolve_path` sits *outside* the `try` because it does not raise (see its docstring): the
+    # earlier fix wrapped it here, which the class's sixth instance showed to be the wrong shape —
+    # the guarantee belongs to the function, not to each caller. It answers `None` for text that
+    # names no path, and that is returned here rather than walked: review 8 measured the previous
+    # declared-text fallback re-anchoring the whole walk on the working directory.
+    resolved = resolve_path(local_root, linked.path)
+    if resolved is None:
+        declared = Path(linked.path)
+        return _with(
+            ScannedKb(alias=linked.name, declared_id=linked.id, path=declared),
+            issues=(
+                LinkedKbUnreachableError(
+                    linked.name, declared, reason=why_unresolvable(local_root, linked.path)
+                ),
+            ),
+        )
 
-    if not (path / MANIFEST_NAME).is_file():
-        reason = "no pinakes.toml there" if path.is_dir() else "no such directory"
-        return _with(base, issues=(LinkedKbUnreachableError(linked.name, path, reason=reason),))
+    path = resolved
+    base = ScannedKb(alias=linked.name, declared_id=linked.id, path=path)
+    try:
+        if not (path / MANIFEST_NAME).is_file():
+            return _with(
+                base,
+                issues=(LinkedKbUnreachableError(linked.name, path, reason=why_not_a_kb(path)),),
+            )
+    except OSError as exc:
+        return _with(
+            base,
+            issues=(LinkedKbUnreachableError(linked.name, path, reason=exc.strerror or str(exc)),),
+        )
 
     try:
         partner_id, roots, include, exclude = partner_sources(path)
@@ -393,12 +695,19 @@ def scan(
     """
     scanned: list[ScannedKb] = []
     for linked in manifest.links:
-        if not force and not is_stale(last_scans.get(str(linked.id)), now):
+        resolved = None if force else resolve_path(manifest.root, linked.path)
+        # `resolve_path(...) is None` **falls through to the walk** rather than being fresh-skipped.
+        # A path that names nothing is a broken manifest, and the TTL exists to skip re-reading a
+        # partner that was fine an hour ago — not to withhold the reason a partner is unreachable
+        # for the rest of the hour. `scan_one` reports it and returns immediately, so the
+        # fall-through costs nothing. It also keeps `ScannedKb.path` a real `Path`: the alternative
+        # was a nullable field on a row `sync` stringifies.
+        if resolved is not None and not is_stale(last_scans.get(str(linked.id)), now):
             scanned.append(
                 ScannedKb(
                     alias=linked.name,
                     declared_id=linked.id,
-                    path=resolve_path(manifest.root, linked.path),
+                    path=resolved,
                     kb_id=linked.id,
                     skipped_fresh=True,
                 )

@@ -487,7 +487,11 @@ class LinkScanError(PinakesError):
     """
 
     def __init__(self, alias: str, message: str, *, remedy: str) -> None:
-        super().__init__(f"linked KB `{alias}` {message}.", remedy=remedy)
+        # `rstrip(".")` before appending one: the reasons these carry are increasingly borrowed
+        # from other exceptions — `RuntimeError`'s "Could not determine home directory.", another
+        # `PinakesError`'s own already-punctuated message — and those arrive with a full stop, so a
+        # fixed `.` produced `…home directory..`. Every reason written by hand here has none.
+        super().__init__(f"linked KB `{alias}` {message.rstrip('.')}.", remedy=remedy)
         self.alias = alias
 
 
@@ -500,8 +504,8 @@ class LinkedKbUnreachableError(LinkScanError):
             f"cannot be read at {path}: {reason}",
             remedy=(
                 "Not an error in itself — a KB is routinely shared without its partners, and "
-                "inbound links from it are simply not known here. Fix `[[links.kb]] path` if it "
-                "should resolve."
+                "inbound links from it are simply not known here. If it should resolve, fix "
+                "`[[links.kb]] path`, or check that you can read the directory it names."
             ),
         )
         self.path = path

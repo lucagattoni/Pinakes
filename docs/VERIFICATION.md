@@ -189,6 +189,76 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | the CLI and MCP surfaces project the same keys | L5 | `tests/test_graph_present.py::test_the_two_surfaces_project_the_same_keys` |
 | an empty answer says whether the arguments emptied it | L5 | `tests/test_serve.py::test_an_empty_answer_says_whether_the_arguments_emptied_it` |
 | a neighbour in a second served KB says which KB to fetch it from | L5 | `tests/test_serve.py::test_a_neighbour_in_a_second_served_kb_says_which_kb_to_fetch_it_from` |
+| an alias is resolved to a ULID before it reaches disk | L6 | `tests/test_cli_link.py::test_an_alias_is_resolved_to_a_ulid_on_write` |
+| ...and so is `self` | L6 | `tests/test_cli_link.py::test_self_is_expanded_on_write` |
+| all three target grammars resolve | L6 | `tests/test_cli_link.py::test_each_dst_grammar_resolves` |
+| ...with `pnk://` tried before the alias form | L6 | `tests/test_cli_link.py::test_a_pnk_uri_wins_over_an_alias_that_happens_to_be_called_pnk` |
+| ...and a colon in a path is still a path | L6 | `tests/test_cli_link.py::test_a_colon_in_a_path_that_is_not_a_declared_alias_stays_a_path` |
+| a well-formed `pnk://` to an absent target is written | L6 | `tests/test_cli_link.py::test_a_well_formed_pnk_uri_to_an_absent_target_is_written` |
+| an unresolvable target is refused with its remedy | L6 | `tests/test_cli_link.py::test_an_unresolvable_dst_is_refused_with_its_remedy` |
+| ...including an alias whose KB is not on this machine | L6 | `tests/test_cli_link.py::test_an_alias_pointing_at_a_kb_that_is_not_here_is_refused` |
+| ...and one whose partner declares a different `[kb] id` | L6 | `tests/test_cli_link.py::test_an_alias_whose_partner_declares_a_different_id_is_refused` |
+| a source with no sidecar is refused, and none is minted | L6 | `tests/test_cli_link.py::test_a_source_with_no_sidecar_is_refused_and_none_is_minted` |
+| an unreadable source sidecar is never overwritten | L6 | `tests/test_cli_link.py::test_an_unreadable_source_sidecar_is_never_overwritten` |
+| a source outside the KB is refused | L6 | `tests/test_cli_link.py::test_a_source_outside_the_kb_is_refused` |
+| ...and a sidecar named as the source | L6 | `tests/test_cli_link.py::test_a_sidecar_named_as_the_source_is_refused` |
+| an empty `--rel` is refused before anything is read | L6 | `tests/test_cli_link.py::test_an_empty_rel_is_refused_before_anything_is_read` |
+| ...and a missing one is a usage error | L6 | `tests/test_cli_link.py::test_a_missing_rel_is_a_usage_error` |
+| comments survive a rewrite through `pnk link` | L6 | `tests/test_cli_link.py::test_comments_survive_a_rewrite_through_pnk_link` |
+| unknown keys inside a link entry survive it | L6 | `tests/test_cli_link.py::test_unknown_keys_inside_a_link_entry_survive_through_pnk_link` |
+| no line outside the `links` block changes | L6 | `tests/test_cli_link.py::test_no_line_outside_the_links_block_changes_when_a_link_is_added` |
+| ...while an indented block is reindented (pinned) | L6 | `tests/test_cli_link.py::test_an_indented_links_block_is_reindented_when_a_link_is_added` |
+| ...and a document-trailing comment is captured (pinned) | L6 | `tests/test_cli_link.py::test_a_document_trailing_comment_is_captured_when_the_first_link_is_appended` |
+| a first link into a null `links` value does not crash | L6 | `tests/test_cli_link.py::test_a_first_link_into_a_null_links_value_does_not_crash` |
+| a `rel` that looks like a boolean is quoted, on both write paths | L6 | `tests/test_cli_link.py::test_a_rel_that_looks_like_a_boolean_is_quoted`, `::test_a_rel_that_looks_like_a_boolean_is_quoted_on_a_first_link_too` |
+| the source document is byte-identical afterwards | L6 | `tests/test_cli_link.py::test_the_source_document_is_byte_identical_afterwards` |
+| the write is atomic under an interrupted rename | L6 | `tests/test_cli_link.py::test_the_write_is_atomic_under_an_interrupted_rename` |
+| the same link twice writes nothing the second time | L6 | `tests/test_cli_link.py::test_the_same_link_twice_writes_nothing_the_second_time` |
+| ...while a second relation to one target is a second entry | L6 | `tests/test_cli_link.py::test_a_second_relation_to_the_same_target_is_a_second_entry` |
+| what `pnk link` writes reaches the `links` table | L6 | `tests/test_cli_link.py::test_a_link_round_trips_through_sync_into_the_links_table` |
+| the grammar is reachable without the CLI | L6 | `tests/test_cli_link.py::test_resolve_target_is_reachable_without_the_cli` |
+| a document cannot link to itself | L6 review | `tests/test_cli_link.py::test_a_document_cannot_link_to_itself` |
+| a symlinked document inside the KB can be linked | L6 review | `tests/test_cli_link.py::test_a_symlinked_document_inside_the_kb_can_be_linked` |
+| ...while `..` is still refused | L6 review | `tests/test_cli_link.py::test_a_dot_dot_escape_is_still_refused` |
+| ...and a symlinked *directory* cannot carry a link out of the KB | L6 review 2 | `tests/test_cli_link.py::test_a_symlinked_directory_cannot_carry_a_link_out_of_the_kb` |
+| an absolute source behind a symlinked ancestor is accepted | L6 review 2 | `tests/test_cli_link.py::test_an_absolute_source_behind_a_symlinked_ancestor_is_accepted` |
+| an unreadable or over-long path is refused, not a traceback | L6 review 3 | `tests/test_cli_link.py::test_an_unreadable_directory_is_refused_rather_than_crashing` |
+| ...and an unreadable *partner* KB likewise | L6 review 4 | `tests/test_cli_link.py::test_a_partner_kb_that_cannot_be_read_is_unreachable_not_a_traceback` |
+| ...and a `[[links.kb]] path` that will not expand | L6 review 5 | `tests/test_cli_link.py::test_a_linked_kb_path_that_will_not_expand_is_unreachable_not_a_traceback` |
+| ...and the same class inside `linkscan`, on a git hook | L6 review 5 | `tests/test_sync_links.py::test_a_linked_kb_that_raises_before_the_handling_is_still_only_an_issue` |
+| a partner with a malformed `[kb] id` names the KB it came from | L6 review 5 | `tests/test_cli_link.py::test_a_partner_with_a_malformed_kb_id_names_the_kb_it_came_from` |
+| a `[[links.kb]] path` naming a regular file says so | L6 review 5 | `tests/test_cli_link.py::test_a_linked_kb_path_naming_a_regular_file_says_so` |
+| ...and a `pinakes.toml` that is a directory or a broken symlink says which | L6 review 9 | `tests/test_cli_link.py::test_a_pinakes_toml_that_is_not_a_regular_file_says_which` |
+| a partner `include` pattern reaching outside its KB is refused | L6 review 10 | `tests/test_sync_links.py::test_a_partner_include_pattern_outside_its_own_kb_is_refused` |
+| ...while a symlinked document *inside* a partner KB is still read | L6 review 10 | `tests/test_sync_links.py::test_a_symlinked_document_inside_a_partner_kb_is_still_read` |
+| ...refused **before** the glob, so the walk is bounded | L6 review 11 | `tests/test_sync_links.py::test_an_escaping_include_pattern_is_refused_without_walking` |
+| ...while a `..` that stays *inside* the KB is not refused | L6 review 12 | `tests/test_sync_links.py::test_a_dot_dot_pattern_that_stays_inside_the_kb_is_not_refused` |
+| ...and a symlinked escape stops at the first match | L6 review 12 | `tests/test_sync_links.py::test_a_symlinked_escape_stops_at_the_first_match` |
+| ...and a *leading* glob does not defeat the refusal | L6 review 13 | `tests/test_sync_links.py::test_a_leading_glob_does_not_defeat_the_static_refusal` |
+| a fixed and a glob include naming one symlinked document agree | L6 review 13 | `tests/test_sync_links.py::test_a_fixed_include_naming_a_symlinked_document_agrees_with_the_glob_spelling` |
+| an absolute include says it is absolute, not that it escapes | L6 review 13 | `tests/test_sync_links.py::test_an_absolute_include_says_it_is_absolute_not_that_it_escapes` |
+| ...and `**` before a `..` does not defeat the refusal | L6 review 14 | `tests/test_sync_links.py::test_a_double_star_before_a_dot_dot_does_not_defeat_the_refusal` |
+| one unusable include pattern does not discard the others | L6 review 14 | `tests/test_sync_links.py::test_one_unusable_include_pattern_does_not_discard_the_others` |
+| the walk raising is an issue, never a traceback | L6 review 14 | `tests/test_sync_links.py::test_the_walk_raising_is_an_issue_not_a_traceback` |
+| ...for a bad `include` **or** `exclude` entry, without discarding the rest | L6 review 15 | `tests/test_sync_links.py::test_one_bad_sources_entry_is_one_problem_not_the_end_of_the_partner` |
+| a trailing `..` in an include is refused | L6 review 15 | `tests/test_sync_links.py::test_a_trailing_dot_dot_include_is_refused` |
+| only `**` is dropped from the containment probe | L6 review 15 | `tests/test_sync_links.py::test_only_double_star_is_dropped_from_the_probe` |
+| a partner document with no sidecar contributes nothing | L6 review 15 | `tests/test_sync_links.py::test_a_partner_document_without_a_sidecar_contributes_nothing` |
+| a pattern escaping under one root collects under none | L6 review 16 | `tests/test_sync_links.py::test_a_pattern_that_escapes_under_one_root_collects_under_none` |
+| ...and an escape matching only sidecars is still reported | L6 review 11 | `tests/test_sync_links.py::test_an_escape_matching_only_sidecars_is_still_reported` |
+| one escaping pattern is one problem, however many roots | L6 review 11 | `tests/test_sync_links.py::test_one_escaping_pattern_is_one_problem_however_many_roots` |
+| `exclude` matches the path the partner wrote, not the resolved one | L6 review 11 | `tests/test_sync_links.py::test_an_exclude_rule_matches_the_path_the_partner_wrote_not_the_resolved_one` |
+| the boundary is the KB root, not `[sources]` (stated residual) | L6 review 3 | `tests/test_cli_link.py::test_a_document_inside_the_root_but_outside_sources_can_be_linked` |
+| a `~` path is refused, not a `RuntimeError` traceback | L6 review | `tests/test_cli_link.py::test_a_home_relative_path_is_refused_rather_than_crashing` |
+| an empty `tags:`/`provenance:` is not normalised by a link | L6 review | `tests/test_cli_link.py::test_an_empty_tags_or_provenance_is_not_normalised_by_adding_a_link` |
+| a symlinked sidecar is written through, not replaced | L6 review | `tests/test_cli_link.py::test_a_symlinked_sidecar_is_written_through_not_replaced` |
+| `<alias>:` naming no document says so | L6 review | `tests/test_cli_link.py::test_an_alias_naming_no_document_says_so` |
+| ...and a manifest declaring no linked KBs says that | L6 review | `tests/test_cli_link.py::test_a_kb_declaring_no_linked_kbs_says_that_rather_than_listing_none` |
+| `resolve_path` never raises, and answers an **absolute** path or `None` | L6 review 7, 8 | `tests/test_sync_links.py::test_resolve_path_never_raises_whatever_the_manifest_says` |
+| ...so an unresolvable path is reported, never silently fresh-skipped | L6 review 7, 8 | `tests/test_sync_links.py::test_an_unresolvable_path_is_reported_rather_than_fresh_skipped` |
+| ...and an unresolvable path is never walked from the working directory | L6 review 8 | `tests/test_sync_links.py::test_an_unresolvable_path_is_never_walked_from_the_working_directory` |
+| ...nor resolved through it into a permanent link | L6 review 8 | `tests/test_cli_link.py::test_an_unresolvable_linked_kb_path_is_never_resolved_through_the_working_directory` |
+| an embedded NUL in a path is refused, not a `ValueError` traceback | L6 review 7 | `tests/test_cli_link.py::test_a_path_with_an_embedded_nul_is_refused_rather_than_crashing` |
 
 ## The sidecar round-trip (L5b)
 
