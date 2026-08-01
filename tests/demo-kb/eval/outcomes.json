@@ -1,0 +1,541 @@
+{
+  "schema": 1,
+  "k": 5,
+  "embedding": {
+    "provider": "fastembed",
+    "model": "BAAI/bge-small-en-v1.5",
+    "dim": 384
+  },
+  "rerank": {
+    "provider": "fastembed",
+    "model": "BAAI/bge-reranker-base"
+  },
+  "retrieval": {
+    "candidates_per_source": 30,
+    "fusion": "rrf",
+    "fusion_top_k": 12,
+    "final_k": 5,
+    "rerank": "local",
+    "vector_tier": "numpy"
+  },
+  "questions": [
+    {
+      "id": "flt-environmental-alert",
+      "kind": "filter",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "flt-lending-in",
+      "kind": "filter",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "flt-lending-out",
+      "kind": "filter",
+      "hit": true,
+      "hit_rank": 2,
+      "confidence": "high"
+    },
+    {
+      "id": "flt-withdrawal-signoff",
+      "kind": "filter",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-assessment-records",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-committee-frequency",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-description-levels",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-fixity-interval",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-master-resolution",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-number-format",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-quarantine-length",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-reading-room-added",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "medium"
+    },
+    {
+      "id": "lex-reading-room-hours",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-registration-length",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-stack-conditions",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-trap-frequency",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "mh-1878-walls-conditions",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "mh-backlog-shortened",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 2,
+      "confidence": "high"
+    },
+    {
+      "id": "mh-borrowed-item-wait",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "mh-borrower-requirements",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "mh-closure-without-an-end",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "medium"
+    },
+    {
+      "id": "mh-colour-target-then-storage",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "mh-fifteen-year-embargo",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "mh-fragile-volume-storage",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "medium"
+    },
+    {
+      "id": "mh-halt-digitisation",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "mh-infestation-found-in-quarantine",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "mh-overnight-drift",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "medium"
+    },
+    {
+      "id": "mh-public-grant-sale",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "mh-registered-then-admitted",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "mh-salvage-at-three-in-the-morning",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "mh-scope-note-level",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "mh-second-copy-disposal",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "medium"
+    },
+    {
+      "id": "mh-volunteer-contribution",
+      "kind": "multi-hop",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "mh-withdrawn-collection-register",
+      "kind": "multi-hop",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "medium"
+    },
+    {
+      "id": "na-bus-routes",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "low"
+    },
+    {
+      "id": "na-catalogue-software",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "medium"
+    },
+    {
+      "id": "na-drone-photography",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "low"
+    },
+    {
+      "id": "na-headcount",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "medium"
+    },
+    {
+      "id": "na-keeper-salary",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "high"
+    },
+    {
+      "id": "na-parking",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "low"
+    },
+    {
+      "id": "na-ticket-price",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "low"
+    },
+    {
+      "id": "na-wifi-password",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "high"
+    },
+    {
+      "id": "par-copy-carries-reference",
+      "kind": "paraphrase",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "high"
+    },
+    {
+      "id": "par-freezing-delays",
+      "kind": "paraphrase",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "low"
+    },
+    {
+      "id": "par-interest-not-enough",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "medium"
+    },
+    {
+      "id": "par-no-endless-restriction",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "par-number-never-reissued",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 3,
+      "confidence": "high"
+    },
+    {
+      "id": "par-offline-copy",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 4,
+      "confidence": "high"
+    },
+    {
+      "id": "par-partial-restriction",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "par-scope-note",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 5,
+      "confidence": "low"
+    },
+    {
+      "id": "par-stability-over-target",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "par-thick-walls",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "par-too-fragile-to-shelve",
+      "kind": "paraphrase",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "medium"
+    },
+    {
+      "id": "par-zero-count-is-data",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-access-copies-derived",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "medium"
+    },
+    {
+      "id": "sl-annual-closure",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-authority-record-subjects",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-building-origin",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-copy-refused",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "medium"
+    },
+    {
+      "id": "sl-duplicates-kept",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 3,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-enquiry-charged",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-freezing-window",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-gloves-for-paper",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-inward-loan-insurance",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-item-level-only",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-keeper-responsibilities",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-numbers-padded",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-project-funding-covers",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-restriction-review",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "medium"
+    },
+    {
+      "id": "sl-trustee-referral",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-two-items-at-once",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-uncertain-dates",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "sl-verbal-assurance",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "medium"
+    },
+    {
+      "id": "sl-volunteer-tasks",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    }
+  ]
+}
