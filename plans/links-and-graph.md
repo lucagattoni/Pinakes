@@ -549,7 +549,10 @@ the interim cut.
    zero-link nudge is KB-wide (L7), so it does not fire on a corpus with any authored links at all.
    Then run `pnk doctor` once on an **unsynced** copy: still exit 0, and it must say the link checks
    could not run.
-8. The ClaudeKB realism check is **run, or declined in writing**.
+8. The ClaudeKB realism check is **run, or declined in writing**. It cannot be run against this
+   repo — the only KBs here are synthetic by rule — so a declination is the honest answer until
+   the corpus in [`realism-corpus.md`](realism-corpus.md) exists. Record the declination and its
+   reason; do not leave the step silent.
 
 **The final cut's sweep — decision 27's exception inverted.** The links release's name is dropped
 from the 🚫 unbuilt-work table **here and only here**: `CLAUDE.md` and `docs/STATUS.md`'s mirrored
