@@ -10,6 +10,103 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] — 20260801 10:51
+
+### Added
+
+- **`pnk link <source> <target> --rel REL` authors a link** from the command line, writing one
+  `links[]` entry into the source document's own sidecar and nothing else. The target takes three
+  forms, tried in order: a `pnk://` URI (`pnk://self/…` included), `<alias>:<path>` naming a
+  declared `[[links.kb]]`, or a path in this KB. Aliases and `self` are resolved to ULIDs **before**
+  anything reaches disk, which is what makes a link mean the same thing on someone else's machine.
+  The rewrite goes through the round-trip writer, so comments, quoting, blank lines, key order and
+  unknown keys — including one inside a `links[]` entry — all survive.
+- **It never mints a sidecar.** A source that has none is refused with `pnk sync` as the remedy: a
+  `links[].to` needs a ULID only sync mints, and writing a fresh one over a file that may already
+  hold a permanent one is the unrecoverable case. An unreadable source sidecar is reported and left
+  exactly as it is; the write itself is rename-atomic.
+- **An alias resolves through the partner's own `[kb] id`**, and a disagreement with the local
+  `[[links.kb]] id` is refused rather than guessed — one of the two names the wrong KB, and what
+  would be written is permanent. A well-formed `pnk://` URI whose target is *not* on this machine is
+  written, because both ULIDs are already in it.
+- **Running the same `pnk link` twice writes nothing the second time** and says so. Two different
+  relations to one target remain two entries; a document linking to *itself* is refused.
+- **A symlinked document can be linked, and a symlinked sidecar is written through** rather than
+  replaced by a regular file. Everything above the final path component is resolved and the
+  component itself is not, so a symlinked *file* — which `pnk sync` does index — is accepted, while
+  a symlinked *directory* cannot carry a link out of the KB, and an absolute path whose ancestor is
+  a symlink (macOS `/tmp`, or any checkout behind one) is no longer refused as "outside this KB".
+- **Fixed: `tags:` or `provenance:` written with nothing under them** were rewritten to `tags: []`
+  and `provenance: {}` on any sidecar rewrite, against the byte-identity promise. Reachable before
+  now only from a paid PDF extraction; `pnk link` would have reached it on a first link.
+
+- **`[kb] requires_pinakes` — a manifest can declare the oldest pinakes that can read it.** Unknown
+  keys are a hard error by design, so a KB written by a newer pinakes previously failed on the first
+  key this build had never heard of and reported it as a typo, when the real problem was an
+  out-of-date pinakes. The floor is read in a pre-pass **before** strict validation — after it, the
+  parse has already died on the unknown key and the field would be unreachable in exactly the case
+  it exists for. A floor only (`">=0.5.0"`): a KB is readable by the version that wrote it or any
+  newer one, so there is no ceiling to express and no specifier grammar to parse. Absence means no
+  floor declared, never a refusal, and `pnk init` does not stamp the field — a fresh KB carries no
+  key an older pinakes would choke on, so a stamped floor would lock out readers for no gain.
+
+### Changed
+
+`pnk doctor` reports link coverage as the **ratio** DESIGN §6.2 promises — `8 of 30 documents
+linked (27%)` — rather than an edge count, and resolves cross-KB targets instead of declaring them
+unchecked. A target whose own KB is on this machine and does not have the document is now a WARN
+with a count; one whose KB is *not* here is counted and left alone, because an index that cannot
+see a KB has no standing to call its documents missing.
+
+A new **linked KBs** check reads `[[links.kb]]` from the manifest alone, so it runs on a freshly
+cloned KB with no index — which is exactly when a committed absolute `path` matters. Four outcomes:
+a path that names no path at all, a KB absent from this machine, an absolute path (warned even when
+it resolves, because it publishes one machine's layout), and everything fine.
+
+A KB where nothing links to anything is now a WARN nudge rather than a silent OK.
+
+`pnk doctor` on a KB with no index now says *"not built yet, so the link checks did not run"* rather
+than only *"not built yet"*. Every index-backed check is produced from one place, so an absent index
+silently removed them all — including link coverage, which is the check a reader consults after
+authoring links. A report that stops listing a check reads as nothing to report about it.
+
+### Fixed
+
+Four tests that build an unreadable directory now skip where the process bypasses directory
+permissions (root, as in CI's container) instead of asserting against a precondition they could not
+construct, and a test asserting `pathlib`'s exact "unacceptable pattern" wording now asserts the
+property it meant. No shipped behaviour changes.
+
+- **Retrieval results no longer depend on how the index was built.** Every tiebreak in the pipeline
+  ultimately resolved to `chunks.id` — the rowid, which the schema says has no identity across
+  rebuilds — so two indexes over byte-identical sources could return different documents for the
+  same query. Measured on the golden set: one question in 41 answered differently after an
+  incremental sync than after a `--rebuild`. Ordering is now total on
+  `(documents.path, chunks.ordinal)` at the vector array, the BM25 cut and hydration, and the vector
+  sort is stable, which additionally stops a newly added document reordering tied results elsewhere
+  in the corpus. **No measured number moved**: the demo KB scores byte-identically to its committed
+  baseline before and after, which is what a change that only breaks ties should do.
+
+- **A `check.sh` gate and two CI jobs hold it there** — `tools/eval_reproducibility_gate.py` sweeps
+  four kinds of corpus change (a document edited, added, removed, renamed) offline in about a
+  second, and CI diffs per-question outcomes between `ubuntu-latest` and `macos-latest`, which is
+  the half of the question one machine cannot answer.
+
+- Making the BM25 cut a total order costs a join: **+11.5 ms** (23.9 → 35.4) on a synthetic
+  50k-chunk corpus where every chunk matches every query term, which is the worst case rather than a
+  typical one. `load_vectors`' new ordering costs nothing measurable — both query plans already
+  sorted through a temp B-tree.
+
+### Fixed
+
+- Two behaviours found in 0.5.0 after it was published, recorded here because they can only change
+  in a later release. A sidecar carrying its own **`%YAML 1.1` directive** is still parsed at 1.1,
+  so `country: NO` becomes `False` in the index and `false` on disk on any rewrite — the
+  cross-document version leak was fixed before release and tested, this same-file case was not.
+  And an **integral `!!float`** keeps its tag *and* gains quotes on rewrite (`f: !!float 3` →
+  `f: !!float '3'`), against the note that the tag itself is not written back; the locking test
+  asserts `!!int` and `!!seq` only.
+
 ## [0.5.0] — 20260731 11:27
 
 ### Added
@@ -1816,7 +1913,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.6.0
 [0.5.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.5.0
 [0.4.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.4.1
 [0.4.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.4.0

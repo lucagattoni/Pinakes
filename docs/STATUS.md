@@ -24,7 +24,7 @@
 | `pnk serve` | shipped | MCP: `pinakes_search`, `pinakes_get`, `pinakes_links`, `pinakes_list_kbs` |
 | `pnk budget` | shipped 0.3.0 | I6b. Day/month/operation spend, `--resolve` for an unknown outcome |
 | `pnk links` | shipped 0.5.0 | L4. What a document connects to and what connects to it: `--rel`, `--direction`, `--depth`, `--query`, `--json` |
-| `pnk link` | **on `main`, unreleased** | L6. Writes one `links[]` entry into the source document's own sidecar. Targets: a `pnk://` URI, `<alias>:<path>`, or a path in this KB |
+| `pnk link` | shipped 0.6.0 | L6. Writes one `links[]` entry into the source document's own sidecar. Targets: a `pnk://` URI, `<alias>:<path>`, or a path in this KB |
 | `pnk ask --deep` | **not built** | the deep release |
 
 | Capability | State | Notes |
@@ -38,7 +38,7 @@
 | Budget estimator, caps, window aggregation | shipped 0.2.2, **inert** | I6a. The pure logic only — nothing calls it, so nothing can spend |
 | Budget ledger, `pnk budget`, the accountant | shipped 0.3.0 | I6b. `ledger.jsonl`, the reservation/outcome protocol, and I6a's decisions read from it — now driven by I7b's extractor |
 | `path:page` citations | shipped | I8. `docs/paper.pdf:p7` / `:p7-8`, on the CLI and MCP alike; `pnk doctor` names the pages with no text layer |
-| Cross-KB links (`pnk link`, `pnk links`, `pinakes_links`) | **built** — `pnk sync` records what other KBs link into this one (`--scan-links`), `pnk links` and `pinakes_links` traverse (0.5.0), and `pnk link` authors, on `main` and unreleased. What remains is `pnk doctor`'s link coverage (L7) | the links release |
+| Cross-KB links (`pnk link`, `pnk links`, `pinakes_links`) | **built** — `pnk sync` records what other KBs link into this one (`--scan-links`), `pnk links` and `pinakes_links` traverse (0.5.0), `pnk link` authors, and `pnk doctor` reports link coverage as a ratio and resolves cross-KB targets (0.6.0) | the links release |
 | Sidecar round-trip | **shipped** — `ruamel.yaml` in round-trip mode at YAML 1.2: comments, quoting, block scalars and blank lines survive a rewrite, and an unknown key's value is no longer reinterpreted | the links release |
 | `sqlite-vec` tier, template ecosystem | **not built** | the template release |
 
@@ -225,7 +225,6 @@ and this release can be numbered whenever it is cut.
 >
 > | Name | What it is |
 > |---|---|
-> | **the links release** | `pnk link`, `pnk links`, `pinakes_links`, reverse-scan |
 > | **the graph release** | Structural edges, the expansion channel — each eval-gated |
 > | **the deep release** | `pnk ask --deep` |
 > | **the template release** | Template ecosystem, `pnk upgrade`, the `sqlite-vec` tier |
@@ -254,6 +253,7 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.4.0** ✅ | `path:page` citations on both surfaces, `pnk doctor` text yield (I8); the verification table and its gate (I9) |
 | **0.4.1** ✅ | A sidecar that will not parse is no longer overwritten by a freshly minted one, and no longer aborts the whole sync — data loss present since v0.1 |
 | **0.5.0** ✅ *(the links release, interim)* | `pnk links`, `pinakes_links`, reverse-scan and the sidecar round-trip fix — no `schema_version` bump, so no rebuild. **The release cuts twice** (decision 27): this is the interim MINOR at L5b; the final cut is at L8, and the name stays in the unbuilt-work table until then. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **L5b landed:** `ruamel.yaml` replaces `pyyaml` in the sidecar, so a rewrite preserves comments, quoting and blank lines — and `country: NO` stops becoming `false` ([decision](../plans/decision-ruamel-yaml.md)). **L6 has since landed on `main`, unreleased:** `pnk link`, the authoring command — it goes out at the final cut, not in 0.5.0. **Next: L7** (`pnk doctor`'s link coverage), then L8 and that cut |
+| **0.6.0** ✅ *(the links release, final)* | `pnk link` authors a link from the command line, and `pnk doctor` reports link coverage as **linked docs / total docs** and resolves each cross-KB target through its `[[links.kb]]` entry (L6–L8). Also `[kb] requires_pinakes` (G4) and the evaluation's tie-ordering fix (G1) — no `schema_version` bump, so no rebuild. **This completes the two-cut release** decision 27 describes: 0.5.0 was the interim MINOR at L5b, this is the final cut, and the name leaves the unbuilt-work table here |
 | *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. **Two increments are on `main`, unreleased.** **G1:** the evaluation's reproducibility was measured and the tie-ordering defect it found was fixed ([above](#is-the-evaluation-reproducible--measured-20260801-0035)) — no number moved, no `schema_version` bump. **G4:** `[kb] requires_pinakes`, a compatibility floor read *before* strict validation, so a KB written by a newer pinakes names the version it needs instead of failing as a typo. If G2's headroom measurement fails, G3 and G5 do not start and G1/G2/G4 are cut as their own release, named at the cut |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
 | *the deep release* | `pnk ask --deep` |
