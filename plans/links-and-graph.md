@@ -43,26 +43,17 @@ adversarial passes) and `docs/RETROSPECTIVES.md` **together with any unspliced f
 [`retro.d/`](../retro.d/)** — the newest findings live there until a release splices them, so
 reading only the document systematically misses them.
 
-## Baseline — `main` at `86d6db6`, 20260731 12:10
+## Baseline — `main` at `6421cb1`, 20260801 10:55
 
-Re-verify before L6. Re-baselined at 0.5.0: everything through L5b has shipped, so the rows below
-describe the tree L6 starts from, not the one the first drafts were written against.
+**The links release is complete.** L1–L8 have all landed and 0.6.0 is prepared on `main` — the
+document half is committed, the tag is not pushed. From the graph release's side: **G1 and G4 are in
+0.6.0 too**, so the tree the next increment starts from already has the tie-ordering fix and the
+compatibility floor in it.
 
-| Fact | Value |
-|---|---|
-| Latest release | **0.5.0** (20260731 09:34 UTC) — `pnk links`, `pinakes_links`, reverse-scan, and the sidecar round-trip through `ruamel.yaml`. The interim cut of a release that cuts twice |
-| `schema_version` | 2 |
-| I8, I9 | **Shipped in 0.4.0** (20260729 03:37). Not this plan's concern; noted because the previous revision called them planned, and `docs/CLI.md` line numbers moved when I8 landed |
-| Golden set | 41 questions · recall@5 0.909 · MRR 0.812 · rerank precision 0.758 · false-abstain 0.03 · false-confidence 0.25 |
-| Per class | `lexical` 1.00 · `filter` 1.00 · `no-answer` 1.00 · `multi-hop` **1.00 (n=5, at ceiling)** · `paraphrase` 0.75 |
-| `links` | PK is `(src_kb_id, src_doc_id, dst_kb_id, dst_doc_id, rel)` — **`origin` is not in it** |
-| `kb_refs` | Four columns, never written |
-| `chunks.id` | The rowid. `store.py`: *"a chunk has no identity across rebuilds"* |
-| Authored links | **Shipped.** demo-kb 16 links across 8 of 30 documents; partner-kb 13 across 6 of 21. Was zero in both when this plan was written |
-| `eval.py` | Structurally **single-KB**: one connection, one manifest, one backend; `retrieved` is local `passage.path` strings; per-question outcomes are computed and discarded |
-| Conventions | `changelog.d/` and `retro.d/` fragments — **editing `CHANGELOG.md` or `RETROSPECTIVES.md` directly is forbidden**; `tools/fragments.py --check` and `tools/shared_file_overlap.py` are `check.sh` gates |
-
----
+**The next increment is [G2](#g2--per-question-outcomes-the-grown-golden-set-one-re-baseline), and
+nothing else in this plan can start before it.** G3 and G5 are gated on its headroom measurement, and
+G6 closes the graph release. Re-verify this baseline before starting: `git log --oneline -1`,
+`gh run list --branch main --limit 1`, and `python3 tools/shared_file_overlap.py --fetch --strict`.
 
 ## Two releases, three cuts
 
@@ -71,8 +62,10 @@ describe the tree L6 starts from, not the one the first drafts were written agai
 | **the links release** | `pnk link`, `pnk links`, `pinakes_links`, reverse-scan, link coverage, the sidecar round-trip fix | **No** | **No** |
 | **the graph release** | Structural edges, the expansion channel, `schema_version` 3 | Yes, once | Yes — it is the whole gate |
 
-**The links release cuts twice** (decision 27): an interim MINOR at **L5b**, carrying L1–L5b, and
-the final cut at L8. A tag is a point on `main`, so a cut at L5b ships everything merged before it.
+**The links release cut twice** (decision 27): an interim MINOR at **L5b** carrying L1–L5b — 0.5.0,
+20260731 — and the final cut at L8 — **0.6.0, 20260801**, which is where its name left the
+unbuilt-work table. A tag is a point on `main`, so the interim cut shipped everything merged before
+it. One cut remains in this plan: the graph release's, at G6.
 
 **A third outcome exists and is planned for**, not discovered: if G2's precondition fails, G3 and G5
 do not run, and G1 + G2 + G4 ship as their own release — a reproducibility measurement, a larger and
@@ -86,48 +79,27 @@ question through it produced a class pinned at 0.00 or 1.00 by construction. Tra
 is directly testable — does the traversal return the neighbour the corpus says it should — and that
 is what the links release ships with. All eval work moves to the graph release, where it is the gate.
 
-## Two tracks in parallel — the contract
+## One track now — and what the parallel run taught
 
-**G1, G2 and G4 may be built by a second agent alongside L6/L7/L8.** Verified 20260801 00:22, not
-assumed: none of the three touches a file the L-track touches, and none depends on the links work.
-**G3 and G5 may not start either way** — they are gated behind G2's headroom measurement.
+**The L-track is finished** (0.6.0), so the two-track split is history. What remains is the graph
+release, and it is sequential by construction: **G2 gates G3 and G5**, and G6 closes the release.
+A second agent has nothing independent to take up until G2's measurement lands.
 
-**That verification was too narrow, and G1 found out by landing** (proposed by the G-track,
-incorporated 20260801 01:26). It compared the two tracks' *owned* files and never asked what a new
-**gate** touches: the Ground rules oblige every one to edit `check.sh`,
-`.github/workflows/ci.yml` and `tests/test_check_script.py`, and each is appended to at the end of
-the same region. G1 also edits `src/pinakes/search.py` and `src/pinakes/store.py`, which appear in
-**neither** column — reproducibility is a property of core retrieval, so no G-increment could have
-avoided them. Scope it honestly: the L-track has touched none of these five so far and L7/L8 may
-never add a gate, so this is where a clean auto-merge is *least likely* to be a correct one, not a
-collision already in progress. Nothing here forbids the work.
+Three things the parallel run established that outlive it, and that apply to any future split:
 
-| Track | Owns | Never edits |
-|---|---|---|
-| **L** — L6, L7, L8 | `doctor.py`, `link.py`, `linkscan.py`, `sidecar.py`, `cli.py`, `errors.py`, `tests/test_doctor.py`, `tests/test_cli_link.py`, `tests/test_sync_links.py`, `docs/CLI.md` | `eval.py`, `manifest.py`, `tests/test_eval.py`, the golden set, `baseline.json` |
-| **G** — G1, G2, G4 | `eval.py`, `manifest.py`, `tests/test_eval.py`, `tests/demo-kb/eval/*`, `src/pinakes/templates/notes/eval/*`, the two new test files | `doctor.py`, `link.py`, `linkscan.py`, `sidecar.py`, `docs/CLI.md` |
-| **Shared, and the reason the overlap gate is mandatory** | `docs/STATUS.md` (all six increments), `docs/DESIGN.md` (G2 §7, G4 §2.1, L-track elsewhere), `docs/MANIFEST.md` (G4 and L7), `docs/VERIFICATION.md` (all), **`check.sh` + `.github/workflows/ci.yml` + `tests/test_check_script.py`** (any increment that adds a gate — appended to at the same place), **`src/pinakes/search.py` + `src/pinakes/store.py`** (core retrieval, owned by neither track) | — |
-
-Four rules, each closing a failure this plan or CLAUDE.md has already recorded once:
-
-1. **G2 lands *after* L8's final cut — or amends L8 step 5 in the same commit.** Step 5 reads
-   *"`make eval` unchanged … any movement is a defect."* G2 grows the golden set from 41 to ~59,
-   adds a `simple-lookup` kind and rewrites `baseline.json`, so landing it first makes that premise
-   false. The dangerous failure is not the false alarm: it is an executor who knows G2 explains the
-   movement and therefore stops reading the number at all.
-2. **Neither track assigns a release number until the other's cut has landed.** The G-track's
-   fallback release and L8 both take one, and CLAUDE.md already records an agent almost numbering a
-   release from a stale base (20260728). The G-track does not cut before L8 does.
-3. **`python3 tools/shared_file_overlap.py --fetch --strict` before every merge, both tracks, and
-   then *read* the merged state of what it names.** `changelog.d/` and `retro.d/` removed the cause
-   for the two documents every change writes to; `docs/STATUS.md` has no such protection and is
-   touched by all six increments. A clean auto-merge is not a correct merge.
-4. **G4 and [`source-walk-containment.md`](source-walk-containment.md) both edit `manifest.py`** —
-   G4 a pre-pass around `load()`, containment a check inside `_sources()`. They are genuinely
-   independent and *will* merge cleanly, which is the hazard rather than the reassurance. Whichever
-   lands second re-reads the merged file before pushing.
-
----
+1. **Ownership by *file* is not enough — ask what a new gate touches.** The first contract compared
+   the tracks' owned files and passed. G1 then edited `check.sh`, `.github/workflows/ci.yml` and
+   `tests/test_check_script.py`, which the Ground rules oblige *every* new gate to append to at the
+   same place, plus `src/pinakes/search.py` and `src/pinakes/store.py`, which belonged to neither
+   column because core retrieval belongs to neither track.
+2. **`docs/STATUS.md` is touched by every increment** and has none of the protection `changelog.d/`
+   and `retro.d/` gave the other two shared documents. Both G1's and G4's proposals rewrote the same
+   roadmap row; applied independently, the second would have silently deleted the first's sentence.
+   `python3 tools/shared_file_overlap.py --fetch --strict` before every merge, then *read* what it
+   names.
+3. **A verification step written against one track's assumptions goes stale when the other lands.**
+   L8's step 5 says `make eval` must be unchanged; G2 rewrites `baseline.json` deliberately. That is
+   noted at the step itself, not only here — the place an executor is actually standing.
 
 ## Goal
 
@@ -298,293 +270,33 @@ which still names every test by increment; what they *taught* is in
 
 ---
 
-### L6 — `pnk link`
+### L6–L8 — shipped ✅ *(0.6.0, the links release's final cut)*
 
-**Unblocked** — L5b delivered the comment-preserving writer, superseding decision 18. There is no
-fallback path: no `pyyaml` retry, no comment-loss warning, and
-`test_comments_survive_a_rewrite_through_pnk_link` lands **passing**.
+Specifications compacted 20260801 10:55, once built — 3009 words, the same treatment L1–L5c had. What
+they *decided* is in *Decisions taken*; what they *promise* is in *Verification*, which still names
+every test by increment; what they *taught* is in
+[`docs/RETROSPECTIVES.md`](../docs/RETROSPECTIVES.md); what they *did* is in
+[`CHANGELOG.md`](../CHANGELOG.md) `[0.6.0]`. Full text in this file's git history.
 
-**What lands.** `pnk link <src> <dst> --rel <rel>`, writing one entry into the **source document's
-sidecar only**, rename-atomically.
-
-**`<src>`:** a path relative to the KB root. **A source with no sidecar is refused** — *"run `pnk
-sync` first"* — because a `links[].to` needs a doc ULID that only sync mints. **Never mint here**: if
-`pnk link` builds a sidecar and calls `write()`, it overwrites a file that may already hold a
-permanent ULID, which `sidecar.create()` exists to refuse (`sidecar.py:604-620` records the incident).
-An **unreadable** source sidecar is a typed error and is never overwritten. `--kb` is accepted like
-every other command; `--rel` is required (`_links` refuses an empty `rel`).
-
-**`<dst>` grammar, in precedence order** — the list was previously unordered and ambiguous. Try the
-`pnk://` prefix first; then `<alias>:` **only when the prefix is a declared `[[links.kb]]` name**
-(a POSIX path may contain a colon, and `pnk://…` itself splits as alias `pnk`); otherwise treat the
-whole string as a KB-root-relative path. An alias resolves via `linkscan.resolve_path` plus a read of
-the partner's sidecar for its `id`; an absent partner path is refused here (L7 only *warns* about one
-already written). **"Unresolvable" means the alias or `self` cannot be turned into a ULID pair** — a
-well-formed `pnk://` to an absent target **is written**, which `tests/free_path_run.py` depends on.
-
-**`<dst>` legacy note:** a path relative to the local KB root; `pnk://<kb-ulid>/<doc-ulid>`; or
-`<alias>:<path>` where the alias is a `[[links.kb]]` name. Aliases and `self` in the `<dst>` **argument** resolve to ULIDs before the
-entry is written. Note this is a different moment from `read()`, which resolves `pnk://self/…`
-already on disk, and from `write()`, which matches on the **resolved** URI — three resolution points,
-easy to conflate. An unresolvable `<dst>` is refused with a typed error and a remedy.
-
-**Per-link unknown keys already round-trip — L5b delivered this, do not re-implement it.** The
-paragraph here previously said they did *not*, contradicting its own heading and the DESIGN §2.2
-amendment. `Link` is still a two-field frozen dataclass, but `write()` assigns only `to` and `rel`
-into an existing entry and deletes nothing, so a user's own key inside a `links[]` entry survives —
-verified against the shipped 0.5.0 writer. L6's job is to **not break it**, and the test below is a
-regression guard rather than new behaviour.
-
-**The first link is the common case, and it is the one L5b just fixed a crash on.** A sidecar with
-`links:` and nothing under it — what a user has before their first link — read fine, then crashed
-`write()` with an unhandled `TypeError`. `pnk link` reaches that shape on almost every first
-invocation, so test it explicitly rather than relying on L5b's guard holding.
-
-**Two of L5b's pinned limitations are reachable here, and one fires on the common case.**
-Appending a key captures a **document-trailing comment** — measured, a foot-of-file note becomes the
-introduction to the new `links:` block — and `pnk link` appends `links` on every first invocation.
-Re-indentation is the second (see the test note below). What is *not* reachable is deletion:
-`pnk link` only appends. L5b's pinned limitation — removing an
-entry misattributes one comment and destroys another — is unreachable here: `pnk link` only appends.
-`pnk unlink` stays out (see *What this plan deliberately does NOT decide*); if it ever lands, that
-limitation becomes user-facing.
-
-**Tests.** `tests/test_cli_link.py::test_an_alias_is_resolved_to_a_ulid_on_write`;
-`::test_a_first_link_into_a_null_links_value_does_not_crash`;
-`::test_a_rel_that_looks_like_a_boolean_is_quoted` (decision 23 — `pnk link --rel no` writes into an
-**existing** sidecar, so a bare `rel: no` reads back as `False` under YAML 1.1; the verification
-table already assigns this test here, and L6's list omitted it);
-`::test_self_is_expanded_on_write`; `::test_each_dst_grammar_resolves`;
-`::test_an_unresolvable_dst_is_refused_with_its_remedy`;
-`::test_a_link_round_trips_through_sync_into_the_links_table`;
-`::test_unknown_keys_inside_a_link_entry_survive_through_pnk_link`;
-`::test_the_write_is_atomic_under_an_interrupted_rename`;
-`::test_the_source_document_is_byte_identical_afterwards`;
-`::test_comments_survive_a_rewrite_through_pnk_link` (**passing**, on L5b's writer);
-`::test_no_line_outside_the_links_block_changes_when_a_link_is_added` (**renamed** — the old name
-claimed byte-identity the invariant excludes: appending to a 2-space-indented `links:` block
-re-indents every line of it, and the committed corpora happen to use 0-indent sequences, so a fixture
-copied from them would be green while the promise in the name was false);
-`::test_an_indented_links_block_is_reindented_when_a_link_is_added` (pins that exclusion);
-`::test_a_document_trailing_comment_is_captured_when_the_first_link_is_appended` (pins the
-limitation above, at the CLI).
-
-**Exit criteria.** `DESIGN_COMMANDS` and `IMPLEMENTED` (`tests/test_cli.py:17`), `docs/CLI.md`'s
-*Planned — not built yet* row for `pnk link` moving into a real section, and CLAUDE.md's
-`docs/`-ownership amendment. **Not "DESIGN §8's command list" — there is no such list**: §8 is a
-why-this-order section that opens *"What has actually shipped is STATUS.md"*, and L4 and L5 were
-given the same amendment and landed without executing it.
-**Docs:** `docs/CLI.md`; `docs/GUIDE.md` — **diff its printed output against the real output**, not
-just run it (an L5 example survived a full increment because it ran fine and printed something else);
-`docs/MANIFEST.md` — specifically line ~241, *"It is the one place a machine writes into `docs/`"*,
-which `pnk link` falsifies and which an executor updating the field table would not notice;
-`docs/DESIGN.md` §2.2; `docs/STATUS.md` — the roadmap row moves *Cross-KB links* from **partly
-built** to built; a `changelog.d/` fragment.
-
-**Also lands.** `tests/free_path_run.py` gains `pnk link`. Note L5b rewrote that file off PyYAML
-onto `pinakes.sidecar.read`/`write`, so it no longer looks as it did when this line was written.
-
-**Mutation targets.** The alias→ULID resolution; the per-link key preservation; the atomic rename;
-the `rel` quoting predicate.
-
----
-
-### L7 — `pnk doctor`: link coverage and cross-KB resolution
-
-**Precondition: L6 must be merged to `main` first.** Not a preference — `linkscan.why_unresolvable`
-does not exist on `main`, and `linkscan.resolve_path` still returns a bare `Path` there. Both of
-this increment's cross-KB severities are written against the L6 signatures. Branch from `main`
-*after* the merge, never from the L6 branch. Nothing else here depends on L6: it touches neither
-`doctor.py` nor `tests/test_doctor.py`, so the three broken tests and the four doc claims below are
-the same on `main` and at the L6 tip — checked, 20260801 00:02.
-
-**What lands.** Two things in `src/pinakes/doctor.py`:
-
-1. **The coverage ceiling DESIGN §6.2 promises** — *"`pnk doctor` reports it (linked docs / total
-   docs)"*. The `origin = 'sidecar'` **filter** is shipped in `_links`; the **metric** is not. The
-   shipped check prints an *edge* count (`16 links, 4 cross-KB`) and prints a ratio only in its zero
-   branch — on `tests/demo-kb` those 16 edges come from 8 of 30 documents, so the ceiling the
-   §6.2 row is tabled against, 27%, is never printed. Add `COUNT(DISTINCT src_doc_id)` over the same
-   filter and print the ratio in **both** branches. Verify the filter; **build** the metric.
-2. **`"cross-KB (unchecked until the links release)"`** becomes a real check: each cross-KB
-   target is resolved through the `[[links.kb]]` entry naming its KB, via `linkscan.resolve_path`
-   — which answers **`Path | None`** (L6 review 8, 20260731). `None` means the text names no path
-   at all; `linkscan.why_unresolvable(root, raw)` gives the reason, and returns the reason
-   *alone*, because the caller already holds the path. Never fall back to the declared text as a
-   filesystem base: review 8 measured that shape walking a same-named decoy directory in the
-   working directory and deleting every inbound reverse row.
-
-**Where each check lives.** `_links` is yielded from *inside* `_index`, which returns at its first
-branch when `.pinakes/` is absent. Anything needing only the manifest must not live there, or it
-never fires on a freshly cloned KB — exactly when a committed absolute path is a hazard.
-
-| Check | Home | Needs |
-|---|---|---|
-| coverage ratio, dangling-internal, cross-KB resolution | `_links`, as today | the index |
-| every `[[links.kb]]` entry — unresolvable, absent, absolute (four cases, below) | a new `_linked_kbs(manifest)` returning **one** `Check` named `"linked KBs"`, appended in `diagnose` immediately after `_template(manifest)` | the manifest only |
-
-**`_linked_kbs` returns one `Check`, always** — with no `[[links.kb]]` declared, `Status.OK` and
-`"none declared"`, never an absent check. That is not cosmetic: a check `diagnose` *always* produces
-is one `test_every_doctor_check_is_exercised_by_a_test` can see, so it needs no entry in that test's
-`conditional` map and the coverage guard keeps working by construction. Status is the worst across
-the entries; the detail names how many are declared, how many resolvable, and one clause per problem
-class carrying the offending aliases.
-
-**`why_not_a_kb` supplies the reason, and it raises — wrap it.** It answers five cases (no such
-directory / not a directory / no `pinakes.toml` there / `pinakes.toml` is itself a directory / it is
-a symlink to nothing), and it raises `OSError` on an unreadable parent (`~root` is mode 0700 on
-macOS) and on `ENAMETOOLONG`. Its docstring names **this increment as its third caller**:
-`linkscan.scan_one` and `link._via_alias` each place it inside an `except OSError`, and
-`_linked_kbs` must do the same. A diagnostic command reporting a traceback is the one outcome
-`pnk doctor` may not have. The totality argument that applies to `resolve_path` deliberately does
-not transfer here — there is no value it could return for *"I could not tell"* that a caller would
-not have to branch on anyway.
-
-**The detail string, exactly.** `_links` builds `f"{linked} of {active} documents linked
-({linked / active:.0%}), {len(targets)} links, {external} cross-KB"` — `{:.0%}` matching
-`tools/link_density_gate.py`'s `render`, so the two read alike — then appends, each only when
-non-zero and in this order: `f"; {n} dangling inside this KB"`, **wording unchanged**, and
-`f"; {n} cross-KB unresolved"`. The zero branch keeps its `"none authored"` wording and gains the
-same `0 of {active}` ratio.
-
-**Doctor's number is as of the last sync.** It counts index rows where L1's gate counts sidecar
-files, so one `pnk link` without a re-sync makes them disagree — measured on a copy of the committed
-corpus: gate 17, doctor 16. Say so in the detail line. Do **not** write that they cannot differ.
-
-**Severity.** Zero authored links KB-wide → WARN nudge (not per-document: L1's ≤ 35% cap guarantees
-that would fire on both committed corpora by construction — an amendment to APPROACH §3, tabled
-above). Cross-KB target absent from a KB that did resolve → WARN with the count. **Four
-`[[links.kb]] path` cases, not two** — `resolve_path` answers `None`, an absent directory, or a
-real one: unresolvable (`~someone/kb`, an embedded NUL) → WARN carrying `why_unresolvable`'s
-reason; absent on this machine → WARN; absolute → WARN; resolvable and present → OK. Nothing here
-is FAIL — `cli.py`'s `doctor` exits
-non-zero only on `Status.FAIL`, and none of these is a broken KB. **Every new WARN carries a
-remedy**: `test_every_problem_carries_a_remedy` runs on a fixture that cannot reach these checks, so
-it will not catch a missing one.
-
-**Do not call `linkscan.scan` to answer any of this.** It returns a `skipped_fresh` row whose
-`kb_id` is the **locally declared** `[[links.kb]] id`, not the partner's own — safe today only
-because `sync` `continue`s before reading it. `ScannedKb.kb_id`'s docstring names `pnk doctor` as
-the reader that would take one for the other. Read the manifest, and resolve with `resolve_path`.
-
-**Not a check here: a malformed `pnk://`.** It never reaches the `links` table — `sidecar._links`
-raises `SidecarError` at read, and doctor's *sidecars* check already reports it FAIL. A test named
-for it would pass against that pre-existing check while the new one went unexercised. Do not write
-one. (It also holds only for sidecars under the local `[sources] roots`; a malformed URI in a
-*partner's* sidecar surfaces as a linkscan failure at sync time, not here.)
-
-**Three committed tests break, not two** — all in `tests/test_doctor.py`:
-
-| Test | Why |
+| Increment | What shipped |
 |---|---|
-| `test_link_coverage_is_reported_even_when_nothing_is_linked` | asserts `Status.OK` where zero becomes WARN — update |
-| `test_a_cross_kb_link_is_counted_and_declared_unchecked` | asserts the literal string this increment retires — update |
-| `test_a_dangling_link_inside_this_kb_is_a_warning_naming_how_many` | asserts `"1 dangling inside this KB"` while the detail *prefix* changes — it survives only because the suffix wording above is held fixed. Re-run it; do not edit it |
+| **L6** | `pnk link <source> <target> --rel REL` — one `links[]` entry into the source document's own sidecar and nothing else. Three target grammars tried in order (`pnk://` URI, `<alias>:<path>`, a path in this KB), aliases and `self` resolved to ULIDs **before** writing. Rename-atomic, and no lock: atomicity prevents a torn file, not a lost update. **16 review rounds**, the last several spent on one containment rule that took four spellings to state correctly |
+| **L7** | `pnk doctor` reports link coverage as the **ratio** DESIGN §6.2 promises — linked docs / total docs — not an edge count; resolves each cross-KB target through its `[[links.kb]]` entry; and checks the declared linked KBs themselves (unresolvable, absent, absolute). Every new finding is a WARN with a remedy |
+| **L8** | Verification of the whole, and the final cut. Seven of eight steps ran green. **Step 8, the ClaudeKB realism check, was declined in writing** — it needs a real knowledge base and this repo forbids committing one. [`realism-corpus.md`](realism-corpus.md) is what gives it something to be run against |
 
-**Both meta-guards run on a fixture that declares no `[[links.kb]]`.**
-`test_every_doctor_check_is_exercised_by_a_test` builds its set from `diagnose()` on that fixture,
-and `test_every_problem_carries_a_remedy` runs on it too. The "one `Check`, always" rule above is
-what keeps the first one honest — do **not** instead add `"linked KBs"` to its `conditional` map,
-which would exempt the check from the guard rather than expose it to it. The second guard stays
-blind either way, because on that fixture the check is `OK` and carries no problem: that is why
-*"every new WARN carries a remedy"* is stated as a requirement here rather than left to it.
-
-**Tests.** `tests/test_doctor.py::test_link_coverage_counts_authored_links_only`;
-`::test_link_coverage_reports_the_ratio_not_the_edge_count`;
-`::test_a_dangling_cross_kb_target_warns_with_a_reason`;
-`::test_an_absolute_linked_kb_path_warns`;
-`::test_a_linked_kb_absent_from_this_machine_warns`;
-`::test_a_linked_kb_path_that_resolves_to_nothing_warns_with_the_reason`;
-`::test_a_kb_with_no_authored_links_nudges`.
-
-**Docs.** Four files carry claims this increment falsifies, and none is optional:
-
-- `docs/CLI.md` — doctor's checks, **and** the `pnk link` section's *"`pnk doctor`'s cross-KB check
-  is not built yet"*, which an executor told to update "doctor's checks" will not open.
-- `docs/MANIFEST.md` — the *"`path` is stored but **not yet read by anything**"* paragraph: already
-  false since 0.5.0 (`linkscan.resolve_path` reads it), and it states L7's absolute-path warn in the
-  future tense.
-- `docs/VERIFICATION.md` — the two rows naming the retired tests, plus a row per new test.
-  `tests/test_verification.py` hard-fails on an unresolvable name, so renaming a test without editing
-  the table is a red gate; editing the test in place leaves the table asserting a falsehood that
-  nothing catches.
-- `docs/STATUS.md`, and a `changelog.d/` fragment.
-
----
-
-### L8 — Verification of the whole, and the links release's **final** cut
-
-**Two cuts, not one** (decision 27). **L5b** took the **interim** cut, running the steps that
-existed then; L8 takes the **final** cut and runs all eight below. `tools/fragments.py --apply` runs
-at *each* cut and deletes what it consumes, so the interim cut's CHANGELOG section carries L1–L5b and
-the final one carries everything spliced after it — L6–L8, plus any fragment landed on `main` since
-the interim cut.
-
-**Verification** — run, not reasoned about:
-
-1. `./check.sh` green on all three CI legs; CI green on the merge.
-2. A fresh KB works, **in this order**: `pnk init` → **set `provider = "fastembed"` in both
-   `[embedding]` and `[rerank]`** → add a document → **`pnk sync`** (which mints the sidecar and its
-   ULID) → `pnk link` to a second KB → **`pnk sync` again** (which carries the link into the `links`
-   table) → `pnk search` → `pnk links` — executed. The manifest edit is not optional: `pnk init`
-   stamps `sentence-transformers` in both tables, all three CI legs are `[light]`, and without it
-   `pnk sync` exits 1 before `pnk link` is ever reached. `docs/GUIDE.md` documents the same two lines
-   — cite it rather than inventing wording. `pnk link` cannot precede the first sync: there is no
-   sidecar to write into and no ULID to link from, and it says so and exits 1.
-3. Every command in `docs/GUIDE.md` runs as written, install line included.
-4. `.paid-path-allowlist` byte-identical; the free-path gate covers `pnk link`, `pnk links` and an
-   MCP handshake that **invokes** `pinakes_links`.
-5. `make eval` unchanged — this release touches no retrieval, so any movement is a defect. L5b
-   swapped the loader `load_questions` uses; the swap was measured inert on both committed
-   `questions.yaml`, so movement here would mean that measurement was wrong. **If G2 has landed
-   first, this step is void as written** — it grows the set from 41 to ~59 and rewrites
-   `baseline.json` deliberately. Either it lands after this cut, or the commit that lands it amends
-   this step (the two-tracks contract, rule 1). Do not run the step and reason past a difference.
-6. **`store.SCHEMA_VERSION` is still 2.**
-7. **`pnk sync` both corpora first**, then `pnk doctor` on each, and paste each `links:` line — it
-   must name a coverage ratio *and* a count. Unsynced, `.pinakes/` is absent (it is gitignored, so
-   that is their committed state), `_index` returns at its first branch and **no link check runs at
-   all**: a bare exit-0 would prove nothing about L7. `make demo` syncs `tests/demo-kb`; nothing
-   syncs `tests/partner-kb`. "Clean" means no FAIL — WARNs are possible and do not block, and the
-   zero-link nudge is KB-wide (L7), so it does not fire on a corpus with any authored links at all.
-   Then run `pnk doctor` once on an **unsynced** copy: still exit 0, and it must say the link checks
-   could not run.
-8. The ClaudeKB realism check is **run, or declined in writing**. It cannot be run against this
-   repo — the only KBs here are synthetic by rule — so a declination is the honest answer until
-   the corpus in [`realism-corpus.md`](realism-corpus.md) exists. Record the declination and its
-   reason; do not leave the step silent.
-
-**The final cut's sweep — decision 27's exception inverted.** The links release's name is dropped
-from the 🚫 unbuilt-work table **here and only here**: `CLAUDE.md` and `docs/STATUS.md`'s mirrored
-table both. Then four edits, each already *partly* done by L6 — read the row before rewriting it:
-
-- `docs/STATUS.md`'s **`pnk link` command row**, still reading "on `main`, unreleased".
-- `docs/STATUS.md`'s ***Cross-KB links*** row — L6 already moved it to **built**; its tail still says
-  `pnk link` is "on `main` and unreleased" and that "what remains is `pnk doctor`'s link coverage
-  (L7)".
-- `docs/STATUS.md`'s **Release roadmap**: a new row for the final version, and the `0.5.0` row's
-  tail, which still reads "the final cut is at L8 … **Next: L7**, then L8 and that cut".
-- The *Published on PyPI* table and `README.md`'s install lines, as at any release.
-
-Verify by querying the index, not by reading. Step 3 carries L5b's wording in full — diff
-the GUIDE's printed output rather than running it, and test against the **built wheel**, since
-`uvx --from "pinakes[light]"` resolves from the index and would validate the previous release.
-
-**The cut.** `python3 tools/fragments.py --apply` (splices `changelog.d/` and `retro.d/`, deleting
-what it consumes — a release that skips it and runs it later splices into the wrong version), bump
-`__version__`, move `[Unreleased]` into a dated section **and add its link definition at the foot,
-repointing `[Unreleased]`'s compare** (`fragments.py --apply` splices entries and does not touch the
-footer), commit, **merge from the primary checkout**,
-push, `make release-check`, tag, push the tag, create the GitHub release. Then `git tag -l`,
-`gh release list` and `git merge-base --is-ancestor` to verify it happened.
-**Check `origin/main` for the number first** — this plan's own interim cut took 0.5.0, and another
-agent may cut again before L8 lands.
+**The one L-finding worth carrying into the G stages**, because it cost four merges: *`main` was red
+while local `check.sh` was green.* Six tests asked the operating system to produce an error and then
+asserted on the answer — `chmod(0o000)`, a 300-character filename, an embedded NUL — which tests the
+platform, not the guard. They now raise `PermissionError`/`OSError`/`ValueError` directly, which is
+what each guard's contract actually says it catches. **`gh run list --branch main` belongs in the
+merge sequence, right after the push** — not in the next increment's verification, which is where it
+was and why four merges landed on a red default branch.
 
 ---
 
 ## Increments — the graph release
 
-### G1 — Is the eval reproducible? ✅ built 20260801, on `main`, unreleased
+### G1 — Is the eval reproducible? ✅ shipped in 0.6.0
 
 **The answer was no, and only luck hid it.** Under ties, one question in 41 changed answer between
 an incremental sync and a `--rebuild`: every tiebreak in the pipeline resolved to `chunks.id`, the
@@ -795,7 +507,7 @@ soft-delete removal; the `schema_version` refusal.
 
 ---
 
-### G4 — `requires_pinakes` ✅ built 20260801, on `main`, unreleased
+### G4 — `requires_pinakes` ✅ shipped in 0.6.0
 
 `[kb] requires_pinakes` — a compatibility floor read in a **pre-pass before strict validation**, so a
 manifest written by a newer pinakes names the version it needs instead of failing as a typo. The
