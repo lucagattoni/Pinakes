@@ -307,9 +307,11 @@ the alias form bites **only** on a declared name — a POSIX path may legitimate
 
 **What is refused, and what is not.** A well-formed `pnk://` URI whose target is not on this
 machine **is written**: both ULIDs are already in it, and refusing would make authoring depend on
-which KBs happen to be checked out. Nothing checks that target afterwards, either — `pnk doctor`'s
-cross-KB check is not built yet, and `pnk links` reports only *local* targets under `unresolved`,
-because a cross-KB one cannot be verified from here without the other KB. An **alias** that cannot
+which KBs happen to be checked out. What checks it afterwards is **`pnk doctor`**, which resolves
+each cross-KB target through its `[[links.kb]]` entry and reports the ones it cannot find as
+`N cross-KB unresolved` — a WARN, never a FAIL, because a partner absent from this machine is a fact
+about the machine. `pnk links` still reports only *local* targets under `unresolved`: a cross-KB one
+cannot be verified mid-traversal without reading the other KB. An **alias** that cannot
 be turned into a ULID pair is refused, because
 resolving one means reading that KB. So is an alias whose partner declares a different `[kb] id`
 than `[[links.kb]]` does — one of the two names the wrong KB, and what would be written is

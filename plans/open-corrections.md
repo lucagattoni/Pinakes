@@ -188,6 +188,42 @@ and it must not wait behind them.
 
 ---
 
+## 11 · `tools/fragments.py` splices duplicate `###` headings
+
+**Current:** applying 7 changelog fragments at the 0.6.0 cut produced a section with **two
+`### Fixed` headings**, and one entry beginning `- **Fixed: …**` filed under `### Added` — the
+fragment's own prefix, in the wrong section. The tool concatenates fragments in order and does not
+merge same-named headings.
+
+**Required:** group by heading and emit one block per category, in Keep-a-Changelog order
+(`Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`). A test that applies two
+fragments sharing a category and asserts one heading in the output.
+
+**Why it matters:** it is silent, it lands in the artifact that is published and cannot be
+re-uploaded, and it scales with the number of fragments — 11 at this release, and the next graph
+release will have more. Repaired by hand for 0.6.0; the tool is unchanged.
+
+---
+
+## 12 · L7 shipped without two of its four Docs items
+
+**Current:** L7's Docs list named four files. Two were not done, and both said something false about
+L7's own headline feature at the moment 0.6.0 was being prepared:
+
+- `docs/CLI.md` — *"`pnk doctor`'s cross-KB check is not built yet"*, inside the `pnk link` section.
+- `docs/MANIFEST.md` — *"`path` is stored but **not yet read by anything** — nothing resolves it and
+  no check inspects it"*, already false since 0.5.0.
+
+**Required:** nothing — the planner fixed both on 20260801 10:58, before the tag. Recorded because
+the *cause* is worth naming: both were listed in the increment's plan with the sentence to look for,
+and the increment was reviewed twice without either being noticed. A Docs list is a checklist, and
+neither review checked it.
+
+**For future increments:** the last step before declaring an increment done is to re-read its own
+Docs list and confirm each item, by grepping for the sentence the plan quotes.
+
+---
+
 ## Not to be fixed — recorded so nobody tries
 
 - **A sidecar carrying its own `%YAML 1.1` directive** is parsed at 1.1, so `country: NO` becomes

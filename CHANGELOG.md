@@ -36,9 +36,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   component itself is not, so a symlinked *file* — which `pnk sync` does index — is accepted, while
   a symlinked *directory* cannot carry a link out of the KB, and an absolute path whose ancestor is
   a symlink (macOS `/tmp`, or any checkout behind one) is no longer refused as "outside this KB".
-- **Fixed: `tags:` or `provenance:` written with nothing under them** were rewritten to `tags: []`
-  and `provenance: {}` on any sidecar rewrite, against the byte-identity promise. Reachable before
-  now only from a paid PDF extraction; `pnk link` would have reached it on a first link.
 
 - **`[kb] requires_pinakes` — a manifest can declare the oldest pinakes that can read it.** Unknown
   keys are a hard error by design, so a KB written by a newer pinakes previously failed on the first
@@ -72,6 +69,11 @@ authoring links. A report that stops listing a check reads as nothing to report 
 
 ### Fixed
 
+- **`tags:` or `provenance:` written with nothing under them** were rewritten to `tags: []`
+  and `provenance: {}` on any sidecar rewrite, against the byte-identity promise. Reachable before
+  now only from a paid PDF extraction; `pnk link` would have reached it on a first link.
+
+
 Four tests that build an unreadable directory now skip where the process bypasses directory
 permissions (root, as in CI's container) instead of asserting against a precondition they could not
 construct, and a test asserting `pathlib`'s exact "unacceptable pattern" wording now asserts the
@@ -97,7 +99,6 @@ property it meant. No shipped behaviour changes.
   typical one. `load_vectors`' new ordering costs nothing measurable — both query plans already
   sorted through a temp B-tree.
 
-### Fixed
 
 - Two behaviours found in 0.5.0 after it was published, recorded here because they can only change
   in a later release. A sidecar carrying its own **`%YAML 1.1` directive** is still parsed at 1.1,
