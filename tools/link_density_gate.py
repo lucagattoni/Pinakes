@@ -152,6 +152,13 @@ def documents_of(root: Path, roots: list[str], include: list[str]) -> list[Path]
 
 
 def census(root: Path) -> Census:
+    # **Resolved once, at the top.** `documents_of` resolves its bases (`(root / name).resolve()`)
+    # while the `relative_to(root)` below used the raw argument, and on macOS — where `/tmp` is a
+    # symlink to `/private/tmp` — the two disagree and this dies with a `ValueError` traceback. It
+    # only bites on an explicitly non-canonical root, so the committed corpora and CI never saw it;
+    # but this is the tool an executor is told to run *against a copy*, and on this platform a copy
+    # lives under `/tmp`.
+    root = root.resolve()
     owner, roots, include = manifest_facts(root)
     degrees: dict[str, int] = {}
     relations: Counter[str] = Counter()

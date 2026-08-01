@@ -23,3 +23,7 @@
   and the unmatched-files sweep reported an indexed document as unmatched. The key now collapses
   `..` lexically. It is not *resolved*: that would follow a symlinked directory and silently re-key
   every document under it, which for an existing KB is a path change on a permanent identity.
+- **`tools/link_density_gate.py` no longer dies on a root reached through a symlinked parent.**
+  `census` resolved one of its two bases and not the other, so on macOS — where `/tmp` symlinks to
+  `/private/tmp` — running the gate against a copy of a KB exited with a `ValueError` traceback
+  instead of a verdict. It is the tool an executor is told to run against a copy.

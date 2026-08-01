@@ -1554,6 +1554,11 @@ def test_an_escaping_pattern_is_refused_without_enumerating_the_tree(kb: Path) -
     Checking each candidate afterwards refuses the results while still paying for the enumeration.
     Counted as entries pulled from the generator, not as `resolve()` calls — the cost being avoided
     is the walk itself.
+
+    The count is a **design** assertion rather than a trap for a specific mutation: containment now
+    lives at load, where nothing globs at all, so the only way `pulled` rises is a future version
+    that moves the check back into the walk. That is exactly the regression worth naming, and the
+    `raises` above is what catches the guard simply going missing.
     """
     outside = kb.parent / "outside"
     outside.mkdir()
@@ -1576,6 +1581,21 @@ def test_an_escaping_pattern_is_refused_without_enumerating_the_tree(kb: Path) -
             load(kb)
 
     assert pulled == 0, f"the tree was enumerated before the refusal ({pulled} entries)"
+
+
+def test_a_root_that_does_not_exist_yet_still_loads(kb: Path) -> None:
+    """Layer 1 runs on every manifest load, including before the directories exist.
+
+    `resolve()` is non-strict, so a probe under a missing root is collapsed lexically rather than
+    raising — and a KB whose `docs/` has not been created must still be openable, which is the
+    state `pnk init` leaves behind for a root the user adds by hand.
+    """
+    import shutil
+
+    shutil.rmtree(kb / "docs")
+    _set_include(kb, "**/*.md", "../notes/*.md")
+
+    assert load(kb).sources.include == ("**/*.md", "../notes/*.md")
 
 
 def test_the_escape_is_reported_once_per_pattern_not_once_per_file(kb: Path) -> None:

@@ -472,3 +472,27 @@ def test_every_committed_sidecar_round_trips_through_read_and_write(tmp_path: Pa
             assert after == before.replace("pnk://self/", f"pnk://{owner}/")
 
     assert expansions == 1, "the corpora carry exactly one `self` link, and it is the fixture"
+
+
+def test_the_gate_survives_a_root_reached_through_a_symlinked_parent(tmp_path: Path) -> None:
+    """`census` resolved one of its two bases and not the other, and died on the disagreement.
+
+    `documents_of` resolves each root (`(root / name).resolve()`) while `relative_to(root)` used the
+    raw argument, so on macOS — where `/tmp` is a symlink to `/private/tmp` — the two disagreed and
+    the tool exited with a `ValueError` traceback rather than a verdict. It only bites on an
+    explicitly non-canonical root, which is why the committed corpora and CI never saw it; but this
+    is the tool an executor is told to run against a *copy*, and on this platform a copy lives under
+    `/tmp`.
+    """
+    import shutil
+
+    real = tmp_path / "real"
+    real.mkdir()
+    shutil.copytree(DEMO, real / "kb", ignore=shutil.ignore_patterns(".pinakes"))
+    (tmp_path / "via-symlink").symlink_to(real, target_is_directory=True)
+
+    result = gate(tmp_path / "via-symlink" / "kb")
+
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+    assert "30 documents" in result.stdout

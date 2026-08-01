@@ -172,8 +172,11 @@ class SyncReport:
     """The extra a `.pdf` in `unmatched` would still need after the glob is added — set only when
     the extractor is genuinely not importable, so the hint is never redundant advice."""
     escaping_patterns: tuple[str, ...] = ()
-    """`[sources] include` patterns whose walk left the KB through a symlinked directory, one entry
-    per pattern. The static check in `manifest._check_include_containment` cannot see these — the
+    """Glob patterns whose walk left the KB through a symlinked directory, one entry per pattern.
+
+    Usually an `[sources] include` entry, and not always: the sidecar sweep contributes its own
+    `*.pnk.yaml`, which is why the printed line names the pattern rather than claiming which key it
+    came from. The static check in `manifest._check_include_containment` cannot see these — the
     escape exists only on disk — so the walk stops at the first candidate outside and says so. A
     skip that printed nothing would be a KB quietly indexing less than the user asked for."""
     busy: bool = False
@@ -307,8 +310,8 @@ class SyncReport:
     def escape_lines(self) -> list[str]:
         """One line per pattern that walked out of the KB, never one per file it matched."""
         return [
-            f"`[sources] include` pattern {pattern!r} left the KB through a symlinked directory "
-            "— the walk stopped there, and nothing outside was indexed"
+            f"the source walk left the KB through a symlinked directory while matching "
+            f"{pattern!r} — it stopped there, and nothing outside was indexed"
             for pattern in self.escaping_patterns
         ]
 

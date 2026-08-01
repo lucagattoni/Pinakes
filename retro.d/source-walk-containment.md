@@ -88,3 +88,27 @@ rested on. The loop is now lazy; output order does not depend on it, because `wa
 what it returns and the per-root sort only decided which of two candidates sharing one key won —
 and they describe the same file with the same hash. Measured: **301 entries enumerated before, 1
 after**, and both the `break` and a reversion to `sorted()` are caught by that number.
+
+### Two tooling corrections swept in the same PATCH (20260801 13:52)
+
+**`tools/link_density_gate.py`** resolved one of its two bases and not the other, so any
+non-canonical root — every `/tmp` path on macOS — exited with a traceback. One `root.resolve()` at
+the top of `census`, and a test driving the tool through a symlinked parent.
+
+**`tools/fragments.py`'s duplicate-heading defect was already closed**, and the open-corrections
+entry saying "the tool is unchanged" is stale. Measured rather than assumed: three fragments
+(two `fixed-*`, one `added-*` whose body begins `- **Fixed: …**`) spliced into a section that
+already had a `### Fixed` produce exactly one `### Fixed`, one `### Added`, and the
+category-prefixed entry filed by its **filename**, which is where the category belongs. Both halves
+have regression tests already —
+`test_fragments_merge_into_a_category_heading_that_already_exists` asserts `count("### Added") == 1`.
+Closed by the 0.6.0 release-prep commit, not by this one.
+
+**LOW, and the reason to write this down: `fragments.py --apply` is anchored to the repo it lives
+in, not the working directory.** Testing it by `cd`-ing to a temp tree spliced *this* worktree's
+`CHANGELOG.md` and deleted its `changelog.d/` fragment, reporting success. `--repo` exists exactly
+for that and the tool's own test suite uses it. The damage was recoverable only because the
+fragment had already been committed — which is the same rule the G1 mutation harness earned:
+**commit before running anything that rewrites the tree.** A `git checkout --` to undo a mutation
+in the same session then reverted an *uncommitted* fix in `tools/`, for the second time in this
+project, and was caught only by re-reading `git diff --stat` afterwards.
