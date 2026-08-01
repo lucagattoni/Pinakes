@@ -317,6 +317,46 @@ in git history.
 
 ### G2 — Per-question outcomes, the grown golden set, one re-baseline
 
+**Read this first — G2 is a measurement wearing a feature's clothes.** The artifact, the questions,
+the `kind` validation and the empty-set skip are the deliverables; the **output** is a stop/go on the
+entire graph release. If the headroom precondition fails, **G3 does not start** — no
+`schema_version` bump, no forced rebuild for every KB in existence — and G1/G2/G4 ship as their own
+release instead. Build it expecting the answer to be *no*, and it will be honest either way.
+
+**Four traps, in the order you will hit them:**
+
+1. **Freeze the multi-hop set before the probe runs.** If the probe fails, the questions are *not*
+   re-authored until it passes. Re-authoring is fitting the question set to the edge set — the
+   circularity decision 14 removed once already, and undetectable afterwards.
+2. **Two reachability numbers, and only one binds.** With-authored and without-authored. The
+   **without**-authored figure is the precondition; the other is recorded and licenses nothing.
+   Reporting one number is the documented way to clear a gate that has not been met.
+3. **Failing is necessary and nowhere near sufficient.** A question can fail today and still be
+   unliftable, because its evidence documents are not connected within 2 logical hops of the fused
+   seeds. Measure both; a failure count alone can pass with zero reachable questions.
+4. **The probe must be shown to fail.** A reachability probe that answers "reachable" for everything
+   is the vacuous case — this project's recurring defect, an assertion satisfied by something other
+   than the property it names. Mutate the edge derivation and confirm the number moves.
+
+**Operational, from the L-track's 0.6.0 experience — none of it is in the spec below:**
+
+- **`gh run list --branch main` immediately after every push.** `main` was red for four merges
+  because local `check.sh` was green and nobody looked. It belongs in the merge sequence, not in the
+  next increment's verification.
+- **Before declaring the increment done, re-read this section's own Docs list** and grep for each
+  sentence it quotes. L7 shipped without two of its four, both asserting the opposite of what it
+  built, through two review rounds.
+- **`tools/fragments.py` splices duplicate `###` headings** and mis-files an entry whose text starts
+  with a category name (`open-corrections.md` item 2). Check the spliced CHANGELOG section, or fix
+  the tool first — G2 adds fragments like any increment.
+- **A new gate touches `check.sh`, `.github/workflows/ci.yml` and `tests/test_check_script.py`** —
+  the three files both tracks append to at the same place. `check.sh` also gained a `nul-scan` gate
+  on 20260801; read its merged state rather than trusting a clean auto-merge.
+- **Do not undo G1's ordering.** `load_vectors`' `(documents.path, chunks.ordinal)` row order, the
+  stable `argsort`, the lexical tiebreak and hydration's `ORDER BY` are what make a per-question
+  sign test mean anything. Without them one question in 41 changes answer between an incremental
+  sync and a `--rebuild`, and every such flip would be attributed to the channel.
+
 **What lands, and why it is one increment.** G5's gate is an exact sign test, which needs
 **per-question before/after pairs**. Nothing can produce them today: `run()` discards outcomes
 (`metrics, _ = evaluate(...)`), `write_baseline` stores aggregates, and `compare()` reads only those.
