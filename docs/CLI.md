@@ -22,7 +22,7 @@ Every error carries a **remedy**, not just a message. If one doesn't, that's a b
 
 | Flag | On | Means |
 |---|---|---|
-| `--kb PATH` | `sync`, `search`, `doctor`, `install-hooks`, `budget` | KB root. Defaults to the nearest `pinakes.toml`, searching upwards from the cwd — git-style |
+| `--kb PATH` | `sync`, `search`, `doctor`, `install-hooks`, `budget`, `link`, `links` | KB root. Defaults to the nearest `pinakes.toml`, searching upwards from the cwd — git-style |
 | `--offline` | `sync`, `search`, `serve` | Never reach out for model weights. Fails fast instead of downloading |
 
 ---
@@ -276,6 +276,70 @@ rebuild — so a sync during a session is safe.
 
 ---
 
+## `pnk link`
+
+```text
+pnk link <source> <target> --rel REL [--kb PATH]
+```
+
+Write one link, into **`<source>`'s own sidecar and nothing else**. The other end learns about it
+when it next runs `pnk sync --scan-links`; a link is never written into someone else's file.
+
+`<source>` is a path relative to the KB root. A document with no sidecar is **refused** — run `pnk
+sync` first, which mints the permanent ULID the link needs. `pnk link` never mints one: a fresh
+ULID written over a file that already holds a permanent one breaks every inbound link to it, and
+there is no migration machinery by design.
+
+`<target>` has three grammars, tried **in this order**, because they overlap:
+
+| Form | Example | Resolved by |
+|---|---|---|
+| a `pnk://` URI | `pnk://01J…KB/01J…DOC`, or `pnk://self/01J…DOC` | Parsing alone. `self` expands to this KB before anything is written |
+| `<alias>:<path>` | `partner:docs/loan-agreements.md` | The alias must be a declared `[[links.kb]]`; that KB's own `[kb] id` and the document's sidecar supply the two ULIDs |
+| a path in this KB | `docs/loans-outward.md` | Reading that document's sidecar for its ULID |
+
+The `pnk://` prefix is tried first because `pnk://…` would otherwise split as the alias `pnk`, and
+the alias form bites **only** on a declared name — a POSIX path may legitimately contain a colon.
+
+**Aliases never reach disk.** `partner:` is machine-local; what is written is
+`pnk://<kb-ulid>/<doc-ulid>`, which is why a link survives the KB being shared. The same is true of
+`self`.
+
+**What is refused, and what is not.** A well-formed `pnk://` URI whose target is not on this
+machine **is written**: both ULIDs are already in it, and refusing would make authoring depend on
+which KBs happen to be checked out. Nothing checks that target afterwards, either — `pnk doctor`'s
+cross-KB check is not built yet, and `pnk links` reports only *local* targets under `unresolved`,
+because a cross-KB one cannot be verified from here without the other KB. An **alias** that cannot
+be turned into a ULID pair is refused, because
+resolving one means reading that KB. So is an alias whose partner declares a different `[kb] id`
+than `[[links.kb]]` does — one of the two names the wrong KB, and what would be written is
+permanent.
+
+Running the same `pnk link` twice writes nothing the second time and says so. Two *different*
+relations to one target are two entries: a pair of documents can relate more than one way.
+
+The sidecar is rewritten through the round-trip parser, so comments, quoting, blank lines, your own
+key order and any key pinakes does not know all survive — including a key of your own inside a
+`links[]` entry. Two documented exceptions, both from the YAML writer rather than from this
+command: appending to an **indented** `links:` block re-indents that block, and appending `links:`
+for the first time to a file whose last line is a comment leaves that comment reading as the
+block's introduction. [MANIFEST](MANIFEST.md#the-sidecar--filepnkyaml) lists the full set.
+
+**It takes no lock.** `pnk sync` holds one; this does not, so a sync writing the same sidecar at the
+same moment can lose one side's change — whichever writes last wins. Rename-atomicity prevents a
+*torn* file, not a lost update.
+
+Only a sync you started yourself can collide with it. Two of them rewrite an *existing* sidecar: a
+paid extraction, and `--force` with an explicit free `--extract`, which clears the paid claim the
+sidecar was carrying. Everything else either mints a sidecar or does not enter `docs/` at all.
+
+The git hooks are none of those — `post-commit` and `post-merge` run `--index-only`, `pre-commit`
+only mints sidecars for documents that have none, all three force the free extractor, and no hook
+passes `--force`. So the window is a `pnk link` typed while your own `pnk sync` is rewriting that
+same document's sidecar; if it happens, re-run whichever change went missing.
+
+---
+
 ## `pnk links`
 
 ```text
@@ -337,5 +401,4 @@ Listed so the shape is known in advance; each names the increment that lands it
 | Surface | Increment | Adds |
 |---|---|---|
 | `pnk ask --deep` | the deep release | Bounded, budgeted synthesis for CLI and cron use, where no agent is present |
-| `pnk link` | the links release | Authoring a link from the command line. Traversal — `pnk links` and `pinakes_links` — is **built**; see above |
 | `pnk upgrade` | the template release | Diffs a KB's template version against the installed one and *prints* a migration — never applies one |

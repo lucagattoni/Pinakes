@@ -221,8 +221,8 @@ provenance:
 | `title` | you | Shown in results |
 | `tags` | you | What `pnk search --tag` filters on |
 | `created` | sync | Optional; date filters use the document's mtime instead, since every document has one |
-| `links[].to` | you / `pnk link` (the links release) | A `pnk://` URI. Aliases and `self` are resolved to ULIDs **on write**, so what reaches disk survives being shared |
-| `links[].rel` | you / `pnk link` (the links release) | Free-form relation, e.g. `cites`, `supersedes` |
+| `links[].to` | you / [`pnk link`](CLI.md#pnk-link) | A `pnk://` URI. Aliases and `self` are resolved to ULIDs **on write**, so what reaches disk survives being shared |
+| `links[].rel` | you / [`pnk link`](CLI.md#pnk-link) | Free-form relation, e.g. `cites`, `supersedes` |
 | `provenance.source` | you | Where the document came from |
 | `provenance.extraction` | **sync, paid PDFs only** | `{backend, fingerprint, extracted, content_hash}` |
 
@@ -244,6 +244,7 @@ Bounds on that, all of them things pinakes or YAML does rather than choices abou
 | **`pnk://self/…` is expanded** | A `self` link is rewritten to the full `pnk://<kb-ulid>/…` form in place — the entry keeps its position, its comment and any keys of your own |
 | **A self-referential anchor is not preserved** | `mine: &x` containing `b: *x` reads as `null` and loses its anchor. It used to crash `pnk sync` instead |
 | **A reused anchor name is refused** | Every alias to a repeated name would resolve to the last one, so which value it meant is not recoverable |
+| **A symlinked sidecar is written through** | The link is kept and its target rewritten, rather than replaced by a regular file. Minting is the exception: it refuses outright |
 
 A **duplicate key is an error**, not a silent last-wins: which of the two values you meant is not
 something any tool can recover.
@@ -261,7 +262,13 @@ the moment a rebuild needs it.
 
 **Sync writes `provenance.extraction` and nothing else into your sidecars**, and only when a paid
 extraction actually ran or `--force` discarded one — never for the routine free case. The write is
-additive; existing keys survive. It is the one place a machine writes into `docs/`.
+additive; existing keys survive.
+
+Exactly two things write into `docs/`, and only ever into a sidecar. Sync is the unattended one — it
+runs from a git hook and from CI, which is why what it may touch is a single key. The other is
+[`pnk link`](CLI.md#pnk-link), which appends one `links[]` entry to the sidecar of the document you
+named, and only that one. Neither ever modifies a source document, and neither writes into another
+document's sidecar.
 
 Writes are atomic (write beside, then rename): a truncated sidecar would lose a permanent ULID and
 every inbound link with it.
