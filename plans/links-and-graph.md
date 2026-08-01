@@ -3,8 +3,10 @@
 **Status:** revised after adversarial passes 1 (22 HIGH), 2 (26 HIGH), 3 (24 HIGH), 4 (13 HIGH),
 5 (3 HIGH), 6 (2 HIGH) and 7 (6 HIGH) on L1–L8 and G1–G6; then **seven passes on L5b alone**
 (8, 8, 7, 6, 7, 7, 7 HIGH) plus an adversarial code review of the implementation (5 HIGH).
-**L1–L5b have shipped in 0.5.0 and L5c is closed unbuilt** — its one refusal turned out to ship
-with L5b. **L6–L8 are implementable; G1–G6 are not yet.**
+**The links release is complete** — L1–L5b shipped in 0.5.0, L6–L8 in 0.6.0 (20260801), and L5c
+closed unbuilt because its one refusal shipped with L5b. **From the graph release, G1 and G4 are in
+0.6.0 too. G2 is the next increment and the only one that can start**: G3 and G5 are gated on its
+headroom measurement, and G6 closes the release.
 
 > ## ⚠ 20260731 — L5b is split into **L5b** and **L5c** (decision 28)
 >
