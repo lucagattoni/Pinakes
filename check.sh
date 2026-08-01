@@ -138,4 +138,29 @@ python3 tools/fragments.py --check
 # moment the answer can still change what you do.
 python3 tools/shared_file_overlap.py
 
+# No NUL byte in a tracked text file. git calls such a file **binary**: no diff, no review, and
+# `grep` skips it silently — so a document can go wrong in a way this project's whole process
+# (read the diff, grep for the sentence) cannot see. Caught 20260801, in a bullet warning about
+# raw NUL bytes reaching output, written with a raw NUL byte in it.
+python3 - <<'NULSCAN'
+import pathlib, subprocess, sys
+TEXT = {".md", ".py", ".toml", ".yaml", ".yml", ".sh", ".txt", ".cfg", ".ini", ".json",
+        ".lock", ".pyi", ".gitignore", ".gitattributes", ""}
+tracked = subprocess.run(["git", "ls-files", "-z"], capture_output=True, check=True).stdout.split(b"\0")
+bad, scanned = [], 0
+for name in filter(None, tracked):
+    path = pathlib.Path(name.decode())
+    # An **allowlist** of text suffixes, not a denylist of binary ones: the first draft excluded
+    # png/jpg/pdf and was immediately caught by a committed .ttf. A denylist of binary formats is
+    # never finished.
+    if not path.is_file() or path.suffix not in TEXT:
+        continue
+    scanned += 1
+    if b"\0" in path.read_bytes():
+        bad.append(str(path))
+if bad:
+    sys.exit("nul-scan: NUL byte in tracked text file(s): " + ", ".join(bad))
+print(f"nul-scan: {scanned} text file(s) scanned, no NUL byte.")
+NULSCAN
+
 echo "all gates green"
