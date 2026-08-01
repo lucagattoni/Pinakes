@@ -53,6 +53,26 @@ the guard it substitutes for asserts truthiness. Four of five remedies were empt
 **A stand-in for a guard has to assert what the guard asserts.** It now returns the string and each
 caller asserts a phrase from it.
 
+### A test named for a guard, authoring nothing that reaches it
+
+**MEDIUM.** `test_an_unreadable_linked_kb_path_is_a_warning_not_a_traceback` was written for the
+sentence *"a diagnostic command reporting a traceback is the one outcome `pnk doctor` may not
+have"*, and named `why_not_a_kb`'s "third caller needing the same `try`". It authored no cross-KB
+link -- so `wanted` was empty, `_unresolved_cross_kb` returned before touching the partner, and the
+test pinned the guard in `_linked_kbs` and *neither* of the two in the function the review had just
+added. Both are load-bearing: a partner directory behind a mode-0000 parent raises `PermissionError`
+out of `partner_sources`, and a `roots` entry carrying an escaped NUL -- which `tomllib` accepts and
+`Path.resolve` does not -- raises `ValueError` out of `sidecars_under`.
+
+Third time in two increments that a fixture stopped one step short of its guard, and the shape is
+always the same: **the test sets up the failure but not the demand for it.** An unreadable partner
+is only reached by code that has a reason to read it.
+
+The dangling-link side of the soft-delete interaction had the same gap in miniature -- the fixture
+that proves the *numerator* excludes a deleted document already produced `1 dangling inside this
+KB` in the detail it held, and asserted nothing about it. The fix was one line in a test that
+already existed.
+
 ### Mutants that were not the logic they claimed
 
 **Methodological.** Four "blank the remedy" mutants replaced `"A cross-KB target…"` with

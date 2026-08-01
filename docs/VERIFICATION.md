@@ -541,6 +541,7 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | an internal link is not counted as cross-KB | L7 review | `tests/test_doctor.py::test_an_internal_link_is_not_counted_as_cross_kb` |
 | a `~` linked-KB path is warned as absolute | L7 review | `tests/test_doctor.py::test_a_tilde_linked_kb_path_is_warned_as_absolute` |
 | an unreadable linked-KB path is a warning, not a traceback | L7 review | `tests/test_doctor.py::test_an_unreadable_linked_kb_path_is_a_warning_not_a_traceback` |
+| ...and an unusable partner `roots` entry likewise | L7 review 2 | `tests/test_doctor.py::test_a_partner_roots_entry_that_cannot_be_resolved_is_not_a_traceback` |
 
 ## The evaluation is reproducible (G1)
 

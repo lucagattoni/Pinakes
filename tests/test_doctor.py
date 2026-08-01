@@ -1147,10 +1147,15 @@ def test_a_deleted_document_leaves_the_coverage_ratio_honest(kb: Path) -> None:
     (kb / "docs" / f"b.md{SIDECAR_SUFFIX}").unlink()
     sync(load(kb), options=SyncOptions(), now="20260729 05:34")
 
-    _status, detail = checks(kb)["links"]
+    status, detail = checks(kb)["links"]
     assert "1 of 1 documents linked (100%)" in detail, detail
     assert "200%" not in detail
     assert "2 links" not in detail, "a deleted document's links were still counted"
+    # The *other* side of the same interaction: `a` still points at the deleted `b`, and a target
+    # that is soft-deleted is dangling. `known` filters on `state = 'active'` for this reason.
+    assert status is Status.WARN
+    assert "1 dangling inside this KB" in detail
+    assert "no longer exists here" in _remedy(kb, "links")
 
 
 def test_a_cross_kb_target_is_resolved_against_the_partners_own_id(
@@ -1224,6 +1229,33 @@ def test_a_partner_whose_sources_are_unusable_is_not_used_as_evidence(
     assert "unresolved" not in detail
 
 
+def test_a_partner_roots_entry_that_cannot_be_resolved_is_not_a_traceback(
+    kb: Path, tmp_path: Path
+) -> None:
+    """The second guard in `_unresolved_cross_kb`, around `sidecars_under`.
+
+    `tomllib` accepts a `\\u0000` escape and `Path.resolve()` does not, so a partner `roots` entry
+    carrying one raises `ValueError` out of the walk. Partner-controlled input reaching a
+    diagnostic command must not become a traceback.
+    """
+    partner = _partner(tmp_path, "partner")
+    partner_id = load(partner).kb.id
+    manifest = partner / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'roots   = ["docs/"]', 'roots   = ["docs/", "\\u0000bad"]'
+        ),
+        encoding="utf-8",
+    )
+    _declare_partner(kb, name="partner", kb_id=str(partner_id), path="../partner")
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    _link_to(kb, f"pnk://{partner_id}/{mint_doc_id()}")
+
+    status, detail = checks(kb)["links"]
+    assert status is Status.OK, detail
+    assert "unresolved" not in detail
+
+
 def test_an_unreadable_linked_kb_path_is_a_warning_not_a_traceback(
     kb: Path, tmp_path: Path
 ) -> None:
@@ -1234,15 +1266,24 @@ def test_an_unreadable_linked_kb_path_is_a_warning_not_a_traceback(
     """
     locked = tmp_path / "locked"
     (locked / "kb").mkdir(parents=True)
-    _declare_partner(kb, name="walled", kb_id=str(mint_kb_id()), path=str(locked / "kb"))
+    walled_id = mint_kb_id()
+    _declare_partner(kb, name="walled", kb_id=str(walled_id), path=str(locked / "kb"))
+    # **A cross-KB link, so `_unresolved_cross_kb` actually runs.** Without one, `wanted` is empty
+    # and it returns before touching the partner — so this test, named for "the third caller
+    # needing the same `try`", reached only `_linked_kbs`'s guard and neither of the two in the
+    # function the review added. Same class as the fixtures L6 kept shipping.
+    sync(load(kb), options=SyncOptions(), now="20260729 05:31")
+    _link_to(kb, f"pnk://{walled_id}/{mint_doc_id()}")
     locked.chmod(0o000)
     try:
-        status, detail = checks(kb)["linked KBs"]
+        report = {c.name: (c.status, c.detail) for c in diagnose(load(kb)).checks}
     finally:
         locked.chmod(0o755)
 
+    status, detail = report["linked KBs"]
     assert status is Status.WARN
     assert "walled" in detail
+    assert report["links"][0] is Status.OK, "an unreadable partner was used as evidence of absence"
 
 
 def test_a_partner_whose_sidecars_cannot_all_be_read_is_not_used_as_evidence(
@@ -1348,6 +1389,9 @@ def test_a_linked_kb_path_that_resolves_to_nothing_warns_with_the_reason(kb: Pat
     assert "broken (the `~` cannot be expanded" in detail
     assert str(kb) not in detail  # names what the author wrote, never the local KB root
     assert "names no path at all" in _remedy(kb, "linked KBs")
+    # ...and not *also* reported absolute: `expanduser()` raises for an unknown user, and a path
+    # that names nothing is unresolvable rather than escaping. A documented decision needs a test.
+    assert "absolute" not in detail
 
 
 def test_an_absolute_linked_kb_path_warns(kb: Path, tmp_path: Path) -> None:

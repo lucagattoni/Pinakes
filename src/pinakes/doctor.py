@@ -759,6 +759,19 @@ def _unresolved_cross_kb(
     `graph/provider.py` refuses to call one `unresolved` for exactly this reason, and doctor may not
     assert what it has no standing to know either. Absent KBs are `_linked_kbs`'s business, as a
     fact about this machine.
+
+    **`owner=partner_id` is the correct value and is unobservable**, measured: only `.id` is kept,
+    and `owner` reaches nothing but `resolve_link`, which expands `pnk://self/…` in links that are
+    then discarded. Substituting the local id is caught by no test and changes no output. It stays
+    because it is what this argument means, and because a later reader keeping the links — which is
+    the shape `linkscan` exists to get right — would need it. Recorded so nobody re-derives it.
+
+    **Cost: linear in the partner's corpus, uncached, on every `pnk doctor`.** Measured at
+    ~0.38ms per sidecar, dominated by `read_sidecar`: 100 documents 0.04s, 1 000 0.38s, 5 000 1.9s.
+    `linkscan.scan` amortises the identical walk behind `TTL_MINUTES`; this has no equivalent
+    because a diagnostic is expected to be current, and caching a health check is how a health
+    check comes to report yesterday's health. Acceptable at the sizes pinakes targets — the
+    corpus-size warning fires at 50k *chunks* — and stated here rather than discovered later.
     """
     wanted = {kb_id for kb_id, _ in external}
     if not wanted:
