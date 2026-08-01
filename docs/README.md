@@ -51,6 +51,7 @@ When an increment lands, this table says which file to edit — usually exactly 
 | What an increment taught us | **RETROSPECTIVES.md** | written as a `retro.d/` fragment; spliced at release |
 | How to run the human-gated paid measurement | **MEASUREMENT-RUN.md** | STATUS carries the numbers it produced, with their date |
 | What is going to be built, and in what order | **`plans/`** | STATUS.md carries the shipped/planned state only |
+| How to cut a release, step by step | **[`RELEASING.md`](RELEASING.md)** | `CLAUDE.md` carries the *rules* about when and the traps; this is the procedure |
 | Which test holds a given promise | **VERIFICATION.md** | a plan's own table records what was *predicted*, never what exists |
 
 The README is deliberately **version-free**: it describes what pinakes *is*, never what release you
