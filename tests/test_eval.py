@@ -338,6 +338,35 @@ def test_an_empty_question_set_skips_with_a_reason(
     assert str(path) in printed
 
 
+def test_a_file_with_no_questions_key_is_still_refused(tmp_path: Path) -> None:
+    """The empty-set skip must not become a skip for *any* file that yields no questions.
+
+    `questions: []` is a template deliberately shipping none. A file with the key misspelled is a
+    golden set with a typo, and under a skip that could not tell them apart it would sail through
+    `make eval` reporting success.
+    """
+    path = tmp_path / "questions.yaml"
+    path.write_text("question:\n  - id: q\n    question: What?\n", encoding="utf-8")
+    with pytest.raises(EvalError) as exc_info:
+        load_questions(path)
+    assert "no `questions` key" in str(exc_info.value)
+
+    path.write_text("questions: []\n", encoding="utf-8")
+    assert load_questions(path) == []
+
+
+def test_a_row_missing_a_field_is_refused_by_name(tmp_path: Path) -> None:
+    """Every field a row carries is read by `score_rows`, so a row missing one cannot be scored."""
+    path = tmp_path / "outcomes.json"
+    path.write_text(
+        json.dumps({"schema": 1, "questions": [{"id": "a", "kind": "lexical", "hit": True}]}),
+        encoding="utf-8",
+    )
+    with pytest.raises(EvalError) as exc_info:
+        read_outcomes(path)
+    assert "missing confidence" in str(exc_info.value)
+
+
 def test_an_unknown_kind_is_refused(tmp_path: Path) -> None:
     """Validated against the known set, never defaulted to `lexical` (G2).
 

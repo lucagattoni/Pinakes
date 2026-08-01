@@ -590,6 +590,8 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | an unknown or absent `kind` is refused, never defaulted | G2 | `tests/test_eval.py::test_an_unknown_kind_is_refused` |
 | a repeated id is refused, and an absent one is derived | G2 | `tests/test_eval.py::test_a_repeated_id_is_refused`, `tests/test_eval.py::test_an_absent_id_is_derived_from_the_question` |
 | an empty question set skips with a printed reason instead of failing | G2 | `tests/test_eval.py::test_an_empty_question_set_skips_with_a_reason` |
+| a file whose `questions` key is missing is still refused, so the skip cannot swallow a typo | G2 | `tests/test_eval.py::test_a_file_with_no_questions_key_is_still_refused` |
+| a row missing a field is refused by name, never a bare `KeyError` | G2 | `tests/test_eval.py::test_a_row_missing_a_field_is_refused_by_name` |
 | the channel-reachable ceiling is measured before the schema bumps | G2 | `tests/test_eval.py::test_the_reachable_ceiling_probe_needs_no_index_schema_change` |
 | the probe answers to the edge set, rather than reporting the same number whatever the graph holds | G2 | `tests/test_eval.py::test_the_reachable_ceiling_probe_answers_to_the_edge_set` |
 

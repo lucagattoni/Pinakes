@@ -244,7 +244,17 @@ def load_questions(path: Path) -> list[Question]:
         ) from exc
     if not isinstance(raw, dict):
         raise EvalError(f"{path} must be a mapping with a `questions` key.", remedy="See §7.")
-    entries: object = cast(dict[str, Any], raw).get("questions") or []
+    document = cast(dict[str, Any], raw)
+    # An *absent* `questions` key is still an error, and the distinction is the whole safety of the
+    # empty-set skip: `questions: []` is a template deliberately shipping none, while a file with
+    # no such key is a golden set with a typo in it — and under the skip it would otherwise pass
+    # `make eval` in silence.
+    if "questions" not in document:
+        raise EvalError(
+            f"{path} has no `questions` key.",
+            remedy="A golden set with no questions is written `questions: []`, not omitted (§7).",
+        )
+    entries: object = document["questions"] or []
     if not isinstance(entries, list):
         raise EvalError(f"{path}: `questions` must be a list.", remedy="See §7.")
 
@@ -538,6 +548,15 @@ def read_outcomes(path: Path) -> tuple[dict[str, Any], list[OutcomeRow]]:
         if not isinstance(entry, dict):
             raise EvalError(f"{path}: every row must be a mapping.", remedy="Regenerate it.")
         item = cast(dict[str, Any], entry)
+        # Named rather than indexed: every one of the five reaches a metric (`score_rows`), so a
+        # row missing one is not a row that can be scored — and a bare `KeyError` out of a reader
+        # that promises to refuse a malformed file is the promise not being kept.
+        missing = [field_ for field_ in ("id", "kind", "hit", "confidence") if field_ not in item]
+        if missing:
+            raise EvalError(
+                f"{path}: a row is missing {', '.join(missing)}.",
+                remedy="Every field is read by `score_rows`. Regenerate the artifact.",
+            )
         rank: object = item.get("hit_rank")
         rows.append(
             OutcomeRow(
@@ -618,7 +637,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("kb", type=Path, help="KB root to evaluate")
     parser.add_argument("--questions", type=Path, default=None)
     parser.add_argument("--baseline", type=Path, default=None)
-    parser.add_argument("--outcomes", type=Path, default=None, help="per-question artifact path")
+    parser.add_argument(
+        "--outcomes",
+        type=Path,
+        default=None,
+        help="where --write-baseline puts the per-question artifact "
+        "(default <kb>/eval/outcomes.json)",
+    )
     parser.add_argument("--write-baseline", action="store_true")
     parser.add_argument("-k", type=int, default=DEFAULT_K)
     args = parser.parse_args(argv)

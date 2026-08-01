@@ -316,7 +316,13 @@ def fused_candidates(
     backend: EmbeddingBackend,
     filters: Filters | None = None,
 ) -> Fused:
-    """Filter, BM25, vectors, RRF — every stage up to the `fusion_top_k` cut."""
+    """Filter, BM25, vectors, RRF — every stage up to the `fusion_top_k` cut.
+
+    **`check_coherence` is the caller's,** and `search` is where it runs. This is a stage, not an
+    entry point: calling it on an index built by a different embedding model compares the query
+    against vectors that mean something else and returns confident nonsense (§4.4). Anything
+    reaching for it directly runs the gate itself first.
+    """
     filters = filters or Filters()
     settings = manifest.retrieval
 

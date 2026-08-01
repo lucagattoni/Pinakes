@@ -59,3 +59,21 @@ substitution appeared exactly once; `provider = "fastembed"` appears twice (embe
 so the assertion fired and the run aborted — correctly. Loosening it to "replace whatever is there"
 would have left the rerank provider real and made an "offline" gate download a model. The expected
 occurrence count is asserted per line, not assumed.
+
+**Review pass — MEDIUM, the empty-set skip could swallow a typo.** `load_questions` read
+`raw.get("questions") or []`, so a file whose key was misspelled produced an empty list — which the
+new skip then reported as "a template deliberately ships none" and exited 0. Under the old
+behaviour that file failed. An *absent* key is now an error and only an explicit `questions: []`
+skips; the two cases are genuinely different and the skip is only safe because it can tell them
+apart.
+
+**Review pass — MEDIUM, `read_outcomes` promised more than it delivered.** Its docstring said it
+"refuses a file whose rows are not rows — never a partial read", and a row missing `confidence`
+raised a bare `KeyError` from the middle of the loop. Every one of the five fields reaches a metric
+in `score_rows`, so a row missing one cannot be scored; they are now checked by name.
+
+**Review pass — LOW, `fused_candidates` is a stage, not an entry point.** It does not run
+`check_coherence`, because `search` does that before calling it. Anything reaching for the new
+public function directly is querying an index that may have been built by a different embedding
+model, which returns confident nonsense rather than an error (§4.4). Stated in the docstring rather
+than duplicated in the function, since `search` would then run it twice on every query.
