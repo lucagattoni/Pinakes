@@ -11,6 +11,7 @@ orphaned sidecars, after printing every path it is about to remove (§6.4).
 """
 
 import sqlite3
+import tomllib
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -53,9 +54,16 @@ from pinakes.extract import cache as extract_cache
 from pinakes.extract.floors import load_floors
 from pinakes.hooks import FREE_BACKEND_FLAG, HOOKS, hooks_dir
 from pinakes.ids import DocId
-from pinakes.linkscan import MANIFEST_NAME, resolve_path, why_not_a_kb, why_unresolvable
+from pinakes.linkscan import (
+    MANIFEST_NAME,
+    partner_sources,
+    resolve_path,
+    sidecars_under,
+    why_not_a_kb,
+    why_unresolvable,
+)
 from pinakes.lock import LOCK_NAME, read_holder
-from pinakes.manifest import STATE_DIR, Manifest
+from pinakes.manifest import Manifest
 from pinakes.search import check_coherence
 from pinakes.sidecar import SIDECAR_SUFFIX, Sidecar, document_for, find_duplicate_ids
 from pinakes.sidecar import read as read_sidecar
@@ -669,9 +677,15 @@ def _links(connection: sqlite3.Connection, manifest: Manifest, active: int) -> C
     disagree — measured on a copy of the committed corpus: gate 17, doctor 16. The detail line says
     so rather than pretending they cannot differ.
     """
+    # **Joined to `documents`, because a soft delete leaves the links behind.** `sync`'s
+    # `SoftDelete` sets `state = 'deleted'` and drops the chunks; it never deletes that document's
+    # `origin = 'sidecar'` rows. `active` counts active documents only, so an unjoined numerator
+    # came from a different population than its denominator — measured at `2 of 1 documents linked
+    # (200%)` after deleting one of two documents that linked to each other.
     rows = connection.execute(
-        "SELECT src_doc_id, dst_kb_id, dst_doc_id FROM links "
-        "WHERE src_kb_id = ? AND origin = 'sidecar'",
+        "SELECT l.src_doc_id, l.dst_kb_id, l.dst_doc_id FROM links l "
+        "JOIN documents d ON d.id = l.src_doc_id AND d.state = 'active' "
+        "WHERE l.src_kb_id = ? AND l.origin = 'sidecar'",
         (manifest.kb.id,),
     )
     authored = [
@@ -722,48 +736,78 @@ def _unresolved_cross_kb(
 ) -> list[tuple[str, DocId]]:
     """Cross-KB targets whose own KB is on this machine and does not have the document.
 
+    **The partner's committed sidecars, never its index** — DESIGN §6.2, verbatim: reverse links
+    come from the other KB's sidecars, *"not its index, which is gitignored and simply absent in a
+    fresh clone, and which could not be read without holding a second KB's lock"*. The first
+    version of this function opened `<partner>/.pinakes/index.db` read-only, which breaks that rule
+    two ways: measured, a `mode=ro` connection still materialises `index.db-shm` and `index.db-wal`
+    inside the partner's `.pinakes/` and cannot checkpoint them away on close, so a *diagnostic*
+    command writes into a KB it was only asked to look at.
+
+    **Keyed on the partner's own `[kb] id`, never the local declaration.** `linkscan.scan_one`
+    refuses a mismatch with `LinkedKbIdMismatchError` because trusting the manifest files another
+    KB's links under this alias; the first version keyed on `linked.id` and so resolved targets
+    against whichever KB happened to sit at that path — measured both ways, it silently resolved a
+    target that did not exist and reported one that did.
+
+    **An incomplete walk proves nothing.** If any sidecar cannot be read, or `[sources]` reports a
+    problem, that partner is skipped rather than treated as "does not have it" — the same rule
+    `ScannedKb.complete` encodes for the delete, for the same reason: absence of evidence here
+    would be reported to a user as evidence of absence.
+
     **Only KBs that resolved.** A target in a KB not checked out here is not evidence of anything —
     `graph/provider.py` refuses to call one `unresolved` for exactly this reason, and doctor may not
-    assert what the index has no standing to know either. Absent KBs are reported separately, by
-    `_linked_kbs`, as a fact about this machine.
-
-    **Not via `linkscan.scan`.** That returns a `skipped_fresh` row whose `kb_id` is the *locally
-    declared* `[[links.kb]] id` rather than the partner's own — safe only because `sync` `continue`s
-    before reading it, and `ScannedKb.kb_id`'s docstring names this command as the reader that would
-    take one for the other.
+    assert what it has no standing to know either. Absent KBs are `_linked_kbs`'s business, as a
+    fact about this machine.
     """
     wanted = {kb_id for kb_id, _ in external}
     if not wanted:
         return []
 
-    indexes: dict[str, set[DocId]] = {}
+    have: dict[str, set[DocId]] = {}
     for linked in manifest.links:
-        if str(linked.id) not in wanted:
-            continue
         root = resolve_path(manifest.root, linked.path)
         if root is None:
             continue
-        index = root / STATE_DIR / "index.db"
         try:
-            if not index.is_file():
-                continue
-            connection = store.connect_ro(index)
-        except (OSError, PinakesError):
-            # Unreadable, locked, or a schema this build cannot open. Not knowing is reported by
-            # `_linked_kbs`; claiming the target is missing on that basis would be the assertion
-            # the docstring above refuses.
+            partner_id, roots, include, exclude = partner_sources(root)
+        except (OSError, ValueError, tomllib.TOMLDecodeError, PinakesError):
+            continue
+        if str(partner_id) not in wanted:
             continue
         try:
-            indexes[str(linked.id)] = {
-                DocId(str(row["id"]))
-                for row in connection.execute("SELECT id FROM documents WHERE state = 'active'")
-            }
-        except sqlite3.Error:
+            sidecars, problems = sidecars_under(root, roots, include, exclude)
+        except (OSError, ValueError, NotImplementedError, PinakesError):
             continue
-        finally:
-            connection.close()
+        if problems:
+            continue  # `[sources]` itself is unusable — the walk cannot have been exhaustive
+        ids: set[DocId] = set()
+        for path in sidecars:
+            try:
+                ids.add(read_sidecar(path, owner=partner_id).id)
+            except PinakesError:
+                break
+        else:
+            have[str(partner_id)] = ids
 
-    return [(kb, doc) for kb, doc in external if kb in indexes and doc not in indexes[kb]]
+    return [(kb, doc) for kb, doc in external if kb in have and doc not in have[kb]]
+
+
+def _is_absolute_once_expanded(raw: str) -> bool:
+    """Whether a `[[links.kb]] path` escapes the KB root — after `~` expansion, as `resolve_path`
+    does it.
+
+    `Path("~/kb").is_absolute()` is `False`, but `linkscan._resolve` expands first and *then* takes
+    the absolute branch, so `~/kb` is never resolved relative to the KB root — which is the property
+    this warning defends. Checking the unexpanded string let every `~` path through.
+
+    `expanduser()` raises `RuntimeError` for an unknown user; that path is unresolvable and reported
+    as such by the caller, so it is not additionally absolute.
+    """
+    try:
+        return Path(raw).expanduser().is_absolute()
+    except RuntimeError:
+        return False
 
 
 def _linked_kbs(manifest: Manifest) -> Check:
@@ -790,7 +834,7 @@ def _linked_kbs(manifest: Manifest) -> Check:
     resolvable = 0
 
     for linked in manifest.links:
-        if Path(linked.path).is_absolute():
+        if _is_absolute_once_expanded(linked.path):
             # Reported whether or not it resolves: a committed absolute path publishes one
             # machine's filesystem layout to everyone who clones the KB, and stops working the
             # moment anyone checks it out elsewhere.

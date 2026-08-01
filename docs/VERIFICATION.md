@@ -533,6 +533,14 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | ...and an absolute path warns even when it resolves | L7 | `tests/test_doctor.py::test_an_absolute_linked_kb_path_warns` |
 | the linked-KBs check exists even with none declared, so the coverage guard sees it | L7 | `tests/test_doctor.py::test_a_kb_declaring_no_linked_kbs_still_produces_the_check` |
 | ...and runs without an index, when an absolute path matters most | L7 | `tests/test_doctor.py::test_the_linked_kbs_check_runs_without_an_index` |
+| a soft-deleted document does not inflate the coverage ratio | L7 review | `tests/test_doctor.py::test_a_deleted_document_leaves_the_coverage_ratio_honest` |
+| doctor writes nothing into a partner KB (§6.2) | L7 review | `tests/test_doctor.py::test_doctor_writes_nothing_into_a_partner_kb` |
+| ...and answers from a partner with no index at all | L7 review | `tests/test_doctor.py::test_a_partner_without_an_index_still_answers` |
+| a cross-KB target resolves against the partner's **own** `[kb] id` | L7 review | `tests/test_doctor.py::test_a_cross_kb_target_is_resolved_against_the_partners_own_id`, `::test_a_partner_is_found_by_its_own_id_even_when_the_manifest_declares_another` |
+| an incomplete partner walk is never used as evidence of absence | L7 review | `tests/test_doctor.py::test_a_partner_whose_sidecars_cannot_all_be_read_is_not_used_as_evidence`, `::test_a_partner_whose_sources_are_unusable_is_not_used_as_evidence` |
+| an internal link is not counted as cross-KB | L7 review | `tests/test_doctor.py::test_an_internal_link_is_not_counted_as_cross_kb` |
+| a `~` linked-KB path is warned as absolute | L7 review | `tests/test_doctor.py::test_a_tilde_linked_kb_path_is_warned_as_absolute` |
+| an unreadable linked-KB path is a warning, not a traceback | L7 review | `tests/test_doctor.py::test_an_unreadable_linked_kb_path_is_a_warning_not_a_traceback` |
 
 ## The evaluation is reproducible (G1)
 
