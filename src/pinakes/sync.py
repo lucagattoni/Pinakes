@@ -17,13 +17,14 @@ properties that make a half-finished sync harmless:
 import codecs
 import hashlib
 import os
+import posixpath
 import sqlite3
 import subprocess
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, cast
 
 from pinakes import store
@@ -170,6 +171,11 @@ class SyncReport:
     unmatched_pdf_extra: str | None = None
     """The extra a `.pdf` in `unmatched` would still need after the glob is added — set only when
     the extractor is genuinely not importable, so the hint is never redundant advice."""
+    escaping_patterns: tuple[str, ...] = ()
+    """`[sources] include` patterns whose walk left the KB through a symlinked directory, one entry
+    per pattern. The static check in `manifest._check_include_containment` cannot see these — the
+    escape exists only on disk — so the walk stops at the first candidate outside and says so. A
+    skip that printed nothing would be a KB quietly indexing less than the user asked for."""
     busy: bool = False
     reclaimed_lock: bool = False
     # --clear-cache's own outcome; None on every other run (see `sync()`'s early return for it).
@@ -275,6 +281,7 @@ class SyncReport:
             )
         if self.unmatched:
             lines.append(self.unmatched_line())
+        lines.extend(self.escape_lines())
         for path in self.paid_extraction_overwritten:
             lines.append(f"paid extraction discarded (--force --extract): {path}")
         if self.paid_extraction_protected:
@@ -296,6 +303,14 @@ class SyncReport:
             lines.append(f"orphaned sidecar (kept; remove with `pnk doctor --prune`): {orphan}")
         lines.extend(self.failure_lines())
         return lines
+
+    def escape_lines(self) -> list[str]:
+        """One line per pattern that walked out of the KB, never one per file it matched."""
+        return [
+            f"`[sources] include` pattern {pattern!r} left the KB through a symlinked directory "
+            "— the walk stopped there, and nothing outside was indexed"
+            for pattern in self.escaping_patterns
+        ]
 
     def unmatched_line(self) -> str:
         """One line, grouped by extension, naming the glob that would pick the commonest up.
@@ -388,8 +403,8 @@ class UnmatchedFiles:
 
 def walk_sources(
     manifest: Manifest,
-) -> tuple[list[WalkedFile], list[WalkedSidecar], UnmatchedFiles]:
-    """Collect source files, sidecars, and files no `include` pattern matched.
+) -> tuple[list[WalkedFile], list[WalkedSidecar], UnmatchedFiles, tuple[str, ...]]:
+    """Collect source files, sidecars, files no `include` matched, and patterns that left the KB.
 
     Sidecars are excluded from the *document* set categorically, whatever the include patterns say:
     an `include = ["**/*.yaml"]` must never ingest a document's own metadata as a document.
@@ -399,20 +414,87 @@ def walk_sources(
     fresh KB matched nothing and `pnk sync` reported `0 indexed` explaining nothing — the file was
     skipped for a reason the user configured without realising, which is exactly the class of thing
     a tool should say out loud.
+
+    **The fourth is containment's dynamic half**; `manifest._check_include_containment` is the
+    static one, and neither covers the other. A **symlinked directory** inside the KB carries the
+    walk out with no `..` and no absolute path anywhere in the manifest — the escape exists only on
+    disk, so no load-time check can see it, and it cannot *be* a load error because nothing is
+    resolvable until the walk runs. `candidate.relative_to(manifest.root)` never caught it either:
+    `relative_to` is lexical, and under a symlink the candidate genuinely is under the root as a
+    string. Measured on 0.7.0 — `docs/escape -> /outside` with `include = ["*/*.md"]` indexed the
+    outside file and minted a sidecar beside it.
+
+    Worth knowing, and *not* a guard: the **default** `include = ["**/*.md", "**/*.txt"]` does not
+    escape this way, because `pathlib`'s recursive `**` skips symlinked directories. That is luck
+    about the standard library, and any user who writes a non-recursive pattern loses it.
     """
     files: dict[str, WalkedFile] = {}
     sidecars: dict[str, WalkedSidecar] = {}
     unmatched: set[str] = set()
+    anchor = manifest.root.resolve()
+    # **One problem per pattern** — not per file, and not per `(root, pattern)`: a hostile `../**`
+    # matches thousands of files, and two roots would report the same escape twice.
+    escaping: set[str] = set()
+    # `parent.resolve()` is a syscall chain per candidate, and a large KB globs thousands of files
+    # out of a handful of directories.
+    resolved: dict[Path, Path] = {}
+
+    def inside(candidate: Path) -> bool:
+        """Parent resolved, final component left alone — the spelling all three sites now share.
+
+        The directory chain is followed, so an escape through a symlinked *ancestor* is caught,
+        while a symlinked *document* stays readable.
+        """
+        parent = resolved.get(candidate.parent)
+        if parent is None:
+            parent = candidate.parent.resolve()
+            resolved[candidate.parent] = parent
+        return (parent / candidate.name).is_relative_to(anchor)
+
+    def key(candidate: Path) -> str:
+        """The document's identity: its path within the KB, with `..` collapsed.
+
+        **`relative_to` is lexical, so it hands back the `..` it was given** — and `[sources]`
+        legitimately allows a pattern containing one (`include = ["../notes/*.md"]` from `docs/`
+        lands inside the KB and is accepted). That produced a document keyed
+        `docs/../notes/n.md`, so one file reached by two spellings became two identities:
+        measured 20260801 with `roots = ["docs/", "notes/"]` and
+        `include = ["../notes/*.md", "*.md"]`, one file indexed once and then **failed twice**
+        with *"appeared after the walk had already read this directory"*, because the sidecar
+        found under one key was invisible under the other.
+
+        **Collapsed lexically (`normpath`), never by resolving.** Resolving would follow a
+        symlinked *directory* and silently re-key every document under it — `docs/alias/x.md`
+        becoming `docs/real/x.md` — which for an existing KB is a path change on a permanent
+        identity. Lexical collapse touches only paths that contain `..`, and every one of those
+        is already broken today. Containment does not depend on this: `inside` above resolves.
+        """
+        return PurePosixPath(
+            posixpath.normpath(candidate.relative_to(manifest.root).as_posix())
+        ).as_posix()
 
     for root_name in manifest.sources.roots:
         root = (manifest.root / root_name).resolve()
         if not root.is_dir():
             continue
         for pattern in manifest.sources.include:
+            if pattern in escaping:
+                continue
             for candidate in sorted(root.glob(pattern)):
+                # **Containment before the `is_file` skip**, not after: a pattern reaching outside
+                # that matched only directories, or only sidecars, hit one of the `continue`s below
+                # first — so the walk left the KB and reported nothing at all.
+                if not inside(candidate):
+                    escaping.add(pattern)
+                    break  # bounds the escape; no static check can see a symlinked directory
                 if not candidate.is_file():
                     continue
-                relative = candidate.relative_to(manifest.root).as_posix()
+                # **`exclude` matches the *unresolved* path**, deliberately. Matching the resolved
+                # one silently changes which rules fire: with `docs/alias -> docs/real` inside the
+                # KB, `exclude = ["docs/real/*"]` would begin excluding documents reached as
+                # `docs/alias/…` — and a locally excluded document is a deleted index row *and* an
+                # orphaned sidecar, not merely a missing edge.
+                relative = key(candidate)
                 if _excluded(relative, manifest.sources.exclude, manifest.root, candidate):
                     continue
                 if is_sidecar(candidate):
@@ -420,10 +502,16 @@ def walk_sources(
                 files[relative] = WalkedFile(path=relative, content_hash=hash_file(candidate))
 
         for candidate in sorted(root.rglob(f"*{SIDECAR_SUFFIX}")):
+            # `rglob`'s `**` skips symlinked directories, so this is defence rather than the fix —
+            # but `relative_to` here carries the identical lexical shape at two more sites, and a
+            # rule spelled in three places and enforced in one is how this defect existed at all.
+            if not inside(candidate) or not inside(document_for(candidate)):
+                escaping.add(f"*{SIDECAR_SUFFIX}")
+                break
             if not candidate.is_file():
                 continue
-            relative = candidate.relative_to(manifest.root).as_posix()
-            document = document_for(candidate).relative_to(manifest.root).as_posix()
+            relative = key(candidate)
+            document = key(document_for(candidate))
             try:
                 parsed = read_sidecar(candidate, owner=manifest.kb.id)
             except PinakesError:
@@ -451,6 +539,7 @@ def walk_sources(
         sorted(files.values(), key=lambda f: f.path),
         sorted(sidecars.values(), key=lambda s: s.path),
         UnmatchedFiles(paths=tuple(sorted(unmatched)), truncated=truncated),
+        tuple(sorted(escaping)),
     )
 
 
@@ -671,7 +760,7 @@ def _estimate_only(manifest: Manifest, options: SyncOptions) -> SyncReport:
         )
 
     prices = load_prices()
-    files, _sidecars, _unmatched = walk_sources(manifest)
+    files, _sidecars, _unmatched, _escaping = walk_sources(manifest)
     # Built on the first PDF, not up front: constructing the transport needs a key, and a KB with
     # no PDFs at all has nothing to estimate and no business demanding one.
     transport = None
@@ -777,10 +866,11 @@ def _run(
     report: SyncReport,
     extraction_backend: str,
 ) -> None:
-    files, sidecars, unmatched = walk_sources(manifest)
+    files, sidecars, unmatched, escaping = walk_sources(manifest)
     report.unmatched = unmatched.paths
     report.unmatched_truncated = unmatched.truncated
     report.unmatched_pdf_extra = _missing_pdf_extra(unmatched.paths, extraction_backend)
+    report.escaping_patterns = escaping
 
     if options.sidecars_only:
         _write_missing_sidecars(manifest, files, sidecars, options, stamp, report)
