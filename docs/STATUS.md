@@ -254,7 +254,7 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.4.1** ✅ | A sidecar that will not parse is no longer overwritten by a freshly minted one, and no longer aborts the whole sync — data loss present since v0.1 |
 | **0.5.0** ✅ *(the links release, interim)* | `pnk links`, `pinakes_links`, reverse-scan and the sidecar round-trip fix — no `schema_version` bump, so no rebuild. **The release cuts twice** (decision 27): this is the interim MINOR at L5b; the final cut is at L8, and the name stays in the unbuilt-work table until then. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **L5b landed:** `ruamel.yaml` replaces `pyyaml` in the sidecar, so a rewrite preserves comments, quoting and blank lines — and `country: NO` stops becoming `false` ([decision](../plans/decision-ruamel-yaml.md)). **L6 has since landed on `main`, unreleased:** `pnk link`, the authoring command — it goes out at the final cut, not in 0.5.0. **Next: L7** (`pnk doctor`'s link coverage), then L8 and that cut |
 | **0.6.0** ✅ *(the links release, final)* | `pnk link` authors a link from the command line, and `pnk doctor` reports link coverage as **linked docs / total docs** and resolves each cross-KB target through its `[[links.kb]]` entry (L6–L8). Also `[kb] requires_pinakes` (G4) and the evaluation's tie-ordering fix (G1) — no `schema_version` bump, so no rebuild. **This completes the two-cut release** decision 27 describes: 0.5.0 was the interim MINOR at L5b, this is the final cut, and the name leaves the unbuilt-work table here |
-| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. **Two increments are on `main`, unreleased.** **G1:** the evaluation's reproducibility was measured and the tie-ordering defect it found was fixed ([above](#is-the-evaluation-reproducible--measured-20260801-0035)) — no number moved, no `schema_version` bump. **G4:** `[kb] requires_pinakes`, a compatibility floor read *before* strict validation, so a KB written by a newer pinakes names the version it needs instead of failing as a typo. If G2's headroom measurement fails, G3 and G5 do not start and G1/G2/G4 are cut as their own release, named at the cut |
+| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. **⚠️ Its gate was measured on 20260801 and cannot be reached on this corpus** ([above](#can-the-graph-releases-gate-be-reached--measured-20260801-1214)): 1 of 18 multi-hop questions fails where 7 were needed, so **G3 and G5 do not start** and the three finished increments are cut as their own release, named at the cut — and **G1 and G4 already went out in 0.6.0**, so that cut is **G2 alone**. (The row above says both shipped in 0.6.0; this one used to contradict it by listing them as unreleased.) **G1:** the evaluation's reproducibility, measured and its tie-ordering defect fixed ([above](#is-the-evaluation-reproducible--measured-20260801-0035)). **G4:** `[kb] requires_pinakes`, a compatibility floor read *before* strict validation. **G2 — the one increment on `main`, unreleased:** per-question outcomes as a committed artifact, stable question ids, a validated `kind`, an empty golden set that skips rather than fails, and the golden set grown 41 → 74 with a `simple-lookup` control class — plus the headroom measurement above, which is what closes the graph release rather than opening it |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
 | *the deep release* | `pnk ask --deep` |
 | *the template release* | Template ecosystem, `pnk upgrade` migrations, the `sqlite-vec` tier |
@@ -269,17 +269,29 @@ unverified.
 
 | Metric | Value | Measured |
 |---|---|---|
-| recall@5 | 0.909 | 20260729 03:23, demo KB, `[light]` models |
-| MRR | 0.812 | 20260729 03:23 |
-| rerank precision | 0.758 | 20260729 03:23 |
-| false-abstain | 0.03 | 20260729 03:23 |
-| **false-confidence** | **0.25** | 20260729 03:23 — one no-answer question in four still gets a confident answer |
+| questions | 74 | 20260801 12:14, demo KB, `[light]` models |
+| recall@5 | 0.939 | 20260801 12:14 |
+| MRR | 0.881 | 20260801 12:14 |
+| rerank precision | 0.849 | 20260801 12:14 |
+| false-abstain | 0.015 | 20260801 12:14 |
+| **false-confidence** | **0.25** | 20260801 12:14 — one no-answer question in four still gets a confident answer |
 | NumPy vector tier | 2.25 ms/query at 50k×384, 77 MB resident | 20260725 13:49 |
 
-Per class, same run: `lexical` 1.00, `filter` 1.00, `no-answer` 1.00 (abstained correctly),
-`multi-hop` 1.00, `paraphrase` 0.75. **Paraphrase is the only class with room in it**, and
-`multi-hop` sits at ceiling on five questions — a class at 1.00 can only ever show damage, which is
-why nothing should be tuned against it until it is both larger and harder.
+Per class, same run: `lexical` 1.00, `simple-lookup` 1.00, `filter` 1.00, `no-answer` 1.00
+(abstained correctly), `multi-hop` 0.944, `paraphrase` 0.75.
+
+⚠️ **These numbers moved on 20260801 because the golden set grew from 41 questions to 74, not
+because retrieval changed.** G2 added 20 `simple-lookup` questions and 13 single-KB multi-hop ones
+and re-baselined once. `eval/baseline-pre-growth.json` preserves the 41-question figures with the
+ids they covered, and re-scoring the committed per-question artifact over exactly those 41
+reproduces every one of them **byte-identically** — so nothing already in the set moved. The
+previous run of record was 20260729 03:23: recall@5 0.909, MRR 0.812, rerank precision 0.758,
+false-abstain 0.03.
+
+**Paraphrase is still the only class with real room in it**, and the `multi-hop` class remains close
+to ceiling even after tripling in size — 17 of 18. That is a fact about the corpus, not about the
+questions: thirty short, topically disjoint documents make "retrieve 5 of 30" undemanding. Nothing
+should be tuned against this corpus until it is larger and its documents are less separable.
 
 ⚠️ **These numbers moved on 20260729 because the scorer was wrong, not because retrieval improved.**
 A multi-hop question was scored as a single-shot search of its last hop's query — `hops_followed`
@@ -287,8 +299,9 @@ was computed and reached no metric — and two of the five questions consequentl
 document while demanding another. Recall@5 rose 0.879 → 0.909 and MRR 0.774 → 0.812 when the class
 started requiring every hop to land. Nothing about retrieval changed in that commit.
 
-The false-confidence figure is fitted and scored on the same 41-question set (8 of them no-answer),
-so treat it as a floor rather than an estimate. Publishing it is the point:
+The false-confidence figure is fitted and scored on the same 74-question set (8 of them no-answer,
+unchanged by G2's growth — so the calibrated thresholds were re-fitted after it and came back
+identical), so treat it as a floor rather than an estimate. Publishing it is the point:
 [DESIGN §4.2](DESIGN.md#42-escalation--free-path-first) commits to measuring the heuristic's cost
 rather than assuming it away.
 
@@ -321,6 +334,47 @@ is why this increment rewrites no baseline. Held by `tools/eval_reproducibility_
 `check.sh` gate and its own CI job, sweeping four kinds of corpus change),
 `tests/test_search_reproducibility.py`, and a CI job that diffs per-question outcomes between
 `ubuntu-latest` and `macos-latest` — the half a single machine cannot answer.
+
+### Can the graph release's gate be reached? — measured 20260801 12:14
+
+**No, on this corpus.** The graph release defaults its expansion channel on only if an exact sign
+test finds enough multi-hop questions *improving*, and an improvement can only come from a question
+that fails today. The precondition was: **at least 7 of the ~18 single-KB multi-hop questions fail,
+and at least 7 of those are channel-reachable without authored edges.**
+
+| | Required | Measured |
+|---|---|---|
+| multi-hop questions failing today | ≥ 7 | **1** |
+| of those, reachable within 2 logical hops, **without** authored edges | ≥ 7 | 1 |
+| of those, reachable **with** authored edges (records nothing, licenses nothing) | — | 1 |
+| reachable but beyond 2 hops | — | 0 |
+| reachable only through membership edges | — | 0 |
+
+**So G3 does not start.** No `schema_version` bump, no forced rebuild for every KB in existence for
+an edge table whose channel could never be licensed — which is the whole reason this measurement
+was sequenced before the schema change rather than after it. G1, G2 and G4 are cut as a release of
+their own.
+
+Two findings sit behind that number, and both outlive it:
+
+* **`tests/demo-kb` has no tags at all, and one flat directory.** With `mentions` cut, that leaves
+  exactly **one** derived edge kind that crosses a document boundary — `co-located`, through a
+  single thirty-way directory hub. `shared-tag` derives zero edges for want of any tag;
+  `sibling`, `parent`/`child` and `in-section` are intra-document and cannot bridge two evidence
+  documents by construction. Any future result on this corpus is a claim about one directory.
+* **The retrieval funnel already sees the whole corpus.** `candidates_per_source` is 30 against
+  ~30 chunks, so the vector channel returns essentially every document with a positive cosine and
+  the pipeline then cuts to `final_k = 5`. A failing question here is a **ranking** failure, not a
+  recall failure a channel could fix by reaching further. The probe reports an `at-seed` share
+  separately for that reason: under a tie-heavy fake backend, two of three questions it called
+  reachable were already among the fused candidates and had traversed no edge at all.
+
+The thirteen new multi-hop questions were authored from corpus structure and **frozen before the
+probe ran**. They are not re-authored to produce failures: fitting the question set to the edge set
+is the circularity that cutting cross-KB questions removed once already, and it is undetectable
+afterwards. Held by `tools/reachable_ceiling_probe.py`, whose own tests pin that it needs no schema
+change and that its count moves when an edge kind is removed — a reachability probe answering
+"reachable" for everything is the failure mode it exists to avoid.
 
 ## Published on PyPI
 

@@ -52,9 +52,24 @@ document half is committed, the tag is not pushed. From the graph release's side
 0.6.0 too**, so the tree the next increment starts from already has the tie-ordering fix and the
 compatibility floor in it.
 
-**The next increment is [G2](#g2--per-question-outcomes-the-grown-golden-set-one-re-baseline), and
-nothing else in this plan can start before it.** G3 and G5 are gated on its headroom measurement, and
-G6 closes the graph release. Re-verify this baseline before starting: `git log --oneline -1`,
+**G2 has landed, and its measurement stops the graph release.** The headroom precondition needed
+7 of the ~18 single-KB multi-hop questions to fail today; **1 does** (20260801 12:14, real `[light]`
+models). So **G3 and G5 do not start**, and the third outcome this plan already planned for is the
+one that happened: **G1 + G2 + G4 are cut as their own release**, named at the cut, with G6's
+verification minus its edge-dependent steps. What remains open is that cut and nothing else in the
+graph release. Full numbers and the two findings behind them:
+[`docs/STATUS.md`](../docs/STATUS.md#can-the-graph-releases-gate-be-reached--measured-20260801-1214)
+and `retro.d/g2-headroom-measurement.md`.
+
+**The corpus is what failed, not the questions.** `tests/demo-kb` carries no tags and one flat
+directory, so the only derived edge crossing a document boundary is `co-located` through a single
+thirty-way hub — and at 30 documents against `candidates_per_source = 30` the funnel already sees
+every document, making the failures *ranking* failures rather than reach failures. Reviving the
+graph release means a corpus that can discriminate, and that is a decision, not an increment: it
+would change every number in this plan. The questions are **not** to be re-authored to manufacture
+failures.
+
+Re-verify before starting anything here: `git log --oneline -1`,
 `gh run list --branch main --limit 1`, and `python3 tools/shared_file_overlap.py --fetch --strict`.
 
 ## Two releases, three cuts
@@ -315,7 +330,15 @@ in git history.
 
 ---
 
-### G2 — Per-question outcomes, the grown golden set, one re-baseline
+### G2 — Per-question outcomes, the grown golden set, one re-baseline ✅ landed 20260801 12:14
+
+**Outcome: the precondition failed.** 18 multi-hop questions, **1 failing** against the 7 required;
+reachable-without-authored 1 against the 7 required. G3 does not start. The golden set grew 41 → 74
+(20 `simple-lookup`, 13 new multi-hop), `eval/outcomes.json` is committed beside the baseline,
+`kind` is validated, an empty set skips with a reason, and `eval/baseline-pre-growth.json` preserves
+the 41-question numbers — over which the committed artifact re-scores byte-identically, so nothing
+already in the set moved. The spec below is left as written; it is what was built against.
+
 
 **Read this first — G2 is a measurement wearing a feature's clothes.** The artifact, the questions,
 the `kind` validation and the empty-set skip are the deliverables; the **output** is a stop/go on the
@@ -456,7 +479,9 @@ fragment.
 
 ### G3 — The node model and the edge set (`schema_version` 3)
 
-**Precondition:** G2's headroom measurement passed.
+**Precondition:** G2's headroom measurement passed. **It did not** (20260801 12:14 — 1 of 18
+multi-hop questions fails, 7 were required). **This increment does not start.** Nothing below is
+withdrawn or wrong; it is unbuilt, and reaching it needs a corpus that can discriminate first.
 
 **What lands.** APPROACH §3's node model — **chunk**, **document**, **tag**, **heading-path**
 (scoped per document), **directory** — with every shared-value relation through its hub node.
@@ -564,6 +589,10 @@ rows in [`docs/VERIFICATION.md`](../docs/VERIFICATION.md).
 ---
 
 ### G5 — The expansion channel, default off, and its gate
+
+**Blocked by G2's measurement, through G3.** The gate reads per-question movement on the multi-hop
+class, and that class has one failing question to move. Left as written.
+
 
 **What lands.** `[retrieval] graph_channel = "off" | "expand"`, default `"off"`. When `"expand"`: the
 fused top-*k* as roots, expanded to depth ≤ 2, ranked, fed into RRF as a third input; an empty edge
