@@ -1,4 +1,4 @@
-## `main` was red for two merges, and local `check.sh` could not have known (20260801 05:25)
+## `main` was red for four merges, and local `check.sh` could not have known (20260801 06:05)
 
 Four tests written across L6 and L7 passed on macOS and failed on CI, so `2314dea` (L6) and
 `ed01b00` merged onto a red `main` and stayed there until L8's verification step 1 looked.
@@ -21,6 +21,16 @@ wrong thing.**
   *injected*: `Path.is_file` raises `PermissionError`, which is precisely what the guard exists to
   catch, on every platform and with no filesystem semantics in the way. A test for "an `OSError`
   becomes a `PinakesError`" should raise an `OSError`, not arrange for the operating system to.
+- **Two more of the same shape, found only by pushing the fix and watching CI again.** A
+  300-character filename asserted to produce `ENAMETOOLONG` — the length at which a filesystem
+  says that is a property of the filesystem, and on CI the name was simply not a document. And an
+  embedded NUL in an `include` pattern asserted to raise from `resolve()` — on CI it raised
+  nothing, so the test asserted a problem that never occurred. Both now raise the error directly.
+
+  **Every one of these tests asked the operating system to produce an error, and then asserted on
+  the answer.** That is a test of the platform, not of the guard. The guard's contract is "an
+  `OSError`/`ValueError` from this call becomes a `PinakesError`" — so the test should raise one.
+
 - **`pathlib`'s wording is not a contract.** A test asserted
   `Unacceptable pattern: PosixPath('.')`, which CPython renders as `Unacceptable pattern: ''` on
   other versions. The increment's promise is that the pattern *the author wrote* is named and the

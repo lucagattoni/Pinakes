@@ -531,8 +531,17 @@ def test_an_unreadable_directory_is_refused_rather_than_crashing(
     monkeypatch.undo()
     assert "cannot be read" in caught.value.message
 
+    # The other errno in the same class. **Injected, not built from a 300-character name**: the
+    # length at which a filesystem answers `ENAMETOOLONG` is a property of that filesystem, and on
+    # CI the long name simply was not a document — so the test asserted the wrong message rather
+    # than exercising the guard.
+    def too_long(self: Path) -> bool:
+        raise OSError(63, "File name too long")
+
+    monkeypatch.setattr(Path, "is_file", too_long)
     with pytest.raises(PinakesError) as caught:
-        add(load(local.root), source=f"docs/{'a' * 300}.md", target="docs/beta.md", rel="cites")
+        add(load(local.root), source="docs/whatever.md", target="docs/beta.md", rel="cites")
+    monkeypatch.undo()
     assert "cannot be read" in caught.value.message
 
 
