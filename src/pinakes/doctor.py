@@ -412,7 +412,17 @@ def _drift_check(name: str, paths: list[str], situation: str, remedy: str) -> Ch
 
 def _index(manifest: Manifest) -> Iterator[Check]:
     if not manifest.index_path.exists():
-        yield Check("index", Status.WARN, "not built yet", "Run `pnk sync`.")
+        # **Naming what is missing, not only that something is.** Every check below is yielded from
+        # inside this function, so an absent index silently removes them — including `links`, which
+        # is the one a reader consults `pnk doctor` for after authoring any. A report that simply
+        # stops listing a check reads as "nothing to report about it".
+        yield Check(
+            "index",
+            Status.WARN,
+            "not built yet, so the link checks did not run",
+            "Run `pnk sync`. Link coverage, dangling targets and cross-KB resolution are all "
+            "read from the index, so none of them is reported until there is one.",
+        )
         return
 
     try:
