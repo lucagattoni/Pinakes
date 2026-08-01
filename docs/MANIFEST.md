@@ -184,11 +184,12 @@ Connected KBs. The schema ships today because IDs cannot be retrofitted; travers
 Aliases live here and **never inside a `pnk://` URI** — a URI carrying an alias would break the
 moment the KB reached a machine where that alias means something else.
 
-`path` is stored but **not yet read by anything** — nothing resolves it and no check inspects it.
-When it is (the links release), it will be resolved **relative to this KB's root** with `~`
-expanded; an absolute path will be accepted and **warned about** by `pnk doctor`, because a
-manifest is committed and an absolute path in one publishes your filesystem layout to everyone who
-clones it. A path that does not exist on this machine will **not** be an error: a KB is routinely
+`path` is resolved **relative to this KB's root**, with `~` expanded — never relative to the
+directory `pnk` ran from, because a manifest is committed and shared. `pnk sync --scan-links` reads
+it, `pnk link` resolves an alias through it, and `pnk doctor` inspects it: an absolute path is
+accepted and **warned about**, because a committed absolute path publishes your filesystem layout to
+everyone who clones the KB; a path that resolves to nothing at all (`~someone/kb`, an embedded NUL)
+is reported with the reason it could not be resolved. A path that does not exist on this machine will **not** be an error: a KB is routinely
 shared without its partners, and refusing to load would make every connected KB a hard dependency
 of every other.
 
