@@ -1169,11 +1169,9 @@ def test_the_walk_raising_is_an_issue_not_a_traceback(
     ("include", "exclude", "expected"),
     [
         # A NUL in a non-final component reaches `probe.parent.resolve()`, which was outside any
-        # handler — one line above the `glob` guard written to stop exactly this outcome.
-        (["**/*.md", "a\x00b/x.md"], [], "include pattern 'a\\x00b/x.md' cannot be walked"),
-        # ...and in the final component it reaches `next()`, whose guard no test exercised: the
-        # `""`/`"."` fixtures written for it raise at the `glob()` *call*, not at the step.
-        (["**/*.md", "sub/\x00"], [], "include pattern 'sub/\\x00' cannot be walked"),
+        # `Path.glob("")` raises at the *call*, on every platform.
+        (["**/*.md", ""], [], "include pattern '' cannot be walked"),
+        (["**/*.md", "."], [], "include pattern '.' cannot be walked"),
         # `Path.match("")` raises too. The comment on the `next` guard cited this very case as its
         # reason for scoping tightly, and then left it unhandled.
         (["**/*.md"], [""], "exclude rule '' cannot be used"),
@@ -1195,6 +1193,35 @@ def test_one_bad_sources_entry_is_one_problem_not_the_end_of_the_partner(
     assert len(found) == 2, "the valid entries stopped being walked"
     assert len(problems) == 1, problems
     assert problems[0].startswith(f"[sources] {expected}: "), problems[0]
+
+
+def test_an_include_pattern_the_filesystem_rejects_is_one_problem(
+    pair: tuple[Kb, Kb], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `probe.parent.resolve()` guard, which sits above the `glob` one.
+
+    **Injected rather than built from an embedded NUL.** Whether a NUL in a path component raises
+    is the platform's business — macOS raises `ValueError` from `lstat`, and on CI the same
+    pattern produced no error at all, so the test asserted a problem that never occurred. What is
+    under test is that *one* unusable pattern is one problem rather than the end of the partner,
+    and that is exactly what raising from `resolve` exercises.
+    """
+    _local, partner = pair
+    real_resolve = Path.resolve
+
+    def refuse(self: Path, strict: bool = False) -> Path:
+        if "poison" in str(self):
+            raise ValueError("embedded null character in path")
+        return real_resolve(self, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", refuse)
+    found, problems = sidecars_under(partner.root, ["docs/"], ["**/*.md", "poison/x.md"], [])
+    monkeypatch.undo()
+
+    assert len(found) == 2, "the valid entries stopped being walked"
+    assert problems == [
+        "[sources] include pattern 'poison/x.md' cannot be walked: embedded null character in path"
+    ]
 
 
 def test_a_pattern_that_escapes_under_one_root_collects_under_none(pair: tuple[Kb, Kb]) -> None:
