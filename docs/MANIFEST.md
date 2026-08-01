@@ -66,9 +66,21 @@ What gets indexed. Paths are always relative to the KB root, POSIX separators.
 
 | Key | Default | Notes |
 |---|---|---|
-| `roots` | `["docs/"]` | |
-| `include` | `["**/*.md", "**/*.txt"]` | **Add `"**/*.pdf"` yourself** to index PDFs — the shipped template omits it ([GUIDE](GUIDE.md#indexing-pdfs)) |
-| `exclude` | `[]` | Applied after `include` |
+| `roots` | `["docs/"]` | Must stay inside the KB: an absolute entry, or one containing `..`, is refused at load |
+| `include` | `["**/*.md", "**/*.txt"]` | **Add `"**/*.pdf"` yourself** to index PDFs — the shipped template omits it ([GUIDE](GUIDE.md#indexing-pdfs)). Carries the same containment rule as `roots` (below) |
+| `exclude` | `[]` | Applied after `include`. **Not** containment-checked, deliberately |
+
+**`include` must stay inside the KB, and what matters is where a pattern *lands*.** An absolute
+pattern is refused (Python's `glob` cannot walk one wherever it points), and so is one whose walk
+would leave the KB — checked at load, before anything is globbed. A `..` that lands back *inside* is
+fine: `include = ["../notes/*.md"]` from `roots = ["docs/"]` reaches `notes/` and is accepted. What
+is refused is `../../outside/*.md`, which used to index files outside the KB and mint sidecars
+beside them. A **symlinked directory** inside the KB can carry the walk out with no `..` anywhere,
+which no load-time check can see, so the walk re-tests each file and stops at the first one outside,
+reporting the pattern.
+
+`exclude` is deliberately exempt: a pattern there can only fail to match, never widen the walk, so
+`..` in it is harmless. The asymmetry is intentional rather than an oversight.
 
 Sidecars are never ingested as documents, whatever your globs say.
 
