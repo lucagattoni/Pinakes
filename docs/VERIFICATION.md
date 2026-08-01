@@ -533,6 +533,7 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | ...and an absolute path warns even when it resolves | L7 | `tests/test_doctor.py::test_an_absolute_linked_kb_path_warns` |
 | the linked-KBs check exists even with none declared, so the coverage guard sees it | L7 | `tests/test_doctor.py::test_a_kb_declaring_no_linked_kbs_still_produces_the_check` |
 | ...and runs without an index, when an absolute path matters most | L7 | `tests/test_doctor.py::test_the_linked_kbs_check_runs_without_an_index` |
+| an unsynced KB says the link checks did not run | L8 | `tests/test_doctor.py::test_an_unsynced_kb_says_the_link_checks_did_not_run` |
 | a soft-deleted document does not inflate the coverage ratio | L7 review | `tests/test_doctor.py::test_a_deleted_document_leaves_the_coverage_ratio_honest` |
 | doctor writes nothing into a partner KB (§6.2) | L7 review | `tests/test_doctor.py::test_doctor_writes_nothing_into_a_partner_kb` |
 | ...and answers from a partner with no index at all | L7 review | `tests/test_doctor.py::test_a_partner_without_an_index_still_answers` |

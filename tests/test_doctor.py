@@ -107,6 +107,20 @@ def test_a_fresh_kb_reports_no_index_yet(kb: Path) -> None:
     assert "FTS5 present" in found["sqlite"][1]
 
 
+def test_an_unsynced_kb_says_the_link_checks_did_not_run(kb: Path) -> None:
+    """Every check in `_index` is yielded from inside it, so an absent index silently removes them
+    — `links` included, which is the one a reader consults `pnk doctor` for after authoring any.
+
+    L8's verification asks for this in as many words: on an unsynced KB, doctor must still exit 0
+    **and say the link checks could not run**. It exited 0 and said nothing; a report that stops
+    listing a check reads as "nothing to report about it".
+    """
+    found = checks(kb)
+    assert "links" not in found, "the fixture is meant to have no index"
+    assert "the link checks did not run" in found["index"][1]
+    assert "coverage" in (_remedy(kb, "index") or "")
+
+
 def test_a_synced_kb_is_healthy(kb: Path) -> None:
     sync(load(kb), options=SyncOptions(), now="20260725 17:31")
     found = checks(kb)
