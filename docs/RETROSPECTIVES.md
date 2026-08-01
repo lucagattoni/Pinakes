@@ -2170,6 +2170,621 @@ Editing the *second* entry is the discriminating case: its fallback claims the l
 owed exactly, and both relations end up swapped under the wrong comments. Two of this increment's
 tests have now needed the *specific* case rather than a representative one.
 
+## `main` was red for four merges, and local `check.sh` could not have known (20260801 06:05)
+
+Four tests written across L6 and L7 passed on macOS and failed on CI, so `2314dea` (L6) and
+`ed01b00` merged onto a red `main` and stayed there until L8's verification step 1 looked.
+
+**Two causes, one shape: a test that cannot build its precondition does not skip — it asserts the
+wrong thing.**
+
+- **`chmod(0o000)` is not a portable way to deny a read.** Three fixtures built an "unreadable
+  directory" that CI read anyway: `pnk link` reported `no pinakes.toml there` where the test
+  demanded `Permission denied`, and `'docs/locked/x.md' is not a document in this KB` where it
+  demanded `cannot be read`.
+
+  **The first fix was wrong, and its wrongness is the lesson.** It probed whether permissions are
+  enforced and skipped when they are not — reasoning that CI runs as root. CI is *not* root: the
+  probe reported permissions enforced, did not skip, and the run failed identically. Whatever that
+  runner does with a mode-000 directory, `is_file()` neither succeeded nor raised `EACCES`.
+
+  Skipping was the wrong shape regardless. It disables the guard **exactly where it broke** — the
+  environment the test could not model is the one that most needed testing. The refusal is now
+  *injected*: `Path.is_file` raises `PermissionError`, which is precisely what the guard exists to
+  catch, on every platform and with no filesystem semantics in the way. A test for "an `OSError`
+  becomes a `PinakesError`" should raise an `OSError`, not arrange for the operating system to.
+- **Two more of the same shape, found only by pushing the fix and watching CI again.** A
+  300-character filename asserted to produce `ENAMETOOLONG` — the length at which a filesystem
+  says that is a property of the filesystem, and on CI the name was simply not a document. And an
+  embedded NUL in an `include` pattern asserted to raise from `resolve()` — on CI it raised
+  nothing, so the test asserted a problem that never occurred. Both now raise the error directly.
+
+  **Every one of these tests asked the operating system to produce an error, and then asserted on
+  the answer.** That is a test of the platform, not of the guard. The guard's contract is "an
+  `OSError`/`ValueError` from this call becomes a `PinakesError`" — so the test should raise one.
+
+- **`pathlib`'s wording is not a contract.** A test asserted
+  `Unacceptable pattern: PosixPath('.')`, which CPython renders as `Unacceptable pattern: ''` on
+  other versions. The increment's promise is that the pattern *the author wrote* is named and the
+  other `include` entries survive; that is what it asserts now. Third instance in two increments of
+  asserting a phrase where the property was meant.
+
+**The process failure is the larger one.** `./check.sh` was green before each merge, and green on
+one developer machine is not green on the three-leg CI matrix — different OS, different Python
+patch, different privileges. The project rule already says to check whether the latest run on the
+default branch actually succeeded; it was not checked after either merge, and the second merge
+landed on top of the first failure without noticing it.
+
+**`gh run list --branch main` belongs in the merge sequence, after the push**, not in the next
+increment's verification step. A red default branch blocks the release either way — finding it two
+merges later only makes the bisect longer.
+
+## G1 — Is the eval reproducible? (20260801 00:52)
+
+Decision 15 said measure before fixing, and the measurement paid for itself twice: once by finding a
+real defect, and once by contradicting the fix that was nearly written for it.
+
+**HIGH — the eval was reproducible by luck, and the luck was invisible.** Running the golden set,
+editing a document, re-syncing, rebuilding and comparing *per-question* outcomes: the real `[light]`
+models agreed everywhere. A low-dimensional fake disagreed on one question in 41 between an
+incremental sync and a `--rebuild`. Both facts are the same fact — 384-dimensional cosines almost
+never tie exactly, and every tiebreak underneath resolved to `chunks.id`, the rowid, which
+`store.py`'s own schema comment says has no identity across rebuilds. A property that holds because
+the corpus never exercises it is not a property, and G5's sign test was about to be built on it.
+The fix is total ordering on `(documents.path, chunks.ordinal)` at three sites plus a stable
+`argsort`; **no measured number moved**, which is the right outcome for a change that only breaks
+ties, and is why this increment rewrites no baseline and needs no amendment to L8 step 5.
+
+**HIGH — the fixture was the algorithm, in the one place that judges the algorithm.** The first
+version of the tests used eight dimensions, reasoning "fewer dimensions, more ties". Swept against
+the genuine pre-fix code, eight and sixteen dimensions both reported **zero** differences across all
+four perturbations: collapse the space far enough and every candidate ties, so the ordering
+underneath stops reaching the top-k at all. The relationship is not monotonic — 32 caught two
+perturbations, 64 caught one, 128 caught two. Had the sweep not been run, G1 would have shipped a
+green gate, a green test suite and a live defect, all three agreeing. The sweep is recorded in the
+gate's own `DIM` docstring rather than the conclusion alone, because the next person's intuition
+will be the same as this one's.
+
+**HIGH — the mutation harness deleted the thing it was measuring.** The first mutation run restored
+each mutation with `git checkout -- <file>`. The fix was uncommitted, so the first restore reverted
+it; every later mutation then failed to apply to code that no longer had the target, and the suite
+ran green against **original** code four times while reporting "0 failures" as though the mutations
+had been survived. It read exactly like a well-tested change. Two rules fall out. *Restore from a
+copy of the mutated-from state, never from `HEAD`* — `git checkout` restores to the last commit,
+which is a different thing from "undo my mutation" whenever the work is uncommitted. And *a mutation
+harness must assert that its mutation applied*: the rewritten one fails loudly if the target string
+is not found exactly once, which is what turned three silent no-ops into an error.
+
+**MEDIUM — a stable sort needed its own test, and the obvious one was vacuous.** `kind="stable"`
+changes nothing a repeated run can observe: on a fixed input array NumPy's introsort is
+deterministic. It changes what happens when the array *grows*, because partitioning depends on the
+whole array — measured at 500 of 500 random tie-heavy arrays reordering their original entries. The
+first test written for it used four tied chunks and passed under the mutation, because NumPy uses an
+insertion sort below roughly sixteen elements and insertion sort is stable whatever `kind` says. A
+fixture can be too small to contain the behaviour it is named after.
+
+**What the increment ended up asserting, and at which level.** Three end-to-end tests state the
+property G5 needs, over the committed corpus and questions; four site tests each drive one ordering
+decision directly and are the mutation targets — one mutation, one failing test, verified for all
+four. The two levels are not redundant: the end-to-end tests can only observe ties the corpus
+happens to contain, which is precisely how the defect survived three releases.
+
+### The adversarial pass over G1's own diff (20260801 01:25)
+
+Six findings, four of them real defects in work that was already green.
+
+**HIGH — a gate advertised a field it had retired.** `_plant` rewrote the reranker's *model* name
+and left `[retrieval.confidence] fitted_for` naming the real one, so `_confidence` short-circuited
+and all 41 questions scored `unknown`. Both the gate's docstring and the tests claimed to compare
+the confidence label. Naming the reranker was not enough either: the committed thresholds were
+fitted on a real cross-encoder's logits and sit below every score the fake can emit, so the label
+became a constant `high` — still unable to move. Thresholds inside the fake's range give
+35 medium / 5 high / 1 low, and the field is finally live. **The class of defect matters more than
+the instance:** a fixture that rewires half of a calibrated pair silently disables the thing it was
+calibrated for, and nothing fails.
+
+**HIGH — the plan still asserted what the measurement disproved.** Decision 15 says a final tiebreak
+would be *"a provable no-op"* because cross-document ties are totalised by `documents.path` and
+rowid order is ordinal order. Both premises are true about **writes** and irrelevant to the
+**output**: `documents.path` cannot separate two chunks of the same document, and an incremental
+sync by definition does not rewrite the files it did not touch, so rowid order stops matching corpus
+order at the first re-chunked file. The plan is an executor doc; leaving that cell intact would have
+licensed a G2–G5 executor to skip a tiebreak for a reason this increment measured to be false.
+
+**MEDIUM — half the gate's sweep has never observed anything.** Of its four perturbations, *added*
+and *removed* report zero differences against the genuine pre-fix code at every width swept
+(8/16/32/64/128), while *edited* and *renamed* bite. `--inject-difference` cannot reveal this: it
+corrupts all four alike. The gate now states it. **A gate's own justification is a claim like any
+other** — this one said "it sweeps four ways where the tests exercise one", and two of the four were
+along for the ride.
+
+**MEDIUM — the contract's file table was checked against the wrong question.** It compared the two
+tracks' *owned* files and never asked what a new gate touches. Every gate edits `check.sh`,
+`ci.yml` and `tests/test_check_script.py`, which both tracks append to at the end of the same
+regions; and G1 necessarily edits `search.py` and `store.py`, which the table lists under neither
+track, because reproducibility is a property of core retrieval. Widened, with the reason.
+
+**LOW, and recorded rather than fixed —** making the BM25 cut total costs a join: +11.5 ms on a
+50k-chunk corpus where every chunk matches every term. That is the worst case a planner can be
+given, the correctness is not optional, and the number now sits in `docs/STATUS.md` so a later
+change can argue with it.
+
+**What the pass confirmed, having tried to break it:** `bm25()` still resolves with the alias
+present and returns byte-identical rows; the join multiplies nothing (both sides unique); the
+`load_vectors` reordering costs nothing measurable; `graph/provider.py`, the other caller, reduces
+to a per-document max and is order-independent; the four site tests each fail against pre-fix code;
+and the artifact paths, cache keys and macOS wheels in the cross-machine job all resolve.
+
+## L6 — `pnk link` (20260801 01:41)
+
+**Every review commit on this increment found defects in the one before it, and most of them found
+the previous commit's own fix or claim** rather than something it had missed — `3ce150e` (review 1's
+containment fix had traded one defect for two), `986faf3` (review 2's fix was right; its stated
+justification was not), `7b3f0a3` (the escaping-error class sat one line above the `try` added for it),
+`9c8f667` (the totality fix re-anchored the walk on the working directory), `cdee8d8` (the test for
+an untested branch entered it, but its assertion held either way), `dbebd8b` (a severity asserted,
+not measured), and the last three, which took four goes at one containment rule.
+
+No total is given, deliberately. Three drafts stated one and all three were wrong, because it
+changes depending on whether `8b` and `9b` count as rounds of their own — and the last wrong figure
+was introduced *by the commit correcting the one before it*. `git log main..HEAD` is the answer, and
+it cannot go stale. What follows is the state after all of them, not a log:
+the rule is to rewrite to the current state rather than layer corrections, and earlier drafts of
+this fragment broke it four times — describing a concurrency
+scenario a later round had disproved, calling every self-link a typo after the fix for the other
+case existed, counting the rounds that had happened when it was written rather than the ones that
+had, and asserting a safety property (*"`Path.resolve()` is safe at both call sites"*) that was
+wrong twice over: `strict=False` suppresses `OSError`, not the `ValueError` an embedded NUL raises,
+and there are six `Path.resolve()` sites across the two modules rather than two.
+
+### One defect class, six instances, and why fixing it at the call site produced them
+
+**HIGH.** `cli.main` catches `PinakesError`. Anything else is a traceback on a user's terminal — or
+on an unattended `post-commit` hook. Six calls in this increment's blast radius raised something
+else:
+
+1. `Path("~nosuchuser/x.md").expanduser()` raises `RuntimeError`, on `<source>` in `link.py`. It
+   bought nothing either: a `~` that *does* expand lands in `$HOME` and is refused by the
+   containment check on the next line. Copying a call across a boundary copies its justification
+   too, and `linkscan`'s need for it (a `[[links.kb]] path` may be `~/kbs/partner`) did not survive
+   the trip.
+2. `Path.is_file()` ignores `ENOENT`, `ENOTDIR`, `EBADF` and `ELOOP` and **raises everything else**
+   — so an unreadable parent directory (`EACCES`) and an over-long name (`ENAMETOOLONG`) on the
+   same source path.
+3. The `is_file()`/`is_dir()` pair one branch over, in `_via_alias`: a partner KB directory this
+   user cannot read raised `PermissionError`.
+4. `resolve_path`, on the line immediately above the `try` just added for (3).
+5. The same three, in the module `link.py` calls into. `linkscan.scan_one`'s docstring promises
+   *"Never raises: every failure comes back in `issues`"*, and all of them sat in the three lines
+   that ran before any handling did — so `pnk sync` on a hook became a traceback. There since L2.
+6. `resolve_path` again, bare in `scan()`'s freshness branch — which **plain `pnk sync` takes**, so
+   a partner path that stopped resolving crashed every `git commit` inside the TTL. The branch had
+   no test at all.
+
+Fixes 1–5 each wrapped the instance in front of them and stopped. What closed the class was moving
+the guarantee into `resolve_path` itself — a guarantee three call sites each have to remember is a
+function with the wrong contract — which then *removed* the wrappers fixes 4 and 5 had added.
+
+**The first version of that fix introduced a worse defect than the one it closed**, and this is the
+part worth keeping. `resolve_path` was made *total*: on text no filesystem call accepts it returned
+`Path(raw)`, the declared text, so an error could still name what the author wrote. That value is
+**relative**, and five consumers use it as a filesystem base — `(path / MANIFEST_NAME).is_file()`,
+`why_not_a_kb`, `partner_sources`, `sidecars_under`, `_doc_id_of`. So the walk silently re-anchored
+on the process's **working directory**: the precise thing `resolve_path`'s own first paragraph says
+it exists to prevent, reintroduced four paragraphs below by the round that wrote it.
+
+With a directory of that literal name in the CWD holding a readable `pinakes.toml`, `pnk sync`
+walked the decoy, found nothing, stamped the scan `complete` — and `replace_reverse_links` deleted
+every inbound row the real partner had, with `report.ok` true and no issue raised. That is the real
+consequence, and it is silent data loss.
+
+**Round 8 also claimed `pnk link` would write the decoy's ULID into the real sidecar, permanently.
+It would not, and round 9 reproduced the refusal.** `_document_in` compares an absolute
+`joined.parent.resolve()` against the *relative* `root`, which can never be `is_relative_to`, so it
+fires before any sidecar is read — `'docs/one.md' is outside \`partner\``, which tells the user the
+path they typed correctly is wrong and names neither the KB path nor the expansion failure. A
+message defect, not corruption.
+
+Three things kept that overstatement alive for a round. The true account was already in the tree —
+`link.py`'s own comment describes the misleading refusal — so the increment carried both versions
+at once. The regression test's docstring asserted the severe reading, and under the round-7
+mutation it failed on its *first* assertion, so the two that encoded the severe claim were never
+reached: **a test that fails proves the mutation is caught, never that it is caught for the stated
+reason.** And the claim was written from the mechanism (a relative base re-anchors the walk →
+therefore the walk completes) rather than from running it. That is the same "prose written from the
+design" failure as the two documentation defects below, in a commit message and a retrospective —
+the two places where being wrong is hardest to notice later, because nothing executes them.
+
+The answer is `None`, not a fallback value: text that names no path yields no path, and pyright
+makes every caller say what it does instead — a type-checked obligation rather than a remembered
+one, which is the same lesson one level up. The declared text is still what the message names; it
+was always available as `linked.path`, which every caller already held. **A total function is not
+automatically a safe one** — totality only moves the failure from a raise to a return value, and a
+return value that is the wrong *kind* of thing is harder to notice than an exception.
+
+Four tests fail against the round-7 shape, verified by mutation — including the two written for
+it, though one of those for a different reason than its docstring gave (above).
+
+**A defect class is not closed until it has been searched for**, and the search is mechanical: list
+every call in the module that touches the filesystem and ask of each which errno it swallows.
+
+`Path.resolve()` belongs on that list and was wrongly excused twice. `strict=False` suppresses
+`OSError`; it does not suppress the `ValueError` raised for an embedded NUL, which `tomllib`
+accepts in a manifest and `pathlib` will not open. Enumerated rather than excused, there are six
+sites: `_document_in` (`link.py:298`) resolves a path built from user text and is now guarded and
+tested; `resolve_path` (`linkscan.py:178`) is the fix above; and `sidecars_under` has four —
+`anchor`, the `roots` entry, the pattern probe and the per-candidate check — all inside the
+caller's `except (OSError, ValueError, NotImplementedError, PinakesError)`.
+
+The enumeration is the point: *"safe at both call sites"* named neither the number nor the reason,
+so it could not be checked without redoing the work — whereas a count with line numbers is wrong
+the moment it drifts, and says so. It has drifted twice already: round 8 corrected an earlier
+version that called two of the `sidecars_under` sites partner-controlled when one is not, round
+10's own fix added the fifth site, making "four" stale in the same commit that relied on it; and
+round 13's added the sixth the same way.
+
+### The containment check took three spellings, and the first two were each wrong in one direction
+
+**HIGH.** `_document_in` decides whether a path names a document in this KB.
+
+* `joined.resolve()` — the original — follows the **final** symlink before checking, so a symlinked
+  *document* was refused as "outside this KB", with a remedy repeating the path the user had typed
+  correctly. `pnk sync` indexes such a file, `pnk doctor` calls its sidecar readable and `pnk links`
+  traverses it; only `pnk link` said it was not there, and nothing could link it in either
+  direction.
+* `os.path.normpath` — round 1's fix — follows **nothing**, so a symlinked *directory* under `docs/`
+  passed containment: the write went out of the KB through it, and in the other direction minted a
+  **permanent** `pnk://` to a ULID this KB will never index, because `Path.glob` does not recurse a
+  symlinked directory. It simultaneously refused a legitimate *absolute* path whose ancestor is a
+  symlink — the ordinary shape on macOS (`/tmp` → `/private/tmp`) and behind any symlinked checkout
+  — because `manifest.load` resolves the root, so a verbatim comparison could never match it.
+* `joined.parent.resolve() / joined.name` is right in both directions. The directory chain is
+  followed, so an escape through it is caught and a symlinked ancestor lands inside; the final
+  component is left alone, so the document's own symlink is irrelevant — which is correct, because
+  `Path.glob` *does* yield a symlinked file.
+
+`normpath` must also not run first: it collapses `docs/link-to-elsewhere/../x.md` to `docs/x.md`
+textually, turning an escaping path into one that looks contained. `resolve()` on the parent
+collapses `..` after following the links it sits behind.
+
+**The docstring was wrong for longer than the code.** Two drafts justified the check with "what
+decides membership is the path under `[sources]`" — a rule the check has never implemented, since it
+compares against the KB *root*. Round 2 quoted that sentence as the lesson and left it in place;
+round 3 found it still there. The residual it was papering over is now stated instead: a document
+inside the root but outside `[sources]` can be linked, and the link will not resolve until that
+document is ingested. Answering the `[sources]` question properly means re-implementing
+`walk_sources` including its globs, and refusing a "link it now, ingest it next" order of work that
+costs nothing.
+
+### Two documentation claims the code contradicted, in prose written from the design
+
+**HIGH.** The new `pnk link` section told the reader that a `pnk://` URI pointing at a KB not on
+this machine is fine because *"`pnk doctor` reports a dangling target; `pnk links` lists it under
+`unresolved`"*. Neither happens. `doctor.py` filters its dangling list to this KB — the cross-KB
+check is **L7, the next increment** — and `provider.py`'s `unresolved` carries a docstring
+explicitly refusing to widen: *"a cross-KB target cannot be checked from here without the other KB,
+and reporting one as unresolved on that basis would be asserting something this index has no
+standing to know."* A reassurance was invented for the one case the section was telling the reader
+not to worry about, and half of it described something the design had already declined to build.
+
+The replacement prose then made the same mistake twice more, which is the finding worth keeping.
+Round 1's fix illustrated the missing lock with a `post-commit` hook firing a paid extraction — a
+scenario `hooks.py` structurally prevents. Round 2's fix replaced that with "the one sync that
+rewrites an existing sidecar is a paid extraction", which `sync.py`'s `--force`-plus-free-`--extract`
+override falsifies, and which this increment's own edits to DESIGN, MANIFEST and CLAUDE.md all name
+the carve-out for. **A correction is a diff and earns the same verification as the line it
+replaces**; three rounds of unverified prose about the same paragraph is what happens otherwise.
+
+### Fixtures that were representative rather than discriminating
+
+**MEDIUM, four times.** A test can be green because the code is right or because the input never
+reaches it, and the two look identical from the outside.
+
+* `test_no_line_outside_the_links_block_changes_when_a_link_is_added` used a sidecar with a
+  *populated* `tags:` list, which `write()` short-circuits as unchanged and therefore never touches.
+  It could not have failed. Meanwhile `tags:` and `provenance:` written with nothing under them were
+  being rewritten to `tags: []` and `provenance: {}` on every `pnk link` — two lines changed outside
+  the block, in the increment whose test says none are, against a promise stated as byte-identity.
+  Reachable before L6 only from a paid PDF extraction, which is why L5b's sweep missed it; `pnk
+  link` reaches it on a *first* link, the common case. The sibling
+  `test_a_known_key_with_a_null_value_does_not_crash_the_writer` parametrises exactly these three
+  keys and asserts only `"id:" in text`: it pins the absence of a crash and nothing about the value.
+* The embedded-NUL test put its NUL in the *filename* — `docs/a\x00b.md` — where only the parent is
+  resolved, so it never reached the guard it was written for and passed against the ordinary "not a
+  document" refusal. Moved into a directory component. Caught by mutation, not by review.
+* `assert "outside" in message` against a fixture named `outside.md`, and `assert "partner" in
+  message` against a `tmp_path` ending in `/partner`. Both were satisfied by the interpolated path,
+  so the *reason* could have vanished from the wording with the test still green — proven by
+  rewording the error and watching all 29 pass. Fixtures renamed, phrases asserted.
+* **A fixture stops reaching its guard when a later fix gets there first, and nothing says so.**
+  The ordering test for the containment check was retargeted twice — once when the static refusal
+  was added, once when that learned to resolve the prefix — because each fix caught its input
+  earlier, leaving the test green and its guard unexercised. Both times the mutation found it and
+  the reading did not. **Re-run the whole mutation battery after every fix, not only a mutant for
+  the fix itself**: a fix can silently disarm a test written for something else.
+* The test written for the freshness branch — the branch a finding had just called untested —
+  asserted only `report.ok`, which holds whether that branch runs or not. Proven by forcing
+  `is_stale` to return `True`: the branch never ran and the test still passed. A skipped-fresh row
+  carries no issue, so `link_scan` is the assertion that discriminates. Found by a reviewer, not by
+  the round that wrote it, in the commit whose message called its other two fixes mutation-verified
+  — **"mutation-verified" is a per-assertion claim, not a per-commit one.**
+
+### A docstring claiming a safety property its function cannot have
+
+**MEDIUM.** `_doc_id_of`'s `owner` argument was documented as preventing the `pnk://self/…`
+retargeting defect. It cannot: only `.id` is returned, so `owner` never reaches an observable —
+measured both ways, the mutation is caught by no test and the output against a partner sidecar
+carrying the exact retargeting shape is byte-identical. The protection is real but lives in
+`linkscan.scan_one`, which keeps the links it reads. A plausible rationale attached to the correct
+line is harder to catch than a wrong line, because reviewing it means re-deriving the claim rather
+than reading the code.
+
+### Mutation testing: a killed run poisons everything after it
+
+**HIGH, methodological.** The first mutation run blew a two-minute timeout and was killed
+mid-mutation, so its `finally` never restored the source. The next run's pattern then failed to match
+the already-mutated file, reported "pattern not found", skipped — and that guard stayed disabled for
+all ten mutants that followed. The signature is unmistakable once known: **one unrelated test failing
+on every mutant**, including mutations that cannot reach it.
+
+Two things made it recoverable: the disabled guard had its own test, so the failure was loud, and
+`./check.sh` had been green minutes earlier, which dated the contamination. The fix is a **baseline
+snapshot taken before the first mutation and asserted after every restore** — not `git diff --quiet`,
+useless in the increment's own worktree where the source is legitimately dirty. Scope the run to the
+modules under test, too: the full-suite run is what blew the timeout that caused this.
+
+Every fix was mutation-tested against the test written for it, and **three escaped**, each in a
+different way that "green" could not distinguish. The NUL guard had a test whose input never
+reached the line. The containment-ordering test stopped reaching its branch twice, when a later fix
+caught its fixture earlier. And review 14's `next()` guard had no test at all: the `""` and `"."`
+written for it raise at the `glob()` *call*, not at the step, so the guard one line down was never
+executed — which review 14's own commit message called "eleven mutants, each killed by the right
+test", and this paragraph called "all but one".
+
+The method is now: mutate every behaviour in the function, not the ones the diff touched. **That
+standard was stated before it was met.** The sweep that first claimed it covered three behaviours;
+an independent 47-mutant pass over the whole of `sidecars_under` and `scan_one` killed 33 and left
+14 alive — 2 provably equivalent, 12 unpinned. Every one of the 12 was checked and the code is
+right in each, so they are coverage rather than defects, and they are listed rather than closed:
+the two halves of the `exclude` disjunction (a deliberate mirror of `sync._excluded`), the
+`continue` that bounds a pre-walk escape, `.resolve()` on `anchor` and on `base`, the `is_file()`
+and sidecar-suffix skips, the two `sorted()` calls, `partner_sources` raising, and
+`LinkTargetMissingError`'s count.
+
+Naming them is the point. A number for the battery is unverifiable afterwards — the runs leave no
+artefact — but *which* behaviours are unpinned is checkable by anyone who repeats the sweep, and
+that is what a later reader needs.
+
+One mutant is genuinely equivalent: substituting the locally declared `[[links.kb]] id` for the
+partner's own when writing an alias target changes nothing, because the refusal above has already
+established the two are equal. Saying so is part of the result — the rule is enforced by that
+refusal, which *is* caught, and the docstring records it so nobody simplifies the variable away on
+the grounds that they are the same.
+
+### Green expires at the next keystroke
+
+**HIGH.** `./check.sh` ran green, then a docstring was reworded to 101 characters, then the increment
+was committed. Under `set -e` a failing `ruff check` means the eleven gates after it never ran either:
+the increment's own verification stopped at gate two, unnoticed, because the earlier green run was
+still in mind. The rule already says green-before-review; what this adds is that the run has to be the
+*last* thing before the commit, including after an edit to a comment.
+
+### A containment rule argued in prose and implemented for half its inputs
+
+**HIGH.** `sidecars_under` reads a *partner's* `[sources]`, and its docstring says why that input is
+untrusted: *"without the same check here, a partner manifest could point the walk at any directory
+on this machine, and `roots = ["/"]` would be an unbounded walk on a `post-commit` hook."* The check
+existed for `roots`. `include` is exactly as partner-controlled and had none, so
+`include = ["../../outside/*.md"]` walked out of the partner KB and this one recorded inbound links
+from files the partner does not own — `complete` true, so `sync` persisted them.
+
+**The line that looks like the guard is not one.** `candidate.relative_to(root)` ran on every match,
+and `relative_to` is *purely lexical*: `docs/../../outside/planted.md` is relative to the root as a
+string, returning `docs/../../outside/planted.md` rather than raising. A `..` is only collapsed by
+resolving, which is what the `roots` branch does one block above and this one did not. Two spellings
+of the same rule, ten lines apart, one of them not implementing it.
+
+**The fix then took four goes, and every wrong one came from spelling the rule differently from
+the place that already had it right.** `link._document_in` resolves the *parent* and leaves the
+final component: the directory chain is followed, so `..` collapses and an escape through a
+symlinked ancestor is caught, while the document's own symlink is irrelevant. That is the rule.
+Each attempt reinvented it:
+
+1. **Per candidate, after globbing.** Correct about what to refuse, but it refuses the *results*:
+   `glob` has already enumerated and stat'd the whole tree by the time the first match is
+   inspected, so `include = ["../../../../**/*.md"]` still walked the machine on every
+   `post-commit`. And an escape sets `complete` false, so no `last_scan` is written and the TTL
+   cannot suppress the retry either — unbounded, forever.
+2. **Refuse any pattern containing `..`, before globbing.** Bounded, and wrong in the other
+   direction: `../notes/*.md` stays inside the KB and the partner's own `walk_sources` ingests it.
+   This KB called a legitimate manifest an escape and then never refreshed that partner again.
+   Refusing a partner's valid configuration is the same defect as accepting an invalid one.
+3. **Resolve the prefix before the first glob component.** Defeated by a pattern that *starts* with
+   one: `*/../../../outside/**/*.md` has an empty prefix, so the check passed unconditionally and
+   the `..` ran inside `glob` — attempt 1's defect, reachable again. It also refused a *fixed*
+   pattern naming a symlinked document, because with no glob component the "prefix" is the whole
+   path and resolving it whole follows the final symlink: `include = ["alpha.md"]` refused while
+   `include = ["*.md"]`, reaching the same file, was accepted.
+4. **Join the whole pattern and apply `_document_in`'s spelling to it.** A glob component is just a
+   name that does not exist, which `resolve()` collapses lexically, so one `resolve()` answers it
+   with no enumeration. Ten patterns measured — a `..` staying inside, a directory genuinely named
+   `a..b`, a literal bracket, two escapes, one behind a leading glob, a symlinked directory under a
+   glob, a symlinked document by both spellings, and an absolute — all correct, escapes refused in
+   0.12ms without touching a 3000-file tree. **None of the ten contained `**` followed by `..`.**
+5. **Drop `**` from the probe.** `**` matches *zero* or more components while `Path.parts` counts
+   it as one, so keeping it let a following `..` cancel it and the probe landed one level below
+   where the walk goes. `**/../../**/*.md` probed inside the KB and walked the directory containing
+   it, recursively — linear in the outside tree, and silent, because an escape is only noticed once
+   a candidate is yielded and that pattern matched none. Dropping it is exact rather than merely
+   conservative: each component `**` expands to is one a following `..` then pops, so the
+   zero-expansion is the highest the walk can reach.
+
+   Attempt 4's measurement was real and its ten patterns were all correct. It was the *sampling*
+   that was wrong — ten hand-chosen inputs, none of which combined the two tokens whose interaction
+   is the whole difficulty. A table of cases proves the cases in it, and reads like proof of the
+   rule.
+
+An absolute pattern is refused separately, because `glob` cannot walk one *wherever it points* —
+including at this KB's own `docs/`. It had been folded into the escape message, which was simply
+false for that case.
+
+The lesson is not about paths. **Three of the four attempts were written by reasoning about the
+problem afresh instead of copying the spelling from the function twenty lines away that had solved
+it.** A rule implemented twice is a rule with two behaviours; the fix was to make the third
+implementation textually identical to the first two and say so in all three.
+
+Each attempt was found by mutating its predecessor, and **three of them disarmed an existing
+test**: a fix that catches its input earlier leaves the older test green with its guard
+unexercised. By the last round two guards written in *earlier* increments had gone dead this way —
+L2's `roots` containment check, whose test was satisfied by the substring "outside the KB" that the
+new per-candidate check also emits, and `scan_one`'s own `except` around the walk, whose only
+input (`include = ["/etc/**/*.md"]`) the absolute branch now answers first. Both were found by
+mutating behaviours *this increment never touched*.
+
+So the rule is stronger than "re-run the battery after every fix": **the battery is over the whole
+function, not the diff** — and a promise worth a guard is pinned directly (here, by making the walk
+raise) rather than through an input that some later fix can intercept. Running it that way in the
+next round found three more unpinned behaviours: the sidecar existence check, which predates L6
+(`7570a69`), and the `*`/`**` boundary and the `next()` guard, **both written two rounds earlier by
+this increment** (`425d106`). The sharper reading is the second one — the code least likely to be
+pinned is not the oldest, it is what a recent fix added while attention was on the defect it
+closed.
+
+**The fix for "one bad entry is not the end of the partner" was itself incomplete, one line either
+side of where it landed.** `probe.parent.resolve()` sat above it unguarded, so an embedded NUL in
+any but a pattern's final component still raised out of the function; and `Path.match("")` sat
+below it, so an empty `exclude` entry did the same — a case the new guard's own comment cited by
+name as its reason for being scoped tightly, and then did not handle. Both produced the outcome the
+commit had just declared impossible. **A guard placed by reasoning about one call is a guard for
+one call**; the same mechanical sweep that closes an escaping-error class — list every call that
+can raise, ask what each does with bad input — is what this needed, and it is the third time in
+this increment that lesson has been relearned rather than applied.
+
+One more from the same sweep: the containment predicate was fooled by a trailing `..`, because
+`Path("/kb/..").is_relative_to("/kb")` is lexically *true*. The final component is left unresolved
+so a symlinked *document* stays readable, and `..` is never a document.
+
+**`sync.walk_sources` has the identical shape for the *local* manifest** and is not fixed here: it
+is the user's own configuration rather than a partner's, and changing the engine's document walk is
+not this increment's to do. Reported instead, and now scoped as its own increment and PATCH release
+in `plans/source-walk-containment.md` — which measured a third defect this pass had not: an
+**absolute** local `include` is a raw `NotImplementedError` out of `cli.main`, the same escaping-
+error class L6 spent four passes closing on the partner side.
+
+### Smaller things
+
+- **`pnk link A A` wrote a self-loop**, which says nothing and would return the document as its own
+  neighbour. Refused now — and worded for both ways of arriving, because only the ULID is known here:
+  the target really is this document, or it is a *different* file carrying the same id, which is a KB
+  fault in its own right. "would link to itself" told someone who had named two different documents
+  that one of them was itself, and pointed at neither the duplicate nor `pnk doctor`, which finds it.
+- **`os.replace` onto a symlinked sidecar** destroyed the link and left a regular file, with the real
+  file elsewhere still holding the old text. `create()` guards this explicitly; `write()` did not, and
+  `pnk link` is the first command a person points at a file of their own choosing. It now writes
+  *through* the link.
+- **The error fallback named the local KB root** while the comment beside it claimed it named the
+  declared path — reporting an unrelated readable directory for a failure that had nothing to do
+  with it. Neither of the two tests written for that fix caught it: both asserted only the message
+  prefix.
+- **`why_not_a_kb` reproduced, one level down, the defect its own docstring exists to record.** The
+  three-way split was added because an `is_dir()` split called an existing regular file "no such
+  directory" — *"the one answer a person would check and find false"*. But the caller's probe is
+  `is_file()`, so a `pinakes.toml` that exists and is a **directory**, or a symlink to nothing, fell
+  through to "no pinakes.toml there" with the file plainly visible in `ls`. Found in review 9 by
+  reading the docstring's justification against the code beneath it, which is a cheap check worth
+  running on any function whose comment argues for its shape.
+- **`pnk link` takes no lock**, so a concurrent write to the same sidecar can lose one side's change.
+  Rename-atomicity prevents a torn file, not a lost update, and DESIGN §2.2 now says which.
+- **STATUS's *surface you can use today* table had no `pnk links` row at all**, an hour and a
+  quarter after it shipped in 0.5.0 (`20260731 11:27`; the row landed in `b96d247`, 12:44) — found while writing the increment by reading the neighbourhood rather than the
+  diff.
+
+## L7 — `pnk doctor`'s link checks (20260801 05:40)
+
+### The check read a partner's index, and DESIGN §6.2 forbids exactly that
+
+**HIGH.** The cross-KB check opened `<partner>/.pinakes/index.db` read-only to ask whether the
+target document exists. §6.2 rules that out in the sentence that defines reverse links: they come
+from the other KB's committed sidecars, *"**not** its index, which is gitignored and simply absent
+in a fresh clone, and which could not be read without holding a second KB's lock"* — repeated
+verbatim in `linkscan`'s module docstring, which is the module the check imports from.
+
+`mode=ro` is not enough, and this is the part worth keeping. Measured: a read-only connection still
+materialises `index.db-shm` and `index.db-wal` inside the partner's `.pinakes/`, and cannot
+checkpoint them away on close. A *diagnostic* command wrote into a KB it was only asked to look at.
+Two more consequences fell out of the same choice: a partner cloned but never synced answered
+"missing" for every target, and a partner whose `.pinakes/` is mode 0500 degraded silently with an
+internal `StoreError` message that misdiagnosed the cause.
+
+The fix is the machinery L2 already had — `partner_sources` + `sidecars_under` + `read_sidecar` —
+which is design-conformant, works on a fresh clone with no index at all, and is now tested that way.
+
+**The rule was in the imported module's own docstring.** Not a subtle design point: a paragraph in
+the file the new code imports three names from.
+
+### The metric's numerator and denominator came from different populations
+
+**HIGH.** Coverage is `COUNT(DISTINCT src_doc_id) / active`. `sync`'s `SoftDelete` sets
+`state = 'deleted'` and drops the chunks — it never deletes that document's `origin = 'sidecar'`
+rows. So a deleted document still counted toward the numerator while leaving the denominator,
+and the headline number of this increment reported **`2 of 1 documents linked (200%)`**.
+
+A ratio built from two queries is two populations until something makes them one. The join is one
+line; noticing it needed one was the work.
+
+### The declared `[[links.kb]] id` is not evidence of which KB is at that path
+
+**MEDIUM.** The check keyed partner document sets on `linked.id` — the *local declaration*.
+`linkscan.scan_one` refuses that substitution with `LinkedKbIdMismatchError`, and DESIGN §6.2 rule 1
+states it as a rule, because trusting the manifest files another KB's links under this alias.
+Measured both ways with a manifest declaring `X` over a partner whose real id is `Y`: a target that
+existed in `Y` was reported unresolved, and one that did not was silently resolved.
+
+Two directions need two tests, and only one of them is obvious. Filtering on the declared id also
+*skips* a partner whose real id is the one wanted — a dangling target that goes unreported rather
+than misreported — and that mutant survived until a test was written for it specifically.
+
+### Four remedies could be blanked with the suite green
+
+**MEDIUM.** The plan required "every new WARN carries a remedy" precisely because the meta-guard
+(`test_every_problem_carries_a_remedy`) runs on a fixture where these checks are `OK` and carry no
+problem. The helper written to stand in for it asserted `is not None` — which `""` satisfies, while
+the guard it substitutes for asserts truthiness. Four of five remedies were emptiable.
+
+**A stand-in for a guard has to assert what the guard asserts.** It now returns the string and each
+caller asserts a phrase from it.
+
+### A test named for a guard, authoring nothing that reaches it
+
+**MEDIUM.** `test_an_unreadable_linked_kb_path_is_a_warning_not_a_traceback` was written for the
+sentence *"a diagnostic command reporting a traceback is the one outcome `pnk doctor` may not
+have"*, and named `why_not_a_kb`'s "third caller needing the same `try`". It authored no cross-KB
+link -- so `wanted` was empty, `_unresolved_cross_kb` returned before touching the partner, and the
+test pinned the guard in `_linked_kbs` and *neither* of the two in the function the review had just
+added. Both are load-bearing: a partner directory behind a mode-0000 parent raises `PermissionError`
+out of `partner_sources`, and a `roots` entry carrying an escaped NUL -- which `tomllib` accepts and
+`Path.resolve` does not -- raises `ValueError` out of `sidecars_under`.
+
+Third time in two increments that a fixture stopped one step short of its guard, and the shape is
+always the same: **the test sets up the failure but not the demand for it.** An unreadable partner
+is only reached by code that has a reason to read it.
+
+The dangling-link side of the soft-delete interaction had the same gap in miniature -- the fixture
+that proves the *numerator* excludes a deleted document already produced `1 dangling inside this
+KB` in the detail it held, and asserted nothing about it. The fix was one line in a test that
+already existed.
+
+### Mutants that were not the logic they claimed
+
+**Methodological.** Four "blank the remedy" mutants replaced `"A cross-KB target…"` with
+`"" or "A cross-KB target…"`, which evaluates to the original string. All four reported SURVIVED,
+which read as four coverage gaps and was really one broken harness. Rebuilt to replace the whole
+`remedies.append(...)` call, all four die.
+
+This is the second increment where a mutant that did not reproduce the real prior logic was briefly
+taken for a result. The check is cheap: a mutant that survives should be *run* against the case it
+claims to break before it is believed.
+
 ## Design review passes 1–7 (pre-implementation)
 
 Seven adversarial passes over [`DESIGN.md`](DESIGN.md) **before any code was written** — 58 findings

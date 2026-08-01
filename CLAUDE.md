@@ -46,7 +46,6 @@ name:
 
 | Name | What it is |
 |---|---|
-| **the links release** | `pnk link`, `pnk links`, `pinakes_links`, reverse-scan |
 | **the graph release** | Structural edges, the expansion channel — each eval-gated |
 | **the deep release** | `pnk ask --deep` |
 | **the template release** | Template ecosystem, `pnk upgrade`, the `sqlite-vec` tier |
