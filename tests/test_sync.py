@@ -12,7 +12,7 @@ import yaml
 
 from pinakes import store
 from pinakes.embed import EmbeddingBackend, ModelInfo, Vectors
-from pinakes.errors import DuplicateIdsError
+from pinakes.errors import DuplicateIdsError, ManifestError
 from pinakes.extract import (
     ExtractedText,
     ExtractionContext,
@@ -1325,9 +1325,9 @@ def test_a_sidecar_that_appears_after_the_walk_asks_for_a_rerun(
 
     def walk_as_if_the_sidecar_arrived_late(
         manifest: Manifest,
-    ) -> tuple[list[Any], list[Any], Any]:
-        files, _sidecars, unmatched = real_walk(manifest)
-        return files, [], unmatched
+    ) -> tuple[list[Any], list[Any], Any, tuple[str, ...]]:
+        files, _sidecars, unmatched, escaping = real_walk(manifest)
+        return files, [], unmatched, escaping
 
     monkeypatch.setattr(sync_module, "walk_sources", walk_as_if_the_sidecar_arrived_late)
     report = run(kb, rebuild=True)
@@ -1394,3 +1394,350 @@ def test_an_anchored_boolean_is_indexed_as_true_not_one(kb: Path) -> None:
     assert metadata["aliased"] is True, "...nor an alias of one"
     assert metadata["nested"] == {"deep": True}, "...nor one nested in a mapping"
     assert metadata["listed"] == [True], "...nor one inside a list"
+
+
+# --- the source walk stays inside the KB (containment, both layers) ---------------------------
+#
+# One rule, two layers, and neither covers the other: `manifest._check_include_containment` bounds
+# the walk *before* `glob` runs, and `sync.walk_sources` re-tests each candidate because a
+# symlinked directory is invisible to any static check. All three defects below were measured on
+# 0.7.0 before the fix, and each writes files outside the KB — a sidecar minted in a directory
+# pinakes was never pointed at.
+
+
+def _set_include(kb: Path, *patterns: str) -> None:
+    """Rewrite whatever `include` line is there — callers set it more than once."""
+    import re
+
+    text = (kb / "pinakes.toml").read_text(encoding="utf-8")
+    listed = ", ".join(f'"{pattern}"' for pattern in patterns)
+    replaced, count = re.subn(r"include = \[[^\]]*\]", f"include = [{listed}]", text)
+    assert count == 1, "the fixture manifest no longer has exactly one `include`"
+    (kb / "pinakes.toml").write_text(replaced, encoding="utf-8")
+
+
+def test_an_include_pattern_that_climbs_out_of_the_kb_is_refused_at_load(kb: Path) -> None:
+    """Defect 1, layer 1. Measured on 0.7.0: `2 indexed`, and a sidecar written outside the KB.
+
+    A hard error at load, matching the `roots` precedent, because this manifest is the user's own —
+    and because `pinakes.toml` is committed and shared, so cloning a KB and running `pnk sync`
+    ran *their* `include` against *your* tree.
+    """
+    outside = kb.parent / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("# Secret\n\nNot ours.\n", encoding="utf-8")
+    _set_include(kb, "**/*.md", "../../outside/*.md")
+
+    with pytest.raises(ManifestError) as exc_info:
+        load(kb)
+    assert "reaches outside the KB" in str(exc_info.value)
+    assert "../../outside/*.md" in str(exc_info.value)
+    assert not (outside / f"secret.md{SIDECAR_SUFFIX}").exists(), "nothing may be written outside"
+
+
+def test_an_absolute_include_pattern_is_a_manifest_error_not_a_traceback(kb: Path) -> None:
+    """Defect 2. `glob` raises `NotImplementedError` on any absolute pattern, wherever it points.
+
+    On 0.7.0 that went out through `cli.main` as a stack trace with no `error:` line and no remedy.
+    Its own message, because "reaches outside the KB" is false for an absolute path naming this
+    KB's own `docs/` — which `glob` still cannot walk.
+    """
+    _set_include(kb, str(kb / "docs" / "*.md"))
+
+    with pytest.raises(ManifestError) as exc_info:
+        load(kb)
+    assert "is an absolute path" in str(exc_info.value)
+    assert "cannot walk an absolute pattern" in (exc_info.value.remedy or "")
+    assert "reaches outside" not in str(exc_info.value), "an absolute path here is inside the KB"
+
+
+def test_a_symlinked_directory_cannot_carry_the_walk_out_of_the_kb(kb: Path) -> None:
+    """Defect 3, layer 2 — no `..` and no absolute path anywhere, so layer 1 cannot see it.
+
+    Measured on 0.7.0: `1 indexed`, and a sidecar minted in the outside directory.
+    """
+    outside = kb.parent / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("# Secret\n\nNot ours.\n", encoding="utf-8")
+    (kb / "docs" / "escape").symlink_to(outside, target_is_directory=True)
+    _set_include(kb, "*/*.md")
+
+    report = run(kb)
+
+    assert report.embedded == 0, "nothing outside the KB may be indexed"
+    assert not (outside / f"secret.md{SIDECAR_SUFFIX}").exists()
+    assert report.escaping_patterns == ("*/*.md",)
+    assert any("left the KB through a symlinked directory" in line for line in report.lines())
+
+
+def test_a_symlinked_document_inside_the_kb_is_still_ingested(kb: Path) -> None:
+    """The asymmetry, and the over-tightening regression it guards.
+
+    Parent resolved, final component left alone. Resolving the whole path would follow a final
+    symlink and refuse a symlinked *document*, which is a legitimate thing to have in a KB.
+    """
+    real = kb / "docs" / "real.md"
+    real.write_text("# Real\n\nA document about retrieval.\n", encoding="utf-8")
+    (kb / "docs" / "alias.md").symlink_to(real)
+
+    report = run(kb)
+
+    assert report.escaping_patterns == ()
+    assert {row["path"] for row in index(kb)} == {"docs/real.md", "docs/alias.md"}
+
+
+def test_the_same_document_is_ingested_by_a_fixed_and_a_globbed_pattern_alike(kb: Path) -> None:
+    """Two spellings of one include must not give opposite answers (linkscan review 13).
+
+    `include = ["alpha.md"]` and `include = ["*.md"]` name the same file. Resolving the joined path
+    whole accepts the second and refuses the first, because only the fixed spelling ends in a real
+    name that `resolve()` will follow.
+    """
+    real = kb.parent / "outside-target.md"
+    real.write_text("# Alpha\n\nA document about retrieval.\n", encoding="utf-8")
+    (kb / "docs" / "alpha.md").symlink_to(real)
+
+    _set_include(kb, "alpha.md")
+    load(kb)  # must not raise
+    _set_include(kb, "*.md")
+    load(kb)
+
+
+def test_a_dot_dot_pattern_that_stays_inside_the_kb_is_accepted(kb: Path) -> None:
+    """Review 12: what matters is where the path *lands*, never whether `..` occurs in it.
+
+    `../notes/*.md` from `docs/` lands inside the KB and is a legitimate manifest. Refusing it is
+    the same defect as accepting an escape.
+    """
+    notes = kb / "notes"
+    notes.mkdir()
+    (notes / "n.md").write_text("# Note\n\nA note about retrieval.\n", encoding="utf-8")
+    _set_include(kb, "../notes/*.md")
+
+    report = run(kb)
+
+    assert report.escaping_patterns == ()
+    assert {row["path"] for row in index(kb)} == {"notes/n.md"}
+
+
+def test_a_leading_glob_does_not_defeat_the_static_refusal(kb: Path) -> None:
+    """Review 13: `*/../../../outside/**` has an empty fixed prefix.
+
+    A check that resolves only the prefix before the first glob component passes it
+    unconditionally, and the `..` then runs inside `glob` — the unbounded walk, reachable again.
+    """
+    _set_include(kb, "*/../../../outside/*.md")
+
+    with pytest.raises(ManifestError) as exc_info:
+        load(kb)
+    assert "reaches outside the KB" in str(exc_info.value)
+
+
+def test_a_double_star_before_a_dot_dot_does_not_defeat_the_refusal(kb: Path) -> None:
+    """Review 14: `**` matches *zero* components while `Path.parts` counts it as one.
+
+    Keeping `**` in the probe lets a following `..` cancel it, so the probe lands one level below
+    where the walk actually goes — `**/../../**/*.md` probed inside the KB and then walked the
+    directory containing it, recursively. Review 13's ten measured patterns were all correct and
+    none of them combined `**` with `..`, which is how a table of cases reads like proof of a rule.
+    """
+    _set_include(kb, "**/../../**/*.md")
+
+    with pytest.raises(ManifestError) as exc_info:
+        load(kb)
+    assert "reaches outside the KB" in str(exc_info.value)
+
+
+def test_an_escaping_pattern_is_refused_without_enumerating_the_tree(kb: Path) -> None:
+    """Layer 1's whole purpose: refuse *before* globbing, which is what bounds the walk.
+
+    Checking each candidate afterwards refuses the results while still paying for the enumeration.
+    Counted as entries pulled from the generator, not as `resolve()` calls — the cost being avoided
+    is the walk itself.
+
+    The count is a **design** assertion rather than a trap for a specific mutation: containment now
+    lives at load, where nothing globs at all, so the only way `pulled` rises is a future version
+    that moves the check back into the walk. That is exactly the regression worth naming, and the
+    `raises` above is what catches the guard simply going missing.
+    """
+    outside = kb.parent / "outside"
+    outside.mkdir()
+    for number in range(200):
+        (outside / f"f{number}.md").write_text("x\n", encoding="utf-8")
+
+    pulled = 0
+    real_glob = Path.glob
+
+    def counting_glob(self: Path, pattern: str, **kwargs: Any) -> Iterator[Path]:
+        nonlocal pulled
+        for entry in real_glob(self, pattern, **kwargs):
+            pulled += 1
+            yield entry
+
+    _set_include(kb, "../../outside/*.md")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(Path, "glob", counting_glob)
+        with pytest.raises(ManifestError):
+            load(kb)
+
+    assert pulled == 0, f"the tree was enumerated before the refusal ({pulled} entries)"
+
+
+def test_a_root_that_does_not_exist_yet_still_loads(kb: Path) -> None:
+    """Layer 1 runs on every manifest load, including before the directories exist.
+
+    `resolve()` is non-strict, so a probe under a missing root is collapsed lexically rather than
+    raising — and a KB whose `docs/` has not been created must still be openable, which is the
+    state `pnk init` leaves behind for a root the user adds by hand.
+    """
+    import shutil
+
+    shutil.rmtree(kb / "docs")
+    _set_include(kb, "**/*.md", "../notes/*.md")
+
+    assert load(kb).sources.include == ("**/*.md", "../notes/*.md")
+
+
+def test_the_escape_is_reported_once_per_pattern_not_once_per_file(kb: Path) -> None:
+    """A hostile pattern matches thousands, and two roots reported the same escape twice."""
+    outside = kb.parent / "outside"
+    outside.mkdir()
+    for number in range(5):
+        (outside / f"f{number}.md").write_text("# F\n\nText.\n", encoding="utf-8")
+    (kb / "docs" / "escape").symlink_to(outside, target_is_directory=True)
+    (kb / "docs" / "sub").mkdir()
+    text = (kb / "pinakes.toml").read_text(encoding="utf-8")
+    (kb / "pinakes.toml").write_text(
+        text.replace('roots = ["docs/"]', 'roots = ["docs/", "docs/sub/"]'), encoding="utf-8"
+    )
+    _set_include(kb, "*/*.md")
+
+    report = run(kb)
+
+    assert report.escaping_patterns == ("*/*.md",), "one entry per pattern, not per file or root"
+    assert len(report.escape_lines()) == 1
+
+
+def test_an_excluded_pattern_may_contain_dot_dot(kb: Path) -> None:
+    """The stated asymmetry, pinned so a later pass does not "fix" it.
+
+    An `..` in `exclude` can only fail to match, never widen the walk, so it is not validated.
+    """
+    write(kb, "keep.md", "# Keep\n\nA document about retrieval.\n")
+    text = (kb / "pinakes.toml").read_text(encoding="utf-8")
+    (kb / "pinakes.toml").write_text(
+        text.replace('include = ["**/*.md"]', 'include = ["**/*.md"]\nexclude = ["../../*.md"]'),
+        encoding="utf-8",
+    )
+
+    report = run(kb)
+
+    assert report.embedded == 1
+    assert report.escaping_patterns == ()
+
+
+def test_one_file_reached_by_two_legal_spellings_is_one_document(kb: Path) -> None:
+    """The key must collapse `..`, or one file becomes two identities.
+
+    `[sources]` legitimately allows a pattern containing `..` that lands inside the KB, and
+    `relative_to` is lexical — so it hands back the `..` it was given. Measured on 0.7.0 with the
+    manifest below: the file was indexed once as `docs/../notes/n.md` and then **failed twice**
+    with *"appeared after the walk had already read this directory"*, because the sidecar found
+    under one key was invisible under the other.
+    """
+    notes = kb / "notes"
+    notes.mkdir()
+    (notes / "n.md").write_text("# Note\n\nA note about retrieval.\n", encoding="utf-8")
+    text = (kb / "pinakes.toml").read_text(encoding="utf-8")
+    (kb / "pinakes.toml").write_text(
+        text.replace('roots = ["docs/"]', 'roots = ["docs/", "notes/"]'), encoding="utf-8"
+    )
+    _set_include(kb, "../notes/*.md", "*.md")
+
+    report = run(kb)
+
+    assert report.failures == [], (
+        f"one file must not fail under a second spelling: {report.failures}"
+    )
+    assert {row["path"] for row in index(kb)} == {"notes/n.md"}
+    assert report.embedded == 1
+    # The unmatched sweep compares against these same keys, so a `..` in one made an *indexed*
+    # document look like a file no pattern had picked up.
+    assert report.unmatched == ()
+
+
+def test_an_escaping_pattern_that_matches_only_a_directory_is_still_caught(kb: Path) -> None:
+    """Containment runs *before* the `is_file()` skip, and this is the case that proves it.
+
+    A pattern reaching outside that matches only directories — or only sidecars — hits one of the
+    `continue`s below the check first, so with the order reversed the walk leaves the KB and reports
+    nothing at all. Every other symlink test here matches a file, where the ordering is invisible.
+    """
+    outside = kb.parent / "outside"
+    (outside / "sub").mkdir(parents=True)
+    (kb / "docs" / "escape").symlink_to(outside, target_is_directory=True)
+    _set_include(kb, "*/*")  # matches `docs/escape/sub`, a directory, and nothing else
+
+    report = run(kb)
+
+    assert report.escaping_patterns == ("*/*",), "an escape matching no file is still an escape"
+
+
+def test_an_escape_under_one_root_does_not_drop_documents_under_another(kb: Path) -> None:
+    """A symlink is a property of one directory, never of the pattern — so it may not drop files.
+
+    `linkscan.sidecars_under` skips a known-escaping pattern under every later root, and copying
+    that here would be data loss rather than caution: a dropped document is a deleted index row and
+    an orphaned sidecar, where a dropped partner candidate is one missing inbound link.
+    """
+    outside = kb.parent / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("# Secret\n\nNot ours.\n", encoding="utf-8")
+    (kb / "docs" / "escape").symlink_to(outside, target_is_directory=True)
+    other = kb / "other" / "sub"
+    other.mkdir(parents=True)
+    (other / "keep.md").write_text("# Keep\n\nA document about retrieval.\n", encoding="utf-8")
+    text = (kb / "pinakes.toml").read_text(encoding="utf-8")
+    (kb / "pinakes.toml").write_text(
+        text.replace('roots = ["docs/"]', 'roots = ["docs/", "other/"]'), encoding="utf-8"
+    )
+    _set_include(kb, "*/*.md")
+
+    report = run(kb)
+
+    assert report.escaping_patterns == ("*/*.md",)
+    assert {row["path"] for row in index(kb)} == {"other/sub/keep.md"}, (
+        "an escape under one root must not stop the same pattern collecting under another"
+    )
+
+
+def test_a_symlinked_escape_stops_the_walk_rather_than_enumerating_the_tree(kb: Path) -> None:
+    """The `break`'s only justification — and it has one only because the loop is lazy.
+
+    Layer 1 cannot pre-empt a symlinked escape (it exists on disk, not in the manifest), so this
+    loop is the only thing bounding it. Written as `sorted(root.glob(pattern))` the generator is
+    drained before the first candidate is inspected, and the `break` then saves nothing at all:
+    the enumeration it exists to stop has already run.
+    """
+    outside = kb.parent / "outside"
+    outside.mkdir()
+    for number in range(300):
+        (outside / f"f{number:03d}.md").write_text("# F\n\nText.\n", encoding="utf-8")
+    (kb / "docs" / "escape").symlink_to(outside, target_is_directory=True)
+    _set_include(kb, "*/*.md")
+
+    pulled = 0
+    real_glob = Path.glob
+
+    def counting_glob(self: Path, pattern: str, **kwargs: Any) -> Iterator[Path]:
+        nonlocal pulled
+        for entry in real_glob(self, pattern, **kwargs):
+            pulled += 1
+            yield entry
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(Path, "glob", counting_glob)
+        report = run(kb)
+
+    assert report.escaping_patterns == ("*/*.md",)
+    assert pulled < 50, f"the escape enumerated {pulled} of 300 entries before stopping"

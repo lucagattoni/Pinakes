@@ -472,7 +472,102 @@ def _sources(root_table: Table, path: Path) -> SourcesSection:
                 message=f"`roots` entry {entry!r} must stay inside the KB",
                 remedy="Roots are always relative to the KB root (docs/DESIGN.md §2.1).",
             )
+    _check_include_containment(section, path)
     return section
+
+
+def _check_include_containment(section: SourcesSection, path: Path) -> None:
+    """`include` carries the same containment rule as `roots`, refused here rather than at the walk.
+
+    **The rule was written in prose beside one of its two inputs and implemented for that one.** The
+    `roots` loop above states that a source root must stay inside the KB; `include` was validated
+    nowhere, and `sync.walk_sources` then relied on `candidate.relative_to(manifest.root)` — purely
+    lexical, so `docs/../../outside/x.md` *is* relative to the root as a string. Measured on 0.7.0:
+    `include = ["../../outside/*.md"]` indexed a file outside the KB, minted a **sidecar** beside
+    it, and stored the document under a key that still contained the `..`.
+
+    Writing outside the KB is the part that makes this a defect rather than a foot-gun, and
+    "it is the user's own configuration" does not survive contact with the fact that `pinakes.toml`
+    is **committed and shared**: clone someone's KB, run `pnk sync`, and *their* `include` writes
+    into *your* tree. So this is a hard error at load, matching the `roots` precedent — the manifest
+    is the user's own, unlike the partner manifests `linkscan.sidecars_under` merely reports on.
+
+    **The predicate is `linkscan`'s, copied rather than re-derived.** Four attempts there each got
+    it wrong differently, and mirroring the survivor is cheaper than repeating that sequence:
+
+    * **Not "does the pattern contain `..`"** — `../notes/*.md` from `docs/` lands *inside* the KB
+      and is a legitimate thing to write. What matters is where the path lands, never whether `..`
+      occurs in it. Refusing a valid manifest is the same defect as accepting an invalid one.
+    * **Not "resolve the fixed prefix before the first glob component"** — `*/../../../outside/**`
+      has an empty prefix, so it passes unconditionally and runs its `..` inside `glob`.
+    * **Not "resolve the whole path"** — with no glob component the probe *is* the file, and
+      resolving it whole follows a final symlink, so `include = ["alpha.md"]` would be refused as an
+      escape while `include = ["*.md"]`, naming the same file, is accepted. Parent resolved, final
+      component left alone: `..` collapses and a symlinked *ancestor* is caught, while a symlinked
+      *document* stays readable.
+    * **`**` is dropped from the probe**, because it matches *zero* or more components while
+      `Path.parts` counts it as one. Keeping it let a following `..` cancel it, so the probe landed
+      one level below where the walk actually goes. Dropping it is exact, not merely conservative:
+      every component `**` expands to is one a following `..` then pops, so the zero-expansion is
+      the highest the walk can reach, and that is what must be inside the KB.
+
+    **This is the bound, and it is not the whole guard.** A symlinked *directory* inside the KB is
+    invisible to any static check — no `..`, no absolute path, and the escape only exists on disk —
+    so `sync.walk_sources` keeps a per-candidate test as well. Neither layer covers the other.
+
+    **`exclude` is deliberately not validated.** A pattern there can only fail to match, never widen
+    the walk, so a `..` in it is harmless. The asymmetry is intentional rather than an oversight.
+    """
+    root = path.parent
+    anchor = root.resolve()
+    for pattern in section.include:
+        if Path(pattern).is_absolute():
+            # Its own message, because "reaches outside the KB" is false for an absolute path
+            # naming this KB's own `docs/` — and `glob` refuses to walk one wherever it points,
+            # which on 0.7.0 surfaced as a bare `NotImplementedError` traceback out of `cli.main`.
+            raise ManifestError(
+                path,
+                table="sources",
+                message=f"`include` pattern {pattern!r} is an absolute path",
+                remedy=(
+                    "Patterns are relative to each `roots` entry. Python's `glob` cannot walk an "
+                    "absolute pattern at all, wherever it points."
+                ),
+            )
+        for name in section.roots:
+            base = (root / name).resolve()
+            try:
+                probe = base.joinpath(*(part for part in Path(pattern).parts if part != "**"))
+                # The final component is resolved too when it is `..`, which leaving the last one
+                # alone otherwise lets through: `Path("/kb/..").is_relative_to("/kb")` is *true*
+                # lexically. The exemption exists so a symlinked document stays readable, and `..`
+                # is never one.
+                landing = (
+                    probe.resolve() if probe.name == ".." else probe.parent.resolve() / probe.name
+                )
+            except (ValueError, OSError) as exc:
+                # `resolve()` raises on an embedded NUL, which `tomllib` accepts.
+                raise ManifestError(
+                    path,
+                    table="sources",
+                    message=f"`include` pattern {pattern!r} cannot be walked: {exc}",
+                    remedy="Remove or correct the pattern.",
+                ) from exc
+            if not landing.is_relative_to(anchor):
+                raise ManifestError(
+                    path,
+                    table="sources",
+                    message=(
+                        f"`include` pattern {pattern!r} reaches outside the KB "
+                        f"(under root {name!r})"
+                    ),
+                    remedy=(
+                        "Patterns must stay inside the KB, like `roots`. A pattern that walks out "
+                        "indexes files pinakes was never pointed at and writes sidecars beside "
+                        "them."
+                    ),
+                ) from None
+    return None
 
 
 def _embedding(root_table: Table, path: Path) -> EmbeddingSection:

@@ -511,6 +511,8 @@ def print_sync_report(report: "SyncReport", *, quiet: bool) -> None:
     # project's own documented workflow as the single place this never reaches.
     if report.unmatched:
         print(report.unmatched_line(), file=sys.stderr)
+    for line in report.escape_lines():
+        print(line, file=sys.stderr)
     for line in report.failure_lines():
         print(line, file=sys.stderr)
 
