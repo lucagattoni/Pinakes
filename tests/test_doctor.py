@@ -9,7 +9,7 @@ from types import ModuleType
 import numpy as np
 import pytest
 import yaml
-from conftest import pdf_extraction_runnable
+from conftest import pdf_extraction_runnable, permissions_are_enforced
 
 from pinakes import store
 from pinakes.budget.prices import Prices, load_prices
@@ -1264,6 +1264,10 @@ def test_an_unreadable_linked_kb_path_is_a_warning_not_a_traceback(
 
     A diagnostic command reporting a traceback is the one outcome `pnk doctor` may not have.
     """
+    if not permissions_are_enforced(tmp_path):
+        pytest.skip(
+            "this process bypasses directory permissions (root); the fixture cannot be built"
+        )
     locked = tmp_path / "locked"
     (locked / "kb").mkdir(parents=True)
     walled_id = mint_kb_id()

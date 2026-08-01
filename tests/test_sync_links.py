@@ -1127,10 +1127,13 @@ def test_one_unusable_include_pattern_does_not_discard_the_others(pair: tuple[Kb
     for bad in ("", "."):
         found, problems = sidecars_under(partner.root, ["docs/"], ["**/*.md", bad], [])
         assert len(found) == 2, f"{bad!r} discarded the valid include entries"
-        assert problems == [
-            f"[sources] include pattern {bad!r} cannot be walked: "
-            "Unacceptable pattern: PosixPath('.')"
-        ]
+        # **The prefix, not `pathlib`'s wording.** CPython renders this as
+        # `Unacceptable pattern: PosixPath('.')` on some versions and `Unacceptable pattern: ''`
+        # on others; asserting the library's exact text made the suite fail on CI while passing
+        # locally. What this increment promises is that the *pattern the author wrote* is named
+        # and the other entries survive — assert that.
+        assert len(problems) == 1, problems
+        assert problems[0].startswith(f"[sources] include pattern {bad!r} cannot be walked: ")
 
 
 def test_the_walk_raising_is_an_issue_not_a_traceback(

@@ -228,3 +228,29 @@ def write_manifest(tmp_path: Path) -> Callable[[str], Path]:
         return root
 
     return _write
+
+
+def permissions_are_enforced(tmp_path: Path) -> bool:
+    """Whether `chmod(0o000)` on a directory actually denies *this* process.
+
+    It does not for root, which bypasses the check entirely — and CI's container runs as root, so
+    every "unreadable directory" fixture silently became "an ordinary empty directory" there. Four
+    such tests passed on macOS and failed on `main` after two merges, because a test that cannot
+    construct its precondition does not skip: it asserts the wrong thing and fails, or worse,
+    passes.
+
+    Probed rather than inferred from `os.geteuid()`: capabilities, ACLs and mount options all
+    decide this, and the only question that matters is whether the read is refused here.
+    """
+    probe = tmp_path / "probe-permissions"
+    probe.mkdir()
+    (probe / "inside").write_text("x", encoding="utf-8")
+    probe.chmod(0o000)
+    try:
+        (probe / "inside").read_text(encoding="utf-8")
+    except OSError:
+        return True
+    else:
+        return False
+    finally:
+        probe.chmod(0o755)
