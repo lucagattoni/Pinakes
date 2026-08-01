@@ -4,6 +4,14 @@
 closes decision 1's realism question and gives L8's step 8 — *"the ClaudeKB realism check is run, or
 declined in writing"* — something it can actually be run against.
 
+**Since 20260801 12:14 it has a second purpose, and it is now the critical path.** G2 measured that
+the graph release's gate cannot be reached on `tests/demo-kb`, and both reasons are properties of the
+corpus rather than of the code: the corpus has no tags and one directory, so exactly one derived edge
+kind crosses a document boundary; and the retrieval funnel already returns every document, so no
+channel can reach further than it already does. **G3, G5 and G6 do not start until a corpus exists
+that can discriminate.** That raises this document's priority — and puts an honesty burden on it,
+discharged in § *Why this is not the gate moving to fit the answer*.
+
 **Two knowledge bases, not one**, because one name was covering two different needs:
 
 | | Realism corpus | Dogfooding KB |
@@ -46,6 +54,47 @@ is the obvious candidate — RFC 9110–9114, 8446, 3986, and everything they ob
 7230–7235, 2616, 2068 — but **the executor picks the exact set and records why**, with the closure
 rule it used. State the rule before fetching: *follow `Obsoletes` and `Updates` edges transitively
 from the seed set until the frontier is empty or the count reaches 300, whichever first.*
+
+## Structure — the part demo-kb did not have, and the reason its gate failed
+
+**As first written, this plan specified a flat `docs/` with one `.txt` per RFC and no tags. That
+reproduces `tests/demo-kb`'s exact blindness at larger scale**, and would have produced a second
+negative result that looked like a fact about graphs and was a fact about directory layout. The
+corpus needs structure, and the constraint on it is arithmetic rather than preference.
+
+**A hub whose degree is the corpus is not a signal.** G3's weights were frozen in decision 13,
+committed before any of this: `co-located` is doc↔directory at 1/dir-size, `shared-tag` is doc↔tag
+at 1/tag-degree, and composition across a hub is the product of both spokes. One directory holding
+every document therefore connects every document to every other at an identical weight — a constant
+added to every candidate, which changes no ordering. The same holds for a tag carried by everything.
+**A hub discriminates only when its degree is small relative to the corpus**, and that is true no
+matter which answer one is hoping for.
+
+**So the requirement is: many small buckets, not one large one** — and derived mechanically from a
+field the documents or their editors already publish, never invented.
+
+**The source is the RFC Editor's own index**, `https://www.rfc-editor.org/rfc-index.xml`. Its schema
+(`rfc-index.xsd`, read 20260801 13:20) defines per entry: **`wg_acronym`**, **`area`**, **`stream`**,
+**`keywords`**, **`current-status`**, **`publication-status`**, and the relation elements
+`obsoletes` / `updates` (plus `obsoleted-by` / `updated-by`, which are the same edges from the other
+end — see below). That is real, human-assigned metadata, which is what makes using it honest.
+
+**Measure before choosing, and record the measurement.** For each candidate field, over the selected
+set: how many documents carry it at all, how many distinct values, and the size of the largest
+bucket. Then:
+
+| | Use it as | Reject it if |
+|---|---|---|
+| `wg_acronym` | the **directory** — `docs/<wg>/rfcNNNN.txt` | its largest bucket is most of the corpus, or most entries are empty |
+| `keywords` | **tags** in the sidecar | same test, per keyword |
+| `area`, `stream`, `current-status` | fallback directory, if `wg_acronym` fails the test | an IETF-only cluster makes `stream` a single bucket by construction |
+
+**Expect some of these to fail the test, and say so.** A cluster chosen for its `Obsoletes` chains is
+likely to be mostly one area and mostly Standards Track — meaning `area` and `current-status` are
+hubs, not discriminators. Reporting that is the measurement working. **What is not permitted is
+inventing a directory split, or hand-assigning tags, to reach a bucket size that makes a later probe
+pass.** The rule is the fixed thing: *the scheme is a mechanical function of a published field,
+chosen and written down before the probe runs.*
 
 ## Links — derived from the documents, never invented
 
@@ -91,13 +140,47 @@ being made unrealistically dense, and that argument is untouched by what real RF
 
 1. `pnk init` in the corpus repo. `provider = "fastembed"` in **both** `[embedding]` and `[rerank]`
    (`pnk init` stamps `sentence-transformers`; see `docs/GUIDE.md`).
-2. Documents under `docs/`, one `.txt` per RFC, named `rfcNNNN.txt`.
+2. Documents under `docs/<bucket>/rfcNNNN.txt`, the bucket chosen by the rule above, with the
+   measurement that chose it recorded. Tags into each sidecar from the same source.
 3. `pnk sync` to mint sidecars and ULIDs. **Commit the sidecars** — they are the truth layer, not
    generated state. **Never commit `.pinakes/`.**
 4. Author the `links[]` entries from the headers (a script in the corpus repo, not in `pinakes`).
 5. `pnk doctor` — expect WARNs, expect no FAIL.
 6. A `README.md` recording: the licence finding, the selection rule, the retrieval date, the
    dropped-target count, and how to rebuild the whole thing from scratch.
+
+## Why this is not the gate moving to fit the answer
+
+Designing a corpus after watching a gate fail on the old one is exactly the shape of fitting the
+measurement to the desired result, and it has to be answered rather than waved past.
+
+**The justification is independent and it is timestamped.** This document was decided with the user
+at **20260801 07:19**, five hours before G2's probe ran at **12:14**, for a purpose that had nothing
+to do with the graph gate — L8's declined realism check. It carries a falsifiable prediction made in
+ignorance of the outcome (the density cap, below). And `docs/STATUS.md` has said since **20260729
+03:23** that `multi-hop` sits at ceiling and *"nothing should be tuned against it until it is both
+larger and harder"* — the same conclusion, reached two days earlier from the numbers alone.
+
+**The structural constraint is derived from frozen weights, not from a wanted answer.** Decision 13
+froze `1/dir-size` and `1/tag-degree` before G2's questions were authored. "A hub the size of the
+corpus adds a constant" follows from those weights arithmetically; it would be equally true if the
+graph release had already shipped.
+
+**What the corpus licenses: nothing.** Building it does not restart G3. The sequence is unchanged and
+each step can still say no:
+
+1. Select, structure and author the corpus by the written rules — **before any question exists**.
+2. Author a multi-hop question set against it, and **freeze it before the probe runs** (G2's trap 1).
+3. Re-run `tools/reachable_ceiling_probe.py`. Report **both** numbers, with and without authored
+   edges; only the **without** figure binds (G2's trap 2).
+4. Report whichever answer comes back. **"Still cannot discriminate" is a publishable result**, and
+   on this corpus it is a live possibility — a cluster whose documents all cite each other may be no
+   more separable than thirty short disjoint notes, only longer.
+
+**One thing is forbidden outright:** re-authoring questions, re-cutting buckets or re-selecting
+documents *after* seeing a probe result, to move the number. If the probe fails twice, the honest
+conclusion is that the expansion channel is not worth a `schema_version` bump — which is a finding,
+not a failure.
 
 ## What this is not
 
