@@ -3,10 +3,11 @@
 **Status:** revised after adversarial passes 1 (22 HIGH), 2 (26 HIGH), 3 (24 HIGH), 4 (13 HIGH),
 5 (3 HIGH), 6 (2 HIGH) and 7 (6 HIGH) on L1–L8 and G1–G6; then **seven passes on L5b alone**
 (8, 8, 7, 6, 7, 7, 7 HIGH) plus an adversarial code review of the implementation (5 HIGH).
-**The links release is complete** — L1–L5b shipped in 0.5.0, L6–L8 in 0.6.0 (20260801), and L5c
-closed unbuilt because its one refusal shipped with L5b. **From the graph release, G1 and G4 are in
-0.6.0 too. G2 is the next increment and the only one that can start**: G3 and G5 are gated on its
-headroom measurement, and G6 closes the release.
+**Both tracks have stopped, for different reasons.** The links release is **complete** — L1–L5b in
+0.5.0, L6–L8 in 0.6.0 (20260801), L5c closed unbuilt because its one refusal shipped with L5b. The
+graph release is **blocked**: G1 and G4 shipped in 0.6.0, G2 in 0.7.0, and G2's headroom measurement
+came back negative, so **G3, G5 and G6 do not start**. Nothing in this plan is buildable today.
+What unblocks it is [`realism-corpus.md`](realism-corpus.md) — a corpus, not code.
 
 > ## ⚠ 20260731 — L5b is split into **L5b** and **L5c** (decision 28)
 >
@@ -45,32 +46,26 @@ adversarial passes) and `docs/RETROSPECTIVES.md` **together with any unspliced f
 [`retro.d/`](../retro.d/)** — the newest findings live there until a release splices them, so
 reading only the document systematically misses them.
 
-## Baseline — `main` at `6421cb1`, 20260801 10:55
+## Baseline — `main` at `3637361`, 20260801 13:15
 
-**The links release is complete.** L1–L8 have all landed and 0.6.0 is prepared on `main` — the
-document half is committed, the tag is not pushed. From the graph release's side: **G1 and G4 are in
-0.6.0 too**, so the tree the next increment starts from already has the tie-ordering fix and the
-compatibility floor in it.
+**Everything in this plan has either shipped or is blocked.** L1–L8 shipped (0.5.0, 0.6.0); G1 and
+G4 shipped in 0.6.0; G2 shipped in 0.7.0 and returned the measurement that stops the rest.
 
-**G2 has landed, and its measurement stops the graph release.** The headroom precondition needed
-7 of the ~18 single-KB multi-hop questions to fail today; **1 does** (20260801 12:14, real `[light]`
-models). So **G3 and G5 do not start**, and the third outcome this plan already planned for is the
-one that happened: **G1 + G2 + G4 are cut as their own release**, named at the cut, with G6's
-verification minus its edge-dependent steps. What remains open is that cut and nothing else in the
-graph release. Full numbers and the two findings behind them:
-[`docs/STATUS.md`](../docs/STATUS.md#can-the-graph-releases-gate-be-reached--measured-20260801-1214)
-and `retro.d/g2-headroom-measurement.md`.
+| | |
+|---|---|
+| **G3** — the node model and the edge set | Blocked. G2's precondition needed ≥ 7 failing multi-hop questions reachable without authored edges; 1 was measured |
+| **G5** — the expansion channel and its gate | Blocked through G3. Its gate reads per-question movement on a class with one question that can move |
+| **G6** — edge-hub reporting and the cut | Blocked through G3. It reports hubs in an edge table that does not exist |
 
-**The corpus is what failed, not the questions.** `tests/demo-kb` carries no tags and one flat
-directory, so the only derived edge crossing a document boundary is `co-located` through a single
-thirty-way hub — and at 30 documents against `candidates_per_source = 30` the funnel already sees
-every document, making the failures *ranking* failures rather than reach failures. Reviving the
-graph release means a corpus that can discriminate, and that is a decision, not an increment: it
-would change every number in this plan. The questions are **not** to be re-authored to manufacture
-failures.
+**Do not start any of them, and do not re-author G2's questions to change the number** — that is
+fitting the question set to the edge set, the circularity decision 14 removed once already. The
+precondition is re-tested by re-running the probe on a corpus that can discriminate, and the probe's
+answer is reported whichever way it comes back.
 
-Re-verify before starting anything here: `git log --oneline -1`,
-`gh run list --branch main --limit 1`, and `python3 tools/shared_file_overlap.py --fetch --strict`.
+**The corpus is the critical path**, and it is not a pinakes increment: see
+[`realism-corpus.md`](realism-corpus.md) § *Why this is not the gate moving to fit the answer*.
+Re-verify this baseline before starting anything: `git log --oneline -1`,
+`gh run list --branch main --limit 1`, `python3 tools/shared_file_overlap.py --fetch --strict`.
 
 ## Two releases, three cuts
 
@@ -82,13 +77,17 @@ Re-verify before starting anything here: `git log --oneline -1`,
 **The links release cut twice** (decision 27): an interim MINOR at **L5b** carrying L1–L5b — 0.5.0,
 20260731 — and the final cut at L8 — **0.6.0, 20260801**, which is where its name left the
 unbuilt-work table. A tag is a point on `main`, so the interim cut shipped everything merged before
-it. One cut remains in this plan: the graph release's, at G6.
+it. One cut remains in this plan — the graph release's, at G6 — and it is **blocked**, not pending.
 
-**A third outcome exists and is planned for**, not discovered: if G2's precondition fails, G3 and G5
-do not run, and G1 + G2 + G4 ship as their own release — a reproducibility measurement, a larger and
-better-instrumented golden set, and a manifest forward-compatibility pre-pass. Its verification is
-G6's minus the edge-dependent steps, its deliverable is not edge-hub reporting, and it is named at
-the cut like any other.
+**The third outcome fired.** It was planned for rather than discovered: G2's precondition failed on
+20260801 12:14, so G3 and G5 do not run and the finished increments ship without them. G1 and G4 had
+already gone out in 0.6.0, so that release was **G2 alone — 0.7.0**, and its deliverable is a
+measurement rather than a feature. **The graph release's own cut, at G6, has not happened and cannot
+be scheduled**; the name stays in `CLAUDE.md`'s unbuilt-work table until it does.
+
+**Planning the failing branch before running the measurement is what made the negative result
+cheap.** It cost one release with a real deliverable in it, instead of a `schema_version` bump that
+forces every KB in existence to rebuild for an edge table whose channel could never be licensed.
 
 **The links release changes no retrieval**, so no golden-set work is on its critical path. Pass 3
 made this unavoidable: `eval.py` is structurally single-KB, and every attempt to score a cross-KB
@@ -96,11 +95,13 @@ question through it produced a class pinned at 0.00 or 1.00 by construction. Tra
 is directly testable — does the traversal return the neighbour the corpus says it should — and that
 is what the links release ships with. All eval work moves to the graph release, where it is the gate.
 
-## One track now — and what the parallel run taught
+## No track is open — and what the parallel run taught
 
-**The L-track is finished** (0.6.0), so the two-track split is history. What remains is the graph
-release, and it is sequential by construction: **G2 gates G3 and G5**, and G6 closes the release.
-A second agent has nothing independent to take up until G2's measurement lands.
+**The L-track is finished** (0.6.0) and the G-track is **blocked at G2's measurement** (0.7.0), so
+there is no increment in this plan an agent can pick up. The work that exists is elsewhere and is
+listed in [`open-corrections.md`](open-corrections.md) — a source-walk containment increment and two
+tooling defects — plus the corpus in [`realism-corpus.md`](realism-corpus.md), which is what decides
+whether this plan ever resumes.
 
 Three things the parallel run established that outlive it, and that apply to any future split:
 
@@ -588,7 +589,7 @@ rows in [`docs/VERIFICATION.md`](../docs/VERIFICATION.md).
 
 ---
 
-### G5 — The expansion channel, default off, and its gate
+### G5 — The expansion channel, default off, and its gate 🚫 blocked
 
 **Blocked by G2's measurement, through G3.** The gate reads per-question movement on the multi-hop
 class, and that class has one failing question to move. Left as written.
@@ -766,7 +767,12 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 
 ---
 
-### G6 — Edge-hub reporting, verification, and the graph release cut
+### G6 — Edge-hub reporting, verification, and the graph release cut 🚫 blocked
+
+**Blocked by G2's measurement, through G3 and G5.** It reports hubs in an edge table that is not
+built, and it cuts a release whose two feature increments do not start. **Its verification steps are
+not blocked and should not be lost** — steps 1–5 and 8 below are the standing shape of any release
+cut in this project, and `docs/RELEASING.md` is where a cut that is actually happening reads from.
 
 **What lands.** `pnk doctor` reports the highest-degree structural edge hubs.
 

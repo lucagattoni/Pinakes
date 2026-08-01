@@ -14,6 +14,12 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
+**Since 20260801 12:14 these are the only buildable pinakes increments.** The links release is
+complete and the graph release is blocked at G2's measurement, so
+[`links-and-graph.md`](links-and-graph.md) has nothing an agent can pick up. The work that unblocks
+it is a corpus rather than code ([`realism-corpus.md`](realism-corpus.md)), and these three are what
+there is to build in the meantime.
+
 ---
 
 ## Live
