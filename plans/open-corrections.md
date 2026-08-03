@@ -14,82 +14,39 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**Since 20260801 12:14 these are the only buildable pinakes increments.** The links release is
-complete and the graph release is blocked at G2's measurement, so
-[`links-and-graph.md`](links-and-graph.md) has nothing an agent can pick up. The work that unblocks
-it is a corpus rather than code ([`realism-corpus.md`](realism-corpus.md)), and these three are what
-there is to build in the meantime.
+**Nothing is live. 20260803 22:18 — the list is empty for the first time.** All three remaining
+items closed in 0.7.1 (20260801 13:42), and no new one has been raised since. Do not read this as
+"nothing to do": the links release is complete, the graph release is **blocked** at G2's measurement
+([`links-and-graph.md`](links-and-graph.md)), and what unblocks it is a corpus rather than code
+([`realism-corpus.md`](realism-corpus.md)). **An empty list here plus a blocked plan means the
+corpus is the only work there is.**
 
 ---
 
 ## Live
 
-### 1 · `tools/link_density_gate.py` — an uncaught `ValueError` on a non-canonical root
-
-**Current:** `census` calls `document.relative_to(root)` on the **raw** root while `documents_of`
-resolves its bases (`(root / name).resolve()`). On macOS, where `/tmp` symlinks to `/private/tmp`,
-the two disagree and the tool dies with a traceback. Still reproduces on `main`, 20260801 11:30:
-
-```text
-$ cp -R tests/demo-kb /tmp/dgt && uv run python tools/link_density_gate.py /tmp/dgt
-ValueError: '/private/tmp/dgt/docs/access-restrictions.md' is not in the subpath of '/tmp/dgt'
-```
-
-**Required:** resolve the root once at the top of `census` (`root = root.resolve()`), so the
-denominator and the `relative_to` share one base. A test passing a root through a symlinked parent
-pins it.
-
-**Why it matters:** it only bites on an explicit non-canonical root, so the committed corpora are
-fine and CI is green — but this is the tool an executor is told to run *against a copy* when
-comparing the gate's number with `pnk doctor`'s, and on this platform that is a `/tmp` path.
-
----
-
-### 2 · `tools/fragments.py` — duplicate `###` headings on splice
-
-**Current:** applying the 7 changelog fragments at the 0.6.0 cut produced a section with **two
-`### Fixed` headings**, and one entry beginning `- **Fixed: …**` filed under `### Added` — the
-fragment's own prefix, in the wrong section. The tool concatenates fragments in order and does not
-merge same-named headings. Repaired by hand for 0.6.0; the tool is unchanged.
-
-**Required:** group by heading and emit one block per category in Keep-a-Changelog order (`Added`,
-`Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`). A test that applies two fragments sharing
-a category and asserts one heading in the output.
-
-**Why it matters:** it is silent, it lands in the artifact that is published and cannot be
-re-uploaded, and it scales with fragment count — 11 at this release, and the graph release will have
-more.
-
----
-
-### 3 · The local source walk escapes the KB — its own increment
-
-Three measured defects in `sync.walk_sources` and `manifest._sources`, live since before 0.5.0: a
-`..` in `[sources] include` walks out of the KB and mints sidecars outside it; an absolute `include`
-is an unhandled `NotImplementedError` traceback; and a symlinked directory carries the walk out with
-no `..` anywhere. Too large for this file — the build order, the two layers, the ten tests and the
-PATCH release are in [`source-walk-containment.md`](source-walk-containment.md).
-
-**Take this one if you built L6**, and read its first instruction: *copy `linkscan.sidecars_under`,
-do not re-derive it.* Reviews 10–14 each killed a different plausible-looking spelling of that rule.
+**None.** Anything raised goes here, above the table.
 
 ---
 
 ## Closed — recorded so nobody reopens them
 
-| # | Was | Closed by |
-|---|---|---|
-| 1 | `sidecar.py`'s docstring overstated the 1.1 → 1.2 fix | Now says *"three of the four"*, and that `0755` becomes int **755** |
-| 2 | `CHANGELOG.md` `[0.5.0]` stated one break twice, once over-broadly | One statement, carrying the *uniformly-keyed nested mapping* precision |
-| 3 | `docs/MANIFEST.md`'s `rel` row credited the user, not `pnk link` | Fixed on the L6 branch |
-| 4 | `docs/STATUS.md`'s verified-install claim omitted the manifest edit | Rewritten and re-verified against **0.6.0** from the index, 20260801 11:10 |
-| 5 | Both 🚫 rows listed link-coverage reporting, which shipped in v0.1 | Moot: the links-release row left both tables at the final cut |
-| 6b | The plan's baseline said 0.4.0 and a stale `main` | Re-baselined at `6421cb1`, 20260801 |
-| 6c | The verification table named two tests that do not exist | Repointed; `tests/test_verification.py` green |
-| 6d | L6 named two tests L5b already owned | L6 shipped with distinct names |
-| 7 | The iteration log was out of chronological order | Sorted, and now in `links-and-graph-log.md` — 25 rows, verified sorted |
-| 9 | L6 review 7's freshness test never entered the freshness branch | Review 8b closed it the other way; the prescribed fix would now pin behaviour review 8 replaced |
-| 12 | L7 shipped without two of its four Docs items | Both fixed before the 0.6.0 tag. **The rule it earned:** the last step before declaring an increment done is to re-read its own Docs list and grep for each sentence the plan quotes |
+| Was | Closed by |
+|---|---|
+| `tools/link_density_gate.py` died with a `ValueError` on a non-canonical root — every `/tmp` path on macOS, and running it against a copy is exactly what an executor is told to do | 0.7.1. `census` resolves the root once, so the denominator and the `relative_to` share one base |
+| `tools/fragments.py` spliced **two `### Added` headings** into one section, and filed a `Fixed:` entry under `Added` — silent, and it lands in an artifact that cannot be re-uploaded | Fixed with a test (`tests/test_fragments.py`). `_merge_into_section` reuses an existing `### Category` heading, bounded to the anchor's own section so an older release's heading is never written into |
+| The local source walk escaped the KB: a `..` in `[sources] include` minted sidecars outside it, an absolute pattern was a bare `NotImplementedError`, and a symlinked directory carried the walk out with no `..` anywhere. Live since before 0.5.0 | 0.7.1, as its own increment. **A fourth defect was found by a test written to pin *correct* behaviour** — a legal `..` landing inside the KB kept the `..` in the document key, so one file reachable two ways indexed once and failed twice |
+| `sidecar.py`'s docstring overstated the 1.1 → 1.2 fix | Now says *"three of the four"*, and that `0755` becomes int **755** |
+| `CHANGELOG.md` `[0.5.0]` stated one break twice, once over-broadly | One statement, carrying the *uniformly-keyed nested mapping* precision |
+| `docs/MANIFEST.md`'s `rel` row credited the user, not `pnk link` | Fixed on the L6 branch |
+| `docs/STATUS.md`'s verified-install claim omitted the manifest edit | Rewritten and re-verified against **0.6.0** from the index, 20260801 11:10 |
+| Both 🚫 rows listed link-coverage reporting, which shipped in v0.1 | Moot: the links-release row left both tables at the final cut |
+| The plan's baseline said 0.4.0 and a stale `main` | Re-baselined at `6421cb1`, 20260801 |
+| The verification table named two tests that do not exist | Repointed; `tests/test_verification.py` green |
+| L6 named two tests L5b already owned | L6 shipped with distinct names |
+| The iteration log was out of chronological order | Sorted, and now in `links-and-graph-log.md` — 25 rows, verified sorted |
+| L6 review 7's freshness test never entered the freshness branch | Review 8b closed it the other way; the prescribed fix would now pin behaviour review 8 replaced |
+| L7 shipped without two of its four Docs items | Both fixed before the 0.6.0 tag. **The rule it earned:** the last step before declaring an increment done is to re-read its own Docs list and grep for each sentence the plan quotes |
 
 ---
 

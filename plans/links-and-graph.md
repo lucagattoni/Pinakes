@@ -46,10 +46,12 @@ adversarial passes) and `docs/RETROSPECTIVES.md` **together with any unspliced f
 [`retro.d/`](../retro.d/)** — the newest findings live there until a release splices them, so
 reading only the document systematically misses them.
 
-## Baseline — `main` at `3637361`, 20260801 13:15
+## Baseline — `main` at `d56bb35`, 20260803 22:18
 
 **Everything in this plan has either shipped or is blocked.** L1–L8 shipped (0.5.0, 0.6.0); G1 and
-G4 shipped in 0.6.0; G2 shipped in 0.7.0 and returned the measurement that stops the rest.
+G4 shipped in 0.6.0; G2 shipped in 0.7.0 and returned the measurement that stops the rest. 0.7.1
+then closed the last of the standalone work ([`open-corrections.md`](open-corrections.md) is empty),
+so **the corpus is not merely the critical path — it is the only path.**
 
 | | |
 |---|---|
@@ -98,10 +100,10 @@ is what the links release ships with. All eval work moves to the graph release, 
 ## No track is open — and what the parallel run taught
 
 **The L-track is finished** (0.6.0) and the G-track is **blocked at G2's measurement** (0.7.0), so
-there is no increment in this plan an agent can pick up. The work that exists is elsewhere and is
-listed in [`open-corrections.md`](open-corrections.md) — a source-walk containment increment and two
-tooling defects — plus the corpus in [`realism-corpus.md`](realism-corpus.md), which is what decides
-whether this plan ever resumes.
+there is no increment in this plan an agent can pick up. The standalone work that existed beside it
+shipped in 0.7.1, so [`open-corrections.md`](open-corrections.md) is empty as well. What remains is
+the corpus in [`realism-corpus.md`](realism-corpus.md), which is what decides whether this plan ever
+resumes — and it is built in a repository of its own, by an agent that may not read `src/`.
 
 Three things the parallel run established that outlive it, and that apply to any future split:
 
