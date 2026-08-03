@@ -169,7 +169,7 @@ yet** — see [STATUS](STATUS.md#the-surface-you-can-use-today).
 | `confirm_above_eur` | `0.01` | Prompt for confirmation (soft). Deliberately a *lower*, separate field from the hard caps, and evaluated **once per document**, never per request |
 | `per_operation_eur` | `0.30` | Hard ceiling for one invocation — never exceeded, never prompted past. Raised from `0.05` on 20260803: at bundled prices a single synthesis round reserves ~€0.21, so the old default refused the first call of any multi-call operation 4× over |
 | `daily_eur` | `1.00` | Hard ceiling per calendar day. A burst limiter between the per-operation and monthly caps: a per-operation cap alone bounds one run, not thirty of them |
-| `monthly_eur` | `5.00` | Hard ceiling per calendar month |
+| `monthly_eur` | `30.00` | Hard ceiling per calendar month. Raised from `5.00` on 20260803 alongside `per_operation_eur`, preserving the ~100-operations-a-month allowance the old pair gave. **`daily_eur` is now the binding sequence limit** — 1.00/day over a 30-day month is 30.00, so the monthly ceiling is reached only by a 31-day month at full daily spend |
 | `max_price_age_days` | `30` | Refuse to estimate against bundled prices older than this. An estimate built on silently outdated prices is a liability |
 | `timezone` | `UTC` | Makes "daily"/"monthly" unambiguous. Any IANA zone; DST transitions are handled by conversion, not special-casing |
 | `on_exceed` | `abort` | `abort` or `partial` |
