@@ -66,7 +66,7 @@ def test_omitted_sections_take_the_documented_defaults(write_manifest: WriteMani
     assert manifest.rerank.model == "BAAI/bge-reranker-base"
     assert manifest.budget.on_exceed == "abort"
     assert manifest.budget.confirm_above_eur == Decimal("0.01")
-    assert manifest.budget.per_operation_eur == Decimal("0.05")
+    assert manifest.budget.per_operation_eur == Decimal("0.30")
     assert manifest.budget.daily_eur == Decimal("1.00")
     assert manifest.budget.monthly_eur == Decimal("5.00")
     assert manifest.budget.max_price_age_days == 30
