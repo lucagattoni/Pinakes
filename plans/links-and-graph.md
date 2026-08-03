@@ -65,7 +65,8 @@ precondition is re-tested by re-running the probe on a corpus that can discrimin
 answer is reported whichever way it comes back.
 
 **The corpus is the critical path**, and it is not a pinakes increment: see
-[`realism-corpus.md`](realism-corpus.md) § *Why this is not the gate moving to fit the answer*.
+[`realism-corpus.md`](realism-corpus.md) § *Why this is not the gate moving to fit the answer*, and
+[`corpus-probe-run.md`](corpus-probe-run.md) for how the second measurement is run once it exists.
 Re-verify this baseline before starting anything: `git log --oneline -1`,
 `gh run list --branch main --limit 1`, `python3 tools/shared_file_overlap.py --fetch --strict`.
 
