@@ -720,7 +720,7 @@ def _budget(root_table: Table, path: Path) -> BudgetSection:
     if table is None:
         return BudgetSection(
             confirm_above_eur=Decimal("0.01"),
-            per_operation_eur=Decimal("0.05"),
+            per_operation_eur=Decimal("0.30"),
             daily_eur=Decimal("1.00"),
             monthly_eur=Decimal("5.00"),
             max_price_age_days=30,
@@ -732,7 +732,7 @@ def _budget(root_table: Table, path: Path) -> BudgetSection:
             "confirm_above_eur", default=Decimal("0.01"), minimum=Decimal("0")
         ),
         per_operation_eur=table.decimal(
-            "per_operation_eur", default=Decimal("0.05"), minimum=Decimal("0")
+            "per_operation_eur", default=Decimal("0.30"), minimum=Decimal("0")
         ),
         daily_eur=table.decimal("daily_eur", default=Decimal("1.00"), minimum=Decimal("0")),
         monthly_eur=table.decimal("monthly_eur", default=Decimal("5.00"), minimum=Decimal("0")),

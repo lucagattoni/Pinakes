@@ -109,7 +109,7 @@ model    = "BAAI/bge-reranker-base"
 
 [budget]
 confirm_above_eur = 0.01
-per_operation_eur = 0.05
+per_operation_eur = 0.30
 monthly_eur       = 5.00
 timezone          = "UTC"
 on_exceed         = "abort"
