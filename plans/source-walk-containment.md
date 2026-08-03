@@ -1,4 +1,9 @@
-# The local source walk escapes the KB
+# The local source walk escapes the KB ✅ shipped in 0.7.1
+
+**Shipped 20260801 13:42.** All three defects closed, plus a fourth found by a test written to pin
+*correct* behaviour: a legal `..` landing inside the KB kept the `..` in the document key, so one
+file reachable two ways was indexed once and failed twice. The spec below is left as written — it is
+what was built against.
 
 **Audience: the coder. Goal: executor.** One increment, its own branch, its own PATCH release.
 **Not part of L6, L7 or L8** — it touches `sync.py` and `manifest.py`, which the links plan does not,

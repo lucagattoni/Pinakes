@@ -76,9 +76,9 @@ every PDF into a failed document rather than a skipped one.
 ⚠️ **A template change reaches new KBs only.** The explanatory line above shipped in 0.2.2 and
 appears in no KB created before it, and nothing today detects or reports that divergence — so existing KBs stay PDF-blind
 permanently unless their owner edits the manifest by hand. That gap, and what to do about it, is
-worked through in [KB-UPDATES.md](KB-UPDATES.md). Its `requires_pinakes` half is **built (G4), on
-`main`, unreleased** — a manifest can now declare the oldest pinakes that can read it, so an
-out-of-date build says so instead of reporting a typo. That closes the *diagnosis*, not this gap:
+worked through in [KB-UPDATES.md](KB-UPDATES.md). Its `requires_pinakes` half **shipped in 0.6.0
+(G4)** — a manifest can declare the oldest pinakes that can read it, so an out-of-date build says so
+instead of reporting a typo. That closes the *diagnosis*, not this gap:
 nothing yet detects template drift or adopts a new default into an existing manifest.
 
 ### Caveat: the `[light]` backend needs a manifest edit
@@ -107,8 +107,8 @@ landing with its own tests.
 | I7a | The paid-path allowlist gate and the invariant amendments | shipped 0.3.0 |
 | I7b | The paid Claude-vision extractor — request shape, validation, retries | shipped 0.3.0 |
 | I7c | The completeness audit, staging, all-or-nothing commit | shipped 0.3.0 |
-| I8 | `pnk doctor` text yield, `path:page` citations on both surfaces, the three end-to-end traces | **landed 20260729 04:55**, unreleased |
-| I9 | The verification audit (`docs/VERIFICATION.md` + its gate), the untested-check sweep, README extras, wheel-smoke assertions | **landed 20260729 05:29**, unreleased |
+| I8 | `pnk doctor` text yield, `path:page` citations on both surfaces, the three end-to-end traces | shipped 0.4.0 |
+| I9 | The verification audit (`docs/VERIFICATION.md` + its gate), the untested-check sweep, README extras, wheel-smoke assertions | shipped 0.4.0 |
 
 **Decided 20260728 17:52 — I6–I9 accumulate, and cut as one MINOR release.** `plans/v0.2.md`
 assumed a single release at I9; 0.2.0 was instead released after I5, correctly, since I1–I5 was
@@ -164,8 +164,7 @@ with all-or-nothing commit — plus the live measurement behind every number in
 
 **What it deliberately did not include.** `path:page` citations were still index-only and not
 surfaced in results; the release therefore read scanned pages it could not yet cite precisely. That
-gap was named here rather than discovered by a user, and **I8 has since closed it** (landed
-20260729 04:55, unreleased at the time of writing).
+gap was named here rather than discovered by a user, and **I8 closed it** (shipped in 0.4.0).
 
 ### The measurement run has been done — 20260729 03:17, €0.43
 
@@ -252,7 +251,7 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.3.0** ✅ | Budget machinery, the opt-in paid Claude-vision extractor (I6–I7c) |
 | **0.4.0** ✅ | `path:page` citations on both surfaces, `pnk doctor` text yield (I8); the verification table and its gate (I9) |
 | **0.4.1** ✅ | A sidecar that will not parse is no longer overwritten by a freshly minted one, and no longer aborts the whole sync — data loss present since v0.1 |
-| **0.5.0** ✅ *(the links release, interim)* | `pnk links`, `pinakes_links`, reverse-scan and the sidecar round-trip fix — no `schema_version` bump, so no rebuild. **The release cuts twice** (decision 27): this is the interim MINOR at L5b; the final cut is at L8, and the name stays in the unbuilt-work table until then. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **L5b landed:** `ruamel.yaml` replaces `pyyaml` in the sidecar, so a rewrite preserves comments, quoting and blank lines — and `country: NO` stops becoming `false` ([decision](../plans/decision-ruamel-yaml.md)). **L6 has since landed on `main`, unreleased:** `pnk link`, the authoring command — it goes out at the final cut, not in 0.5.0. **Next: L7** (`pnk doctor`'s link coverage), then L8 and that cut |
+| **0.5.0** ✅ *(the links release, interim)* | `pnk links`, `pinakes_links`, reverse-scan and the sidecar round-trip fix — no `schema_version` bump, so no rebuild. **The release cuts twice** (decision 27): this is the interim MINOR at L5b; the final cut is at L8, and the name stays in the unbuilt-work table until then. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **L5b landed:** `ruamel.yaml` replaces `pyyaml` in the sidecar, so a rewrite preserves comments, quoting and blank lines — and `country: NO` stops becoming `false` ([decision](../plans/decision-ruamel-yaml.md)). |
 | **0.6.0** ✅ *(the links release, final)* | `pnk link` authors a link from the command line, and `pnk doctor` reports link coverage as **linked docs / total docs** and resolves each cross-KB target through its `[[links.kb]]` entry (L6–L8). Also `[kb] requires_pinakes` (G4) and the evaluation's tie-ordering fix (G1) — no `schema_version` bump, so no rebuild. **This completes the two-cut release** decision 27 describes: 0.5.0 was the interim MINOR at L5b, this is the final cut, and the name leaves the unbuilt-work table here |
 | **0.7.0** ✅ | The evaluation grows a per-question artifact (`eval/outcomes.json`), stable question ids, a validated `kind`, and an empty golden set that skips with a reason instead of failing — plus the demo KB's golden set grown 41 → 74 with a `simple-lookup` control class (G2). **Its deliverable is a measurement:** the graph release's gate cannot be reached on this corpus, so G3 and G5 do not start ([above](#can-the-graph-releases-gate-be-reached--measured-20260801-1214)). No `schema_version` bump, so no rebuild |
 | **0.7.1** ✅ | `[sources] include` can no longer walk out of the KB or write sidecars outside it — three defects live since before 0.5.0: a `..` pattern indexed files outside and minted sidecars beside them, an absolute pattern was a bare traceback, and a symlinked directory carried the walk out with no `..` anywhere. Plus a document reached by two legal spellings is now one document, and `tools/link_density_gate.py` survives a non-canonical root |
