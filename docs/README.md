@@ -23,6 +23,7 @@ Build plans live in [`plans/`](../plans/); the release history is [`CHANGELOG.md
 | [`source-walk-containment.md`](../plans/source-walk-containment.md) | A standalone increment, shipped in 0.7.1 — outside both releases above |
 | [`open-corrections.md`](../plans/open-corrections.md) | Numbered corrections for the implementing agent; items are closed in place, never deleted |
 | [`realism-corpus.md`](../plans/realism-corpus.md) | The RFC corpus and the dogfooding KB — both live **outside** this repo |
+| [`corpus-probe-run.md`](../plans/corpus-probe-run.md) | How the second headroom measurement is run against that corpus, and the conversion contract that keeps its frozen questions frozen |
 | [`decision-*.md`](../plans/) | A decision record — rationale, not instructions |
 | `v0.1.md`, `v0.2.md` | **Shipped.** Historical build orders, still cited by `check.sh` and `tools/paid_path_gate.py` |
 

@@ -172,7 +172,10 @@ each step can still say no:
 1. Select, structure and author the corpus by the written rules — **before any question exists**.
 2. Author a multi-hop question set against it, and **freeze it before the probe runs** (G2's trap 1).
 3. Re-run `tools/reachable_ceiling_probe.py`. Report **both** numbers, with and without authored
-   edges; only the **without** figure binds (G2's trap 2).
+   edges; only the **without** figure binds (G2's trap 2). **A different agent does this**, by
+   [`corpus-probe-run.md`](corpus-probe-run.md) — which also owns the conversion from the frozen
+   question file into the eval schema, because that conversion touches frozen material and is the
+   one place this separation could quietly leak.
 4. Report whichever answer comes back. **"Still cannot discriminate" is a publishable result**, and
    on this corpus it is a live possibility — a cluster whose documents all cite each other may be no
    more separable than thirty short disjoint notes, only longer.
