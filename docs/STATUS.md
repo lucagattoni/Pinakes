@@ -1,6 +1,6 @@
 # Status — what ships today
 
-**Latest release: 0.4.1** · last reviewed 20260729 07:48
+**Latest release: 0.7.1** · last reviewed 20260803 22:23
 
 > **This file is the only place in the repo that says what is built.** Every other doc describes
 > *how* something works or *why* it was designed that way, and links here for whether you can use it
