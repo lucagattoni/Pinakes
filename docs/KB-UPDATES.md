@@ -1,7 +1,7 @@
 # Updating an existing KB — design note
 
 **Status: mostly proposal. Decided 20260728 18:39.** Its minimum — the `requires_pinakes` pre-pass
-(§4, §7) — **is built and on `main`, unreleased**, as G4 of
+(§4, §7) — **shipped in 0.6.0**, as G4 of
 [`plans/links-and-graph.md`](../plans/links-and-graph.md); every field rule is in
 [MANIFEST.md](MANIFEST.md) and the reasoning in [DESIGN §2.1](DESIGN.md#21-the-manifest--pinakestoml).
 Everything else here — `pnk upgrade`, the template-drift gate, doctor reporting drift — is still a
@@ -30,7 +30,7 @@ detection at all — while v0.2 is actively changing what the template ships.
 | 1 | **Index schema** | `schema_version` mismatch → refuse to open, name `pnk sync --rebuild`. No migrations, by design (`store.py:205`) | ✅ shipped |
 | 2 | **Embedding model** | Index built by another model/revision → queries refuse rather than return garbage | ✅ shipped |
 | 3 | **PDF extractor** | Fingerprint mismatch → free backend refuses; paid marks `stale_extraction` and warns | ✅ shipped (I5) |
-| 4 | **Manifest + template** | `[kb] requires_pinakes`: a version floor read in a pre-pass, so a refusal can name the version needed (G4, unreleased). The template half — detecting and adopting drift — is still absent | ◐ **half closed** |
+| 4 | **Manifest + template** | `[kb] requires_pinakes`: a version floor read in a pre-pass, so a refusal can name the version needed (G4, shipped 0.6.0). The template half — detecting and adopting drift — is still absent | ◐ **half closed** |
 
 Axes 1–3 share a shape: *detect, refuse, and point at a free remedy.* That works because the remedy
 is always "rebuild derived state", which costs nothing and destroys nothing.

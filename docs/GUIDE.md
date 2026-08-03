@@ -46,7 +46,7 @@ uv add "pinakes[light] @ git+https://github.com/lucagattoni/Pinakes"
 | `[st]` | `sentence-transformers` (~2 GB, torch) | Default backend; widest model choice |
 | `[light]` | `fastembed` (~100 MB, ONNX) | Same default models, no torch |
 | `[pdf]` | `pypdfium2` | Free PDF text extraction |
-| `[claude]` | Anthropic SDK — **requires `[pdf]`** | The opt-in paid extractor. Built, but [in no release yet](STATUS.md) — `main` only |
+| `[claude]` | Anthropic SDK — **requires `[pdf]`** | The opt-in paid extractor ([shipped in 0.3.0](STATUS.md)) |
 
 Extras compose: `pinakes[light,pdf]` is a normal install. A core-only install fails with the exact
 extra to add, rather than a traceback:
@@ -397,7 +397,7 @@ them and `pnk links` traverses them: see [Following links between two KBs](#foll
 |---|---|---|
 | `the sentence-transformers backend is not installed` | `[light]` install, default manifest | Set `provider = "fastembed"` in `[embedding]` **and** `[rerank]` |
 | `N file(s) matched no include pattern` | Those files are in your roots but no glob picks them up | Add the glob it names ([above](#indexing-pdfs)), or `exclude` them |
-| A PDF indexes with no text | Scanned / image-only — the free path has no OCR | Needs the paid extractor, [in no release yet](STATUS.md) |
+| A PDF indexes with no text | Scanned / image-only — the free path has no OCR | The opt-in paid extractor: `uv add "pinakes[pdf,claude]"`, then `--extract=claude-vision` ([STATUS](STATUS.md)) |
 | `no extractor for .pdf` | `[pdf]` extra missing | `uv add "pinakes[pdf]"` |
 | Queries refuse to run, naming a model mismatch | Embedding model changed since the index was built | `pnk sync --rebuild` — free |
 | Index refuses to open, naming `schema_version` | Index predates 0.2.0 | `pnk sync --rebuild`. There are no migrations, by design |
