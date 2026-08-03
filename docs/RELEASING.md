@@ -43,6 +43,7 @@ with no tag, no release and nothing published (`RETROSPECTIVES.md`, 20260727).
 
 | Document | What goes stale |
 |---|---|
+| `docs/STATUS.md` — **line 3** | `**Latest release: x.y.z**`. **Missed by four consecutive release sweeps** (0.5.0 → 0.7.1) because this table did not name it, while the same sweeps updated all three rows below. It is the first line a reader sees and it contradicted the file's own tables in a public repo. Bump it with `__version__`, in the same commit |
 | `docs/STATUS.md` — *Published on PyPI* | The published-version list. It is a fact about the **index**, not about this repo |
 | `docs/STATUS.md` — *Release roadmap* | Tick the row, and drop the name from the unbuilt-work table above it — **only at a release's final cut**, never at an interim one |
 | `README.md` | The install lines, if the release added an extra or a capability a new user would look for |
