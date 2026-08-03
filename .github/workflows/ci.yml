@@ -261,6 +261,40 @@ jobs:
           name: outcomes-${{ matrix.os }}
           path: outcomes.json
 
+  status-header:
+    # docs/STATUS.md's header — line 3, `**Latest release: x.y.z**` — must name
+    # `pinakes.__version__`. It drifted for four consecutive releases (0.5.0 → 0.7.1) while the
+    # same release sweeps updated every table below it, in a public repo, in the file whose own
+    # preamble says it is the only place that says what is built (plans/open-corrections.md,
+    # 20260803). Its own job for the same reason every sibling gate has one: `ci.yml` never
+    # invokes `check.sh`. Core-only — the gate needs `pinakes.__version__` and nothing else.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      - name: docs/STATUS.md's header names the released version
+        run: uv run --frozen python tools/status_header_gate.py
+
+      - name: The gate can still fail
+        # A gate nobody has watched fail is a gate nobody knows works. Drives the same artifact
+        # against a version the tree does not have and asserts a non-zero exit AND the stated
+        # reason — a crash, a missing file or `uv` falling over all satisfy a bare non-zero exit
+        # too. `--expect-version` mutates the expectation, never docs/STATUS.md itself.
+        run: |
+          if uv run --frozen python tools/status_header_gate.py --expect-version 99.99.99; then
+            echo "status-header passed against a version the tree does not have — it is not gating" >&2
+            exit 1
+          fi
+          uv run --frozen python tools/status_header_gate.py --expect-version 99.99.99 2>&1 \
+            | grep -q "the header drifted from the release"
+
   eval-cross-machine-compare:
     needs: eval-cross-machine
     runs-on: ubuntu-latest

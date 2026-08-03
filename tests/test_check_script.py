@@ -146,6 +146,31 @@ def test_ci_runs_the_eval_reproducibility_gate_and_proves_it_can_fail() -> None:
     )
 
 
+def test_check_sh_declares_the_status_header_gate() -> None:
+    """docs/STATUS.md's header drifted from `__version__` for four consecutive releases because
+    only a checklist watched it (plans/open-corrections.md, 20260803). Same pinning as its
+    siblings: match the real invocation, never a substring that an explanatory comment would also
+    satisfy."""
+    text = CHECK_SH.read_text(encoding="utf-8")
+    assert re.search(
+        r"^uv run --frozen python3 tools/status_header_gate\.py\s*$", text, re.MULTILINE
+    ), "check.sh no longer invokes the status-header gate"
+
+
+def test_ci_runs_the_status_header_gate_and_proves_it_can_fail() -> None:
+    workflow = _workflow()
+    job = re.search(r"^  status-header:\n(?P<body>(?:    .*\n|\n)*)", workflow, re.MULTILINE)
+    assert job is not None, "ci.yml has no status-header job"
+    body = job.group("body")
+    assert "tools/status_header_gate.py" in body
+    assert "--expect-version 99.99.99" in body, (
+        "the negative check is gone — nothing proves it gates"
+    )
+    assert "the header drifted from the release" in body, (
+        "the negative check no longer requires the stated reason, so a crash would satisfy it"
+    )
+
+
 def test_ci_compares_per_question_outcomes_across_two_operating_systems() -> None:
     """The half a single machine cannot answer (G1).
 
