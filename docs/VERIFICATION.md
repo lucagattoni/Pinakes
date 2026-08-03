@@ -605,3 +605,7 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | two agents editing shared documents are told before they merge | — | `tests/test_shared_file_overlap.py::test_uncommitted_work_counts`, `check.sh` gate |
 | a core-only wheel still installs and runs | I9 | CI `build` job smoke step |
 | the shipped wheel carries `prices.toml` and `floors.toml` | I9 | CI `build` job smoke step |
+| `docs/STATUS.md` line 3 names `pinakes.__version__`, in the exact `**Latest release: x.y.z**` shape | fix | `tests/test_status_header_gate.py::test_the_real_status_file_agrees_with_the_real_version`, `tests/test_status_header_gate.py::test_agreeing_versions_pass` |
+| a drifted header fails naming both versions and the file | fix | `tests/test_status_header_gate.py::test_disagreeing_versions_fail_naming_both` |
+| deleting, moving or reformatting the header cannot silence the gate | fix | `tests/test_status_header_gate.py::test_a_missing_line_fails`, `tests/test_status_header_gate.py::test_a_reformatted_line_fails`, `tests/test_status_header_gate.py::test_the_header_on_the_wrong_line_fails` |
+| the status-header gate is invoked, and can still fail | fix | `tests/test_check_script.py::test_check_sh_declares_the_status_header_gate`, `tests/test_check_script.py::test_ci_runs_the_status_header_gate_and_proves_it_can_fail` |

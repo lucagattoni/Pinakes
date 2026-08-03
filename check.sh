@@ -126,6 +126,16 @@ uv run --frozen python3 tools/link_density_gate.py
 # removed, renamed — because each takes a different path through sync.py and the tests cover one.
 uv run --frozen python3 tools/eval_reproducibility_gate.py
 
+# status-header: docs/STATUS.md line 3 — `**Latest release: x.y.z**` — must name
+# pinakes.__version__. It drifted for four consecutive releases while the same sweeps updated
+# every table below it (plans/open-corrections.md, 20260803); a checklist missed it four times,
+# which is this project's threshold for turning the item into a gate. Only the version is gated,
+# never the `last reviewed` date beside it — a wall-clock staleness check fails on a quiet
+# weekend with no code change, the same reasoning recorded at prices-toml-parses above. On main
+# the invariant has no exception window: a release bumps `__version__` and the header in one
+# commit (docs/RELEASING.md step 2 + sweep table), and between releases neither moves.
+uv run --frozen python3 tools/status_header_gate.py
+
 # changelog/retrospective fragments are well-formed. Cheap, offline, and it fails *here* rather
 # than at release time — `--apply` deletes the fragments it consumed, so a malformed one found then
 # would be found with the evidence already gone.
