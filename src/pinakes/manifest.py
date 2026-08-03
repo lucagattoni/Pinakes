@@ -722,7 +722,7 @@ def _budget(root_table: Table, path: Path) -> BudgetSection:
             confirm_above_eur=Decimal("0.01"),
             per_operation_eur=Decimal("0.30"),
             daily_eur=Decimal("1.00"),
-            monthly_eur=Decimal("5.00"),
+            monthly_eur=Decimal("30.00"),
             max_price_age_days=30,
             timezone="UTC",
             on_exceed="abort",
@@ -735,7 +735,7 @@ def _budget(root_table: Table, path: Path) -> BudgetSection:
             "per_operation_eur", default=Decimal("0.30"), minimum=Decimal("0")
         ),
         daily_eur=table.decimal("daily_eur", default=Decimal("1.00"), minimum=Decimal("0")),
-        monthly_eur=table.decimal("monthly_eur", default=Decimal("5.00"), minimum=Decimal("0")),
+        monthly_eur=table.decimal("monthly_eur", default=Decimal("30.00"), minimum=Decimal("0")),
         max_price_age_days=table.integer("max_price_age_days", default=30, minimum=1),
         timezone=table.string_or("timezone", "UTC"),
         on_exceed=table.choice("on_exceed", ON_EXCEED, default="abort"),
