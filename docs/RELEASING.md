@@ -48,6 +48,14 @@ with no tag, no release and nothing published (`RETROSPECTIVES.md`, 20260727).
 | `docs/STATUS.md` — *Release roadmap* | Tick the row, and drop the name from the unbuilt-work table above it — **only at a release's final cut**, never at an interim one |
 | `README.md` | The install lines, if the release added an extra or a capability a new user would look for |
 
+**Also grep the whole tree for claims the release just falsified** — the class a checklist of
+*sections* cannot catch, found eight times on 20260803, in three docs contradicting a fourth:
+
+    grep -rn "unreleased\|in no release yet\|not built yet\|Next:" docs/ plans/ README.md CLAUDE.md
+
+Re-judge every hit against what this release shipped. Most are fine (historical records, generic
+instructions); the ones that are not are exactly the ones nothing else will ever flag.
+
 **Verify by querying the index and installing what the docs show, not by reading them**
 (`curl -s https://pypi.org/pypi/pinakes/json`). **That endpoint is CDN-cached**: a query moments
 after an upload can return the previous release list, so bust the cache and cross-check
