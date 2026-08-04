@@ -879,8 +879,10 @@ A git hook can fire while an MCP server is answering. The policy:
   freshness forever, which is exactly what a bare "exit if lock exists" rule would do, silently,
   with `--quiet` hiding the symptom. If the hostname is not this machine (shared/NFS checkout),
   refuse and name the lock: liveness cannot be checked across hosts, so the conservative path is a
-  human running `pnk sync --force-unlock`. `pnk doctor` reports any held lock with its age and
-  holder. Residual risk — pid reuse can misjudge liveness — is accepted: start time in the lock
+  human running `pnk sync --force-unlock`. `pnk doctor` reports any held lock with its holder and
+  the time it was taken — `pid N on <host>, since <stamp>`, never a computed age, because an age
+  would have to be differenced against a clock the reader cannot see.
+  Residual risk — pid reuse can misjudge liveness — is accepted: start time in the lock
   makes the misjudgement window narrow, and the failure mode is one skipped sync, not corruption.
 - The server detects a swapped index by **`stat()`ing `.pinakes/index.db` (inode + mtime) per
   request**, not by reading `meta.build_id` through its own connection — an open handle keeps the
