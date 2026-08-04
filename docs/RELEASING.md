@@ -57,10 +57,20 @@ Re-judge every hit against what this release shipped. Most are fine (historical 
 instructions); the ones that are not are exactly the ones nothing else will ever flag.
 
 **Verify by querying the index and installing what the docs show, not by reading them**
-(`curl -s https://pypi.org/pypi/pinakes/json`). **That endpoint is CDN-cached**: a query moments
-after an upload can return the previous release list, so bust the cache and cross-check
-`https://pypi.org/simple/pinakes/` before concluding a publish failed (20260729 — a correct 0.4.0
-upload read as missing).
+(`curl -s https://pypi.org/pypi/pinakes/json`). **Three separate caches will tell you a successful
+upload failed.** Measured on 0.9.0 and again on 0.10.0, 20260804:
+
+| Cache | Symptom | Beat it with |
+|---|---|---|
+| The JSON endpoint | Returns the previous release list; still said `0.8.0` an hour after 0.9.0 uploaded | A query string, then wait — it is the slowest to settle |
+| `https://pypi.org/simple/` | Lists no file for the new version, **even with a cache-buster and `Cache-Control: no-cache`** | Nothing reliable. Do not read its silence as evidence |
+| `uv`'s own index cache | `uvx --refresh` reports the version *unsatisfiable* | `uvx --no-cache --refresh`. **`--refresh` alone is not enough** |
+
+So **the order that actually settles it**: read the workflow's `Publish to PyPI` step log — it
+prints `Uploading pinakes-x.y.z-py3-none-any.whl` per file and cannot be cached — then confirm with
+`uvx --no-cache --refresh --from "pinakes[light]==x.y.z" pnk --version`. Only a failed install
+after **both** of those is a failed publish (20260729 — a correct 0.4.0 upload read as missing;
+20260804 — 0.10.0 read as missing from `/simple/` while its two files were already on the index).
 
 Caught 20260729: `STATUS.md` still said "Published version: 0.2.2 **only**" three hours after 0.3.0
 was on PyPI, and the roadmap still listed the paid-extraction release as unbuilt.
