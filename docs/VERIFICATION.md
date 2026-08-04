@@ -628,6 +628,10 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | `docs/STATUS.md` line 3 names `pinakes.__version__`, in the exact `**Latest release: x.y.z**` shape | fix | `tests/test_status_header_gate.py::test_the_real_status_file_agrees_with_the_real_version`, `tests/test_status_header_gate.py::test_agreeing_versions_pass` |
 | a drifted header fails naming both versions and the file | fix | `tests/test_status_header_gate.py::test_disagreeing_versions_fail_naming_both` |
 | deleting, moving or reformatting the header cannot silence the gate | fix | `tests/test_status_header_gate.py::test_a_missing_line_fails`, `tests/test_status_header_gate.py::test_a_reformatted_line_fails`, `tests/test_status_header_gate.py::test_the_header_on_the_wrong_line_fails` |
+| landing refuses when the default branch's sha did not move — the merge that reports success and lands nothing | fix | `tests/test_land.py::test_refuses_when_the_default_branch_did_not_move`, `tests/test_land.py::test_cleanup_does_not_run_when_the_landing_was_refused` |
+| landing merges in the primary checkout even when invoked from the feature worktree | fix | `tests/test_land.py::test_merges_in_the_primary_checkout_even_when_invoked_from_the_feature_worktree` |
+| landing cannot fold uncommitted work into the merge, or land onto the wrong branch | fix | `tests/test_land.py::test_refuses_a_dirty_primary_checkout`, `tests/test_land.py::test_refuses_to_merge_the_default_branch_into_itself` |
+| `--cleanup` removes the worktree and **both** copies of the branch | fix | `tests/test_land.py::test_cleanup_removes_the_worktree_and_both_copies_of_the_branch` |
 | the status-header gate is invoked, and can still fail | fix | `tests/test_check_script.py::test_check_sh_declares_the_status_header_gate`, `tests/test_check_script.py::test_ci_runs_the_status_header_gate_and_proves_it_can_fail` |
 
 ## The source walk stays inside the KB (0.7.1)
