@@ -596,9 +596,14 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | the probe answers to the edge set, rather than reporting the same number whatever the graph holds | G2 | `tests/test_eval.py::test_the_reachable_ceiling_probe_answers_to_the_edge_set` |
 | a hop expecting a path the index does not hold refuses the run by name, instead of being counted failing-and-unreachable | G2 | `tests/test_eval.py::test_the_probe_refuses_a_hop_expecting_a_document_the_index_does_not_hold` |
 | a `multi-hop` question with no `hops` refuses the run by name, instead of padding the denominator it can never fail | G2 | `tests/test_eval.py::test_the_probe_refuses_a_multi_hop_question_with_no_hops` |
-| a well-formed golden set is not refused — the control that keeps both refusals from being caused by the environment | G2 | `tests/test_eval.py::test_a_well_formed_golden_set_is_not_refused` |
+| a `multi-hop` question with one hop refuses too — the shape that moves `liftable` **upward**, against a precondition that is a floor | G2 | `tests/test_eval.py::test_the_probe_refuses_a_multi_hop_question_carrying_a_single_hop` |
+| a hop expecting a document the index holds **no chunks** for refuses: a correctly spelled path that can never land or be reached | G2 | `tests/test_eval.py::test_the_probe_refuses_a_hop_expecting_a_document_the_index_holds_no_chunks_for` |
+| a hop with an empty `query` refuses, rather than failing on its own terms and being counted | G2 | `tests/test_eval.py::test_the_probe_refuses_a_hop_whose_query_is_empty` |
+| a golden set with no `multi-hop` question refuses, rather than printing zeros that read as a measurement | G2 | `tests/test_eval.py::test_the_probe_refuses_a_golden_set_with_no_multi_hop_question_at_all` |
+| a well-formed golden set is not refused — the control that keeps every refusal from being caused by the environment | G2 | `tests/test_eval.py::test_a_well_formed_golden_set_is_not_refused` |
 | `--fake` and `--kb` cannot be combined, so no run can label one corpus's numbers with another's | G2 | `tests/test_eval.py::test_the_probe_refuses_fake_together_with_kb` |
-| every probe output names the KB it measured, in both formats | G2 | `tests/test_eval.py::test_the_probe_names_the_kb_it_measured` |
+| the output names the KB measured — pinned against a KB that is **not** the demo one, so the test can detect "always names the default" | G2 | `tests/test_eval.py::test_the_probe_names_the_kb_it_measured` |
+| a `--fake` run names its own copy and records that a fake backend produced the numbers | G2 | `tests/test_eval.py::test_the_fake_run_names_its_own_copy_and_says_it_is_fake` |
 
 ## Release machinery
 

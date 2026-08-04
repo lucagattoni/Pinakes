@@ -642,13 +642,139 @@ def test_the_probe_refuses_a_multi_hop_question_with_no_hops(demo: Path) -> None
     assert completed.returncode != 0
     assert REFUSAL in completed.stderr
     assert "multi-hop-in-name-only" in completed.stderr
-    assert "hops" in completed.stderr
+    # The count, not the bare word `hops`: every refusal's closing remedy sentence contains
+    # "`hops:` list", so asserting on that would pass for a path typo too.
+    assert "with 0 hop(s)" in completed.stderr
+
+
+def test_the_probe_refuses_a_multi_hop_question_carrying_a_single_hop(demo: Path) -> None:
+    """The dangerous direction. Fewer hops than the kind claims is absorbed like a missing `hops`,
+    except that one hop is *measured* — as a single search — and can move `liftable` upward. The
+    precondition is a floor (`>= 7`), so under-counting only blocks a release while over-counting
+    licenses a `schema_version` bump that forces every KB in existence to rebuild. A hand
+    conversion that scripts hops for the first evidence document and stops produces exactly this.
+    """
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "one-hop-is-not-two",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md"],
+                "hops": [{"query": "public money", "expect": "docs/deaccession-policy.md"}],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    assert "one-hop-is-not-two" in completed.stderr
+    assert "with 1 hop(s)" in completed.stderr
+
+
+def test_the_probe_refuses_a_hop_expecting_a_document_the_index_holds_no_chunks_for(
+    demo: Path,
+) -> None:
+    """A path can be spelled correctly and still be unmeasurable. Every node the channel walks is
+    built from the `chunks` table, so a document with none — a blank file, a note that is only
+    front matter, a PDF whose free extraction yielded nothing — can neither be retrieved nor
+    reached, and its hop is recorded failing-and-unreachable for a reason that is not about the
+    channel. Validating that the *path* exists does not catch it."""
+    blank = demo / "docs" / "blank-note.md"
+    blank.write_text("", encoding="utf-8")
+    sync(load(demo), options=SyncOptions(), now="20260725 18:30")
+
+    connection = store.connect_ro(demo / ".pinakes" / "index.db")
+    try:
+        rows = list(
+            connection.execute(
+                "SELECT d.path, COUNT(c.id) AS n FROM documents d "
+                "LEFT JOIN chunks c ON c.doc_id = d.id WHERE d.path = ? GROUP BY d.id",
+                ("docs/blank-note.md",),
+            )
+        )
+    finally:
+        connection.close()
+    # The premise of the test, asserted rather than assumed: if a blank file ever stops producing
+    # a chunk-less document, this test would otherwise silently start proving nothing.
+    assert rows and rows[0]["n"] == 0, rows
+
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "hop-onto-an-empty-document",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/blank-note.md"],
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "core funding", "expect": "docs/blank-note.md"},
+                ],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    assert "hop-onto-an-empty-document" in completed.stderr
+    assert "no chunks" in completed.stderr
+
+
+def test_the_probe_refuses_a_hop_whose_query_is_empty(demo: Path) -> None:
+    """An empty query fails on its own terms rather than the corpus's, which is the same silent
+    deflation as a mistyped path: the hop is counted failing, and nothing says why."""
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "a-hop-with-nothing-to-search-for",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "   ", "expect": "docs/funding-sources.md"},
+                ],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    assert "a-hop-with-nothing-to-search-for" in completed.stderr
+    assert "empty `query`" in completed.stderr
+
+
+def test_the_probe_refuses_a_golden_set_with_no_multi_hop_question_at_all(demo: Path) -> None:
+    """The last shape that produced a plausible artifact out of nothing: every figure would be a
+    zero, and a zero from an empty class is indistinguishable from a measured one."""
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "not-a-multi-hop-question",
+                "question": "What may not be done with material acquired using public money?",
+                "kind": "simple-lookup",
+                "expect": ["docs/deaccession-policy.md"],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    assert "no `multi-hop` question at all" in completed.stderr
 
 
 def test_a_well_formed_golden_set_is_not_refused(demo: Path) -> None:
-    """The control the two refusals need: the message must be caused by the question, not by the
-    environment they run in. Same subprocess, same KB, same unregistered backend — only the golden
-    set differs, and this one is the committed set."""
+    """The control every refusal test needs: the message must be caused by the question, not by
+    the environment they run in. Same subprocess, same KB, same unregistered backend — only the
+    golden set differs, and this one is the committed set."""
     assert REFUSAL not in _run_probe("--kb", str(demo)).stderr
 
 
@@ -658,20 +784,77 @@ def test_the_probe_refuses_fake_together_with_kb(tmp_path: Path) -> None:
     completed = _run_probe("--fake", "--kb", str(tmp_path))
 
     assert completed.returncode == 2  # argparse's own, before anything is measured
+    # The exclusion itself, not merely "an argparse error": every usage line names both flags, so
+    # `--bogus` would satisfy an assertion that only looked for the two names.
+    assert "not allowed with argument" in completed.stderr
     assert "--fake" in completed.stderr and "--kb" in completed.stderr
 
 
-def test_the_probe_names_the_kb_it_measured() -> None:
+RUNNER = """
+import sys
+
+sys.path.insert(0, {tools!r})
+from pinakes.embed import register_embedding_backend, register_reranker
+
+import reachable_ceiling_probe as probe
+
+register_embedding_backend("fake", lambda section, offline: probe.HashingBackend())
+register_reranker("fake", lambda section, offline: probe.OverlapReranker())
+sys.exit(probe.main(sys.argv[1:]))
+"""
+"""Runs the probe over an arbitrary `--kb` with the fake backend registered.
+
+Needed because `--fake` measures a copy of the demo KB and nothing else, so a test written on it
+alone cannot tell "names the KB measured" from "always names the demo KB" — which is the very
+defect the naming fix exists to close.
+"""
+
+
+def test_the_probe_names_the_kb_it_measured(demo: Path, tmp_path: Path) -> None:
     """Neither output named it, so two runs against two corpora produced artifacts that could not
-    be told apart on inspection — which is what made a silently discarded `--kb` survivable."""
+    be told apart on inspection — which is what made a silently discarded `--kb` survivable.
+
+    Measured against a KB deliberately **not** called `demo-kb`, and asserted to be an absolute
+    resolved path: a relative `--kb` recorded verbatim would label two corpora identically again
+    when the tool is run from two working directories.
+    """
+    import shutil
+
+    measured = tmp_path / "renamed-corpus"
+    shutil.move(str(demo), str(measured))
+    runner = tmp_path / "run_probe.py"
+    runner.write_text(RUNNER.format(tools=str(REPO / "tools")), encoding="utf-8")
+
+    def run(*extra: str) -> subprocess.CompletedProcess[str]:
+        completed = subprocess.run(
+            [sys.executable, str(runner), "--kb", str(measured), *extra],
+            capture_output=True,
+            text=True,
+            cwd=REPO,
+        )
+        assert completed.returncode == 0, completed.stderr
+        return completed
+
+    payload = json.loads(run("--json").stdout)
+    assert payload["kb_root"] == str(measured.resolve())
+    assert "demo-kb" not in payload["kb_root"]
+    assert payload["kb_id"] == load(measured).kb.id
+    assert payload["fake_backend"] is False
+
+    assert str(measured.resolve()) in run().stdout
+    assert payload["kb_id"] in run().stdout
+
+
+def test_the_fake_run_names_its_own_copy_and_says_it_is_fake() -> None:
+    """`--fake` is the one run whose corpus the operator did not choose, so the artifact has to
+    say both which directory was measured and that a hashing backend produced the numbers."""
     payload = json.loads(_run_probe("--fake", "--json").stdout)
     text = _run_probe("--fake").stdout
-    kb_id = load(DEMO).kb.id
 
     assert payload["kb_root"].endswith("demo-kb")
-    assert payload["kb_id"] == kb_id
+    assert payload["kb_id"] == load(DEMO).kb.id
     assert payload["fake_backend"] is True
-    assert kb_id in text and "demo-kb" in text
+    assert payload["kb_id"] in text and "demo-kb" in text
 
 
 def test_calibration_fits_thresholds_and_prints_a_manifest_block(demo: Path) -> None:

@@ -42,15 +42,28 @@ only that the gate is not impossible.
 removed; if the reachable count does not move, the probe is measuring something other than the edge
 set and its output means nothing. `tests/test_eval.py` pins that.
 
-**A golden set it cannot measure is refused, never absorbed** (`check_measurable`). Both of the
-ways it used to be absorbed moved the number and left the output looking valid, which is the
-worst thing a measurement tool can do: a hop expecting a path the index does not hold resolved to
-no document at all and was counted failing-and-unreachable, so one typo deflated the ratio the
-precondition binds on; and a `multi-hop` question with no `hops` yielded no verdict while still
-counting in the `multi-hop` denominator, so it could never be `failing` and vanished from every
-other figure. Both are likely on a real corpus — a converted question set is hand-written, and the
-`hops` key is the one part of the schema a reader can miss. Both now stop the run, by name, before
-a backend is even loaded.
+**A golden set it cannot measure is refused, never absorbed** (`check_measurable`). The failure
+class, which is the reason this section exists: a malformed question used to be turned into a
+plausible verdict and counted, so the output looked exactly as valid as a correct one — the worst
+thing a measurement tool can do, because nobody re-derives a number that already looks fine. Every
+shape below is refused by name, before a backend is even loaded:
+
+* a hop whose `expect` names a path the index does not hold — it resolved to no document at all
+  and was counted failing-and-unreachable, so one typo deflated the ratio the precondition binds
+  on;
+* a hop whose `expect` names a document the index holds with **no chunks**. Every node the channel
+  walks is built from the `chunks` table, so such a document can neither be retrieved nor reached:
+  the same corrupted verdict, from a path that is spelled correctly;
+* a `multi-hop` question with fewer than `MIN_HOPS` hops. With none it yielded no verdict while
+  still counting in the denominator, so it could never be `failing` and vanished from every other
+  figure; with one it is measured as a single search and moves `liftable` **upward**, which is the
+  dangerous direction — the precondition is a floor;
+* a hop with an empty `query`, which fails on its own terms rather than the corpus's;
+* a golden set with no `multi-hop` question at all, whose every figure would be a zero
+  indistinguishable from a measured one.
+
+All of them are likely on a real corpus rather than hypothetical: a converted question set is
+hand-written, and `hops` is the part of the schema a reader can miss.
 
 **Every output names the corpus it measured** — root path and kb-ulid, in the text and the JSON
 alike. Two runs against two corpora otherwise produce artifacts that cannot be told apart, and the
@@ -71,8 +84,9 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import unicodedata
 import zlib
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -347,35 +361,100 @@ def active_documents(connection: sqlite3.Connection) -> dict[str, str]:
     }
 
 
+def documents_with_chunks(connection: sqlite3.Connection) -> set[str]:
+    """Document ids the index holds at least one chunk for — the only ones a hop can ever land.
+
+    `derive` builds every node it walks from the `chunks` table, so a document with no chunks is
+    in `documents` and in no graph: neither retrieval nor expansion can produce it, whatever the
+    edge set holds. Accepting one reproduces the unknown-path defect exactly — `lands=False,
+    reachable=False`, for a reason that has nothing to do with the channel. A blank file, a note
+    that is only front matter, or a PDF whose free extraction yielded nothing all have this shape,
+    and none of them looks wrong in a golden set.
+    """
+    return {str(row["doc_id"]) for row in connection.execute("SELECT DISTINCT doc_id FROM chunks")}
+
+
+MIN_HOPS = 2
+"""What `kind: multi-hop` claims: the answer needs at least two retrievals.
+
+A one-hop `multi-hop` question is measured as a single search and counted in the class anyway —
+and unlike the absorptions below it can move `liftable` *upward*, which is the one direction that
+matters: the precondition is a floor, so over-counting licenses a `schema_version` bump that
+under-counting could only block. A hand conversion that scripts hops for the first evidence
+document and stops produces exactly this.
+"""
+
+
 def check_measurable(
-    questions: Sequence[Question], documents: Mapping[str, str], *, source: Path
+    questions: Sequence[Question],
+    documents: Mapping[str, str],
+    *,
+    chunked: Set[str],
+    source: Path,
 ) -> None:
     """Refuse the whole run if any question would be absorbed instead of measured.
 
     Every problem is collected before raising, so one run names every one of them: fixing a
     question set one refusal at a time, re-syncing a corpus in between, is how a second typo gets
     found after the number has already been reported.
+
+    `documents` is `active_documents`; `chunked` is `documents_with_chunks`. Both are needed
+    because "the index has this path" and "a hop could land it" are different questions, and only
+    the second one is what the verdict depends on.
     """
     problems: list[str] = []
+    if not any(question.kind == "multi-hop" for question in questions):
+        problems.append(
+            "the golden set holds no `multi-hop` question at all. There is nothing here for this "
+            "probe to measure, and every figure it printed would be a zero indistinguishable from "
+            "a measured one."
+        )
+
     for question in questions:
-        if question.kind == "multi-hop" and not question.hops:
+        if question.kind == "multi-hop" and len(question.hops) < MIN_HOPS:
             problems.append(
-                f"{question.id!r}: kind `multi-hop` with no `hops`. It would count in the "
-                f"multi-hop denominator and yield no verdict, so it could never be counted "
-                f"failing — it would pad one figure and vanish from every other."
+                f"{question.id!r}: kind `multi-hop` with {len(question.hops)} hop(s), fewer than "
+                f"the {MIN_HOPS} the kind claims. With none it counts in the multi-hop "
+                f"denominator, yields no verdict and so can never be counted failing — padding "
+                f"one figure and vanishing from every other. With one it is measured as a single "
+                f"search and can move `liftable` upward, which the precondition's floor reads as "
+                f"headroom that is not there."
             )
         for path in question.expect:
             if path not in documents:
+                # This probe never reads a question's own `expect` — it measures hops. Refused
+                # anyway, and said plainly rather than filed under "moves the count": a golden set
+                # naming a document the index does not hold is broken for `make eval`, which does
+                # read it, and measuring a corpus while that is true reports a ceiling for a
+                # question set nobody has checked.
                 problems.append(
                     f"{question.id!r}: `expect` names {path!r}, which is not an active document "
-                    f"in this index."
+                    f"in this index{_near_miss(path, documents)}. It moves no figure this probe "
+                    f"prints — `expect` is the eval's, and the hops below are the probe's — but a "
+                    f"golden set that names a document the index does not hold is not one to "
+                    f"measure a release precondition against."
                 )
         for index, hop in enumerate(question.hops):
+            if not hop.query.strip():
+                problems.append(
+                    f"{question.id!r} hop {index}: an empty `query`. It retrieves nothing on its "
+                    f"own terms, so the hop is counted failing for the query rather than for the "
+                    f"corpus — the same silent deflation as a mistyped path."
+                )
             if hop.expect not in documents:
                 problems.append(
                     f"{question.id!r} hop {index}: `expect` names {hop.expect!r}, which is not an "
-                    f"active document in this index. The hop would resolve to no document at all "
-                    f"and be counted failing-and-unreachable."
+                    f"active document in this index{_near_miss(hop.expect, documents)}. The hop "
+                    f"would resolve to no document at all and be counted "
+                    f"failing-and-unreachable."
+                )
+            elif documents[hop.expect] not in chunked:
+                problems.append(
+                    f"{question.id!r} hop {index}: `expect` names {hop.expect!r}, which the index "
+                    f"holds with no chunks. Every node the channel walks is built from chunks, so "
+                    f"this document can neither be retrieved nor reached and the hop would be "
+                    f"counted failing-and-unreachable for a reason that is not about the channel. "
+                    f"Re-sync, or point the hop at a document with content in it."
                 )
     if not problems:
         return
@@ -384,9 +463,32 @@ def check_measurable(
         f"unmeasurable golden set — {len(problems)} problem(s) in {source}:\n{listed}\n"
         f"Fix the golden set and re-run. Every `expect` path is matched against `documents.path` "
         f"exactly as the index stores it (KB-root-relative, forward slashes), and a `multi-hop` "
-        f"question needs a `hops:` list of `query`/`expect` pairs. Refused rather than measured: "
-        f"each of these silently moves the count this probe exists to produce."
+        f"question needs a `hops:` list of at least {MIN_HOPS} `query`/`expect` pairs. Refused "
+        f"rather than measured: each line above is either an input that silently moves the count "
+        f"this probe exists to produce, or a golden set defect that makes the corpus the wrong "
+        f"one to measure — and it says which."
     )
+
+
+def _near_miss(path: str, documents: Mapping[str, str]) -> str:
+    """A `did you mean` when the index holds a path differing only in case, `./` or NFC/NFD.
+
+    Never an acceptance — the lookup above stays exact, because the index's own lookup is exact.
+    It exists because those three are the ways a path can be wrong while *rendering* identically
+    to the right one, and a refusal naming a path that looks correct is unactionable.
+    """
+
+    def key(value: str) -> str:
+        return unicodedata.normalize("NFC", value).casefold().removeprefix("./")
+
+    wanted = key(path)
+    for candidate in documents:
+        if key(candidate) == wanted:
+            return (
+                f" — the index holds {candidate!r}, which differs only in case, `./` or Unicode "
+                f"normalisation"
+            )
+    return ""
 
 
 # --------------------------------------------------------------------------------------------
@@ -685,7 +787,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             root = _fake_kb(Path(workspace))
         else:
             root = args.kb
-        kb_root = str(root)
+        kb_root = str(Path(root).resolve())
 
         manifest = load(root)
         questions_path = root / "eval" / "questions.yaml"
@@ -695,7 +797,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             documents = active_documents(connection)
             # Before the backend loads: on a real run that is a model download, and a run that is
             # going to refuse should refuse in a second rather than after it.
-            check_measurable(questions, documents, source=questions_path)
+            check_measurable(
+                questions,
+                documents,
+                chunked=documents_with_chunks(connection),
+                source=questions_path,
+            )
             backend = load_backend(manifest.embedding)
             reranker = (
                 load_reranker(manifest.rerank) if manifest.retrieval.rerank == "local" else None
