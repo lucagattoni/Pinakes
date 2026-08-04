@@ -32,6 +32,127 @@ and the only KBs in it are the synthetic corpora under `tests/`.
 
 ---
 
+## Measured — the licence and the structure (20260801 14:02)
+
+**Steps 1 and 2 were run. Nothing has been fetched beyond the index, and no repo has been created.**
+Three findings, one of which is about `pinakes` rather than about the corpus.
+
+### 1 · Licence — cleared, under both regimes, and the condition is structural
+
+**Current document: Corrected Trust Legal Provisions 5.0**, effective **20150325**
+(<https://trustee.ietf.org/documents/trust-legal-provisions/tlp-5/>). The grant is **§3.c.i**:
+
+> "to copy, publish, display and distribute IETF Contributions and IETF Documents in full and
+> without modification"
+
+The matching restriction is **§3.d.i** — no licence to *modify* IETF Documents or portions of them
+outside the IETF Standards Process. So: reproducing whole RFC texts verbatim in a public repository
+is granted outright; reproducing *modified* or *extracted* text is not.
+
+**Pre-TLP RFCs are covered by their own notice, and it is not weaker.** The TLP FAQ does not address
+documents published before 20081110, and the HTTP cluster reaches back to 1999. RFC 2616's own
+notice reads:
+
+> "This document and translations of it may be copied and furnished to others … in whole or in part,
+> without restriction of any kind, provided that the above copyright notice and this paragraph are
+> included on all such copies"
+
+**The condition on the older regime is the operative one, and it decides a storage rule:** the
+notice must travel with every copy. Committing the canonical `.txt` **unmodified** satisfies it by
+construction, because the notice is inside the file. That makes "store the unmodified `.txt`" a
+licence requirement, not a convenience — and it means nothing derived from the text may be committed.
+Sidecars are fine: they are separate files carrying metadata, and they modify no RFC. `.pinakes/` is
+gitignored and never published, which is where every derived copy lives.
+
+**Streams:** §3.c applies across streams. The IAB, IRTF and Independent streams adopted the TLP with
+modifications (§8.e–g) that concern **Code Components** (§4), not the reproduction right. The
+selected set is 93% IETF-stream (below), so this is recorded rather than load-bearing.
+
+### 2 · Structure — `wg_acronym` and `keywords` pass; `area`, `stream` and status fail
+
+Measured over the selected set from `rfc-index.xml` (retrieved 20260801 14:00, 9,819 entries).
+
+**The closure rule as written does not reach the target size.** *Follow `obsoletes` and `updates`
+transitively from the seeds until the frontier is empty or the count reaches 300* — from
+RFC 9110–9114, 8446, 3986 — closes at **43 documents** with an empty frontier, against a target of
+100–300. Widening the seeds along the same family (QUIC, cookies, HTTP/2, TLS 1.2/1.1/1.0, PKIX,
+IRI, WebSocket, JWT) still only reaches **59**. Forward `obsoletes`/`updates` is an *ancestor cone*,
+and it is simply small.
+
+Adding the reverse edges (`obsoleted-by`, `updated-by`) — for **selection only**, never for
+authoring — reaches the 300 cap with 87–106 still queued, and produces markedly better structure:
+
+| Closure | docs | `wg_acronym` | `area` | `keywords` |
+|---|---|---|---|---|
+| forward, 7 seeds (as written) | 43 | 6 buckets, largest **34%** | 4, **37%** | 96, **44%** |
+| forward, wider seeds | 59 | 10, **27%** | 5, **35%** | 159, **35%** |
+| **+ reverse, 7 seeds** | **300** | **71, 19%** | 9, **24%** | **670, 8%** |
+| + reverse, wider seeds | 300 | 67, **18%** | 9, **29%** | 658, **8%** |
+
+Against the plan's test — *reject a field if its largest bucket is most of the corpus, or most
+entries are empty*:
+
+| Field | Verdict |
+|---|---|
+| `wg_acronym` → **directory** | **Passes.** 71 buckets, largest 19%. One caveat below |
+| `keywords` → **tags** | **Passes, best of the five.** 670 distinct, largest 8% — a long tail, which is what `1/tag-degree` damping wants |
+| `area` | **Fails.** 9 buckets, and the cluster concentrates in `wit`/`sec` |
+| `stream` | **Fails by construction**, exactly as the plan predicted — 93% `IETF` |
+| `current-status`, `publication-status` | **Fail.** Mostly `PROPOSED STANDARD` — hubs, as predicted |
+
+**The caveat on `wg_acronym`, stated rather than smoothed:** its largest bucket is
+`NON WORKING GROUP` (56/300), and a further 17 carry no value at all — so ~24% of the corpus lands
+in "no working group", which is an *absence* rather than a grouping. It passes the stated test (not
+"most of the corpus") but the largest bucket is a different kind of thing from the others.
+Re-splitting it by some other field would be inventing a directory split, which the rule forbids.
+
+**Two decisions this left to the planner. Both taken 20260804 04:45, and both were already the
+rule the corpus was built under** — recorded here because a rule followed but never written down is
+not reproducible, and this is the file a future agent would rebuild the corpus from.
+
+**Decision A — reverse edges are admitted, for selection only.** `obsoleted-by` and `updated-by`
+decide *membership*; they are never authored as links. The forward rule closes at 43 documents
+against a 100–300 target, so the rule as written could not produce the corpus this plan exists to
+build. Admitting the reverse direction for selection changes which documents are *present*; it does
+not change which relations are *asserted*, and § *Links* still authors the forward direction only.
+The asymmetry is the point: a corpus assembled by following both directions of a real citation
+graph, carrying only the edges a human actually wrote.
+
+**Decision B — membership at the cap is decided by BFS order, and the order is specified.**
+Breadth-first from the seed set; **within each round, candidates in ascending RFC number**. The 300
+cap is reached with 87–106 still queued, so without a stated order the selection is not
+reproducible — two runs would disagree about which documents are in the corpus, and every
+measurement below would be a measurement of a different set. The corpus as built states exactly this
+rule in its own `README.md`.
+
+### 3 · The prediction was right, and it is a finding about `pinakes`, not about the corpus
+
+The plan recorded, before any of this ran: *the RFC corpus will exceed the 35% density cap and
+possibly the degree cap of 4.* Measured, counting **only** the forward `obsoletes`/`updates`
+relations the plan authorises and **dropping** targets outside the set:
+
+| Closure | docs | documents carrying a link | worst out-degree | edges | dropped targets |
+|---|---|---|---|---|---|
+| forward, 7 seeds | 43 | **62%** (cap 35%) | **10** (cap 4) | 54 | 0 |
+| + reverse, 7 seeds | 300 | **54%** | **86** | 385 | 57 |
+| + reverse, wider | 300 | **58%** | **86** | 375 | 75 |
+
+Density exceeds the cap by ~1.6×. Out-degree exceeds it by **21×**: RFC 8996, *Deprecating TLS 1.0
+and TLS 1.1*, updates **86** documents in one header. Real, human-authored, in the canonical index.
+
+**This is larger than a cap.** APPROACH §3's premise — *"authored links are sparse, precious signal
+— plan for scarcity"*, inherited from ClaudeKB — does not survive contact with the IETF corpus, and
+decision 13 froze `authored` at weight **2.0 undamped** on exactly that premise, while every
+structural hub is damped by degree. A document with 86 authored edges at 2.0 is precisely the noise
+clique hub damping exists to prevent, and it is the one edge class with no damping at all. That
+bears on G3's weight table and G5's with-authored run, not merely on `tools/link_density_gate.py`.
+
+Per the plan, the cap is not tuned and the corpus is not thinned: the numbers are reported and the
+decision is the planner's. The gate's argument for `tests/`' own corpora is untouched — it exists to
+stop *synthetic* corpora being made unrealistically dense.
+
+---
+
 ## Precondition — settle the licence before fetching anything
 
 **Do not commit a single RFC until this is written down.** RFCs are published under the IETF Trust's

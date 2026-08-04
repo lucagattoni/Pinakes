@@ -522,6 +522,23 @@ No stored `degree` — that would be derived state inside derived state.
 
 **Weights are frozen** (decision 13), committed before G2's questions were authored.
 
+> ⚠️ **The premise under `authored`'s weight has been falsified by real data (20260801 14:02,
+> incorporated 20260804 04:45).** APPROACH §3's *"authored links are sparse, precious signal — plan
+> for scarcity"*, inherited from ClaudeKB, is what justifies `authored` at **2.0 undamped** while
+> every structural hub is divided by its degree. Measured on the IETF corpus, counting only the
+> forward relations [`realism-corpus.md`](realism-corpus.md) authorises: **54% of documents carry a
+> link** against a 35% cap, and the **worst out-degree is 86** against a cap of 4 — RFC 8996
+> *(Deprecating TLS 1.0 and TLS 1.1)* updates 86 documents in one header. Real, human-authored, in
+> the canonical index.
+>
+> A document with 86 authored edges at weight 2.0 is exactly the noise clique hub damping exists to
+> prevent, in **the one edge class that has none**. This is not a `tools/link_density_gate.py`
+> question: it bears on this weight table and on G5's with-authored run, and it must be re-decided
+> before G3 is built rather than discovered by a gate that passes. **It does not license changing
+> the weight now** — G3 is blocked, nothing has been measured against a real corpus end to end, and
+> a weight changed on an argument rather than a measurement is the thing decision 13 froze the table
+> to prevent.
+
 | Edge | Connects | Weight at read |
 |---|---|---|
 | membership | chunk ↔ doc | 1.0 — transit plumbing, not signal |
