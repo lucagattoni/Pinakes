@@ -404,3 +404,4 @@ Listed so the shape is known in advance; each names the increment that lands it
 |---|---|---|
 | `pnk ask --deep` | the deep release | Bounded, budgeted synthesis for CLI and cron use, where no agent is present |
 | `pnk upgrade` | the template release | Diffs a KB's template version against the installed one and *prints* a migration — never applies one |
+| `pnk templates` | the template release | Lists every installed template with its version and description, `--json` available. Accepted 20260804 10:30 — today `template.available()` is reachable only by naming a template that does not exist, so discovery works by triggering an error |
