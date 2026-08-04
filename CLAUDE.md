@@ -31,15 +31,13 @@ silently.** Everything else fails loudly or is caught by `./check.sh`.
 - **Never commit real knowledge-base content.** The repo is the engine. The only KBs here are the
   synthetic corpora under `tests/` (`demo-kb`, `partner-kb`) — written for the purpose, never
   harvested.
-- **The paid extractor's key is `PINAKES_ANTHROPIC_API_KEY`, never `ANTHROPIC_API_KEY`** — and
-  that is enforced in code (`extract/claude.py: resolve_api_key`), not by machine hygiene. The SDK
-  reads its own variable out of whatever environment it is handed, so on a machine where some
-  other tool exports one the paid path would find a live key nobody aimed at it — measured true
-  here on 20260804. Supplying the key must be an act aimed at *this* tool. It lives in `.env`,
-  gitignored by pattern (`.env`, `.env.*`), passed per command: `uv run --env-file .env pnk …`.
-  **Never teach Pinakes to load `.env` itself**, and never add an `ANTHROPIC_API_KEY` fallback —
-  both are the same defect, one layer apart. Note what actually bounds spend once a key is
-  present: the §5 caps and the enumerated allowlist, not the invocation form
+- **The paid extractor's key is `PINAKES_ANTHROPIC_API_KEY`, never `ANTHROPIC_API_KEY`**, enforced
+  in code (`extract/claude.py: resolve_api_key`), not by machine hygiene: the SDK reads its own
+  variable out of whatever environment it is handed, so on a machine where another tool exports one
+  the paid path would find a live key nobody aimed at it (measured 20260804). It lives in `.env`
+  (gitignored by pattern), passed per command: `uv run --env-file .env pnk …`. **Never teach
+  Pinakes to load `.env` itself**, and never add an `ANTHROPIC_API_KEY` fallback — the same defect,
+  one layer apart. What bounds spend is the §5 caps and the allowlist, not the invocation form
   ([docs/MEASUREMENT-RUN.md](docs/MEASUREMENT-RUN.md)).
 - Vet every file for PII, credentials, private URLs, and anything copied from memory before staging.
 - Never commit model weights or `.pinakes/` state (both are gitignored — keep it that way).
@@ -59,13 +57,11 @@ Decided by the user 20260801 01:24.
 message or a note the planner reads. Never an edit, never "it is one line".
 
 **What the planner does with it:** incorporates it — judging *when*, not whether. A correction to
-what is true **today** lands on `main` at once, independently of your branch. A doc change that
-describes **your unlanded work** lands with your merge, because main must not describe a command
-that does not exist yet.
+what is true **today** lands on `main` at once. A doc change describing **your unlanded work** lands
+with your merge: main must not document a command that does not exist yet.
 
 **Why:** documentation is the coordination surface, and a clean auto-merge is not a correct merge
-(20260729). A document edited by whoever happened to be in the code drifts until no reader can tell
-which sentence is current. The cost is real and accepted: a correction waits for the planner.
+(20260729). The cost is accepted: a correction waits for the planner.
 
 ## 🚫 Unbuilt work is named, never numbered
 
@@ -78,16 +74,15 @@ name:
 | **the deep release** | `pnk ask --deep` |
 | **the template release** | Template ecosystem, `pnk upgrade`, the `sqlite-vec` tier |
 
-**A release that cuts more than once keeps its name in this table until the *final* cut**, and its
-roadmap row carries both tags. Dropping the name at an interim cut deletes one the later increments
-still need — the churn the two-cut decision was taken to avoid.
+**A release that cuts more than once keeps its name here until the *final* cut.** Dropping it at an
+interim cut deletes a name the later increments still need.
 
-**Never write `v0.4` for something unbuilt** — not in docs, not in `--help`, not in an error
-message, not in a code comment. Increment IDs (`I7b`, `I8`) stay: they name work inside a plan, not
-a release. Decided 20260729 00:09, after `v0.3` meant two releases at once and either reading would
-have renumbered ~60 references ([docs/STATUS.md](docs/STATUS.md#release-roadmap)). **Historical
-records keep the numbers they were written with** and carry a header note: `CHANGELOG.md`,
-`docs/RETROSPECTIVES.md`, `plans/`, `docs/graph/`.
+**Never write `v0.4` for something unbuilt** — not in docs, `--help`, an error message or a code
+comment. Increment IDs (`I7b`, `I8`) stay: they name work inside a plan, not a release. Decided
+20260729 00:09, after `v0.3` meant two releases at once
+([docs/STATUS.md](docs/STATUS.md#release-roadmap)). **Historical records keep the numbers they were
+written with**, with a header note: `CHANGELOG.md`, `docs/RETROSPECTIVES.md`, `plans/`,
+`docs/graph/`.
 
 ## Naming (fixed — changing any of these is a breaking change)
 
@@ -111,17 +106,14 @@ across the repo 20260804 11:55, history included.
 
 - **Document and KB ULIDs are permanent.** Never renumber, never regenerate. Every inbound link
   depends on them, and there is no migration machinery by design.
-- **An unknown key in a sidecar round-trips byte-identically.** Stronger and more testable than
-  "untouched", which was true of the dict and false of the file: under YAML 1.1 `country: NO` was
-  read as `False` and written back as `false`. Sidecars are read and written through
-  **`ruamel.yaml` in round-trip mode at YAML 1.2** — never `pyyaml`, which is dev-only and gated by
-  an AST scan over `src/` plus a runtime check on the free path. `write()` reconciles known keys
-  *into* the loaded document; it never renders a fresh one. Values must be JSON-encodable and every
-  key a string, because the index stores metadata as JSON. The invariant is **bounded** — by what
-  Pinakes normalises, what ruamel normalises, and what YAML does not carry — and **each exclusion is
-  pinned by a test**, which is the authoritative list because a bound stated only in prose cannot
-  notice the library's behaviour moving under it: `docs/VERIFICATION.md` § *The sidecar round-trip*,
-  and `docs/MANIFEST.md`'s bounds table.
+- **An unknown key in a sidecar round-trips byte-identically** — stronger and more testable than
+  "untouched", which was true of the dict and false of the file (under YAML 1.1 `country: NO` was
+  read as `False`). Sidecars go through **`ruamel.yaml` round-trip at YAML 1.2** — never `pyyaml`,
+  which is dev-only and gated by an AST scan plus a runtime check. `write()` reconciles known keys
+  *into* the loaded document; it never renders a fresh one. Values must be JSON-encodable, keys
+  strings. The invariant is **bounded**, and **each exclusion is pinned by a test** — the
+  authoritative list, because a bound stated only in prose cannot notice the library moving under
+  it: `docs/VERIFICATION.md` § *The sidecar round-trip*, `docs/MANIFEST.md`'s bounds table.
 - **`docs/` belongs to the user.** Never modify source documents; never delete a sidecar without an
   explicit `--prune`-style flag plus a printed list. Two exceptions, both narrow: a paid PDF
   extraction (or `--force` discarding one) additively rewrites that document's own sidecar with
@@ -137,12 +129,11 @@ across the repo 20260804 11:55, history included.
   that already left the account. Under-counting is the one direction a budget may never be wrong in.
 - **The free path stays free — paid entry points are an enumerated allowlist.** Exactly these may
   spend: `pnk sync` with `[extraction] backend = "claude-vision"` or `--extract=claude-vision`;
-  `pnk ask --deep` (the deep release). Each goes through the §5 accountant. Adding an entry point
-  edits this list, `.paid-path-allowlist` and DESIGN §1 in the same commit. Four gates enforce it in
-  `check.sh` and CI (`tools/paid_path_gate.py`, `tests/test_paid_path.py`); the one that matters
-  runs the whole free path in a fresh subprocess and asserts no paid client reached `sys.modules`.
-  **Never probe a backend's availability by loading it** — `is_backend_installed` answers through
-  `find_spec`; `load_extractor` runs the factory, which imports the client.
+  `pnk ask --deep` (the deep release). Each goes through the §5 accountant. Adding one edits this
+  list, `.paid-path-allowlist` and DESIGN §1 in the same commit. Four gates enforce it; the one that
+  matters runs the whole free path in a fresh subprocess and asserts no paid client reached
+  `sys.modules`. **Never probe a backend's availability by loading it** — `is_backend_installed`
+  answers through `find_spec`; `load_extractor` runs the factory, which imports the client.
 - **Money is `Decimal` end to end, quantised only once — at ledger-write time.** Convert a TOML
   float via `Decimal(str(value))`, never `Decimal(value)`, which reproduces float's binary
   imprecision instead of the decimal a human wrote: `Decimal(0.05) != Decimal("0.05")`.
@@ -167,22 +158,16 @@ is a separate, bisectable landing:
 3. Green before review: run `./check.sh` (or `make check`) — every gate under `set -e`, so a
    failure is a non-zero exit rather than a line in a log that a pipe then swallows. It formats
    Python **inside Markdown fences** too: a docs-only commit can still fail the gate.
-   **Then break the code on purpose.** For the 3–5 most safety-critical assertions, mutate the
-   source (delete the guard, flip the comparison, neuter the conversion), confirm the *right* test
-   fails, and restore. Green proves the tests ran, never that they can detect the defect, and
-   **"mutation-verified" is a per-assertion claim, never a per-commit one** — a test that fails
-   proves the mutant is caught, never that it is caught for the *stated* reason. Tests written by
-   the reasoning that wrote the code inherit its assumptions; the worked cases are in
-   `docs/RETROSPECTIVES.md` § *Start here* → "claim a test is mutation-verified".
-4. **Retrospective review** — a fresh adversarial pass over that increment's own diff, hunting for
-   what is wrong, missed, or asserted without evidence. Fix findings, re-run the checks, repeat
-   until a pass is clean. Findings and fixes are their own commit, separate from the implementation.
-   Findings worth keeping — a real defect, or a fact expensive to rediscover — get a fragment in
-   [`retro.d/`](retro.d/README.md); a finding that becomes a durable rule is promoted into this
-   file too. Trivia stays in the commit message.
+   **Then break the code on purpose.** Mutate the 3–5 most safety-critical assertions, confirm the
+   *right* test fails for the *right reason*, restore. **"Mutation-verified" is a per-assertion
+   claim, never a per-commit one.** Worked cases: `docs/RETROSPECTIVES.md` § *Start here* →
+   "claim a test is mutation-verified".
+4. **Retrospective review** — a fresh adversarial pass over the increment's own diff, repeated
+   until clean. Findings and fixes are their **own commit**. Anything worth keeping gets a
+   [`retro.d/`](retro.d/README.md) fragment; trivia stays in the commit message.
 5. **A `changelog.d/` fragment in the same commit as the code** — never an edit to `CHANGELOG.md`
    itself ([`changelog.d/README.md`](changelog.d/README.md)).
-6. Merge to `main`, push, remove the worktree.
+6. Land it: `python3 tools/land.py <branch> --cleanup` ([above](#-land-with-toolslandpy--never-git-merge-by-hand)).
 
 ## Landing work: always push, always release
 
@@ -192,19 +177,17 @@ left local is invisible to every other agent, machine and scheduled run.
 
 - **Push every landing** to `origin/main`. Never leave merged work sitting locally.
 - **Before merging, run `python3 tools/shared_file_overlap.py --fetch --strict`** — then go and
-  *read* the merged state of the files it names. A clean auto-merge is **not** a correct merge: git
+  *read* the merged state of the files it names. **A clean auto-merge is not a correct merge:** git
   merges edits that do not overlap textually, never edits that *agree*, so two agents can leave one
-  document contradicting itself with every command reporting success (20260729 — three branches, one
-  hour; `CHANGELOG.md` conflicted loudly and two documents merged silently). For the two documents
-  every change writes to, the cause is removed rather than reported:
+  document contradicting itself with every command reporting success (20260729). For the two
+  documents every change writes to, the cause is removed rather than reported:
   [`changelog.d/`](changelog.d/README.md), [`retro.d/`](retro.d/README.md).
 - **Before assigning a release number, check what has already landed on `main`** — another agent may
   have cut one since this branch started (20260728).
 - **Cut the release** as soon as the work passes the SemVer table in the global rules (feature =
   MINOR, fix/docs/deps = PATCH, breaking = MAJOR). Complete work never lingers in `[Unreleased]`.
-- **Land with `python3 tools/land.py <branch>`, never `git merge` by hand** ([above](#-land-with-toolslandpy--never-git-merge-by-hand)).
-- **A tag publishes to PyPI** (`PUBLISH_TO_PYPI` true since 20260728 17:15) and PyPI does not allow
-  re-uploading a version. Run `make release-check` **before** pushing the tag, never after.
+- **A tag publishes to PyPI** and PyPI never accepts a version twice. Run `make release-check`
+  **before** pushing the tag, never after.
 - **Verify, never assume, that a release happened**, and sweep the three documents it stales — both
   in [`docs/RELEASING.md`](docs/RELEASING.md). A CHANGELOG entry and a `__version__` are only claims.
 - After anything lands on `main`, fast-forward the primary checkout (`git pull --ff-only`).
@@ -239,23 +222,13 @@ on every push to `main`, so a docs edit now has a second renderer that a PR gate
 never renamed to fix a site anchor — `mkdocs_hooks.py` makes the site match GitHub, not the
 reverse. Run `make docs` before landing a docs change.
 
+**Five rules live in [`docs/README.md` § Conventions](docs/README.md#conventions), not here** —
+audit the neighbourhood not the diff; name the audience and goal before writing; rewrite to the
+current state, never layer corrections; compact monthly; verify a doc by running the commands it
+shows. That file states each with its measurement. **Read it before any docs change.**
+
 - **README and DESIGN.md are deliberately version-free** — they describe what Pinakes *is*, never
-  which release it's on. Never reintroduce a version number or "as of vX" claim into their prose
-  (CHANGELOG.md `[0.2.1]` — a 20260728 restructure existed specifically to stop that drift).
-- **Verify docs by running the commands they show**, install line included — prose drifts toward
-  the design, because the design is what you are thinking about while writing it (20260727: four
-  README claims contradicted the code while `cli.py` and the CHANGELOG were right).
-- **Audit the neighbourhood, not the diff.** Any change *or decision* re-reads what depended on it
-  for consistency, logic, superseded decisions and outdated facts — including every table,
-  increment, release structure and invariant that assumed the decision it replaces, not only prose.
-  Full rule and measurements: [`docs/README.md` § Conventions](docs/README.md#conventions).
-- **Name the audience (human / agent / both) and the goal (reference / executor) before writing.**
-  An executor doc — `CLAUDE.md`, a `plans/` increment — is imperative and self-sufficient, naming
-  exact files, symbols and predicates. A reference doc argues and measures. Rationale in an executor
-  doc is noise; an instruction in a reference doc is a defect.
-- **Rewrite to the current state; never layer corrections**, and **compact monthly** — cut recaps,
-  superseded reasoning, and anything re-arguing what another file owns; keep decisions, measured
-  numbers and instructions. A section far larger than its siblings is the signal.
+  which release it's on. Never reintroduce a version number or "as of vX" claim into their prose.
 - **Every date carries a time, in UTC** — `YYYYMMDD HH:MM`, `date -u` — in the CHANGELOG, `docs/STATUS.md`,
   `docs/RETROSPECTIVES.md`, and any "verified on" claim.
 - **Every new file in `plans/`, `changelog.d/` and `retro.d/` is named `YYYYMMDD_HHMM-<rest>.md`**
