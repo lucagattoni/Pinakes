@@ -10,6 +10,43 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] — 20260804 12:28
+
+### Added
+
+- **`tools/reachable_ceiling_probe.py` now prints, and includes in `--json`, a per-kind edge
+  census** — how many edges each of `sibling`, `parent-child`, `in-section`, `co-located`,
+  `shared-tag` and `authored` derived for the run. Every kind is a key even at `0`, whether it
+  derived nothing on the corpus (no `heading_path`, no tags) or was removed with `--drop`: a kind
+  absent from the output was indistinguishable from a kind at zero, and the RFC realism corpus
+  measurement needs to tell them apart (`plans/20260731_1202-open-corrections.md` item 1,
+  `plans/20260803_2239-corpus-probe-run.md`). The census is read directly off the same `Graph`
+  the traversal walks — no table is re-queried and no relation is recomputed — so it cannot drift
+  from the edges a run actually derived. `in-section`, `co-located` and `shared-tag` count spokes
+  into a hub, and a hub with a single member (one document alone in its directory, one document
+  wearing a tag nobody shares) contributes none — there is nothing else in the bucket to reach,
+  so a corpus with real documents but no shared structure reports `0`, not a count of the
+  documents that happened to have a directory or a tag.
+
+- **A published documentation site — [lucagattoni.github.io/pinakes](https://lucagattoni.github.io/pinakes/).**
+  MkDocs Material over the existing `docs/`, deployed to GitHub Pages on every push to `main` and
+  built with `--strict` on every PR, so a broken internal link or anchor fails the check. Nothing in
+  `docs/` moved: the filenames are load-bearing in `tools/fragments.py`, `tools/status_header_gate.py`
+  and `tests/test_verification.py`, so the chapter numbering lives in `mkdocs.yml`'s `nav` and is
+  applied by JavaScript rather than written into the Markdown. `make docs` and `make docs-serve`
+  build and preview it; `mkdocs_hooks.py` gives the site GitHub's heading-anchor algorithm so one
+  anchor works on both surfaces.
+
+### Changed
+
+- **The project is `Pinakes`; everything you can type is `pinakes`.** The repository moved to
+  [github.com/lucagattoni/pinakes](https://github.com/lucagattoni/pinakes) (GitHub redirects the old
+  URL, and the docs site is now `lucagattoni.github.io/pinakes`), and prose across the repo —
+  README, docs, plans, changelog, source docstrings — now capitalises the project name. **Nothing an
+  identifier names changed**: the PyPI package is still `pinakes`, and `pinakes.toml`, `.pinakes/`,
+  `pinakes[st]`, `pinakes_search`, `requires_pinakes` and `import pinakes` are untouched. The rule
+  is recorded in `CLAUDE.md`'s naming table.
+
 ## [0.8.0] — 20260804 08:40
 
 ### Added
@@ -2127,7 +2164,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.9.0
 [0.8.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.8.0
 [0.7.1]: https://github.com/lucagattoni/pinakes/releases/tag/v0.7.1
 [0.7.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.7.0
