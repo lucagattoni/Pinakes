@@ -164,12 +164,14 @@ def check_identity(before: Leg, without: Leg, with_authored: Leg) -> list[str]:
         )
     # The arms are reported beside the headline, never gated. Two legs differing in *which*
     # structural kind they dropped are two arms, not a with/without pair.
-    structural = {leg: set(leg.dropped) - {AUTHORED} for leg in (before, without, with_authored)}
-    if len({frozenset(kinds) for kinds in structural.values()}) != 1:
+    structural = [
+        frozenset(set(leg.dropped) - {AUTHORED}) for leg in (before, without, with_authored)
+    ]
+    if len(set(structural)) != 1:
         problems.append(
             "the three legs drop different structural kinds "
-            f"({[sorted(kinds) for kinds in structural.values()]}) — an arm is compared against "
-            "its own before leg, never against the headline's"
+            f"({[sorted(kinds) for kinds in structural]}) — an arm is compared against its own "
+            "before leg, never against the headline's"
         )
     for leg in (without, with_authored):
         missing = set(before.by_id) ^ set(leg.by_id)

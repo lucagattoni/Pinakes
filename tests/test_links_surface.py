@@ -22,7 +22,7 @@ import io
 import json
 import shutil
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -78,15 +78,23 @@ def _links_payload(root: Path, document: str) -> dict[str, Any]:
     return parsed
 
 
-def capture(workspace: Path) -> dict[str, Any]:
+def capture(workspace: Path, *, mutate: Callable[[Path], None] | None = None) -> dict[str, Any]:
     """`pnk links --json` for every active document of both committed corpora.
 
     Both are copied into one directory so `[[links.kb]] path = "../partner-kb"` still resolves,
     and both are scanned, so the reverse-scanned rows — the ones keyed on a *foreign* document —
     are in the payload too.
+
+    `mutate` runs on each **copied** root before it is synced, and exists for one caller:
+    `tests/test_graph_channel.py` turns `[retrieval] graph_channel` on and re-captures, because
+    decision 16's claim is that this same fixture still compares equal (G5). Nothing it does can
+    reach the committed corpora, which is what keeps every other suite measuring the two-list
+    pipeline.
     """
     for name in CORPORA:
         shutil.copytree(REPO / "tests" / name, workspace / name)
+        if mutate is not None:
+            mutate(workspace / name)
 
     surface: dict[str, Any] = {}
     for name in CORPORA:
