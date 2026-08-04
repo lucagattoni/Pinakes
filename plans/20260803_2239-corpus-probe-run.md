@@ -59,6 +59,36 @@ uv run python3 tools/reachable_ceiling_probe.py --kb <corpus-path> --drop co-loc
 uv run python3 tools/reachable_ceiling_probe.py --kb <corpus-path> --drop shared-tag
 ```
 
+## Before the numbers mean anything: which edge kinds actually exist here
+
+**Measured on the built corpus, 20260804:** 106 806 chunks, **every one with an empty
+`heading_path`**. `strategy = "structural"` uses a Markdown-shaped heading grammar and RFC section
+numbering does not match it, so nothing was recognised
+([`20260731_1202-open-corrections.md`](20260731_1202-open-corrections.md) item 3).
+
+Consequence for this measurement, stated before it runs:
+
+| G3 edge kind | On this corpus | Why |
+|---|---|---|
+| `in-section` | **zero edges** | needs `heading_path`; none exists |
+| `parent` / `child` | **zero edges** | same |
+| `co-located` | weak | 74 directories, **median 1 document** — most dirs connect nothing |
+| `shared-tag` | strong | 585 keywords, largest bucket 34 |
+| `authored` | strong | 391 links, median out-degree 1, one hub of 86 |
+| `sibling`, membership | intra-document | cannot bridge two evidence documents |
+
+**So a null result here is not "structure does not help".** It is "two edge kinds were absent, one
+was weak, and two were tested". Reporting a single number would state the first and mean the third.
+
+**Required in the run report, beside the reachability figures: a per-kind edge census** — how many
+edges each kind derived. A kind at zero is a fact about the corpus, and it must be visible without
+reading this section. If `in-section` and `parent`/`child` are still zero when the probe runs, say
+so in the same breath as the verdict.
+
+**This does not license fixing the corpus to raise the count.** Recognising RFC section numbering is
+a chunking change with its own decision and its own eval, not a step in this run. Measure what is
+there.
+
 **The probe must be shown to fail on THIS corpus** — the `--drop` runs are that proof, per corpus,
 not inherited from demo-kb: if removing an edge kind does not move the reachable count here, the
 probe is measuring something other than this corpus's edge set and the main number means nothing.
@@ -76,6 +106,7 @@ The same table shape as
 | of those, reachable within 2 logical hops, **without** authored edges | ≥ 7 | ? |
 | with authored edges (recorded, licenses nothing) | — | ? |
 | at-seed share of "reachable" | — | ? |
+| edges derived, per kind (`in-section`, `parent`/`child`, `co-located`, `shared-tag`, `authored`) | — | ? — a kind at **zero** is the finding |
 
 Plus: the per-question outcomes, the `--drop` deltas, and the conversion flags from rule 6. The
 **without**-authored figure is the only one that binds (G2 trap 2). The at-seed share is reported
