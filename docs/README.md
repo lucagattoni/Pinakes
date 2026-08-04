@@ -19,6 +19,7 @@ anyway.
 | [**MANIFEST.md**](MANIFEST.md) | *What goes in `pinakes.toml`?* Every manifest and sidecar field, with defaults |
 | [**MEASUREMENT-RUN.md**](MEASUREMENT-RUN.md) | *How were the paid extractor's quality numbers obtained, and how do I re-run them?* The runbook, its steps and its euros |
 | [**STATUS.md**](STATUS.md) | *Does this exist yet?* Shipped vs planned, the increment ledger, measured numbers |
+| [**ROADMAP.md**](ROADMAP.md) | *What happened, in what order, and what is left?* Every release with a plain-language expansion, then the unbuilt work and what blocks it. **Human-facing, and it owns no fact** — a narrative view over STATUS, CHANGELOG and `plans/`, which stay authoritative |
 | [**VERIFICATION.md**](VERIFICATION.md) | *What holds this promise?* Every claimed property and the test that checks it — `tests/test_verification.py` asserts each one exists |
 | [**DESIGN.md**](DESIGN.md) | *Why is it built this way?* Architecture, storage, sync semantics, concurrency, trade-offs |
 | [**RETROSPECTIVES.md**](RETROSPECTIVES.md) | *What did we learn?* Per-increment findings, and the design's own review passes |
@@ -57,7 +58,7 @@ When an increment lands, this table says which file to edit — usually exactly 
 
 | Fact | Home | Everywhere else |
 |---|---|---|
-| Whether a feature is built yet | **STATUS.md** | links to it — never restates a version |
+| Whether a feature is built yet | **STATUS.md** | links to it — never restates a version. [ROADMAP.md](ROADMAP.md) retells it for a human and is **derived**: correct STATUS first, then sweep ROADMAP, never the reverse |
 | What a command or flag does | **CLI.md** | `--help` is authoritative; CLI.md adds when and why |
 | A manifest or sidecar field, its default, its validation | **MANIFEST.md** | DESIGN gives the rationale and links here |
 | How to accomplish a task | **GUIDE.md** | README links to it |
