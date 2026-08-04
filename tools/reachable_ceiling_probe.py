@@ -42,8 +42,23 @@ only that the gate is not impossible.
 removed; if the reachable count does not move, the probe is measuring something other than the edge
 set and its output means nothing. `tests/test_eval.py` pins that.
 
+**A golden set it cannot measure is refused, never absorbed** (`check_measurable`). Both of the
+ways it used to be absorbed moved the number and left the output looking valid, which is the
+worst thing a measurement tool can do: a hop expecting a path the index does not hold resolved to
+no document at all and was counted failing-and-unreachable, so one typo deflated the ratio the
+precondition binds on; and a `multi-hop` question with no `hops` yielded no verdict while still
+counting in the `multi-hop` denominator, so it could never be `failing` and vanished from every
+other figure. Both are likely on a real corpus — a converted question set is hand-written, and the
+`hops` key is the one part of the schema a reader can miss. Both now stop the run, by name, before
+a backend is even loaded.
+
+**Every output names the corpus it measured** — root path and kb-ulid, in the text and the JSON
+alike. Two runs against two corpora otherwise produce artifacts that cannot be told apart, and the
+first thing anyone does with this tool is run it against something other than the demo KB.
+
 Usage:
     python3 tools/reachable_ceiling_probe.py                    # real models, the measurement
+    python3 tools/reachable_ceiling_probe.py --kb path/to/kb    # another corpus
     python3 tools/reachable_ceiling_probe.py --fake             # offline, for tests
     python3 tools/reachable_ceiling_probe.py --drop co-located  # prove the number moves
     python3 tools/reachable_ceiling_probe.py --json
@@ -57,7 +72,7 @@ import sqlite3
 import sys
 import tempfile
 import zlib
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -306,6 +321,75 @@ def _rank_hub_members(
 
 
 # --------------------------------------------------------------------------------------------
+# What the probe refuses to measure
+
+
+class UnmeasurableGoldenSet(SystemExit):
+    """The golden set holds a question this probe cannot turn into an honest verdict.
+
+    A `SystemExit` subclass, so the run stops with its reasons on stderr and exit 1 — a named
+    failure a reader cannot miss, rather than a diagnostic line they have to notice. Every
+    problem it can find *deflates* a count that decides whether a release is built, and a count
+    that is quietly wrong is worse than no count: nothing about the output says so.
+    """
+
+
+def active_documents(connection: sqlite3.Connection) -> dict[str, str]:
+    """Path → document id, active documents only — exactly the population `derive` walks.
+
+    Inactive rows are excluded deliberately: a golden set naming a deleted document is broken in
+    the same way as one naming a document that was never there, and a hop expecting one could
+    never land whatever the edge set held.
+    """
+    return {
+        str(row["path"]): str(row["id"])
+        for row in connection.execute("SELECT id, path FROM documents WHERE state = 'active'")
+    }
+
+
+def check_measurable(
+    questions: Sequence[Question], documents: Mapping[str, str], *, source: Path
+) -> None:
+    """Refuse the whole run if any question would be absorbed instead of measured.
+
+    Every problem is collected before raising, so one run names every one of them: fixing a
+    question set one refusal at a time, re-syncing a corpus in between, is how a second typo gets
+    found after the number has already been reported.
+    """
+    problems: list[str] = []
+    for question in questions:
+        if question.kind == "multi-hop" and not question.hops:
+            problems.append(
+                f"{question.id!r}: kind `multi-hop` with no `hops`. It would count in the "
+                f"multi-hop denominator and yield no verdict, so it could never be counted "
+                f"failing — it would pad one figure and vanish from every other."
+            )
+        for path in question.expect:
+            if path not in documents:
+                problems.append(
+                    f"{question.id!r}: `expect` names {path!r}, which is not an active document "
+                    f"in this index."
+                )
+        for index, hop in enumerate(question.hops):
+            if hop.expect not in documents:
+                problems.append(
+                    f"{question.id!r} hop {index}: `expect` names {hop.expect!r}, which is not an "
+                    f"active document in this index. The hop would resolve to no document at all "
+                    f"and be counted failing-and-unreachable."
+                )
+    if not problems:
+        return
+    listed = "\n".join(f"  - {problem}" for problem in problems)
+    raise UnmeasurableGoldenSet(
+        f"unmeasurable golden set — {len(problems)} problem(s) in {source}:\n{listed}\n"
+        f"Fix the golden set and re-run. Every `expect` path is matched against `documents.path` "
+        f"exactly as the index stores it (KB-root-relative, forward slashes), and a `multi-hop` "
+        f"question needs a `hops:` list of `query`/`expect` pairs. Refused rather than measured: "
+        f"each of these silently moves the count this probe exists to produce."
+    )
+
+
+# --------------------------------------------------------------------------------------------
 # Running the golden set through it
 
 
@@ -351,11 +435,18 @@ def probe(
     manifest: Manifest,
     questions: Sequence[Question],
     *,
+    documents: Mapping[str, str],
     backend: EmbeddingBackend,
     reranker: Reranker | None,
     kinds: Sequence[str],
     variant: str,
 ) -> Report:
+    """`documents` is `active_documents(connection)`, already through `check_measurable`.
+
+    Passed in rather than looked up per hop, so an `expect` naming nothing has exactly one place
+    it can be handled — the refusal, before this runs. A lookup here that answered `""` for an
+    unknown path is what made a typo indistinguishable from a genuinely unreachable document.
+    """
     graph = derive(connection, manifest.kb.id, kinds=kinds)
 
     chunk_ids, matrix = store.load_vectors(connection, dim=manifest.embedding.dim)
@@ -403,7 +494,7 @@ def probe(
                 depth=DEPTH,
                 exclude_membership=False,
             )
-            wanted = _doc_id(connection, hop.expect)
+            wanted = documents[hop.expect]
             seed_docs = {graph.chunks[c].doc for c in seeds if c in graph.chunks}
             verdicts.append(
                 HopVerdict(
@@ -481,11 +572,6 @@ def _similarity(
         return {}
     scores = unit @ unit_vectors(embedded)[0]
     return {chunk_id: float(scores[index]) for index, chunk_id in enumerate(chunk_ids)}
-
-
-def _doc_id(connection: sqlite3.Connection, path: str) -> str:
-    row = connection.execute("SELECT id FROM documents WHERE path = ?", (path,)).fetchone()
-    return "" if row is None else str(row["id"])
 
 
 # --------------------------------------------------------------------------------------------
@@ -569,8 +655,19 @@ def _render(reports: Iterable[Report]) -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--kb", type=Path, default=DEMO)
-    parser.add_argument("--fake", action="store_true", help="offline hashing backend, for tests")
+    # Mutually exclusive, and an argparse-level error rather than a precedence rule: `--fake`
+    # measures a temporary copy of the demo KB it builds itself, so a `--kb` it accepted and
+    # discarded would report one corpus's numbers under another corpus's name.
+    corpus = parser.add_mutually_exclusive_group()
+    corpus.add_argument(
+        "--kb", type=Path, default=DEMO, help="KB root to measure (default: the demo KB)"
+    )
+    corpus.add_argument(
+        "--fake",
+        action="store_true",
+        help="offline hashing backend over a temporary copy of the demo KB, for tests. "
+        "Not combinable with --kb, which it would otherwise have to ignore.",
+    )
     parser.add_argument(
         "--drop",
         action="append",
@@ -588,13 +685,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             root = _fake_kb(Path(workspace))
         else:
             root = args.kb
+        kb_root = str(root)
 
         manifest = load(root)
-        questions = load_questions(root / "eval" / "questions.yaml")
-        backend = load_backend(manifest.embedding)
-        reranker = load_reranker(manifest.rerank) if manifest.retrieval.rerank == "local" else None
+        questions_path = root / "eval" / "questions.yaml"
+        questions = load_questions(questions_path)
         connection = store.connect_ro(manifest.index_path)
         try:
+            documents = active_documents(connection)
+            # Before the backend loads: on a real run that is a model download, and a run that is
+            # going to refuse should refuse in a second rather than after it.
+            check_measurable(questions, documents, source=questions_path)
+            backend = load_backend(manifest.embedding)
+            reranker = (
+                load_reranker(manifest.rerank) if manifest.retrieval.rerank == "local" else None
+            )
             before = _tables(connection)
             kept = [kind for kind in ALL_KINDS if kind not in args.drop]
             reports = [
@@ -602,6 +707,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     connection,
                     manifest,
                     questions,
+                    documents=documents,
                     backend=backend,
                     reranker=reranker,
                     kinds=[k for k in kept if k != AUTHORED],
@@ -611,6 +717,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     connection,
                     manifest,
                     questions,
+                    documents=documents,
                     backend=backend,
                     reranker=reranker,
                     kinds=kept,
@@ -622,7 +729,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         finally:
             connection.close()
 
+    # Which corpus this is, in both formats. Every other number here is meaningless without it,
+    # and two runs against two KBs were otherwise indistinguishable on inspection.
     payload = {
+        "kb_root": kb_root,
+        "kb_id": manifest.kb.id,
+        "fake_backend": bool(args.fake),
         "schema_version": schema,
         "tables_before": before,
         "tables_after": after,
@@ -634,6 +746,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.json:
         print(json.dumps(payload, indent=2))
     else:
+        print(f"kb {kb_root}  (kb-ulid {manifest.kb.id})")
+        if args.fake:
+            print("measured with --fake: a temporary copy of the demo KB, hashing backend")
+        print()
         print(_render(reports))
         print(
             f"\nschema_version {schema}, adjacent_k {manifest.retrieval.adjacent_k}, "
@@ -642,11 +758,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"tables unchanged: {before == after}")
         if args.drop:
             print(f"derived without: {', '.join(sorted(set(args.drop)))}")
+        # No threshold is printed. The number a liftable count is read against belongs to the
+        # measurement plan for the corpus in hand, and this tool measures whichever corpus `--kb`
+        # names: a hardcoded ">= 7" was a claim about one KB printed under the numbers of another.
         print(
-            "\nThe precondition is the *without-authored* liftable count (>= 7). The\n"
-            "with-authored figure is recorded and licenses nothing: a corpus reachable only\n"
-            "through links its own author wrote cannot say whether derived structure helps.\n"
-            "`at-seed` is the part of `liftable` that traverses no edge at all."
+            "\nThe precondition is the *without-authored* liftable count above, read against the\n"
+            "threshold this corpus's measurement plan sets — not against a number this tool\n"
+            "carries. The with-authored figure is recorded and licenses nothing: a corpus\n"
+            "reachable only through links its own author wrote cannot say whether derived\n"
+            "structure helps. `at-seed` is the part of `liftable` that traverses no edge at all."
         )
     return 0
 

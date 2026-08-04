@@ -564,6 +564,116 @@ def test_the_reachable_ceiling_probe_answers_to_the_edge_set() -> None:
     assert intact["with-authored"]["liftable"] > intact["without-authored"]["liftable"]
 
 
+REFUSAL = "unmeasurable golden set"
+"""The probe's named refusal. Asserted on rather than a bare non-zero exit, because these tests
+run the probe against a KB whose manifest names a backend the subprocess never registered: a run
+that got past the refusal would fail too, and only the message tells the two apart."""
+
+
+def _run_probe(*argv: str) -> subprocess.CompletedProcess[str]:
+    """The probe as a user runs it — deliberately no `check`, since these tests are about how it
+    refuses, and a `CalledProcessError` would hide the stderr they assert on."""
+    return subprocess.run(
+        [sys.executable, str(PROBE), *argv], capture_output=True, text=True, cwd=REPO
+    )
+
+
+def _write_golden_set(root: Path, questions: list[dict[str, object]]) -> None:
+    """Replace a KB's golden set. Written as JSON, which YAML is a superset of: hand-indented YAML
+    inside a test is one more thing that can be wrong for a reason the test is not about."""
+    (root / "eval" / "questions.yaml").write_text(
+        json.dumps({"questions": questions}), encoding="utf-8"
+    )
+
+
+def test_the_probe_refuses_a_hop_expecting_a_document_the_index_does_not_hold(demo: Path) -> None:
+    """A path typo used to be *counted*, which is the worst defect a measurement tool can have.
+
+    The lookup answered `""` for an unknown path, so the hop was recorded `lands=False,
+    reachable=False` — failing and unreachable, indistinguishable from a real one. One typo in a
+    200-document corpus deflates the liftable ratio the graph release's precondition binds on, and
+    nothing in the output says so.
+    """
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "typo-in-the-second-hop",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "core funding", "expect": "docs/funding-sourses.md"},
+                ],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    # Named, both of them: which question, and the path as spelled. A refusal saying only "a path
+    # is wrong" leaves the reader to find it in a file of forty questions.
+    assert "typo-in-the-second-hop" in completed.stderr
+    assert "docs/funding-sourses.md" in completed.stderr
+
+
+def test_the_probe_refuses_a_multi_hop_question_with_no_hops(demo: Path) -> None:
+    """It used to be absorbed: counted in the `multi-hop` denominator, yielding no verdict, so it
+    could never be `failing` and disappeared from every other figure while padding that one.
+
+    Likely on a real corpus rather than hypothetical — the scaffolded template documented `id`,
+    `question`, `expect` and `kind`, and never mentioned `hops` until this commit.
+    """
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "multi-hop-in-name-only",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md"],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    assert "multi-hop-in-name-only" in completed.stderr
+    assert "hops" in completed.stderr
+
+
+def test_a_well_formed_golden_set_is_not_refused(demo: Path) -> None:
+    """The control the two refusals need: the message must be caused by the question, not by the
+    environment they run in. Same subprocess, same KB, same unregistered backend — only the golden
+    set differs, and this one is the committed set."""
+    assert REFUSAL not in _run_probe("--kb", str(demo)).stderr
+
+
+def test_the_probe_refuses_fake_together_with_kb(tmp_path: Path) -> None:
+    """`--fake` measures a copy of the demo KB it builds itself, and used to silently discard
+    `--kb`: `--kb <corpus> --fake` reported demo-kb's numbers labelled as nothing in particular."""
+    completed = _run_probe("--fake", "--kb", str(tmp_path))
+
+    assert completed.returncode == 2  # argparse's own, before anything is measured
+    assert "--fake" in completed.stderr and "--kb" in completed.stderr
+
+
+def test_the_probe_names_the_kb_it_measured() -> None:
+    """Neither output named it, so two runs against two corpora produced artifacts that could not
+    be told apart on inspection — which is what made a silently discarded `--kb` survivable."""
+    payload = json.loads(_run_probe("--fake", "--json").stdout)
+    text = _run_probe("--fake").stdout
+    kb_id = load(DEMO).kb.id
+
+    assert payload["kb_root"].endswith("demo-kb")
+    assert payload["kb_id"] == kb_id
+    assert payload["fake_backend"] is True
+    assert kb_id in text and "demo-kb" in text
+
+
 def test_calibration_fits_thresholds_and_prints_a_manifest_block(demo: Path) -> None:
     questions = load_questions(demo / "eval" / "questions.yaml")
     connection = store.connect_ro(demo / ".pinakes" / "index.db")

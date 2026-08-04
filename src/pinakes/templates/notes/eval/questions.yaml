@@ -14,6 +14,22 @@
 #   kind:     lexical | simple-lookup | paraphrase | filter | multi-hop | no-answer
 #             Required, and checked against that list — an unrecognised or missing kind is an
 #             error, not a silent `lexical`, because `kind` is what per-class scoring groups on.
+#   hops:     `multi-hop` questions only, and required for them. The retrieval sequence a reader
+#             would follow, in order: each hop a `query` (what you would search at that step) and
+#             one `expect` (the document that search must find). `expect` above is then exactly
+#             the hops' own documents. Omit `hops` and the question is `multi-hop` in name only —
+#             it counts in the class, measures nothing about hopping, and
+#             `tools/reachable_ceiling_probe.py` refuses to measure a corpus holding one:
+#
+#               - id: who-approves-a-loan
+#                 question: Who signs off a loan of a fragile item?
+#                 kind: multi-hop
+#                 expect: [docs/loans.md, docs/conservation.md]
+#                 hops:
+#                   - query: loan approval
+#                     expect: docs/loans.md
+#                   - query: fragile item handling sign-off
+#                     expect: docs/conservation.md
 #
 # `no-answer` entries matter most: the correct behaviour is to abstain, and without them a system
 # that answers everything confidently scores perfectly.
