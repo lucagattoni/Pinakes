@@ -3,11 +3,15 @@
 **Status:** revised after adversarial passes 1 (22 HIGH), 2 (26 HIGH), 3 (24 HIGH), 4 (13 HIGH),
 5 (3 HIGH), 6 (2 HIGH) and 7 (6 HIGH) on L1–L8 and G1–G6; then **seven passes on L5b alone**
 (8, 8, 7, 6, 7, 7, 7 HIGH) plus an adversarial code review of the implementation (5 HIGH).
-**Both tracks have stopped, for different reasons.** The links release is **complete** — L1–L5b in
-0.5.0, L6–L8 in 0.6.0 (20260801), L5c closed unbuilt because its one refusal shipped with L5b. The
-graph release is **blocked**: G1 and G4 shipped in 0.6.0, G2 in 0.7.0, and G2's headroom measurement
-came back negative, so **G3, G5 and G6 do not start**. Nothing in this plan is buildable today.
-What unblocks it is [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) — a corpus, not code.
+**The links release is complete; the graph release is running again.** L1–L5b shipped in 0.5.0,
+L6–L8 in 0.6.0 (20260801), L5c closed unbuilt because its one refusal shipped with L5b. G1 and G4
+shipped in 0.6.0, G2 in 0.7.0.
+
+**G2's headroom measurement came back negative on `tests/demo-kb` and positive on the RFC realism
+corpus** — 12 multi-hop questions failing and 9 reachable without authored edges, against a
+precondition of 7 and 7. **G3 starts** ([`20260804_1442-decision-g3-go.md`](20260804_1442-decision-g3-go.md), decided 20260804 13:50); G5 and G6 follow it. The
+corpus that unblocked this is [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md),
+built in a repository of its own.
 
 > ## ⚠ 20260731 — L5b is split into **L5b** and **L5c** (decision 28)
 >
@@ -48,16 +52,19 @@ reading only the document systematically misses them.
 
 ## Baseline — `main` at `d56bb35`, 20260803 22:18
 
-**Everything in this plan has either shipped or is blocked.** L1–L8 shipped (0.5.0, 0.6.0); G1 and
-G4 shipped in 0.6.0; G2 shipped in 0.7.0 and returned the measurement that stops the rest. 0.7.1
-then closed the last of the standalone work, so **the corpus is not merely the critical path — it
-is the only path.** Read [`20260731_1202-open-corrections.md`](20260731_1202-open-corrections.md) before concluding there is no
-code work: it is where any is listed, and it has been non-empty twice since.
+**The G-track is open again.** L1–L8 shipped (0.5.0, 0.6.0); G1 and G4 shipped in 0.6.0; G2
+shipped in 0.7.0. G2's measurement stopped the rest for three days and **passed on the RFC realism
+corpus on 20260804** — 12 failing, 9 liftable without authored edges, against 7 and 7. **G3 is the
+next increment to build** ([`20260804_1442-decision-g3-go.md`](20260804_1442-decision-g3-go.md)).
+
+Read [`20260731_1202-open-corrections.md`](20260731_1202-open-corrections.md) alongside it: one of
+its live items — the silent structural-chunking degradation — is required by that decision, because
+it is what contaminated three of the six edge kinds in the measurement above.
 
 | | |
 |---|---|
-| **G3** — the node model and the edge set | Blocked. G2's precondition needed ≥ 7 failing multi-hop questions reachable without authored edges; 1 was measured |
-| **G5** — the expansion channel and its gate | Blocked through G3. Its gate reads per-question movement on a class with one question that can move |
+| **G3** — the node model and the edge set | **Ready to build.** G2's precondition needed ≥ 7 failing multi-hop questions reachable without authored edges; the RFC corpus measured **9** (and 12 failing) |
+| **G5** — the expansion channel and its gate | Follows G3. Its gate reads per-question movement on a class that now has **12** questions that can move, and gains a `--drop sibling` arm |
 | **G6** — edge-hub reporting and the cut | Blocked through G3. It reports hubs in an edge table that does not exist |
 
 **Do not start any of them, and do not re-author G2's questions to change the number** — that is
@@ -99,14 +106,13 @@ question through it produced a class pinned at 0.00 or 1.00 by construction. Tra
 is directly testable — does the traversal return the neighbour the corpus says it should — and that
 is what the links release ships with. All eval work moves to the graph release, where it is the gate.
 
-## No track is open — and what the parallel run taught
+## The open track is G3 — and what the parallel run taught
 
-**The L-track is finished** (0.6.0) and the G-track is **blocked at G2's measurement** (0.7.0), so
-there is no increment in this plan an agent can pick up. The standalone work that existed beside it
-shipped in 0.7.1; [`20260731_1202-open-corrections.md`](20260731_1202-open-corrections.md) is where any new code work is listed,
-so read it rather than assuming it is still empty. What remains is
-the corpus in [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md), which is what decides whether this plan ever
-resumes — and it is built in a repository of its own, by an agent that may not read `src/`.
+**The L-track is finished** (0.6.0). **The G-track reopened on 20260804**, when the RFC realism
+corpus cleared G2's precondition ([`20260804_1442-decision-g3-go.md`](20260804_1442-decision-g3-go.md)). **G3 is the increment to pick up**, then G5, then G6 — one
+per branch, never batched. [`20260731_1202-open-corrections.md`](20260731_1202-open-corrections.md)
+is where standalone code work is listed and is worth reading first: its structural-chunking item is
+a precondition of trusting any later measurement on any corpus.
 
 Three things the parallel run established that outlive it, and that apply to any future split:
 
@@ -485,9 +491,18 @@ fragment.
 
 ### G3 — The node model and the edge set (`schema_version` 3)
 
-**Precondition:** G2's headroom measurement passed. **It did not** (20260801 12:14 — 1 of 18
-multi-hop questions fails, 7 were required). **This increment does not start.** Nothing below is
-withdrawn or wrong; it is unbuilt, and reaching it needs a corpus that can discriminate first.
+**Precondition: G2's headroom measurement passed.** It failed on `tests/demo-kb` (20260801 12:14 —
+1 of 18 multi-hop questions failing, 7 required) and **passed on the RFC realism corpus** (20260804 —
+**12 failing, 9 reachable without authored edges**). **This increment starts** ([`20260804_1442-decision-g3-go.md`](20260804_1442-decision-g3-go.md)).
+
+**Build all six derived kinds as specified below.** The corpus measured `sibling` contributing zero
+and `in-section`/`parent-child` contributing nothing at all, but that corpus had an empty
+`heading_path` on every chunk, so three kinds were never exercised and `sibling` there meant an
+adjacent arbitrary *size-slice*. **Kind selection is G5's gate to decide, not this increment's** —
+G5 carries a `--drop sibling` arm for exactly that.
+
+**One requirement this adds to what follows:** the derived kind set must be selectable at eval time,
+so the arm is a flag rather than a rebuild.
 
 **What lands.** APPROACH §3's node model — **chunk**, **document**, **tag**, **heading-path**
 (scoped per document), **directory** — with every shared-value relation through its hub node.
@@ -618,10 +633,18 @@ rows in [`docs/VERIFICATION.md`](../docs/VERIFICATION.md).
 
 ---
 
-### G5 — The expansion channel, default off, and its gate 🚫 blocked
+### G5 — The expansion channel, default off, and its gate
 
-**Blocked by G2's measurement, through G3.** The gate reads per-question movement on the multi-hop
-class, and that class has one failing question to move. Left as written.
+**Follows G3.** G2's precondition is met on the RFC realism corpus — the multi-hop class has **12**
+failing questions to move, not one ([`20260804_1442-decision-g3-go.md`](20260804_1442-decision-g3-go.md)).
+
+**Added by that decision: the gate runs a `--drop sibling` arm and reports it beside the headline.**
+On the corpus that unblocked this plan, `sibling` was 106 506 of 107 802 edges and changed no
+outcome in either variant — but on a corpus whose chunker works a "sibling" is an adjacent
+*section*, not an adjacent size-slice, so the finding does not transfer. The arm exists to answer,
+with the instrument that measures retrieval quality rather than a reachability ceiling, whether
+99.2% of the graph's mass earns its place. **The arm reports; it does not gate.** A release is not
+blocked on its result.
 
 
 **What lands.** `[retrieval] graph_channel = "off" | "expand"`, default `"off"`. When `"expand"`: the
@@ -796,10 +819,10 @@ empty-edge degradation path; the third-channel RRF contribution; the false-absta
 
 ---
 
-### G6 — Edge-hub reporting, verification, and the graph release cut 🚫 blocked
+### G6 — Edge-hub reporting, verification, and the graph release cut
 
-**Blocked by G2's measurement, through G3 and G5.** It reports hubs in an edge table that is not
-built, and it cuts a release whose two feature increments do not start. **Its verification steps are
+**Follows G3 and G5.** It reports hubs in the edge table G3 builds, and cuts the release G5's gate
+licenses. **Its verification steps are
 not blocked and should not be lost** — steps 1–5 and 8 below are the standing shape of any release
 cut in this project, and `docs/RELEASING.md` is where a cut that is actually happening reads from.
 
@@ -910,7 +933,7 @@ cut in this project, and `docs/RELEASING.md` is where a cut that is actually hap
 | Risk | Why it is real | Mitigation |
 |---|---|---|
 | The synthetic corpus is unrealistically clean | One author writes the corpus, the links and the questions | Density and degree caps with negative tests; **frozen weights**; the ClaudeKB check, owned by L8 |
-| The gate cannot be reached | Improvements come only from questions that both currently fail **and** are channel-reachable — and the authoring rule ("no shared vocabulary") selects against reachability once `mentions` is cut | G2 measures **both**, in memory, before G3 bumps the schema; if either fails, G3 does not start and G1/G2/G4 ship on their own |
+| The gate cannot be reached ⚠️ **materialised, then cleared** | Improvements come only from questions that both currently fail **and** are channel-reachable — and the authoring rule ("no shared vocabulary") selects against reachability once `mentions` is cut | G2 measured **both**, in memory, before G3 bumped the schema. It failed on `tests/demo-kb` (1 of 18) and G1/G2/G4 shipped on their own, exactly as this row prescribed; the RFC realism corpus then cleared it on 20260804 (12 failing, 9 liftable). **The mitigation worked — no KB was ever forced to rebuild for an edge table whose channel might not be licensed** |
 | The gate is reached by chance | ~18 questions is a small sample | An exact test, one gated configuration, no post-hoc tuning |
 | Frozen weights understate the channel | Unfitted priors may fail a gate tuned weights would pass | Pre-committed: fitting is exploratory and needs a new question set |
 | A concurrent agent lands conflicting work | `main` moved fifteen commits and cut a release under three drafts | `shared_file_overlap.py --fetch --strict` before every merge, and read what it names |

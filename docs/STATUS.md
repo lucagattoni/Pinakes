@@ -253,12 +253,12 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.4.1** ✅ | A sidecar that will not parse is no longer overwritten by a freshly minted one, and no longer aborts the whole sync — data loss present since v0.1 |
 | **0.5.0** ✅ *(the links release, interim)* | `pnk links`, `pinakes_links`, reverse-scan and the sidecar round-trip fix — no `schema_version` bump, so no rebuild. **The release cuts twice** (decision 27): this is the interim MINOR at L5b; the final cut is at L8, and the name stays in the unbuilt-work table until then. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **L5b landed:** `ruamel.yaml` replaces `pyyaml` in the sidecar, so a rewrite preserves comments, quoting and blank lines — and `country: NO` stops becoming `false` ([decision](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_0602-decision-ruamel-yaml.md)). |
 | **0.6.0** ✅ *(the links release, final)* | `pnk link` authors a link from the command line, and `pnk doctor` reports link coverage as **linked docs / total docs** and resolves each cross-KB target through its `[[links.kb]]` entry (L6–L8). Also `[kb] requires_pinakes` (G4) and the evaluation's tie-ordering fix (G1) — no `schema_version` bump, so no rebuild. **This completes the two-cut release** decision 27 describes: 0.5.0 was the interim MINOR at L5b, this is the final cut, and the name leaves the unbuilt-work table here |
-| **0.7.0** ✅ | The evaluation grows a per-question artifact (`eval/outcomes.json`), stable question ids, a validated `kind`, and an empty golden set that skips with a reason instead of failing — plus the demo KB's golden set grown 41 → 74 with a `simple-lookup` control class (G2). **Its deliverable is a measurement:** the graph release's gate cannot be reached on this corpus, so G3 and G5 do not start ([above](#can-the-graph-releases-gate-be-reached--measured-20260801-1214)). No `schema_version` bump, so no rebuild |
+| **0.7.0** ✅ | The evaluation grows a per-question artifact (`eval/outcomes.json`), stable question ids, a validated `kind`, and an empty golden set that skips with a reason instead of failing — plus the demo KB's golden set grown 41 → 74 with a `simple-lookup` control class (G2). **Its deliverable is a measurement:** the graph release's gate could not be reached on `tests/demo-kb`, so G3 and G5 did not start then — the RFC realism corpus cleared it on 20260804 ([above](#can-the-graph-releases-gate-be-reached--yes-measured-20260804)). No `schema_version` bump, so no rebuild |
 | **0.7.1** ✅ | `[sources] include` can no longer walk out of the KB or write sidecars outside it — three defects live since before 0.5.0: a `..` pattern indexed files outside and minted sidecars beside them, an absolute pattern was a bare traceback, and a symlinked directory carried the walk out with no `..` anywhere. Plus a document reached by two legal spellings is now one document, and `tools/link_density_gate.py` survives a non-canonical root |
 | **0.8.0** ✅ | **Breaking, paid path only:** the Claude-vision extractor's key is `PINAKES_ANTHROPIC_API_KEY` and is passed to the SDK explicitly — no fallback to `ANTHROPIC_API_KEY`, which the SDK used to read out of whatever environment it was handed. Rename the variable in your `.env`. Also `[budget]` defaults raised (`per_operation_eur` 0.05 → 0.30, `monthly_eur` 5.00 → 30.00), a `check.sh` gate pinning `docs/STATUS.md`'s own header to `__version__`, the reachability probe refusing a golden set it cannot measure rather than absorbing it, and sixteen documentation claims corrected against the code. No `schema_version` bump, so no rebuild |
 | **0.9.0** ✅ | **Documentation only — no code path changed.** `docs/` is now published as a site at [lucagattoni.github.io/pinakes](https://lucagattoni.github.io/pinakes/), built with `mkdocs build --strict` on every PR and deployed on every push to `main`; the strict build found and fixed 31 dead links and anchors in the existing docs. The repository moved to `github.com/lucagattoni/pinakes` (GitHub redirects the old URL) and prose across the repo now writes the project name **Pinakes**, while every identifier — the PyPI package, `pinakes.toml`, `.pinakes/`, `pinakes[st]`, `pinakes_search`, `requires_pinakes` — stays lowercase and unchanged. Also a per-kind edge census in `tools/reachable_ceiling_probe.py`. No `schema_version` bump, so no rebuild |
 | **0.10.0** ✅ | An interrupted first sync no longer reads as a model mismatch: `pnk doctor` reports `WARN sync completeness` with remedy `pnk sync`, instead of `FAIL` with `--rebuild` — which discarded every embedding the interrupted sync had already written. `pnk sync` also prints live progress on a terminal (documents done/total and a rate, one self-overwriting line, silent when piped or `--quiet`), after a 300-document run took over two hours with no output. And `sync.py`'s timestamps are UTC, matching `lock.py`'s — the two used identical formats on different clocks, so a lock taken seconds ago could read hours old. No `schema_version` bump, so no rebuild |
-| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. **⚠️ Blocked: its gate was measured on 20260801 and cannot be reached on this corpus** ([above](#can-the-graph-releases-gate-be-reached--measured-20260801-1214)) — 1 of 18 multi-hop questions fails where 7 were needed. Its three finished increments have all shipped: **G1** (reproducibility, and the tie-ordering defect it found) and **G4** (`requires_pinakes`) in 0.6.0, **G2** in 0.7.0. **What is left — G3, G5 and G6 — does not start**, and cannot until a corpus exists that can discriminate: `tests/demo-kb` has no tags and one directory, so exactly one derived edge kind crosses a document boundary, and the funnel already returns every document before any channel could reach further. **The unblocking work is a corpus, not code** ([`plans/20260801_0749-realism-corpus.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260801_0749-realism-corpus.md)) |
+| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. **Building again since 20260804:** its gate was measured negative on `tests/demo-kb` (1 of 18) and **positive on the RFC realism corpus** — 12 multi-hop questions failing, 9 reachable without authored edges, against a precondition of 7 and 7 ([decision](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1442-decision-g3-go.md)). Three increments have shipped: **G1** (reproducibility, and the tie-ordering defect it found) and **G4** (`requires_pinakes`) in 0.6.0, **G2** in 0.7.0. **G3 is the increment being built**, then G5 and G6. The corpus that unblocked it lives in a repository of its own ([`plans/20260801_0749-realism-corpus.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260801_0749-realism-corpus.md)) |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
 | *the deep release* | `pnk ask --deep` |
 | *the template release* | Template ecosystem, `pnk upgrade` migrations, the `sqlite-vec` tier |
@@ -382,27 +382,42 @@ Ten friction findings from building it are in
 [`plans/20260731_1202-open-corrections.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md). `pnk doctor`
 reports no FAIL and five WARNs.
 
-### Can the graph release's gate be reached? — measured 20260801 12:14
+### Can the graph release's gate be reached? — **yes, measured 20260804**
 
-**No, on this corpus.** The graph release defaults its expansion channel on only if an exact sign
-test finds enough multi-hop questions *improving*, and an improvement can only come from a question
-that fails today. The precondition was: **at least 7 of the ~18 single-KB multi-hop questions fail,
-and at least 7 of those are channel-reachable without authored edges.**
+**Yes on a realistic corpus; no on the synthetic one.** The graph release defaults its expansion
+channel on only if an exact sign test finds enough multi-hop questions *improving*, and an
+improvement can only come from a question that fails today. The precondition: **at least 7 multi-hop
+questions fail, and at least 7 of those are channel-reachable within 2 logical hops without authored
+edges.** The without-authored figure binds; the with-authored figure records and licenses nothing.
 
-| | Required | Measured |
-|---|---|---|
-| multi-hop questions failing today | ≥ 7 | **1** |
-| of those, reachable within 2 logical hops, **without** authored edges | ≥ 7 | 1 |
-| of those, reachable **with** authored edges (records nothing, licenses nothing) | — | 1 |
-| reachable but beyond 2 hops | — | 0 |
-| reachable only through membership edges | — | 0 |
+| | Required | `tests/demo-kb` · 20260801 | **RFC realism corpus · 20260804** |
+|---|---|---|---|
+| multi-hop questions failing today | ≥ 7 | 1 | **12** |
+| of those, reachable **without** authored edges | ≥ 7 | 1 | **9** |
+| of those, reachable with authored edges | — | 1 | 12 |
+| reachable but beyond 2 hops · at-seed only | — | 0 · 0 | 0 · 1 |
 
-**So G3 does not start.** No `schema_version` bump, no forced rebuild for every KB in existence for
-an edge table whose channel could never be licensed — which is the whole reason this measurement
-was sequenced before the schema change rather than after it. G1, G2 and G4 are cut as a release of
-their own.
+**So G3 starts** ([decision](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1442-decision-g3-go.md), 20260804 13:50). The measurement was deliberately sequenced
+*before* the schema change, so a `schema_version` bump — and a forced rebuild for every KB in
+existence — could not happen for an edge table whose channel might never be licensed. G1, G2 and G4
+were cut as a release of their own while the answer was still no.
 
-Two findings sit behind that number, and both outlive it:
+**Three drop runs show the 9 discriminates** rather than counting every document already in reach:
+removing `co-located` costs 3 questions, removing `shared-tag` costs 6, and the two sum to exactly
+9 — they lift disjoint sets. Removing `sibling` — 106 506 of 107 802 edges — costs nothing. No drop
+ever raised the count. Artifacts:
+[`pinakes-corpus-rfc/eval/probe`](https://github.com/lucagattoni/pinakes-corpus-rfc/tree/main/eval/probe).
+
+**The bound on all of it: every chunk in that corpus has an empty `heading_path`.** RFC section
+numbering is not Markdown-shaped, so `strategy = "structural"` degraded to size-based chunking in
+silence — `in-section` and `parent-child` derived **zero** edges and were never exercised, and a
+"sibling" there is an adjacent arbitrary size-slice rather than an adjacent section. The 9 is
+therefore a **floor** for a corpus whose chunker works, and `sibling`'s zero is a question for G5's
+gate, not a design decision. Fixing the silent degradation is a live correction.
+
+**Why the synthetic corpus could never answer this**, which is the finding that outlived the
+negative result:
+
 
 * **`tests/demo-kb` has no tags at all, and one flat directory.** With `mentions` cut, that leaves
   exactly **one** derived edge kind that crosses a document boundary — `co-located`, through a

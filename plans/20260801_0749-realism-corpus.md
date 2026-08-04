@@ -8,7 +8,9 @@ declined in writing"* — something it can actually be run against.
 the graph release's gate cannot be reached on `tests/demo-kb`, and both reasons are properties of the
 corpus rather than of the code: the corpus has no tags and one directory, so exactly one derived edge
 kind crosses a document boundary; and the retrieval funnel already returns every document, so no
-channel can reach further than it already does. **G3, G5 and G6 do not start until a corpus exists
+channel can reach further than it already does. **✅ The corpus was built and the gate cleared on 20260804** — 12 multi-hop questions failing, 9 reachable without authored edges, against a precondition of 7 and 7 ([decision](20260804_1442-decision-g3-go.md)). G3 is building. The original framing follows, as written.
+
+**G3, G5 and G6 do not start until a corpus exists
 that can discriminate.** That raises this document's priority — and puts an honesty burden on it,
 discharged in § *Why this is not the gate moving to fit the answer*.
 

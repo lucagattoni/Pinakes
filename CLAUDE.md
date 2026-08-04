@@ -129,11 +129,13 @@ across the repo 20260804 11:55, history included.
 
 The build order is [`plans/20260729_0256-links-and-graph.md`](plans/20260729_0256-links-and-graph.md) — **not** "the newest
 file in `plans/`", which also holds shipped plans, an iteration log, standalone increments and
-decision records ([`docs/README.md`](docs/README.md) tells them apart). **That plan is currently
-closed** — the links release is complete and the graph release is blocked on a corpus — so the live
-work is [`plans/20260801_0749-realism-corpus.md`](plans/20260801_0749-realism-corpus.md),
-[`plans/20260803_2239-corpus-probe-run.md`](plans/20260803_2239-corpus-probe-run.md) and whatever
-[`plans/20260731_1202-open-corrections.md`](plans/20260731_1202-open-corrections.md) lists as live. Never batch increments; each
+decision records ([`docs/README.md`](docs/README.md) tells them apart). **That plan is open at G3**
+— the links release is complete, and the graph release restarted on 20260804 when the RFC corpus
+cleared G2's precondition
+([decision](plans/20260804_1442-decision-g3-go.md)). **G3 is the live increment**, then G5, then G6.
+Beside it: whatever [`plans/20260731_1202-open-corrections.md`](plans/20260731_1202-open-corrections.md)
+lists as live — its structural-chunking item is required by that decision, because it is what
+contaminated three of the six edge kinds in the measurement. Never batch increments; each
 is a separate, bisectable landing:
 
 1. Own worktree, branch `YYYYMMDD_HHMM-i<N>-<slug>`.
