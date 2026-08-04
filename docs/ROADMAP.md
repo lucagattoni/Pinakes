@@ -17,14 +17,14 @@ precision nobody measured.
 
 ---
 
-## Where things stand right now — 20260804 13:40 UTC
+## Where things stand right now — 20260804 14:00 UTC
 
 - **18 releases in 10 days.** [`0.1.0`](#010--the-engine--20260725-1527) on 20260725;
-  [`0.10.0`](#0100--you-can-see-it-working--20260804-1335) being cut today.
-- **Latest on PyPI: `0.8.0`.** [`0.9.0`](#090--a-site-and-a-name--20260804-1228) is tagged and merged
-  but its **upload was refused** — the repository rename broke PyPI trusted publishing. Fixable with
-  one setting change by a project owner; nothing was burned
-  ([STATUS § Published on PyPI](STATUS.md#published-on-pypi)).
+  [`0.10.0`](#0100--you-can-see-it-working--20260804-1335) today.
+- **Latest on PyPI: `0.10.0`**, uploaded 20260804 13:39 UTC. Every release from `0.2.2` on is
+  published ([STATUS § Published on PyPI](STATUS.md#published-on-pypi)).
+  [`0.9.0`](#090--a-site-and-a-name--20260804-1228)'s upload was refused at first — the repository
+  rename broke PyPI trusted publishing — and went out once the publisher was corrected.
 - **Three of four planned releases are done.** The links release shipped across
   [`0.5.0`](#050--links-you-can-walk--20260731-1127)–[`0.6.0`](#060--links-you-can-write--20260801-1051).
 - **[The graph release](#the-graph-release--blocked-since-20260801) is blocked, and has been since
@@ -64,9 +64,9 @@ number belongs to a release only when it is cut
 | **[0.7.0](#070--the-measurement-that-said-no--20260801-1240)** | 20260801 12:40 | The measurement that said no | • Per-question eval artifact, stable ids<br>• Golden set 41 → 74 questions<br>• **Deliverable was a number: [the gate cannot be reached](STATUS.md#can-the-graph-releases-gate-be-reached--measured-20260801-1214)** |
 | **[0.7.1](#071--the-walk-stays-in-the-kb--20260801-1342)** | 20260801 13:42 | The walk stays in the KB | • `[sources] include` could escape the KB and mint sidecars outside it<br>• Three defects, all live before 0.5.0 |
 | **[0.8.0](#080--our-key-not-the-sdks--20260804-0840)** | 20260804 08:40 | Our key, not the SDK's | • **Breaking (paid path):** `PINAKES_ANTHROPIC_API_KEY`, no fallback<br>• Budget defaults raised<br>• STATUS header pinned by a gate<br>• 16 doc claims corrected |
-| **[0.9.0](#090--a-site-and-a-name--20260804-1228)** | 20260804 12:28 | A site, and a name | • Docs published to a MkDocs site<br>• 31 dead links found and fixed<br>• Repo renamed → project is **Pinakes**<br>• ⚠️ **[not on PyPI](STATUS.md#published-on-pypi)** — trusted publishing broke |
-| **[0.10.0](#0100--you-can-see-it-working--20260804-1335)** | 20260804 13:35 | You can see it working | • `pnk sync` shows live progress on a terminal<br>• `pnk doctor` no longer tells an interrupted sync to `--rebuild`<br>• Sync timestamps are UTC<br>• 🔄 **being cut right now** |
-| | | **[Open corrections](#open-corrections--six-live-items)** | • Six live code/tooling items<br>• Five of six came from *building* the RFC corpus, not from reading code<br>• None blocking |
+| **[0.9.0](#090--a-site-and-a-name--20260804-1228)** | 20260804 12:28 | A site, and a name | • Docs published to a MkDocs site<br>• 31 dead links found and fixed<br>• Repo renamed → project is **Pinakes**<br>• ⚠️ First upload **refused** — the rename broke trusted publishing; [since fixed](STATUS.md#published-on-pypi) |
+| **[0.10.0](#0100--you-can-see-it-working--20260804-1335)** | 20260804 13:35 | You can see it working | • `pnk sync` shows live progress on a terminal<br>• `pnk doctor` no longer tells an interrupted sync to `--rebuild`<br>• Sync timestamps are UTC<br>• ✅ Released and on PyPI |
+| | | **[Open corrections](#open-corrections--six-live-items)** | • Six live code/tooling items<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
 | | | **[The graph release](#the-graph-release--blocked-since-20260801)** | • Structural edges, expansion channel, `schema_version` 3<br>• 🚫 **Blocked** — its gate failed on the demo KB (20260801)<br>• Unblocking work is a corpus, not code |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
@@ -408,23 +408,28 @@ The field it hardened: [MANIFEST.md](MANIFEST.md).
 - **The project is `Pinakes`; everything you can type is `pinakes`.** The repository moved to
   [github.com/lucagattoni/pinakes](https://github.com/lucagattoni/pinakes). No identifier changed.
 
-⚠️ **And then the upload was refused — 20260804 12:33.**
+⚠️ **And then the upload was refused — 20260804 12:33. It is fixed; 0.9.0 is on PyPI.**
 
 - Renaming the repository broke PyPI **trusted publishing**, which matches on the exact repository
-  name. The OIDC token now claims `repository: lucagattoni/pinakes`; the registered publisher still
-  says `Pinakes`.
-- **Nothing was uploaded**, so the version is not burned and the same tag can publish once fixed.
-- **The fix is one setting a project owner must change on pypi.org** — Manage → `pinakes` →
-  Publishing → set the repository to `pinakes` — then re-run the failed job.
-- Until then, `uv add pinakes` resolves to **0.8.0**.
+  name. The OIDC token claimed `repository: lucagattoni/pinakes` while the registered publisher
+  still said `Pinakes`, so PyPI answered *"valid token, but no corresponding publisher"*.
+- **Nothing had been uploaded**, so the version was never burned — the same tag published once a
+  project owner corrected the publisher on pypi.org and the failed job was re-run.
+- **This is the release that taught the project how a good publish hides.** Three separate caches
+  each said the upload had failed when it had not: the JSON endpoint still named `0.8.0` an hour
+  later; `/simple/` listed no file **even cache-busted**; and `uvx --refresh` answered
+  *unsatisfiable* from uv's own cache until `--no-cache`. What settles it is the workflow's
+  `Publish to PyPI` log, which prints one `Uploading …` line per file and cannot be cached.
+- The direction matters: a false *"it did not publish"* invites re-cutting a version PyPI will
+  never accept twice.
 
-→ The standing record, with the two caches that make a *successful* publish look failed:
-[STATUS § Published on PyPI](STATUS.md#published-on-pypi). The procedure:
-[RELEASING.md](RELEASING.md). Working install lines: [GUIDE § Install](GUIDE.md#install).
+→ The standing record: [STATUS § Published on PyPI](STATUS.md#published-on-pypi). The verification
+step this rewrote: [RELEASING.md](RELEASING.md). Working install lines:
+[GUIDE § Install](GUIDE.md#install).
 
 ## 0.10.0 — You can see it working · 20260804 13:35
 
-🔄 **Being cut right now** — drafted in a parallel worktree, not yet tagged.
+✅ **Released and published** — tagged `v0.10.0`, on PyPI at 20260804 13:39 UTC.
 
 - **`pnk sync` shows live progress on a terminal.** A CPU-only embedding run measured at ~2.4
   documents/minute — 300 documents ran over **two hours with nothing printed**, making a slow sync
@@ -447,9 +452,10 @@ the corrected text. The locking model: [DESIGN § 6.5 Concurrency](DESIGN.md#65-
 
 ## Open corrections — six live items
 
-Small code and tooling items. Five of six came from *building*
+Small code and tooling items, all unclaimed as of 20260804 13:21. **Every one** came from *building*
 [the RFC realism corpus](#the-corpus-exists--built-20260804-0800) rather than from reading code —
-which is what that corpus was for. Owned by
+which is what that corpus was for. The interrupted-sync trio that used to sit here closed in
+[`0.10.0`](#0100--you-can-see-it-working--20260804-1335). Owned by
 [`plans/20260731_1202-open-corrections.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md).
 
 1. **`strategy = "structural"` degrades to size-based chunking in silence** — its grammar is
