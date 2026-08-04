@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import itertools
 import json
+import posixpath
 import subprocess
 import sys
 import zlib
@@ -594,11 +595,13 @@ def test_a_kind_that_derives_zero_edges_is_reported_not_omitted(
 
     The census must say `in-section: 0`, not leave the key out — a kind missing from the dict is
     indistinguishable from a kind that derived something and simply was not printed, which is the
-    whole reason this requirement exists. Mutation-verified: deleting the
-    `counts["in-section"] = sum(...)` assignment in `edge_census` (so a kind with nothing to add
-    keeps its `dict.fromkeys` default) would *still* pass an assertion that only checked the value
-    was `0` — the `set(census) == set(ALL_KINDS)` assertion below is the one that would catch a
-    kind quietly dropped from the dict entirely, and does not on this fixture.
+    whole reason this requirement exists. Mutation-verified: making `edge_census` filter its own
+    result to non-zero kinds before returning (`{k: v for k, v in counts.items() if v != 0}`) —
+    the shape this test exists to rule out — leaves `census["in-section"] == 0` true by omission
+    (`census.get(..., 0)` would still read `0`, so a lookup-only assertion cannot tell the two
+    apart) and is caught only by `set(census) == set(probe.ALL_KINDS)` below, which fails naming
+    `in-section`, `parent-child`, `shared-tag` and `authored` as the extra keys `ALL_KINDS` has
+    that the mutated `census` does not.
     """
     probe = _load_probe_module()
     root = make_fake_kb()
@@ -681,58 +684,74 @@ def test_edge_census_reconciles_with_the_graph_it_describes(
 
     The fixture is built, not borrowed from `demo-kb`, because `demo-kb` has no nested headings
     and no tags: `parent-child` and `shared-tag` are `0` there either way, which a broken grouping
-    loop could still pass by accident. Every kind here is exercised at a nonzero count.
+    loop could still pass by accident. Every kind here is exercised at a nonzero count, and three
+    shapes are deliberately adversarial rather than merely nonzero — each one found, by mutating
+    `edge_census` and confirming this test actually breaks, in the increment that added it:
+
+    * `nested.md`'s three heading groups are **sized 2, 3 and 5, not equal** — at any equal size
+      `n`, `groups[a] * groups[b]` and `groups[a] + groups[b]` agree (`n*n == n+n` only when
+      `n == 2`, and worse, at `n == 1` every plausible formula agrees), so a fixture with equal
+      groups cannot tell the real product from a plausible wrong sum. 2, 3 and 5 pairwise: `2*3 ≠
+      2+3`, `2*5 ≠ 2+5`.
+    * `docs/alone/solo.md` sits alone in its own directory (as does `nested.md`, in `docs/`
+      itself, once `a.md`/`b.md` are the only other files and both live under `docs/grouped/`)
+      and carries its own tag, so `co-located` and `shared-tag` are both computed from a mix of
+      one bucket with two members and buckets with a single member the code must *not* count —
+      otherwise the fixture cannot distinguish "sums every bucket" from "sums buckets of two or
+      more" (`edge_census`'s own docstring).
+    * one document pair carries **two** `links[]` entries (two `rel` values, one target) — the
+      `links` table holds two rows for the same undirected pair, and `authored` must still count
+      it once: `graph.authored` is a `set` per document, so a naive "count matching rows"
+      expectation would over-count by exactly the duplicate.
     """
     probe = _load_probe_module()
     root = make_fake_kb()
     docs = root / "docs"
     (docs / "grouped").mkdir(parents=True, exist_ok=True)
+    (docs / "alone").mkdir(parents=True, exist_ok=True)
 
-    # Enough prose per heading that structural chunking splits into more than one chunk per
-    # section (`sibling`, `in-section` need that), and two heading depths so a genuine
-    # parent-prefix relation exists (`parent-child` needs that) rather than the single-H1-per-doc
-    # shape every `demo-kb` document has.
-    # 900 words per section, well past `max_tokens = 510`, so each heading group holds *more than
-    # one* chunk — otherwise `groups[a] * groups[b]` and `groups[a] + 1` agree at every group of
-    # size 1, and a broken multiplication would pass unnoticed (found mutation-verifying this
-    # test: 240 words per section left every group at size 1).
-    filler = " ".join(f"word{i}" for i in range(900))
+    # Three different word counts, chosen (and printed via a throwaway script, not guessed) so
+    # `max_tokens = 510` splits "Top", "Child one" and "Child two" into 2, 3 and 5 chunks
+    # respectively — see the docstring above for why the sizes must differ from one another.
+    top = " ".join(f"word{i}" for i in range(800))
+    child_one = " ".join(f"word{i}" for i in range(1300))
+    child_two = " ".join(f"word{i}" for i in range(2000))
     (docs / "nested.md").write_text(
-        f"# Top\n\n{filler}\n\n## Child one\n\n{filler}\n\n## Child two\n\n{filler}\n",
+        f"# Top\n\n{top}\n\n## Child one\n\n{child_one}\n\n## Child two\n\n{child_two}\n",
         encoding="utf-8",
     )
+    filler = " ".join(f"word{i}" for i in range(900))
     (docs / "grouped" / "a.md").write_text(f"# A\n\n{filler}\n", encoding="utf-8")
     (docs / "grouped" / "b.md").write_text(f"# B\n\n{filler}\n", encoding="utf-8")
+    (docs / "alone" / "solo.md").write_text(f"# Solo\n\n{filler}\n", encoding="utf-8")
 
     manifest = load(root)
     sync(manifest, options=SyncOptions(), now="20260804 11:00")
 
-    # A tag shared by two documents in different directories — `shared-tag`'s only source. Added
+    # Tags: "policy" shared by two documents (`shared-tag`'s only source of a real bucket), "lone"
+    # on `solo.md` alone (the bucket-of-one `edge_census` must contribute nothing for). Added
     # after the first sync, into the sidecars it minted, the same order a real user follows.
-    for relative in ("nested.md", "grouped/a.md"):
+    for relative, tag in (
+        ("nested.md", "policy"),
+        ("grouped/a.md", "policy"),
+        ("alone/solo.md", "lone"),
+    ):
         sidecar_path = docs / f"{relative}.pnk.yaml"
         text = sidecar_path.read_text(encoding="utf-8")
         assert "tags:" not in text
-        sidecar_path.write_text(text + "tags:\n  - policy\n", encoding="utf-8")
+        sidecar_path.write_text(text + f"tags:\n  - {tag}\n", encoding="utf-8")
 
-    # An authored link between the two `grouped/` documents — `authored`'s only source, written
-    # by the real authoring command, per the sidecar-ownership invariant (`CLAUDE.md`).
+    # Authored links: two `rel`s between the same pair (`authored`'s dedup case) and a second,
+    # distinct pair, written by the real authoring command per the sidecar-ownership invariant
+    # (`CLAUDE.md`).
     from pinakes.cli import main as pnk_main
 
-    assert (
-        pnk_main(
-            [
-                "link",
-                "docs/grouped/a.md",
-                "docs/grouped/b.md",
-                "--kb",
-                str(root),
-                "--rel",
-                "related",
-            ]
-        )
-        == 0
-    )
+    for source, target, rel in (
+        ("docs/grouped/a.md", "docs/grouped/b.md", "related"),
+        ("docs/grouped/a.md", "docs/grouped/b.md", "cites"),
+        ("docs/alone/solo.md", "docs/nested.md", "related"),
+    ):
+        assert pnk_main(["link", source, target, "--kb", str(root), "--rel", rel]) == 0
 
     sync(manifest, options=SyncOptions(), now="20260804 11:05")
 
@@ -770,30 +789,46 @@ def test_edge_census_reconciles_with_the_graph_it_describes(
             for _, head in entries:
                 if head is not None:
                     groups[head] = groups.get(head, 0) + 1
-            expected_in_section += sum(groups.values())
+            # A group of one chunk is not an edge — nothing else in it to be adjacent to — the
+            # same bucket-of-one exclusion `edge_census` applies to `co-located`/`shared-tag`.
+            expected_in_section += sum(size for size in groups.values() if size >= 2)
 
         active_documents = connection.execute(
             "SELECT id, path FROM documents WHERE state = 'active'"
         ).fetchall()
-        # Every active doc belongs to exactly one directory bucket, so the co-located census —
-        # spokes, not pairwise edges — is exactly the active document count.
-        expected_co_located = len(active_documents)
-        expected_shared_tag = int(
-            connection.execute(
-                "SELECT COUNT(*) AS n FROM documents d, json_each(d.metadata, '$.tags') j "
-                "WHERE d.state = 'active'"
-            ).fetchone()["n"]
+
+        # Grouped by directory in Python, from the raw paths — independent of `derive`'s own
+        # `posixpath.dirname` call and of `_spoke_count`'s bucket-of-one exclusion, which is
+        # re-applied here rather than assumed.
+        by_directory: dict[str, list[str]] = {}
+        for row in active_documents:
+            by_directory.setdefault(posixpath.dirname(str(row["path"])), []).append(str(row["id"]))
+        expected_co_located = sum(
+            len(members) for members in by_directory.values() if len(members) >= 2
         )
+
+        by_tag: dict[str, list[str]] = {}
+        for row in connection.execute(
+            "SELECT d.id AS doc, j.value AS tag FROM documents d, "
+            "json_each(d.metadata, '$.tags') j WHERE d.state = 'active'"
+        ):
+            by_tag.setdefault(str(row["tag"]), []).append(str(row["doc"]))
+        expected_shared_tag = sum(len(members) for members in by_tag.values() if len(members) >= 2)
+
         local_kb = manifest.kb.id
         active_ids = {str(row["id"]) for row in active_documents}
-        expected_authored = sum(
-            1
+        # Unique undirected pairs, not rows: two `rel`s between the same two documents are one
+        # edge in `graph.authored` (a `set` per document), and the expectation has to agree with
+        # that dedup rather than with the row count `links` actually stores.
+        authored_pairs = {
+            frozenset((str(row["src_doc_id"]), str(row["dst_doc_id"])))
             for row in connection.execute("SELECT * FROM links")
             if str(row["src_kb_id"]) == local_kb
             and str(row["dst_kb_id"]) == local_kb
             and str(row["src_doc_id"]) in active_ids
             and str(row["dst_doc_id"]) in active_ids
-        )
+        }
+        expected_authored = len(authored_pairs)
     finally:
         connection.close()
 
@@ -803,7 +838,7 @@ def test_edge_census_reconciles_with_the_graph_it_describes(
     assert expected_in_section > 0
     assert expected_co_located > 0
     assert expected_shared_tag > 0
-    assert expected_authored > 0
+    assert expected_authored == 2, "two distinct pairs are the point — one deduped from two rels"
 
     assert census["sibling"] == expected_sibling
     assert census["parent-child"] == expected_parent_child

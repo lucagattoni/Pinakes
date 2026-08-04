@@ -386,6 +386,15 @@ def edge_census(graph: Graph) -> dict[str, int]:
     model exists specifically to avoid materialising. `authored` counts unordered document pairs
     from the symmetric adjacency `derive` builds (each link recorded on both ends, halved back to
     one edge per pair).
+
+    **A hub with one member contributes no spokes.** A directory holding a single document, a
+    tag on one document, a heading with one chunk: there is nothing else in the bucket to be
+    reached through it, which is exactly `co-located`'s reading in
+    `plans/20260803_2239-corpus-probe-run.md` — "74 directories, median 1 document — most dirs
+    connect nothing". Counting every bucket regardless of size would make `co-located` and
+    `shared-tag` report a large positive number on a corpus with real documents but no shared
+    structure at all, which is the same failure this whole function exists to rule out one level
+    up: a count that looks like it measured something and did not.
     """
     counts: dict[str, int] = dict.fromkeys(ALL_KINDS, 0)
 
@@ -409,12 +418,17 @@ def edge_census(graph: Graph) -> dict[str, int]:
                     if _is_prefix(a, b):
                         counts["parent-child"] += groups[a] * groups[b]
 
-    counts["in-section"] = sum(len(members) for members in graph.heading_hub.values())
-    counts["co-located"] = sum(len(members) for members in graph.dir_hub.values())
-    counts["shared-tag"] = sum(len(members) for members in graph.tag_hub.values())
+    counts["in-section"] = _spoke_count(graph.heading_hub.values())
+    counts["co-located"] = _spoke_count(graph.dir_hub.values())
+    counts["shared-tag"] = _spoke_count(graph.tag_hub.values())
     counts["authored"] = sum(len(neighbours) for neighbours in graph.authored.values()) // 2
 
     return counts
+
+
+def _spoke_count(buckets: Iterable[Sequence[object]]) -> int:
+    """Spokes in buckets of two or more — a bucket of one has nothing to connect to."""
+    return sum(len(members) for members in buckets if len(members) >= 2)
 
 
 # --------------------------------------------------------------------------------------------
@@ -1168,7 +1182,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             "belong to this corpus's measurement plan, not to this tool. The with-authored figure\n"
             "is recorded and licenses nothing: a corpus reachable only through links its own\n"
             "author wrote cannot say whether derived structure helps. `at-seed` is the part of\n"
-            "`liftable` that traverses no edge at all."
+            "`liftable` that traverses no edge at all.\n"
+            "\n"
+            "`edges derived` is not one unit throughout: `sibling`, `parent-child` and `authored`\n"
+            "count document/chunk pairs; `in-section`, `co-located` and `shared-tag` count spokes\n"
+            "into a hub (a bucket of one contributes none — nothing else is in it to reach)."
         )
     return 0
 

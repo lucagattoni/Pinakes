@@ -6,4 +6,8 @@
   measurement needs to tell them apart (`plans/20260731_1202-open-corrections.md` item 1,
   `plans/20260803_2239-corpus-probe-run.md`). The census is read directly off the same `Graph`
   the traversal walks — no table is re-queried and no relation is recomputed — so it cannot drift
-  from the edges a run actually derived.
+  from the edges a run actually derived. `in-section`, `co-located` and `shared-tag` count spokes
+  into a hub, and a hub with a single member (one document alone in its directory, one document
+  wearing a tag nobody shares) contributes none — there is nothing else in the bucket to reach,
+  so a corpus with real documents but no shared structure reports `0`, not a count of the
+  documents that happened to have a directory or a tag.
