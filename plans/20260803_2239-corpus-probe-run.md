@@ -4,7 +4,7 @@
 while the corpus was still being built, precisely so that this step would not be improvised after
 it lands. This is the second measurement of the graph release's precondition — the first, on
 `tests/demo-kb`, failed for corpus reasons
-([`docs/STATUS.md`](../docs/STATUS.md#can-the-graph-releases-gate-be-reached--measured-20260801-1214))
+([`docs/STATUS.md`](../docs/STATUS.md#can-the-graph-releases-gate-be-reached--yes-measured-20260804))
 — and its honesty rests on a separation this file exists to enforce.
 
 **You are not the corpus author.** The corpus and its frozen question set were built by an agent
@@ -98,7 +98,7 @@ could only exercise `co-located`).
 ## What is reported — all of it, whichever way it points
 
 The same table shape as
-[the first measurement](../docs/STATUS.md#can-the-graph-releases-gate-be-reached--measured-20260801-1214):
+[the first measurement](../docs/STATUS.md#can-the-graph-releases-gate-be-reached--yes-measured-20260804):
 
 | | Required | Measured |
 |---|---|---|

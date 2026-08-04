@@ -27,11 +27,12 @@ precision nobody measured.
   rename broke PyPI trusted publishing — and went out once the publisher was corrected.
 - **Three of four planned releases are done.** The links release shipped across
   [`0.5.0`](#050--links-you-can-walk--20260731-1127)–[`0.6.0`](#060--links-you-can-write--20260801-1051).
-- **[The graph release](#the-graph-release--blocked-since-20260801) is blocked, and has been since
-  20260801** — not on code, on a *corpus*. Its gate was measured and cannot be reached on the demo KB
-  ([the measurement](STATUS.md#can-the-graph-releases-gate-be-reached--measured-20260801-1214)). A
-  real 300-RFC corpus [now exists](#the-corpus-exists--built-20260804-0800); the re-measurement has
-  not been run.
+- **[The graph release](#the-graph-release--building-since-20260804) is building again since
+  20260804.** It was blocked for three days — not on code, on a *corpus*. Its gate failed on the demo
+  KB (1 of 18) and **passed on the 300-RFC corpus** that
+  [now exists](#the-corpus-exists--built-20260804-0800): 12 multi-hop questions failing, 9 reachable
+  without authored edges, against a precondition of 7 and 7
+  ([the measurement](STATUS.md#can-the-graph-releases-gate-be-reached--yes-measured-20260804)).
 - **[The template release](#the-template-release--ready-to-start) is unblocked** — plan written,
   reviewed, four decisions taken. Nobody has started it.
 - **[Six open corrections](#open-corrections--six-live-items)** are live, all small, none blocking.
@@ -61,13 +62,13 @@ number belongs to a release only when it is cut
 | **[0.4.1](#041--the-sidecar-that-ate-itself--20260729-0748)** | 20260729 07:48 | The sidecar that ate itself | • A sidecar that would not parse was overwritten by a fresh one — losing a permanent ULID<br>• Data-loss bug live since v0.1 |
 | **[0.5.0](#050--links-you-can-walk--20260731-1127)** | 20260731 11:27 | Links you can walk | • [`pnk links`](CLI.md#pnk-links) + `pinakes_links` traversal<br>• Reverse-scan of partner KBs<br>• Second synthetic corpus<br>• `ruamel.yaml`: sidecars round-trip properly |
 | **[0.6.0](#060--links-you-can-write--20260801-1051)** | 20260801 10:51 | Links you can write | • [`pnk link`](CLI.md#pnk-link) authors a link<br>• `pnk doctor` reports link coverage as a ratio<br>• `[kb] requires_pinakes`<br>• Retrieval made deterministic |
-| **[0.7.0](#070--the-measurement-that-said-no--20260801-1240)** | 20260801 12:40 | The measurement that said no | • Per-question eval artifact, stable ids<br>• Golden set 41 → 74 questions<br>• **Deliverable was a number: [the gate cannot be reached](STATUS.md#can-the-graph-releases-gate-be-reached--measured-20260801-1214)** |
+| **[0.7.0](#070--the-measurement-that-said-no--20260801-1240)** | 20260801 12:40 | The measurement that said no | • Per-question eval artifact, stable ids<br>• Golden set 41 → 74 questions<br>• **Deliverable was a number: [the gate could not be reached on the demo KB](STATUS.md#can-the-graph-releases-gate-be-reached--yes-measured-20260804)** — the RFC corpus cleared it on 20260804 |
 | **[0.7.1](#071--the-walk-stays-in-the-kb--20260801-1342)** | 20260801 13:42 | The walk stays in the KB | • `[sources] include` could escape the KB and mint sidecars outside it<br>• Three defects, all live before 0.5.0 |
 | **[0.8.0](#080--our-key-not-the-sdks--20260804-0840)** | 20260804 08:40 | Our key, not the SDK's | • **Breaking (paid path):** `PINAKES_ANTHROPIC_API_KEY`, no fallback<br>• Budget defaults raised<br>• STATUS header pinned by a gate<br>• 16 doc claims corrected |
 | **[0.9.0](#090--a-site-and-a-name--20260804-1228)** | 20260804 12:28 | A site, and a name | • Docs published to a MkDocs site<br>• 31 dead links found and fixed<br>• Repo renamed → project is **Pinakes**<br>• ⚠️ First upload **refused** — the rename broke trusted publishing; [since fixed](STATUS.md#published-on-pypi) |
 | **[0.10.0](#0100--you-can-see-it-working--20260804-1335)** | 20260804 13:35 | You can see it working | • `pnk sync` shows live progress on a terminal<br>• `pnk doctor` no longer tells an interrupted sync to `--rebuild`<br>• Sync timestamps are UTC<br>• ✅ Released and on PyPI |
 | | | **[Open corrections](#open-corrections--six-live-items)** | • Six live code/tooling items<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
-| | | **[The graph release](#the-graph-release--blocked-since-20260801)** | • Structural edges, expansion channel, `schema_version` 3<br>• 🚫 **Blocked** — its gate failed on the demo KB (20260801)<br>• Unblocking work is a corpus, not code |
+| | | **[The graph release](#the-graph-release--building-since-20260804)** | • Structural edges, expansion channel, `schema_version` 3<br>• ▶ **Building** — its gate failed on the demo KB (20260801) and passed on the 300-RFC corpus (20260804)<br>• G3 next, then G5 and G6 |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
 | | | **[The template release](#the-template-release--ready-to-start)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• Not started |
@@ -338,7 +339,7 @@ improvement can only come from a question that fails today.
 | Multi-hop questions failing today | ≥ 7 | **1** |
 | Of those, reachable without authored edges | ≥ 7 | **1** |
 
-**So [the graph release](#the-graph-release--blocked-since-20260801) stopped here.** No
+**So [the graph release](#the-graph-release--building-since-20260804) stopped here.** No
 `schema_version` bump, no forced rebuild for every KB in existence, for an edge table whose channel
 could never be licensed.
 
@@ -353,7 +354,7 @@ Also shipped: per-question eval outcomes as a committed artifact, stable questio
 set grown 41 → 74 with a `simple-lookup` control class.
 
 → The full measurement, with every figure:
-[STATUS § Can the graph release's gate be reached?](STATUS.md#can-the-graph-releases-gate-be-reached--measured-20260801-1214).
+[STATUS § Can the graph release's gate be reached?](STATUS.md#can-the-graph-releases-gate-be-reached--yes-measured-20260804).
 Current retrieval scores: [STATUS § Measured numbers](STATUS.md#measured-numbers). The multi-hop
 design being tested: [DESIGN § 4.3](DESIGN.md#43-multi-hop-without-paying-for-it).
 
@@ -471,25 +472,34 @@ which is what that corpus was for. The interrupted-sync trio that used to sit he
 > The list refills from use. An empty one means nobody has run Pinakes lately, never that it is
 > finished.
 
-## The graph release — blocked since 20260801
+## The graph release — building since 20260804
 
-🚫 **Blocked.** Not on code — on a corpus.
+▶ **Building.** Blocked for three days on a corpus, not on code; the corpus cleared it.
 
-**What it would add:** structural edges derived at sync time (sibling, parent/child, in-section,
+**What it adds:** structural edges derived at sync time (sibling, parent/child, in-section,
 co-located, shared-tag), an expansion channel behind `graph_channel` (default off), and
-`schema_version` 3 — which forces a rebuild for every KB in existence.
+`schema_version` 3 — which forces a rebuild for every KB in existence. That forced rebuild is why
+the gate was measured *before* the schema change rather than after it.
 
-**Why it stopped:** its gate was measured in
-[`0.7.0`](#070--the-measurement-that-said-no--20260801-1240) and cannot be reached on
-`tests/demo-kb` —
-[the numbers](STATUS.md#can-the-graph-releases-gate-be-reached--measured-20260801-1214).
+**Why it stopped, and what restarted it:** its gate was measured in
+[`0.7.0`](#070--the-measurement-that-said-no--20260801-1240) and could not be reached on
+`tests/demo-kb` — 1 of 18 multi-hop questions failing where 7 were needed. Re-measured on the
+300-RFC corpus on 20260804: **12 failing, 9 reachable without authored edges**, against a
+precondition of 7 and 7 —
+[the numbers](STATUS.md#can-the-graph-releases-gate-be-reached--yes-measured-20260804),
+[the decision](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1442-decision-g3-go.md).
 
 **What has already shipped from it:** G1 (reproducibility) and G4 (`requires_pinakes`) in
 [`0.6.0`](#060--links-you-can-write--20260801-1051); G2 (the evaluation artifact and the measurement
-itself) in [`0.7.0`](#070--the-measurement-that-said-no--20260801-1240). **G3, G5 and G6 do not
-start.**
+itself) in [`0.7.0`](#070--the-measurement-that-said-no--20260801-1240). **G3 is the increment being
+built**, then G5 (the channel and its gate) and G6 (hub reporting and the cut).
 
-**The unblocking work is a corpus, not code.**
+**One caveat carried into the build:** every chunk in the RFC corpus has an empty `heading_path`,
+because RFC section numbering is not Markdown-shaped and structural chunking degraded to size-based
+in silence. So `in-section` and `parent-child` derived **zero** edges and were never exercised, and
+`sibling` derived 106 506 that changed no outcome. All six kinds are built anyway — that zero is a
+question for G5's gate, which carries a `--drop sibling` arm to answer it, not a reason to drop a
+kind on evidence from a corpus whose chunker had failed.
 
 → The design it would implement: [graph/PINAKES_APPROACH.md](graph/PINAKES_APPROACH.md). The build
 order:
