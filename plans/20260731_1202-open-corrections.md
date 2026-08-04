@@ -54,7 +54,7 @@ walked, so it cannot be a separately-computed number that drifts from the graph 
 
 **Why it is the most dangerous of these:** the age is the evidence a user weighs before `pnk sync --force-unlock`, and the documented remedy for a stale lock. A lock that looks two hours old but is live gets force-unlocked *against a running sync*.
 
-**Required:** one clock for both, or an explicit marker on each. Prefer local for both — the manifest's is local and it is the one a human compares against a wall clock. A test that sets a non-UTC `TZ`, takes a lock, and asserts the reported age is under a minute; it fails today under any non-UTC zone and passes under `TZ=UTC`, which is why the test must set the zone rather than inherit it.
+**Required — direction settled 20260804 11:32 by the project-wide move to UTC: make both UTC.** `lock.py` is already right; `sync.py:709` and `sync.py:808` are what change. This was previously written as *prefer local for both*, on the reasoning that a human compares the manifest's stamp against a wall clock; that reasoning is superseded, and the fix is now the cheaper half. A test that sets a non-UTC `TZ`, takes a lock, and asserts the reported age is under a minute; it fails today under any non-UTC zone and passes under `TZ=UTC`, which is why the test must set the zone rather than inherit it.
 
 ---
 
