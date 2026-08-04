@@ -18,10 +18,11 @@
 #             what the kind claims. The sequence a reader would follow, in order: each hop a
 #             `query` (what you would search at that step) and one `expect` (the document that
 #             search must find). `expect` above is then exactly the hops' own documents.
-#             Unlike `kind`, this is not rejected at load time; it is scored. A `multi-hop`
-#             question with no `hops`, or with one, is scored as a single search of its own text:
-#             it counts in the class and measures nothing about hopping, so `by_kind["multi-hop"]`
-#             stops being a number about multi-hop retrieval.
+#             Unlike `kind`, this is not rejected at load time; it is scored. With no `hops` a
+#             `multi-hop` question is scored as one search of the question's own text; with a
+#             single hop, as one search of that hop's query. Either way it counts in the class and
+#             measures nothing about hopping, so `by_kind["multi-hop"]` stops being a number about
+#             multi-hop retrieval.
 #
 #               - id: who-approves-a-loan
 #                 question: Who signs off a loan of a fragile item?

@@ -59,6 +59,33 @@ reported.** What `probe()` consumes is now the checklist — `hops`, each hop's 
 the document behind that path, and `filters`. It is validated through `search`'s own `_filter_sql`
 rather than a hand-written copy, so the check cannot drift from the semantics it is checking.
 
+**MEDIUM — a third pass, and the same lesson a third time: the artifact recorded every setting
+except the one that moves the number most.** `retrieval.rerank` records the *mode* (`local`), never
+the reranker's provider and model — and `lands` is `expect in` the top `final_k` **after**
+reranking. Demonstrated by the reviewer on one corpus, one path, one manifest, with only
+`[rerank] model` changed: 9 failing / 3 liftable became 18 / 12, and every identifying field in the
+two artifacts compared equal. Worse, the commit that added the block claimed it mirrored
+`eval.py::_header` — which carries *three* blocks, `embedding`, `rerank` and `retrieval`, its
+docstring saying it holds "every setting that can move a row". The copy took two of the three and
+dropped precisely the one not derivable from the others. **When you cite a prior art as the
+standard you met, diff against it.** `index_built_at` joined the payload at the same time: a corpus
+edited since its last `pnk sync` is measured as it stood then, and nothing else would say so.
+
+**LOW, and the most human of the findings: one defect, two accusations.** The filters check ran
+before the hop-path check, and filters cannot admit a path the index does not hold — so a mistyped
+`expect` under a healthy `filters:` block produced two problems, the first of them pointing at the
+wrong line, and a `{len(problems)}` count that overstated. Ordering between checks is part of a
+refusal's correctness, not a detail: the message that names the wrong cause costs the same debugging
+hour the guard was written to save.
+
+**LOW — a sentence assembled from parts is a sentence nobody read.** The per-kind wording was
+spliced mid-clause into three messages, and on the branch no test covered — a non-`multi-hop`
+question carrying hops, which `load_questions` allows — it rendered "so this probe never measures
+this question — only `multi-hop` — so no figure moves for the query rather than for the corpus —
+the same silent deflation as a mistyped path": two `so`s, and a closing clause asserting the
+deflation the same sentence had just denied. The commit message claimed that wording was fixed; no
+test exercised it. Each message now ends with a whole sentence, and a test covers the branch.
+
 **MEDIUM — a test can pin a claim it cannot falsify.** `test_the_probe_names_the_kb_it_measured`
 ran only `--fake`, and `--fake` measures a copy of the demo KB: every assertion in it was satisfied
 by a probe that ignored `--kb` and hardcoded the demo path, which is the very defect the test

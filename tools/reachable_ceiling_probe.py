@@ -379,7 +379,13 @@ def documents_with_chunks(connection: sqlite3.Connection) -> set[str]:
     that is only front matter, or a PDF whose free extraction yielded nothing all have this shape,
     and none of them looks wrong in a golden set.
     """
-    return {str(row["doc_id"]) for row in connection.execute("SELECT DISTINCT doc_id FROM chunks")}
+    return {
+        str(row["doc_id"])
+        for row in connection.execute(
+            "SELECT DISTINCT c.doc_id FROM chunks c JOIN documents d ON d.id = c.doc_id "
+            "WHERE d.state = 'active'"
+        )
+    }
 
 
 def documents_selected_by(
@@ -450,13 +456,14 @@ def check_measurable(
 
     for question in questions:
         measured = question.kind == "multi-hop"
-        # What the reader is told a problem costs. A hop on a `lexical` question is validated
-        # like any other and moves nothing, and saying it "would be counted failing" of a
-        # question this probe never reads is the same over-claim in the other direction.
+        # What a problem costs, as a sentence of its own rather than a clause spliced into three
+        # others. A hop on a `lexical` question is validated like any other and moves nothing, and
+        # telling its author it "would be counted failing" is the same over-claim in reverse.
         cost = (
-            "the hop would be counted failing-and-unreachable"
+            "It is counted, and moves the figures this probe prints."
             if measured
-            else "this probe never measures this question — only `multi-hop` — so no figure moves"
+            else "No figure this probe prints moves — it measures `multi-hop` questions only — "
+            "but the golden set is wrong all the same."
         )
         # The last hop is the only one that carries the question's filters (`probe`), so it is
         # the only one whose filters can decide a verdict.
@@ -469,7 +476,10 @@ def check_measurable(
                     f"is counted failing on its own filters rather than on the corpus, and the "
                     f"count moves upward — the direction a floor reads as headroom."
                 )
-            elif selected(question.filters, last.expect) == 0:
+            elif last.expect in documents and selected(question.filters, last.expect) == 0:
+                # `last.expect in documents` first, or a mistyped path would be reported twice —
+                # once here, blaming a `filters:` block that is perfectly healthy, and once below
+                # for what it actually is. The hop-level check owns the missing-path case.
                 problems.append(
                     f"{question.id!r}: `filters` do not admit the last hop's own `expect` "
                     f"({last.expect!r}). The filtered search cannot return it, so the hop is "
@@ -502,22 +512,23 @@ def check_measurable(
             if not hop.query.strip():
                 problems.append(
                     f"{question.id!r} hop {index}: an empty `query`. It retrieves nothing on its "
-                    f"own terms, so {cost} for the query rather than for the corpus — the same "
-                    f"silent deflation as a mistyped path."
+                    f"own terms, so the hop fails for the query rather than for the corpus — the "
+                    f"same silent deflation as a mistyped path. {cost}"
                 )
             if hop.expect not in documents:
                 problems.append(
                     f"{question.id!r} hop {index}: `expect` names {hop.expect!r}, which is not an "
                     f"active document in this index{_near_miss(hop.expect, documents)}. It "
-                    f"resolves to no document at all, so {cost}."
+                    f"resolves to no document at all, so the hop is recorded "
+                    f"failing-and-unreachable. {cost}"
                 )
             elif documents[hop.expect] not in chunked:
                 problems.append(
                     f"{question.id!r} hop {index}: `expect` names {hop.expect!r}, which the index "
                     f"holds with no chunks. Every node the channel walks is built from chunks, so "
-                    f"this document can neither be retrieved nor reached and {cost} — for a reason "
-                    f"that is not about the channel. Re-sync, or point the hop at a document with "
-                    f"content in it."
+                    f"this document can neither be retrieved nor reached, and the hop is recorded "
+                    f"failing-and-unreachable for a reason that is not about the channel. {cost} "
+                    f"Re-sync, or point the hop at a document with content in it."
                 )
     if not problems:
         return
@@ -917,7 +928,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ),
             ]
             after = _tables(connection)
-            schema = store.get_meta(connection).get("schema_version", "?")
+            meta = store.get_meta(connection)
+            schema = meta.get("schema_version", "?")
+            # A corpus edited since its last sync is measured as it stood then, and
+            # nothing else in the artifact would say so.
+            built_at = meta.get("built_at", "?")
         finally:
             connection.close()
 
@@ -933,6 +948,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "kb_id": manifest.kb.id,
         "fake_backend": bool(args.fake),
         "schema_version": schema,
+        "index_built_at": built_at,
         "tables_before": before,
         "tables_after": after,
         "embedding": {
@@ -940,6 +956,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             "model": manifest.embedding.model,
             "dim": manifest.embedding.dim,
         },
+        # The reranker's own model, not only the mode. `lands` is `expect in` the top `final_k`
+        # *after* reranking, so a different reranker is a different measurement: swapping one fake
+        # for another moved demo-kb from 9 failing / 3 liftable to 18 / 12 with every other
+        # recorded field identical. `eval.py`'s header carries this block for the same reason.
+        "rerank": (
+            {"provider": manifest.rerank.provider, "model": manifest.rerank.model}
+            if settings.rerank == "local"
+            else None
+        ),
         "retrieval": {
             "candidates_per_source": settings.candidates_per_source,
             "fusion": settings.fusion,
@@ -953,6 +978,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "dropped": sorted(set(args.drop)),
         "reports": [report.as_dict() for report in reports],
     }
+    reranker_named = (
+        f"{manifest.rerank.provider}/{manifest.rerank.model}"
+        if settings.rerank == "local"
+        else settings.rerank
+    )
     if args.json:
         print(json.dumps(payload, indent=2))
     else:
@@ -962,10 +992,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print()
         print(_render(reports))
         print(
-            f"\nschema_version {schema}, embedding {manifest.embedding.provider}/"
-            f"{manifest.embedding.model} dim {manifest.embedding.dim}, final_k {settings.final_k}, "
-            f"rerank {settings.rerank}, adjacent_k {settings.adjacent_k}, "
-            f"depth {DEPTH} logical hops"
+            f"\nschema_version {schema} (index built {built_at}), embedding "
+            f"{manifest.embedding.provider}/{manifest.embedding.model} dim "
+            f"{manifest.embedding.dim}, final_k {settings.final_k}, rerank {reranker_named}, "
+            f"adjacent_k {settings.adjacent_k}, depth {DEPTH} logical hops"
         )
         print(f"tables unchanged: {before == after}")
         if args.drop:

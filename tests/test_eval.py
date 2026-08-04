@@ -879,7 +879,7 @@ def test_a_path_wrong_only_in_case_is_refused_with_the_indexed_spelling(demo: Pa
                 "kind": "multi-hop",
                 "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
                 "hops": [
-                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "public money", "expect": "./docs/deaccession-policy.md"},
                     {"query": "core funding", "expect": "docs/Funding-Sources.md"},
                 ],
             }
@@ -890,26 +890,106 @@ def test_a_path_wrong_only_in_case_is_refused_with_the_indexed_spelling(demo: Pa
     assert completed.returncode != 0
     assert "the index holds 'docs/funding-sources.md'" in completed.stderr
     assert "letter case" in completed.stderr
+    # Both spellings the index would not match, each named for what it is. The `./` case is the
+    # one a reader is least likely to spot unaided.
+    assert "the index holds 'docs/deaccession-policy.md'" in completed.stderr
+    assert "a leading `./`" in completed.stderr
 
 
 def test_the_artifact_records_the_configuration_that_produced_the_numbers(demo: Path) -> None:
     """`failing` is a function of the retrieval settings — `lands` asks whether a document is in
-    the top `final_k` of a pipeline whose fusion and candidate widths are per-KB manifest keys.
-    Naming the corpus and not the configuration leaves two artifacts from two configurations
-    indistinguishable, which is the same defect the KB-naming fix closed."""
+    the top `final_k` of a pipeline whose fusion, candidate widths **and reranker** are per-KB
+    manifest keys. Naming the corpus and not the configuration leaves two artifacts from two
+    configurations indistinguishable, which is the same defect the KB-naming fix closed.
+
+    The reranker's *model* earns its own assertion: swapping one fake reranker for another moved
+    demo-kb from 9 failing / 3 liftable to 18 / 12 with every other recorded field identical, so
+    the mode (`local`) alone does not identify the measurement.
+    """
     payload = json.loads(_run_probe("--fake", "--json").stdout)
 
     manifest = load(demo)
+    # `final_k`, the embedding model and the reranker model are the assertions that can fail: each
+    # differs from the shipped default, so none of them is satisfied by a payload of hardcoded
+    # defaults — the failure mode this whole branch is about.
     assert payload["retrieval"]["final_k"] == manifest.retrieval.final_k
     assert payload["retrieval"]["fusion"] == manifest.retrieval.fusion
     assert payload["retrieval"]["adjacent_k"] == manifest.retrieval.adjacent_k
     assert payload["retrieval"]["rerank"] == manifest.retrieval.rerank
+    assert payload["rerank"] == {"provider": "fake", "model": "overlap-reranker"}
     assert payload["embedding"]["dim"] == DIM  # the fake's, not the committed model's
     assert payload["embedding"]["model"] == "hashing"
+    assert payload["index_built_at"] != "?"
 
     text = _run_probe("--fake").stdout
     assert f"final_k {manifest.retrieval.final_k}" in text
     assert "hashing" in text
+    assert "overlap-reranker" in text
+
+
+def test_a_hop_problem_on_a_question_the_probe_never_measures_says_so(demo: Path) -> None:
+    """`load_questions` allows hops on any kind, and the probe measures only `multi-hop`. The
+    refusal must not tell the author of a `lexical` question that a figure moved — the same
+    over-claim as the reverse, and the closing "it says which" has to be true of every line."""
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "a-lookup-carrying-hops",
+                "question": "What may not be done with material acquired using public money?",
+                "kind": "lexical",
+                "expect": ["docs/deaccession-policy.md"],
+                "hops": [{"query": "", "expect": "docs/deaccession-policy.md"}],
+            },
+            {
+                "id": "an-intact-multi-hop",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "core funding", "expect": "docs/funding-sources.md"},
+                ],
+            },
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert "a-lookup-carrying-hops" in completed.stderr
+    assert "No figure this probe prints moves" in completed.stderr
+    # And the sentence is whole: the first attempt spliced this clause mid-sentence and rendered
+    # "so no figure moves for the query rather than for the corpus — the same silent deflation",
+    # which asserts and denies the same thing in one line.
+    assert "so no figure moves for the query" not in completed.stderr
+
+
+def test_a_mistyped_path_is_not_also_blamed_on_the_filters(demo: Path) -> None:
+    """One defect, one problem. `filters` cannot admit a path the index does not hold, so the
+    filter check would report a healthy `filters:` block for what is a typo — pointing the
+    operator at the wrong line and inflating the problem count."""
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "a-typo-under-filters",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
+                "filters": {"path_prefix": "docs/"},
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "core funding", "expect": "docs/funding-sourses.md"},
+                ],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert "1 problem(s)" in completed.stderr
+    assert "docs/funding-sourses.md" in completed.stderr
+    assert "do not admit the last hop's own `expect`" not in completed.stderr
 
 
 def test_a_well_formed_golden_set_is_not_refused(demo: Path) -> None:
