@@ -28,7 +28,8 @@ was dropped in the move.
    not touch the footer.
 4. Commit, then **land with `python3 tools/land.py <branch>`** — never `git merge` by hand. It
    merges in the primary checkout whatever directory you ran it from, refuses if `main`'s sha did
-   not move, and pushes. Merging from inside the feature worktree merges the branch into itself and
+   not move, and pushes; `--cleanup-only` removes the branch and its worktree later, once you have
+   seen CI go green. Merging from inside the feature worktree merges the branch into itself and
    reports success three times over
    ([`CLAUDE.md`](https://github.com/lucagattoni/pinakes/blob/main/CLAUDE.md)).
 5. (`land.py` pushed for you. If you landed by hand anyway, push now.)

@@ -5,8 +5,9 @@ indexes the rest (which file owns which fact). This file only carries rules that
 
 ## 🛑 Land with `tools/land.py` — never `git merge` by hand
 
-    python3 tools/land.py <branch>              # merge, verify, push
-    python3 tools/land.py <branch> --cleanup    # also remove the worktree and both branch copies
+    python3 tools/land.py <branch>                  # merge, verify, push
+    python3 tools/land.py <branch> --cleanup        # ... and remove the worktree and both branch copies
+    python3 tools/land.py <branch> --cleanup-only   # remove a branch that landed earlier
 
 **Running `git merge <branch>` from inside that branch's own worktree merges it into itself.** Git
 reports *"Already up to date"*, the push reports *"Everything up-to-date"*, and a tag created there
@@ -18,7 +19,9 @@ here, always the same way: one `&&` chain beginning `cd <worktree>` and later co
 fires — the no-op is silent by design. So `tools/land.py` is the guard: it finds the primary
 checkout itself whatever directory you ran it from, **refuses if `main`'s sha did not move**, and
 re-reads `origin/main` after pushing, because a push reporting success is only a claim. `--cleanup`
-removes the worktree *and* both copies of the branch, since deleting one leaves the other behind.
+removes the worktree *and* both copies of the branch, since deleting one leaves the other behind;
+`--cleanup-only` does that for a branch you landed earlier, after verifying it is an ancestor of
+`origin/main` — because "looks merged" is not "landed".
 
 **This is the only rule here with an executable guard, because it is the only one that fails
 silently.** Everything else fails loudly or is caught by `./check.sh`.

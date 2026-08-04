@@ -120,8 +120,44 @@ def land(branch: str, *, cleanup: bool) -> None:
         remove_branch_everywhere(root, branch)
     else:
         print(
-            f"  worktree and branch kept. `python3 tools/land.py {branch} --cleanup` removes them."
+            f"  worktree and branch kept. `python3 tools/land.py {branch} --cleanup-only` "
+            "removes them once you are satisfied."
         )
+
+
+def cleanup_only(branch: str) -> None:
+    """Remove a branch that landed *earlier* — verifying it landed, rather than assuming it.
+
+    Needed because the normal path leaves the worktree in place: you land, watch CI, then clean up.
+    Re-running `land` with `--cleanup` at that point correctly refuses, since the default branch
+    cannot move a second time — so without this, the only way to finish was by hand, which is the
+    class of mistake this script exists to remove.
+
+    **The safety check is ancestry, not the reflog.** `CLAUDE.md`: before deleting anything, confirm
+    its content actually landed rather than that it "looks merged".
+    """
+    root = primary_checkout()
+    if branch == DEFAULT_BRANCH:
+        raise LandingError(f"refusing to delete {DEFAULT_BRANCH!r}.")
+    sha = git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", cwd=root, check=False)
+    if not sha:
+        raise LandingError(f"no local branch {branch!r}. Nothing to clean up.")
+
+    git("fetch", "--quiet", "origin", cwd=root)
+    merged = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", sha, f"origin/{DEFAULT_BRANCH}"],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    if merged.returncode != 0:
+        raise LandingError(
+            f"{branch!r} ({sha[:7]}) is NOT an ancestor of origin/{DEFAULT_BRANCH} — its content "
+            f"has not landed. Refusing to delete it. Land it first: "
+            f"`python3 tools/land.py {branch}`."
+        )
+    print(f"verified landed: {branch} ({sha[:7]}) is an ancestor of origin/{DEFAULT_BRANCH}")
+    remove_branch_everywhere(root, branch)
 
 
 def remove_branch_everywhere(root: Path, branch: str) -> None:
@@ -162,16 +198,28 @@ def main() -> int:
         action="store_true",
         help="after a verified push, remove the worktree and both copies of the branch",
     )
+    _ = parser.add_argument(
+        "--cleanup-only",
+        action="store_true",
+        help="skip the merge: remove a branch that landed earlier, after verifying it is an "
+        f"ancestor of origin/{DEFAULT_BRANCH}",
+    )
     args = parser.parse_args()
     branch: str = args.branch
     cleanup: bool = args.cleanup
+    only: bool = args.cleanup_only
 
     try:
-        land(branch, cleanup=cleanup)
+        if only and cleanup:
+            raise LandingError("--cleanup and --cleanup-only are alternatives; pass one.")
+        if only:
+            cleanup_only(branch)
+        else:
+            land(branch, cleanup=cleanup)
     except LandingError as exc:
         print(f"land: {exc}", file=sys.stderr)
         return 1
-    print("landed.")
+    print("cleaned up." if only else "landed.")
     return 0
 
 
