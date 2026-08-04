@@ -1,9 +1,28 @@
-# The local source walk escapes the KB ✅ shipped in 0.7.1
+# The local source walk escapes the KB ✅ shipped in 0.7.1 (20260801 13:42)
 
-**Shipped 20260801 13:42.** All three defects closed, plus a fourth found by a test written to pin
-*correct* behaviour: a legal `..` landing inside the KB kept the `..` in the document key, so one
-file reachable two ways was indexed once and failed twice. The spec below is left as written — it is
-what was built against.
+**Discharged.** All three defects re-measured on 0.7.0 before anything was changed, and all three
+still reproduced exactly as specified below. Both layers built as written, the predicate copied from
+`linkscan.sidecars_under` rather than re-derived, thirteen tests, eleven mutation targets.
+
+**Three things this spec did not predict**, all in `retro.d/` → `docs/RETROSPECTIVES.md`:
+
+1. **A fourth defect**, found by a test written to pin *correct* behaviour. A `..` pattern landing
+   inside the KB is legal, and `relative_to` is lexical, so the document key kept the `..`. One file
+   reachable under two legal spellings was indexed once and **failed twice**. Fixed by collapsing
+   the key lexically — never by resolving, which would follow a symlinked directory and re-key every
+   document under it, a path change against a permanent identity.
+2. **The per-root skip must *not* be copied from `linkscan`.** "Copy the predicate, do not
+   re-derive it" was right about the predicate and wrong about the policy around it: skipping a
+   known-escaping pattern under every later root costs one inbound link there and a **deleted index
+   row plus an orphaned sidecar** here, and the escapes this loop sees are symlinks — a property of
+   one directory, not of the pattern.
+3. **The `break` bounded nothing as specified.** Its 360× justification came from `linkscan`'s
+   *lazy* loop; written here inside `sorted(root.glob(pattern))` the enumeration has already
+   happened by the time the escape is noticed. The loop is now lazy: 301 entries enumerated before,
+   1 after.
+
+The spec below is left as written; it is what was built against.
+
 
 **Audience: the coder. Goal: executor.** One increment, its own branch, its own PATCH release.
 **Not part of L6, L7 or L8** — it touches `sync.py` and `manifest.py`, which the links plan does not,
