@@ -46,6 +46,16 @@ TIMESTAMP_FORMAT = "%Y%m%d %H:%M"
 FUSION_STRATEGIES = ("rrf",)
 RERANK_MODES = ("local", "none")
 VECTOR_TIERS = ("auto", "numpy", "sqlite-vec")
+GRAPH_CHANNELS = ("off", "expand")
+"""`[retrieval] graph_channel` (G5), default `"off"`.
+
+APPROACH §4A names a third value, `"ppr"`, as its stage B. It is deliberately **not** here: a
+manifest that can ask for a mode the code does not implement is a manifest whose setting silently
+does nothing, and `table.choice` refusing the name is how a user finds that out at load time
+rather than from an unchanged result list.
+"""
+GRAPH_CHANNEL_DEFAULT = "off"
+"""Named rather than inlined, because it is the value G5's gate licenses or does not."""
 CHUNK_STRATEGIES = ("structural",)
 ON_EXCEED = ("abort", "partial")
 EXTRACTION_BACKEND_DEFAULT = "pypdfium2"
@@ -108,6 +118,7 @@ class RetrievalSection:
     rerank: str
     vector_tier: str
     adjacent_k: int
+    graph_channel: str
     confidence: ConfidenceSection | None
 
 
@@ -628,6 +639,7 @@ def _retrieval(root_table: Table, path: Path) -> RetrievalSection:
             rerank="local",
             vector_tier="auto",
             adjacent_k=DEFAULT_ADJACENT_K,
+            graph_channel=GRAPH_CHANNEL_DEFAULT,
             confidence=None,
         )
     confidence = _confidence(table, path)
@@ -649,6 +661,10 @@ def _retrieval(root_table: Table, path: Path) -> RetrievalSection:
         adjacent_k=table.integer(
             "adjacent_k", default=DEFAULT_ADJACENT_K, minimum=1, maximum=MAX_ADJACENT_K
         ),
+        # Unstamped for the same reason as `adjacent_k` directly above, and default `"off"` for a
+        # second one: the channel defaults on only if G5's gate passes in **both** the with- and
+        # without-authored runs, and a default is not something a manifest reader gets to decide.
+        graph_channel=table.choice("graph_channel", GRAPH_CHANNELS, default=GRAPH_CHANNEL_DEFAULT),
         confidence=confidence,
     )
     table.done()
