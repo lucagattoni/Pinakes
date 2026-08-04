@@ -250,12 +250,71 @@ One SQLite file, `.pinakes/index.db`, in **WAL mode**. No server, no separate ve
 | `kb_refs` | connected KB id → alias, last resolved path, last scan time |
 | `failures` | doc path, stage, error, timestamp — see §6.4 |
 | `meta` | schema_version, build_id, embedding model + revision, vector tier, build timestamps |
+| `nodes` | id (surrogate), kind (`doc` / `chunk` / `tag` / `heading` / `dir`), key — `UNIQUE (kind, key)`. The five kinds span incompatible id spaces, so identity is `(kind, key)`: a document's ULID, `<doc-ulid>:<ordinal>` for a chunk (**never** `chunks.id`, which has no identity across a rebuild), the tag string, `<doc-ulid>:<heading_path>` for a heading — scoped per document, so no global "Introduction" hub can exist — and the KB-root-relative directory |
+| `edges` | src, dst, kind — the derived structural graph (§3.2), indexed on `(src, kind)` and `(dst, kind)` |
 
 **Index schema migrations do not exist.** On `schema_version` mismatch the index refuses to open and
 instructs `pnk sync --rebuild`. Because `.pinakes/` is disposable and rebuilds are free, migration
 code would be pure liability — this is the payoff of the truth/derived split. `schema_version` is
-`2` (the page and extraction-backend columns above); an index written under any earlier version
-raises `IndexSchemaError` naming the same rebuild remedy, never a migration.
+`3` (the `nodes` and `edges` tables above; `2` was the page and extraction-backend columns); an
+index written under any earlier version raises `IndexSchemaError` naming the same rebuild remedy,
+never a migration.
+
+### 3.2 The structural graph
+
+Derived at sync, read only by the expansion channel. `pnk links` and `pinakes_links` serve document
+neighbours out of `links` and never touch it, which is what makes the graph addable without changing
+a released surface (§6.2).
+
+**Why a hub node rather than pairwise edges.** Every shared-value relation — `doc ↔ tag`,
+`doc ↔ directory`, `chunk ↔ heading` — goes *through* a node standing for the value. A tag on 30
+documents is 30 spokes, not 435 edges: linear rather than O(members²) per value, and one node for
+the channel's visited-edge dedup to expand once globally instead of once per encounter. It is also
+what makes damping expressible at all, since the divisor is a property of the hub. A hub with fewer
+than two members is not minted: expanding it returns only the node that reached it.
+
+| Edge | Connects | Stored as | Weight at read |
+|---|---|---|---|
+| `membership` | chunk ↔ doc | doc → chunk | 1.0 — transit plumbing, not signal |
+| `sibling` | chunk ↔ chunk, adjacent ordinal | lower → higher | 1.0 |
+| `parent-child` | chunk ↔ chunk, `heading_path` prefix | parent → child | 1.0 |
+| `in-section` | chunk ↔ heading hub | hub → chunk | 1/section-size |
+| `co-located` | doc ↔ directory hub | hub → doc | 1/dir-size |
+| `shared-tag` | doc ↔ tag hub | hub → doc | 1/tag-degree |
+| `authored` | doc ↔ doc | **not stored** — read from `links` | 2.0 |
+
+**Orientation is part of the table, not the reader's choice.** Every edge is one row. A hub spoke
+always carries the hub as `src`, which is precisely what makes the damping divisor
+`count(*) WHERE src = ? AND kind = ?` well defined — there is no stored `degree`, because that would
+be derived state inside derived state. The symmetric kinds are stored once under the rule above and
+must be read with `src = ? OR dst = ?`; a `src`-only read silently drops half of every one of them.
+A hub kind's two directions are *different questions* — `src = ?` asks who is in this hub, `dst = ?`
+asks what this member is in — and are never unioned. Flow between two members of a hub is the
+**product of both spokes**, so a big hub damps superlinearly.
+
+**Hierarchy is the one relation that is not hubbed** (APPROACH §3), so it materialises pairwise: an
+ancestor heading holding *a* chunks and a descendant holding *d* gives *a·d* rows. On document shapes
+with a long lead section that measured 5.8x to 53.5x the chunk count. The alternative — routing it
+through the heading hub `in-section` already provides — would change what the relation *means*, so
+it is a retrieval question rather than a storage one and belongs to the channel's gate.
+
+**`authored` keeps one home.** It stays in `links` and is resolved to `doc` nodes at read time. A
+`doc` node is keyed on the document ULID alone, so only a *local* document has one: a row with a
+foreign `src_kb_id` (every reverse-scanned row) or a foreign `dst_kb_id` (an outbound cross-KB link)
+resolves to nothing and never enters the channel, in either direction. The kb-id filter is not
+redundant with that lookup — two KBs share document ULIDs the moment one is forked.
+
+**Derivation is full, never incremental**, and only over `state = 'active'` documents. Every hub
+degree is a property of the whole corpus, so a per-document deriver would have to reproduce the
+removals as well as the additions — the same class of bug as a migration, in state a rebuild
+regenerates for free. It is also how a soft-deleted document's edges disappear. `--sidecars-only`,
+the pre-commit hook, never opens the index and so never derives; `post-commit` and `post-merge` do,
+and pay for it whether or not the corpus moved.
+
+**Measured 20260804.** `tests/demo-kb` 192 edges, `tests/partner-kb` 171, each under 2 ms; the
+300-document / 106 806-chunk RFC realism corpus 214 608 edges in 1.3 s, adding 31 MB to a 265 MB
+index. `pnk sync` prints the per-kind census and its wall clock — every kind, including the ones at
+zero, because a kind missing from a report is indistinguishable from a kind that derived nothing.
 
 ### 3.1 Vector search: what the tiers actually buy
 
