@@ -181,18 +181,48 @@ def test_progress_printer_throttles_shows_a_rate_and_always_shows_the_last_call(
     # One value consumed by `_progress_printer()` itself (`start`), then one per `progress()` call.
     clock = iter([0.0, 0.0, 0.3, 1.2, 2.5])
     monkeypatch.setattr("time.monotonic", lambda: next(clock))
-    progress = _progress_printer()
+    progress, finish = _progress_printer()
 
     progress(1, 4)  # t=0.0: first call, always shown
     progress(2, 4)  # t=0.3: <1s since last shown, suppressed
     progress(3, 4)  # t=1.2: >=1s since last shown, shown
     progress(4, 4)  # t=2.5: done == total, always shown, ends the line
+    finish()  # a no-op here — `progress` already closed the line itself
 
     out = capsys.readouterr().out
     assert "1/4" in out and "3/4" in out and "4/4" in out
     assert "2/4" not in out, "the throttled call must not print at all"
     assert out.count("\r") == 3, "one overwrite per line actually shown"
     assert out.endswith("\n"), "the final call must end the line, not leave the cursor mid-line"
+    assert out.count("\n") == 1, (
+        "finish() must not print a second newline onto an already-closed line"
+    )
+
+
+def test_progress_printer_finish_closes_a_line_an_early_stop_left_open(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An adversarial review of this increment found the gap this test pins: a `[budget]` cap (or
+    any early exit from `_run`'s loop, `sync.py`) stops before `done == total` ever fires, leaving
+    the cursor mid-line — a printed `\\r`, no trailing newline — for whatever prints next (the sync
+    report, an error) to land on top of. `run_sync` (`cli.py`) calls `finish()` unconditionally, in
+    a `finally`, specifically to close that line before anything else reaches stdout.
+    """
+    from pinakes.cli import _progress_printer  # pyright: ignore[reportPrivateUsage]
+
+    clock = iter([0.0, 0.0])
+    monkeypatch.setattr("time.monotonic", lambda: next(clock))
+    progress, finish = _progress_printer()
+
+    progress(2, 5)  # done < total: the run stopped early, the line is left open
+    left_open = capsys.readouterr().out
+    assert not left_open.endswith("\n"), "an unfinished call must not end the line itself"
+
+    finish()
+    assert capsys.readouterr().out == "\n", "finish() closes the open line with exactly one newline"
+
+    finish()  # idempotent — nothing left open, so a second call prints nothing
+    assert capsys.readouterr().out == ""
 
 
 def test_run_sync_wires_progress_only_for_a_quiet_free_tty(
