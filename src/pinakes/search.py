@@ -396,9 +396,9 @@ def fused_candidates(
 
     reached: tuple[Reached, ...] = ()
     if expanding:
-        # The roots are the fused top-*k*, so this runs on the same cut every other stage narrows
-        # to — and it runs *before* the cut is applied to `fused`, because a channel seeded from
-        # the post-cut list would be seeded from a list this call has not produced yet.
+        # **The roots are the two-list fused top-*k***, cut here rather than read back off the
+        # `Fused` this function is about to return: that one is fused over three rankings, so
+        # seeding from it would make the channel's own contribution decide its own roots.
         roots = sorted(fused, key=lambda cid: -fused[cid])[: settings.fusion_top_k]
         reached = tuple(
             candidate
