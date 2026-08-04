@@ -338,6 +338,47 @@ is why this increment rewrites no baseline. Held by `tools/eval_reproducibility_
 `tests/test_search_reproducibility.py`, and a CI job that diffs per-question outcomes between
 `ubuntu-latest` and `macos-latest` — the half a single machine cannot answer.
 
+### The realism corpus exists, and it falsified a design premise — built 20260804 08:00
+
+**[`pinakes-corpus-rfc`](https://github.com/lucagattoni/pinakes-corpus-rfc)** — 300 RFCs, a
+connected cluster closed by BFS over `obsoletes`/`updates` in both directions, structured by
+`wg_acronym` and tagged from the RFC Editor's own `keywords`. It lives outside this repo by design
+([`plans/20260801_0749-realism-corpus.md`](../plans/20260801_0749-realism-corpus.md)).
+
+| Measure | demo-kb | partner-kb | RFC corpus |
+|---|---|---|---|
+| documents | 30 | 21 | **300** |
+| carrying an authored link | 27% | 29% | **53.3%** (160/300) |
+| worst out-degree | 2 | 3 | **86** |
+| relation vocabulary | 2 kinds | 4 kinds | 2 (`updates` 296, `supersedes` 95) |
+| chunks | 60 | — | **106 806** |
+| chunks with a `heading_path` | most | most | **0** |
+
+**The prediction recorded before any of it ran was right, and by more than expected.** The plan
+said the corpus would exceed the 35% density cap and possibly the degree cap of 4. Density is
+**53.3%**; worst out-degree is **86** — RFC 8996 *(Deprecating TLS 1.0 and TLS 1.1)* updates 86
+documents in one header. Nothing was tuned: every rule was written down before an edge existed.
+
+**The shape matters more than the headline.** Median out-degree is **1**, second-largest is 17. The
+corpus is sparse with one real human-authored hub — not uniformly dense. So APPROACH §3's
+*"authored links are sparse, precious signal"* is half right: sparse in the median, and carrying a
+hub that decision 13's **2.0 undamped** weight was never designed for
+([the ⚠️ on G3's weight table](../plans/20260729_0256-links-and-graph.md)).
+
+**Two findings about pinakes, not about the corpus:**
+
+- **`strategy = "structural"` recognised no headings at all** — 0 of 106 806 chunks — because its
+  grammar is Markdown-shaped and RFC section numbering is not. Silent. It costs citations their
+  heading component, and it means `in-section`, `parent` and `child` would derive **zero** edges
+  here.
+- **106 806 chunks is 2× past the NumPy vector tier's 50 000 threshold**, and `pnk doctor` says so.
+  A 300-document, 20 MB knowledge base reaches the tier ceiling — which is a smaller corpus than
+  the ceiling's framing implies.
+
+Ten friction findings from building it are in
+[`plans/20260731_1202-open-corrections.md`](../plans/20260731_1202-open-corrections.md). `pnk doctor`
+reports no FAIL and five WARNs.
+
 ### Can the graph release's gate be reached? — measured 20260801 12:14
 
 **No, on this corpus.** The graph release defaults its expansion channel on only if an exact sign
