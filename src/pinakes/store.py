@@ -25,7 +25,7 @@ import numpy as np
 
 from pinakes.errors import IndexSchemaError, StoreError
 
-SCHEMA_VERSION: Final = 2
+SCHEMA_VERSION: Final = 3
 BUSY_TIMEOUT_MS: Final = 5_000
 VECTOR_DTYPE: Final = np.float32
 
@@ -33,6 +33,17 @@ VECTOR_DTYPE: Final = np.float32
 # fails if the two ever drift.
 DOCUMENT_STATES: Final = ("active", "deleted")
 LINK_ORIGINS: Final = ("sidecar", "reverse-scan")
+NODE_KINDS: Final = ("doc", "chunk", "tag", "heading", "dir")
+STRUCTURAL_EDGE_KINDS: Final = (
+    "membership",
+    "sibling",
+    "parent-child",
+    "in-section",
+    "co-located",
+    "shared-tag",
+)
+"""The six kinds `edges` stores (G3). `authored` is deliberately absent: it is resolved from
+`links` at read time, so an authored link keeps exactly one home — see `pinakes.graph.edges`."""
 
 SCHEMA: Final = """
 CREATE TABLE documents (
@@ -131,6 +142,48 @@ CREATE TABLE meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- G3's node model (docs/graph/PINAKES_APPROACH.md §3). Five node kinds span incompatible id
+-- spaces, so identity is `(kind, key)` and `id` is a surrogate minted here. The keys are what
+-- carry meaning across a rebuild:
+--
+--   doc      the document ULID
+--   chunk    `<doc-ulid>:<ordinal>` — **never** `chunks.id`, which this file's own comment says
+--            has no identity across rebuilds
+--   tag      the tag string
+--   heading  `<doc-ulid>:<heading_path>` — scoped per document, so no global "Introduction" hub
+--            can weld every document into one noise clique
+--   dir      the KB-root-relative directory path
+CREATE TABLE nodes (
+    id   INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('doc', 'chunk', 'tag', 'heading', 'dir')),
+    key  TEXT NOT NULL,
+    UNIQUE (kind, key)
+);
+
+-- One row per edge, never two. A hub spoke always carries the hub as `src`, which is what makes
+-- the read-time damping divisor — `count(*) WHERE src = ? AND kind = ?` — well defined. The
+-- symmetric kinds are stored once too, under an explicit orientation rule: `sibling`
+-- lower→higher ordinal, `parent-child` parent→child, `membership` doc→chunk. Readers query
+-- `src = ? OR dst = ?` for those; a `src`-only query would silently drop half of every one.
+--
+-- `authored` is not here. It lives in `links`, and the channel resolves both of its ends to `doc`
+-- nodes at read time.
+CREATE TABLE edges (
+    src  INTEGER NOT NULL REFERENCES nodes (id) ON DELETE CASCADE,
+    dst  INTEGER NOT NULL REFERENCES nodes (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN (
+        'membership', 'sibling', 'parent-child', 'in-section', 'co-located', 'shared-tag'
+    )),
+    PRIMARY KEY (src, dst, kind)
+);
+
+-- Indexed on **both** ends, and on `kind` with each: the divisor reads `(src, kind)`, a member
+-- finds its hubs through `(dst, kind)`, and a symmetric walk needs both halves to be lookups
+-- rather than scans. No stored `degree` column — that would be derived state inside derived
+-- state, and it is one `count(*)` on an indexed column.
+CREATE INDEX edges_src ON edges (src, kind);
+CREATE INDEX edges_dst ON edges (dst, kind);
 """
 
 

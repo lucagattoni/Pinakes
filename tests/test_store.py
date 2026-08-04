@@ -90,11 +90,21 @@ def test_create_builds_the_schema_and_stamps_the_version(index_path: Path) -> No
     assert str(connection.execute("PRAGMA journal_mode").fetchone()[0]).lower() == "wal"
 
 
-def test_schema_version_is_2_for_i5s_page_and_backend_columns() -> None:
-    """I5 bumps the schema (chunks.page_start/page_end, documents.extraction_backend/
-    extraction_fingerprint) — pinned explicitly so a future bump doesn't silently drift past it
-    unnoticed, the same way I2's own version constant is pinned."""
-    assert SCHEMA_VERSION == 2
+def test_schema_version_is_3_for_g3s_node_and_edge_tables(index_path: Path) -> None:
+    """Pinned explicitly, so a bump cannot drift past unnoticed — the version is the only thing
+    standing between a user and a schema their index does not match, and there are no migrations.
+
+    2 was I5's (chunks.page_start/page_end, documents.extraction_backend/extraction_fingerprint);
+    3 is G3's `nodes` and `edges`. The tables are asserted beside the number, so bumping one
+    without the other fails here rather than at the first query.
+    """
+    assert SCHEMA_VERSION == 3
+    connection = tracked(create(index_path))
+    tables = {
+        str(row["name"])
+        for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    assert {"nodes", "edges"} <= tables
 
 
 def test_new_columns_exist_and_default_to_null(index_path: Path) -> None:
@@ -237,7 +247,7 @@ def test_a_v1_index_refuses_to_open_and_says_rebuild(index_path: Path) -> None:
     with pytest.raises(IndexSchemaError) as exc_info:
         connect_rw(index_path)
     assert exc_info.value.found == "1"
-    assert exc_info.value.expected == 2
+    assert exc_info.value.expected == SCHEMA_VERSION
     assert "pnk sync --rebuild" in exc_info.value.remedy
 
 

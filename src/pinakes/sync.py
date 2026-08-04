@@ -20,6 +20,7 @@ import os
 import posixpath
 import sqlite3
 import subprocess
+import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -59,6 +60,7 @@ from pinakes.extract import (
     registered_extractors,
 )
 from pinakes.extract import cache as extract_cache
+from pinakes.graph import edges as graph_edges
 from pinakes.ids import DocId, KbId, parse_doc_id
 from pinakes.lock import LockOutcome, SyncLock
 from pinakes.manifest import Manifest
@@ -234,6 +236,16 @@ class SyncReport:
     """`(alias, inbound rows recorded)` for each partner actually walked this run."""
     links_forgotten: int = 0
     """Inbound rows dropped because their KB is no longer in `[[links.kb]]`."""
+    edges: dict[str, int] = field(default_factory=dict[str, int])
+    """The structural edge census this run derived, per kind, `authored` included (G3).
+
+    **Every kind is a key, even at zero.** A kind absent from a dict is indistinguishable from a
+    kind that derived nothing — and this project has already taken a decision on a corpus where
+    three of six kinds were silently at zero because structural chunking had degraded. Empty only
+    on a run that derived nothing at all (`--sidecars-only`, `--estimate-only`, `--clear-cache`)."""
+    edge_seconds: float = 0.0
+    """Wall-clock spent deriving. Reported because derivation runs on every sync, and `pnk sync`
+    runs on three git hooks — G3's own risk register entry."""
 
     on_exceed: str = "abort"
     """Copied from the manifest so `ok` can read it without the manifest in hand."""
@@ -290,6 +302,8 @@ class SyncReport:
             lines.append(
                 f"{self.links_forgotten} inbound link(s) dropped — their KB is no longer linked"
             )
+        if self.edges:
+            lines.append(self.edge_line())
         if self.unmatched:
             lines.append(self.unmatched_line())
         lines.extend(self.escape_lines())
@@ -314,6 +328,19 @@ class SyncReport:
             lines.append(f"orphaned sidecar (kept; remove with `pnk doctor --prune`): {orphan}")
         lines.extend(self.failure_lines())
         return lines
+
+    def edge_line(self) -> str:
+        """The census, per kind and in a fixed order, plus what deriving it cost.
+
+        A kind at zero is printed rather than omitted: "`in-section=0`" is a fact about the corpus
+        — usually that structural chunking produced no `heading_path` — and a reader who sees no
+        line at all cannot tell that from a reader who sees no kind.
+        """
+        from pinakes.graph.edges import ALL_KINDS
+
+        census = " ".join(f"{kind}={self.edges.get(kind, 0)}" for kind in ALL_KINDS)
+        total = sum(self.edges.values())
+        return f"{total} edge(s) in {self.edge_seconds:.2f}s: {census}"
 
     def escape_lines(self) -> list[str]:
         """One line per pattern that walked out of the KB, never one per file it matched."""
@@ -976,6 +1003,8 @@ def _run(
         # forever.
         _scan_linked_kbs(manifest, connection, options, stamp, report)
 
+        _derive_edges(manifest, connection, report)
+
         store.set_meta(
             connection,
             {
@@ -1015,6 +1044,23 @@ def _run(
     # a future increment ever intervened here.
     if active_hashes is not None:
         extract_cache.evict_orphans(manifest.extract_cache_dir, active_content_hashes=active_hashes)
+
+
+def _derive_edges(manifest: Manifest, connection: sqlite3.Connection, report: SyncReport) -> None:
+    """Rebuild the structural graph from what the document loop just wrote (G3).
+
+    **After the loop and after the link scan, never during.** Every hub degree is a property of the
+    whole corpus — a tag's degree changes when any document gains or loses it — so deriving
+    per-document would either be wrong or would need the corpus anyway. And `authored` is resolved
+    from `links` at read time, so the scan must have finished writing them before the census counts
+    them.
+
+    Not reached on the `--sidecars-only` path at all: that returns from `_run` before an index is
+    even opened, which is what keeps the pre-commit hook off this work.
+    """
+    started = time.monotonic()
+    report.edges = graph_edges.derive(connection, local_kb=str(manifest.kb.id)).edges
+    report.edge_seconds = time.monotonic() - started
 
 
 def _backend_if_needed(
