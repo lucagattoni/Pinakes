@@ -52,3 +52,40 @@ nesting **and** many chunks per section, where the row count is the product. Thi
 document carries 76 distinct heading paths and its arity stays modest because its sections are
 short. Nothing here refutes that risk; it bounds the ordinary case and leaves the tail where the
 decision left it.
+
+### The tail, measured (20260804 22:39) — and it is alarming
+
+The paragraph above left the standing risk as prose. It is now a number. A **purpose-built
+worst-shape corpus** — six documents, heading depth 4, every heading path carrying ~26 chunks,
+which is the *a·d* product the risk names — was generated, synced with the same real backend, and
+measured the same way:
+
+| | this repo's `docs/` + `plans/` | worst-shape corpus |
+|---|---|---|
+| chunks | 2 671 | 2 483 |
+| heading depth, median / max | 2 / 4 | 3 / 4 |
+| chunks per heading path, median | short sections | **26** |
+| `parent-child` rows | 13 232 | **132 630** |
+| **rows per chunk** | **4.95** | **53.42** |
+| share of every stored edge | 71% | **94.7%** |
+| **index growth** | **+12.9%** (1.2 MB) | **+113.4%** (13.3 MB) |
+| derivation | 0.004 s (hierarchy) | 0.84 s (140 079 edges, every kind) |
+
+**53.42 lands at the very top of the decision's projected 5.8×–53.5× band**, so the projection was
+accurate at both ends rather than pessimistic: 4.95 sits below its floor for ordinary prose, 53.4
+reaches its ceiling for the shape it warned about. **The index more than doubles.** Derivation
+stays cheap — 140 079 edges in 0.84 s — which confirms the decision's own prediction that *the cost
+is row count, never wall clock*, and therefore that no mitigation aimed at derivation time would
+help.
+
+**What this corpus is, and is not.** Synthetic and deliberately adversarial: generated Markdown
+with uniform nesting and uniform section length, built to make the product as large as plausible
+rather than to resemble anyone's notes. It is **not** evidence that real corpora do this — neither
+real corpus measured above comes close. It is evidence that the shape is reachable without anything
+exotic, because depth 4 with long sections is an ordinary specification or manual.
+
+**No variant is switched to here, on purpose.**
+[`plans/20260804_1844-decision-parent-child-arity.md`](../plans/20260804_1844-decision-parent-child-arity.md)
+is explicit that if the ceiling proves alarming the immediate-parent form is *the arm to measure*,
+never the default to change first — and `--drop parent-child` is already a reported leg of G5's
+matrix. This is the input to that decision; the decision is the planner's.
