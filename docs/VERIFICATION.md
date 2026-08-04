@@ -658,6 +658,32 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | the node- and edge-kind constants match the DDL's CHECK constraints, in both directions | G3 | `tests/test_store.py::test_constants_match_the_check_constraints` |
 | the deriver is on the free path, and gate 4 reaches it | G3 | `tests/test_paid_path.py::test_the_free_path_never_imports_the_paid_client` |
 
+## The expansion channel and its gate (G5)
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| `expand` surfaces a document two-list fusion does not return | G5 | `tests/test_graph_channel.py::test_expand_surfaces_a_document_fusion_alone_does_not` |
+| an empty edge set reproduces two-list fusion **exactly**, not approximately | G5 | `tests/test_graph_channel.py::test_an_empty_edge_set_reproduces_two_list_fusion_exactly` |
+| `off` issues no query against `nodes` or `edges` at all | G5 | `tests/test_graph_channel.py::test_off_issues_no_traversal_query` |
+| a same-document chunk reachable **only** by membership never appears | G5 | `tests/test_graph_channel.py::test_a_chunk_reachable_only_by_membership_never_appears` |
+| ...and one also reachable by `sibling` is not excluded — the "only" is load-bearing | G5 | `tests/test_graph_channel.py::test_a_same_document_chunk_reachable_by_sibling_is_not_excluded` |
+| membership neighbours are dropped before the cut, so they never spend fan-out budget | G5 | `tests/test_graph_channel.py::test_membership_neighbours_do_not_consume_the_fanout_budget` |
+| `pnk links --json` is byte-identical with the channel on (decision 16) | G5 | `tests/test_graph_channel.py::test_pnk_links_output_is_unchanged_with_the_channel_on` |
+| the gate's two edge-set variants differ in cardinality, so the split discriminates | G5 | `tests/test_graph_channel.py::test_the_gate_is_computed_with_and_without_authored_edges` |
+| "without authored" is the whole kind, whatever a row's `origin` | G5 | `tests/test_graph_channel.py::test_dropping_authored_is_every_links_row_regardless_of_origin` |
+| the sign test reproduces the plan's table **and** refuses the row above each threshold | G5 | `tests/test_graph_channel.py::test_the_sign_test_reproduces_the_plans_table_and_the_rows_below_it` |
+| a rise in `false_confidence` stops the gate — clause 2 cannot see it | G5 | `tests/test_graph_channel.py::test_a_rise_in_false_confidence_stops_the_gate` |
+| a drop in `confidence_coverage` stops the gate | G5 | `tests/test_graph_channel.py::test_a_drop_in_confidence_coverage_stops_the_gate` |
+| **both** runs must pass; one green run licenses nothing | G5 | `tests/test_graph_channel.py::test_the_gate_requires_both_runs_to_pass` |
+| a class vanishing stops the gate | G5 | `tests/test_graph_channel.py::test_a_class_vanishing_stops_the_gate` |
+| an unpaired question set is refused before any clause is scored | G5 | `tests/test_graph_channel.py::test_an_unpaired_question_set_is_refused_before_any_clause_is_scored` |
+| a leg is identified by its header, never its filename | G5 | `tests/test_graph_channel.py::test_a_leg_that_is_not_the_leg_it_was_passed_as_is_refused`, `tests/test_graph_channel.py::test_a_without_authored_leg_that_kept_authored_edges_is_refused` |
+| ...and a gate that should pass does pass, so the four above are not green against a gate that refuses everything | G5 | `tests/test_graph_channel.py::test_a_gate_that_passes_reports_that_it_passes` |
+| `graph_channel` defaults to `off`, is not stamped into the template, and refuses an unknown name | G5 | `tests/test_graph_channel.py::test_the_default_is_off`, `tests/test_graph_channel.py::test_the_channel_setting_is_not_stamped_into_the_template`, `tests/test_graph_channel.py::test_an_unknown_channel_name_is_refused` |
+| a soft-deleted document never reaches the channel — the other end of G3's reaping | G5 | `tests/test_graph_channel.py::test_a_soft_deleted_document_never_reaches_the_channel` |
+| an index with no derived nodes walks empty rather than failing | G5 | `tests/test_graph_channel.py::test_a_kb_synced_before_the_edge_set_existed_walks_empty` |
+| the committed corpora still measure the two-list pipeline | G5 | `tests/test_graph_channel.py::test_the_corpora_are_left_alone`, `tests/test_graph_channel.py::test_the_workspace_helper_copies_rather_than_edits` |
+
 ## Release machinery
 
 | What must be true | Increment | Where it is checked |
