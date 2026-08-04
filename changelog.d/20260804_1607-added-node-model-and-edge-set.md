@@ -19,6 +19,7 @@
 
   Measured, since derivation runs on every sync and `pnk sync` runs on three git hooks:
   `tests/demo-kb` 192 edges and `tests/partner-kb` 171, each derived in under 2 ms; the 300-document
-  / 106 806-chunk RFC realism corpus derives 214 608 edges in **1.4 s** and adds ~31 MB to a 265 MB
-  index. Its per-kind counts — `sibling` 106 506, `shared-tag` 643, `co-located` 262 — reproduce the
-  numbers the go decision was taken on exactly.
+  / 106 806-chunk RFC realism corpus derives 214 608 edges in **1.3 s** and adds 31 MB to a 265 MB
+  index; one document of 32 000 chunks with a full heading hierarchy derives in 0.6 s. That corpus's
+  per-kind counts — `sibling` 106 506, `shared-tag` 643, `co-located` 262 — reproduce the numbers the
+  go decision was taken on exactly.

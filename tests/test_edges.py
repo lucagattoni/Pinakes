@@ -44,6 +44,9 @@ class Doc:
     """KB-root-relative, POSIX. `docs/a.md`, `docs/deep/b.md` — the directory hub reads this."""
     body: str
     tags: tuple[str, ...] = ()
+    doc_id: DocId | None = None
+    """Forced only where the test needs two KBs to share a document ULID — which is what a forked
+    KB produces, and the one shape that tells `authored_pairs`' two kb-id filters apart."""
 
 
 @dataclass
@@ -56,7 +59,7 @@ class Corpus:
         target = self.root / doc.path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(doc.body, encoding="utf-8")
-        doc_id = self.ids.get(doc.path) or mint_doc_id()
+        doc_id = doc.doc_id or self.ids.get(doc.path) or mint_doc_id()
         self.ids[doc.path] = doc_id
         sidecar: dict[str, Any] = {"id": str(doc_id), "title": Path(doc.path).stem}
         if doc.tags:
@@ -915,3 +918,98 @@ def test_the_stored_edge_set_agrees_with_the_probe_the_decision_was_taken_on() -
         kind: theirs[kind] for kind in sorted(shared)
     }
     assert sum(theirs[kind] for kind in shared) > 0, "the probe derived nothing to agree about"
+
+
+def test_a_forked_kb_sharing_a_document_ulid_does_not_forge_a_local_authored_edge(
+    tmp_path: Path,
+) -> None:
+    """`authored_pairs` filters on **both** `kb_id`s, and the `nodes` join is not enough on its own.
+
+    The join looks sufficient — a foreign document ULID has no local `doc` node — right up until
+    two KBs share one. Forking a KB does exactly that: copy the directory, mint a new `[kb] id`,
+    and every document keeps its permanent ULID. A reverse scan of the fork then writes
+    `(fork_kb, D, local_kb, E)` where `D` is *also* one of our documents, and a filter that
+    accepted either end would read it as "our D cites E" — an edge nobody authored here, taken
+    from precisely the partial view of a foreign graph decision 16 refuses to serve.
+
+    Found by mutation: replacing the `AND` with an `OR` was caught by nothing.
+    """
+    local = build(
+        tmp_path / "local",
+        [
+            Doc("docs/a.md", sectioned("A", [("One", "x " * 60)])),
+            Doc("docs/b.md", sectioned("B", [("One", "y " * 60)])),
+        ],
+    )
+    shared = local.ids["docs/a.md"]
+
+    # The fork: its own KB id, its own copy of a document that kept the original's ULID, and a
+    # link from that document into ours. Built with the same builder, so it is a real KB.
+    fork = build(
+        tmp_path / "fork",
+        [Doc("docs/a.md", sectioned("A", [("One", "x " * 60)]), doc_id=shared)],
+    )
+    _link(fork, "docs/a.md", f"pnk://{local.kb_id}/{local.ids['docs/b.md']}", "cites")
+    fork.sync()
+
+    (local.root / "pinakes.toml").write_text(
+        (local.root / "pinakes.toml").read_text(encoding="utf-8")
+        + f'\n[[links.kb]]\nname = "fork"\nid   = "{fork.kb_id}"\npath = "../fork"\n',
+        encoding="utf-8",
+    )
+    local.sync(scan_links=True)
+
+    connection = local.open()
+    try:
+        reverse = connection.execute(
+            "SELECT src_kb_id, src_doc_id FROM links WHERE origin = 'reverse-scan'"
+        ).fetchall()
+        assert [(str(r[0]), str(r[1])) for r in reverse] == [(str(fork.kb_id), str(shared))], (
+            "the reverse scan did not record the fork's row, so this test asserts nothing"
+        )
+        assert identifier(connection, "doc", str(shared)), "the shared ULID is a local doc node too"
+        assert edges.authored_pairs(connection, local_kb=str(local.kb_id)) == [], (
+            "a row whose source lives in the fork was resolved into a local authored edge"
+        )
+    finally:
+        connection.close()
+
+
+def test_hierarchy_matches_the_naive_prefix_predicate(tmp_path: Path) -> None:
+    """The ancestor lookup replaced an every-pair `startswith`, which was quadratic in a document's
+    chunk count and took 3.3 s on one 8 000-chunk document. This recomputes the relation the naive
+    way, from the same `chunks` rows, and asserts the stored edges are exactly it — so the
+    optimisation cannot quietly drop or invent a hierarchy edge.
+    """
+    body = (
+        "# Costs\n\n" + ("a " * 60) + "\n\n"
+        "## Detail\n\n" + ("b " * 60) + "\n\n"
+        "### Deeper\n\n" + ("c " * 60) + "\n\n"
+        "## Other\n\n" + ("d " * 60) + "\n\n"
+        "# Costsheet\n\n" + ("e " * 60) + "\n"
+    )
+    corpus = build(tmp_path / "kb", [Doc("docs/a.md", body)])
+    connection = corpus.open()
+    try:
+        doc_id = str(corpus.ids["docs/a.md"])
+        rows_ = chunks_of(connection, doc_id)
+        assert len({heading for _, heading in rows_}) >= 4, rows_
+
+        naive = {
+            (parent, child)
+            for parent, parent_path in rows_
+            for child, child_path in rows_
+            if parent_path
+            and child_path
+            and child_path.startswith(parent_path + edges.HEADING_SEPARATOR)
+        }
+        assert naive, "the fixture has no hierarchy, so the comparison is vacuous"
+
+        stored = {
+            (edges.parse_chunk_key(src)[1], edges.parse_chunk_key(dst)[1])
+            for _, src, kind, _, dst in rows(connection)
+            if kind == "parent-child"
+        }
+        assert stored == naive
+    finally:
+        connection.close()

@@ -648,6 +648,8 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | `pnk links --json` on both corpora is unchanged across the schema bump | G3 | `tests/test_links_surface.py::test_the_authored_links_surface_is_unchanged_by_the_schema_bump`, `tests/test_links_surface.py::test_the_fixture_covers_both_corpora_and_holds_real_neighbours` |
 | a `schema_version` 2 index is refused with a remedy | G3 | `tests/test_edges.py::test_a_schema_version_2_index_is_refused_with_its_remedy`, `tests/test_store.py::test_schema_version_is_3_for_g3s_node_and_edge_tables` |
 | the stored edge set agrees with the probe the go decision was taken on | G3 | `tests/test_edges.py::test_the_stored_edge_set_agrees_with_the_probe_the_decision_was_taken_on` |
+| a forked KB sharing a document ULID does not forge a local authored edge — found by mutation, caught by nothing | G3 | `tests/test_edges.py::test_a_forked_kb_sharing_a_document_ulid_does_not_forge_a_local_authored_edge` |
+| the hierarchy lookup derives exactly the naive prefix relation it replaced | G3 | `tests/test_edges.py::test_hierarchy_matches_the_naive_prefix_predicate` |
 | the deriver is on the free path, and gate 4 reaches it | G3 | `tests/test_paid_path.py::test_the_free_path_never_imports_the_paid_client` |
 
 ## Release machinery

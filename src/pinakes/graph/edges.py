@@ -375,25 +375,31 @@ def _hierarchy_edges(
 
     Within one document only. A cross-document comparison would be the global-hub failure that
     heading nodes are scoped per document to avoid, arriving through the back door.
+
+    **Each path looks its ancestors up rather than every chunk pair testing a prefix.** The two
+    are the same relation — `child.startswith(parent + " > ")` holds exactly when `parent` is one
+    of `" > ".join(segments[:d])` for `d < len(segments)` — and the cost is not: comparing pairs is
+    quadratic in a *document's chunk count*, which is unbounded. Measured before this was written:
+    a single document of 2 000/4 000/8 000 chunks took 0.23 s/0.85 s/3.32 s, so a 32 000-chunk
+    document would have spent ~50 s deriving on a path `pnk sync` runs from three git hooks. This
+    form is linear in chunks, and quadratic only in a *document's distinct heading paths*.
+    `test_hierarchy_matches_the_naive_prefix_predicate` pins the equivalence.
     """
-    by_doc: dict[str, list[_ChunkRow]] = {}
+    by_doc: dict[str, dict[str, list[int]]] = {}
     for row in chunks:
         if row.heading_path:
-            by_doc.setdefault(row.doc_id, []).append(row)
+            by_doc.setdefault(row.doc_id, {}).setdefault(row.heading_path, []).append(
+                chunk_node[(row.doc_id, row.ordinal)]
+            )
 
     edges: set[tuple[int, int, str]] = set()
-    for doc_id, rows in by_doc.items():
-        for parent in rows:
-            for child in rows:
-                assert parent.heading_path is not None and child.heading_path is not None
-                if child.heading_path.startswith(parent.heading_path + HEADING_SEPARATOR):
-                    edges.add(
-                        (
-                            chunk_node[(doc_id, parent.ordinal)],
-                            chunk_node[(doc_id, child.ordinal)],
-                            "parent-child",
-                        )
-                    )
+    for groups in by_doc.values():
+        for path, children in groups.items():
+            segments = path.split(HEADING_SEPARATOR)
+            for depth in range(1, len(segments)):
+                ancestor = HEADING_SEPARATOR.join(segments[:depth])
+                for parent in groups.get(ancestor, ()):
+                    edges.update((parent, child, "parent-child") for child in children)
     return edges
 
 
