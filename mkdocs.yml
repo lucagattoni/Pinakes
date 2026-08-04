@@ -117,10 +117,11 @@ nav:
       - 3.1 Design: DESIGN.md
       - 3.2 Updating an existing KB: KB-UPDATES.md
   - 4. Project:
-      - 4.1 Status — what ships today: STATUS.md
-      - 4.2 The measurement run: MEASUREMENT-RUN.md
-      - 4.3 Cutting a release: RELEASING.md
-      - 4.4 Retrospectives: RETROSPECTIVES.md
+      - 4.1 Roadmap — the whole story: ROADMAP.md
+      - 4.2 Status — what ships today: STATUS.md
+      - 4.3 The measurement run: MEASUREMENT-RUN.md
+      - 4.4 Cutting a release: RELEASING.md
+      - 4.5 Retrospectives: RETROSPECTIVES.md
   - 5. Graph research:
       - graph/README.md
       - 5.1 The pinakes approach: graph/PINAKES_APPROACH.md
