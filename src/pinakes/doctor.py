@@ -37,6 +37,7 @@ from pinakes.errors import (
     ExtractorMissingError,
     FloorsMissingError,
     HookError,
+    IncompleteIndexError,
     LedgerError,
     PinakesError,
     PricesMissingError,
@@ -466,6 +467,12 @@ def _index(manifest: Manifest) -> Iterator[Check]:
                 )
             else:
                 yield Check("extraction coherence", Status.OK, "none stale")
+        except IncompleteIndexError as exc:
+            # Not a coherence failure — nothing recorded contradicts the manifest, there is simply
+            # nothing recorded yet. A distinct check name, so it can never read as the same finding
+            # as `model coherence` FAIL with a different status: the two have different remedies,
+            # and `--rebuild` is the wrong one here.
+            yield Check("sync completeness", Status.WARN, exc.message, exc.remedy)
         except CoherenceError as exc:
             yield Check("model coherence", Status.FAIL, exc.message, exc.remedy)
         except ExtractionCoherenceError as exc:

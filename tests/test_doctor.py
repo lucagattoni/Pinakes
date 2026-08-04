@@ -143,6 +143,55 @@ def test_an_incoherent_index_is_reported_as_a_failure(kb: Path) -> None:
     assert checks(kb)["model coherence"][0] is Status.FAIL
 
 
+def test_an_interrupted_first_sync_warns_and_never_says_rebuild(kb: Path) -> None:
+    """Item 11 — the RFC corpus's near-hour-of-work loss. `sync.py` writes the embedding identity
+    keys with `set_meta` only after the document loop finishes, so a first sync killed mid-run
+    leaves `meta` holding `schema_version` and nothing else. That is "never finished", not "built
+    under a different model", and it must not be reported (or remedied) as the latter: `--rebuild`
+    on an interrupted index discards every embedding that survived.
+
+    The `--rebuild` assertion is the one that actually carries the fix — a test that only checks
+    the check's *name* or *status* would still pass with the destructive remedy printed underneath.
+    """
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    connection = store.connect_rw(kb / ".pinakes" / "index.db")
+    connection.execute(
+        "DELETE FROM meta WHERE key IN ('embedding_provider', 'embedding_model', 'embedding_dim')"
+    )
+    connection.commit()
+    connection.close()
+
+    report = diagnose(load(kb))
+    assert report.worst is Status.WARN
+
+    found = checks(kb)
+    assert "model coherence" not in found, "not a coherence failure — must not share its name"
+    status, detail = found["sync completeness"]
+    assert status is Status.WARN
+    assert "never finished" in detail or "did not finish" in detail
+
+    remedy = _remedy(kb, "sync completeness")
+    assert "pnk sync" in remedy
+    assert "--rebuild" not in remedy, "the destructive remedy must never appear on this branch"
+
+
+def test_a_partially_written_meta_is_still_a_coherence_failure(kb: Path) -> None:
+    """Some embedding identity keys present, some absent, is neither "never finished" (all absent)
+    nor a clean mismatch — item 11 requires it fall to the FAIL side, never silently into the
+    benign incomplete-sync branch a careless `not all(...)` check would put it in."""
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    connection = store.connect_rw(kb / ".pinakes" / "index.db")
+    connection.execute("DELETE FROM meta WHERE key = 'embedding_dim'")
+    connection.commit()
+    connection.close()
+
+    report = diagnose(load(kb))
+    assert report.worst is Status.FAIL
+    found = checks(kb)
+    assert found["model coherence"][0] is Status.FAIL
+    assert "sync completeness" not in found
+
+
 def test_an_uncalibrated_kb_is_a_warning_not_a_failure(kb: Path) -> None:
     """`unknown` is honest; it is worth reporting, but it is not broken."""
     sync(load(kb), options=SyncOptions(), now="20260725 17:31")

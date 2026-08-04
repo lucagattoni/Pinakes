@@ -517,6 +517,47 @@ def print_sync_report(report: "SyncReport", *, quiet: bool) -> None:
         print(line, file=sys.stderr)
 
 
+def _progress_printer() -> tuple[Callable[[int, int], None], Callable[[], None]]:
+    """A `SyncOptions.progress` callback for a real terminal: `done/total` and a rate, on one line
+    it overwrites in place — not a spinner, because the number is what tells slow from stuck on a
+    multi-hour, CPU-only sync. Throttled to roughly once a second so a fast run (or a small KB)
+    does not spend more time printing than syncing.
+
+    Returns `(progress, finish)`. `progress` ends the line with a newline exactly when `done ==
+    total` — the ordinary case — but a `[budget]` cap or an unhandled failure can stop `_run`'s
+    loop before `total` is reached, leaving the cursor mid-line with no newline printed. `finish`
+    closes that line if `progress` left it open; the caller runs it unconditionally after `sync()`
+    returns *or raises*, before anything else reaches stdout, so a report or an error message never
+    lands glued onto the tail of a progress line.
+    """
+    import time
+
+    start = time.monotonic()
+    last_shown: float | None = None
+    dirty = False  # a line is open (no trailing newline printed for it yet)
+
+    def progress(done: int, total: int) -> None:
+        nonlocal last_shown, dirty
+        now = time.monotonic()
+        finished = done >= total
+        if not finished and last_shown is not None and now - last_shown < 1.0:
+            return
+        last_shown = now
+        elapsed = now - start
+        rate = (done / elapsed * 60) if elapsed > 0 else 0.0
+        line = f"\rsyncing: {done}/{total} documents ({rate:.1f}/min)"
+        print(line, end="\n" if finished else "", flush=True)
+        dirty = not finished
+
+    def finish() -> None:
+        nonlocal dirty
+        if dirty:
+            print()
+            dirty = False
+
+    return progress, finish
+
+
 def run_sync(args: argparse.Namespace) -> int:
     """`pnk sync`. Exit 0 on success (including a busy lock), 1 if any document failed."""
     from pinakes import manifest as manifest_module
@@ -527,26 +568,43 @@ def run_sync(args: argparse.Namespace) -> int:
     if args.clear_cache is not None:
         return _run_clear_cache(loaded, args)
 
-    report = sync(
-        loaded,
-        options=SyncOptions(
-            rebuild=args.rebuild,
-            sidecars_only=args.sidecars_only,
-            scan_links=args.scan_links,
-            index_only=args.index_only,
-            stage=args.stage,
-            offline=args.offline,
-            force_unlock=args.force_unlock,
-            extract=args.extract,
-            force=args.force,
-            estimate_only=args.estimate_only,
-            yes=args.yes,
-            # The terminal facts belong to the caller: `sync()` does no I/O beyond the
-            # filesystem, so it is told whether one is attached rather than probing for it.
-            interactive=sys.stdin.isatty(),
-            ask=input,
-        ),
-    )
+    def _no_finish() -> None:
+        pass
+
+    # `-q` prints only problems (see `print_sync_report`), and a hook can inherit a real tty while
+    # still asking for quiet — so both gates apply, not just the tty check.
+    progress: Callable[[int, int], None] | None = None
+    finish_progress: Callable[[], None] = _no_finish
+    if sys.stdout.isatty() and not args.quiet:
+        progress, finish_progress = _progress_printer()
+
+    try:
+        report = sync(
+            loaded,
+            options=SyncOptions(
+                rebuild=args.rebuild,
+                sidecars_only=args.sidecars_only,
+                scan_links=args.scan_links,
+                index_only=args.index_only,
+                stage=args.stage,
+                offline=args.offline,
+                force_unlock=args.force_unlock,
+                extract=args.extract,
+                force=args.force,
+                estimate_only=args.estimate_only,
+                yes=args.yes,
+                # The terminal facts belong to the caller: `sync()` does no I/O beyond the
+                # filesystem, so it is told whether one is attached rather than probing for it.
+                interactive=sys.stdin.isatty(),
+                ask=input,
+                progress=progress,
+            ),
+        )
+    finally:
+        # Unconditional, and before anything else reaches stdout: a `[budget]` cap or an unhandled
+        # failure can stop `_run`'s loop before `progress`'s own `done == total` ever fires, which
+        # leaves the line open (a trailing `\r`, no newline) for whatever prints next to land on.
+        finish_progress()
 
     if report.estimates:
         print("estimate only — nothing was extracted, and no output tokens were billed:")
