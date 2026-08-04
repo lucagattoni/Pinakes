@@ -294,7 +294,7 @@ each step can still say no:
 2. Author a multi-hop question set against it, and **freeze it before the probe runs** (G2's trap 1).
 3. Re-run `tools/reachable_ceiling_probe.py`. Report **both** numbers, with and without authored
    edges; only the **without** figure binds (G2's trap 2). **A different agent does this**, by
-   [`corpus-probe-run.md`](corpus-probe-run.md) — which also owns the conversion from the frozen
+   [`20260803_2239-corpus-probe-run.md`](20260803_2239-corpus-probe-run.md) — which also owns the conversion from the frozen
    question file into the eval schema, because that conversion touches frozen material and is the
    one place this separation could quietly leak.
 4. Report whichever answer comes back. **"Still cannot discriminate" is a publishable result**, and

@@ -15,7 +15,7 @@ There is deliberately no `content_hash` here: change detection is the index's jo
 committed file would dirty two files per edit and go stale whenever sync had not run (§2.2).
 
 **Written through `ruamel.yaml`, in round-trip mode, at YAML 1.2.** Two things follow, and both are
-the point rather than a side effect (`plans/decision-ruamel-yaml.md`):
+the point rather than a side effect (`plans/20260731_0602-decision-ruamel-yaml.md`):
 
 * **A rewrite preserves comments, quoting, block scalars and blank lines**, because `write()`
   reconciles the known keys *into the document that was read* instead of rendering a fresh one.

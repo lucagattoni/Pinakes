@@ -5,7 +5,7 @@
 updated every table below it, in the file whose own preamble says it is the only place in the repo
 that says what is built — and this repo is public. A written checklist missed it four times
 running, which is this project's own threshold for turning the item into a gate: the same reason
-`changelog.d/`, `retro.d/` and `nul-scan` exist (plans/open-corrections.md, 20260803).
+`changelog.d/`, `retro.d/` and `nul-scan` exist (plans/20260731_1202-open-corrections.md, 20260803).
 
 **The invariant holds with no exception window.** On `main`, `__version__` *is* the latest
 release: the release commit bumps `__version__` (`docs/RELEASING.md` step 2) and its sweep table

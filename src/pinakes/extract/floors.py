@@ -3,7 +3,8 @@
 `extract/floors.toml` ships as package data beside I6a's `prices.toml`, for the same reason: a file
 that lives only in the source tree is invisible to every installed copy, and both numbers here are
 consumed at runtime, not at repo-checkout time. Two numbers share one file because they were fitted
-in the same corpus run (`make pdf-eval`, `plans/v0.2.md` I3b): I3a's running-head threshold *T*
+in the same corpus run (`make pdf-eval`, `plans/20260727_1543-v0.2.md` I3b): I3a's running-head
+threshold *T*
 (`layout.assemble`'s `running_head_threshold`) and I3b's text-yield floor. They differ in what an
 absent value means to their own callers — *T* costs nothing, so `pdfium.py` treats its absence as a
 startup error; the text-yield floor gates spending, so I7b/I8 treat its absence as "refuse to spend"

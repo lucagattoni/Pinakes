@@ -883,7 +883,8 @@ def test_every_doctor_check_is_exercised_by_a_test(kb: Path) -> None:
     to review and invisible to a green suite. This asserts every check name `diagnose` can produce
     is named somewhere in this file.
 
-    Named in `plans/v0.2.md`'s verification table as `test_every_v02_check_appears`, assigned to
+    Named in `plans/20260727_1543-v0.2.md`'s verification table as `test_every_v02_check_appears`,
+    assigned to
     I8, and not written there — found by I9's audit of that table, which is exactly what the audit
     is for.
     """

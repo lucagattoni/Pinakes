@@ -10,7 +10,12 @@ separate files, so the conflict class stops existing rather than being managed
 
 ## Naming
 
-    changelog.d/<category>-<slug>.md
+    changelog.d/YYYYMMDD_HHMM-<category>-<slug>.md
+
+`YYYYMMDD_HHMM` is when the fragment was written, local 24h — **read the clock, never compose it**
+(`date "+%Y%m%d_%H%M"`). It orders `ls` chronologically and dates a fragment without opening it, and
+it is the same prefix plans and branches carry. `tools/fragments.py` strips it before reading the
+category, so it never becomes part of the slug.
 
 `<category>` is one of Keep a Changelog's six — `added`, `changed`, `deprecated`, `removed`,
 `fixed`, `security` — and it lives in the **filename** so it cannot drift from the content.

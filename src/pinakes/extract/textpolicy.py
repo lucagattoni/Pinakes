@@ -1,6 +1,7 @@
 """The one string policy both extraction backends run — pure `str -> str`, no geometry.
 
-Decision 15 (`plans/v0.2.md`): this used to live inside `layout.py`, which made two things false at
+Decision 15 (`plans/20260727_1543-v0.2.md`): this used to live inside `layout.py`, which made two
+things false at
 once. It made "the paid backend bypasses `layout.py`" untrue, since the paid backend still needed
 this stage; and it left this stage's own version out of the paid fingerprint, since only
 `LAYOUT_VERSION` was hashed — so a ligature or whitespace policy change would have changed the

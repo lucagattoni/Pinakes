@@ -2,7 +2,7 @@
 
 **Status: mostly proposal. Decided 20260728 18:39.** Its minimum — the `requires_pinakes` pre-pass
 (§4, §7) — **shipped in 0.6.0**, as G4 of
-[`plans/links-and-graph.md`](../plans/links-and-graph.md); every field rule is in
+[`plans/20260729_0256-links-and-graph.md`](../plans/20260729_0256-links-and-graph.md); every field rule is in
 [MANIFEST.md](MANIFEST.md) and the reasoning in [DESIGN §2.1](DESIGN.md#21-the-manifest--pinakestoml).
 Everything else here — `pnk upgrade`, the template-drift gate, doctor reporting drift — is still a
 proposal, and `pnk upgrade` stays template-release work. [STATUS.md](STATUS.md) is the authority on

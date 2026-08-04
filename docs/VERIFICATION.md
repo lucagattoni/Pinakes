@@ -1,6 +1,6 @@
 # Verification — every promise, and the test that holds it
 
-`plans/v0.2.md` ends with a table headed *"Every row carries an increment number and a test path — a
+`plans/20260727_1543-v0.2.md` ends with a table headed *"Every row carries an increment number and a test path — a
 promise in a section with no owner is a wish"*. **Sixty-one of its ninety-eight test paths did not
 resolve.** Not because the properties went untested — almost all of them are tested, usually under a
 better name than the plan guessed — but because the plan wrote its test names *before* the tests
@@ -21,7 +21,7 @@ test, or write **none** and say why in the same commit.
   test can check that. The mapping below was resolved by reading the tests where the name did not
   make it obvious — and the I9 review still found one row mapped from a name alone, which was
   wrong (the completeness audit's). Treat a row as a strong pointer, not a proof.
-* **The scope is `plans/v0.2.md`'s promises**, which is what the table this replaces covered. v0.1's
+* **The scope is `plans/20260727_1543-v0.2.md`'s promises**, which is what the table this replaces covered. v0.1's
   own modules — `test_chunk.py`, `test_ids.py`, `test_init.py`, `test_lock.py`, `test_pairing.py`,
   `test_uri.py`, `test_embed.py`, `test_eval.py` — are not represented here and are not unowned;
   they simply predate the table. Adding them is worth doing and nobody has.

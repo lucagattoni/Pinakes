@@ -1,6 +1,7 @@
 """`pnk link` — the one command that writes a link, and the only machine writer of `links[]`.
 
-**Forward only, into the source document's own sidecar** (plans/links-and-graph.md, decision 5).
+**Forward only, into the source document's own sidecar** (plans/20260729_0256-links-and-graph.md,
+decision 5).
 A link is authored where it is meant; the other end learns about it by reverse-scan (§6.2), never
 by having its file edited from outside.
 

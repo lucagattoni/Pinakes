@@ -1,6 +1,7 @@
 """Score an extraction against a ground truth — five metrics, each shipping its own denominator.
 
-Rule 3 (`plans/v0.2.md` I3b): v0.1's `false_abstain: 0.0` was vacuous and would have passed a CI
+Rule 3 (`plans/20260727_1543-v0.2.md` I3b): v0.1's `false_abstain: 0.0` was vacuous and would have
+passed a CI
 gate forever, because a rate with no visible denominator cannot be told apart from "measured and
 zero." Every metric here returns a `Rate`, never a bare float — `Rate.value` is `None`, not `0.0`,
 when the denominator is legitimately zero, so a stratum with nothing to measure is declared, never
@@ -134,7 +135,8 @@ def junk_rate(extracted: str, expected: str) -> Rate:
 def pair_adjacency(extracted: str, pairs: Sequence[tuple[str, str]], *, window: int = 80) -> Rate:
     """Asserted (label, value) pairs within `window` characters of each other in `extracted`.
 
-    80 is a stated basis, not a fit (`plans/v0.2.md` I3b): correct reading order puts a label and
+    80 is a stated basis, not a fit (`plans/20260727_1543-v0.2.md` I3b): correct reading order puts
+    a label and
     its value 0-40 characters apart (adjacent cells read in the same row), a reading-order
     failure puts them hundreds apart (every label read together, then every value); any value in
     ~50-150 separates the two cases, and 80 is the midpoint. `str.find` locates each string's
@@ -459,7 +461,8 @@ def fit_text_yield_floor(report: CorpusReport) -> tuple[float, str]:
 
     The scanned stratum is the positive control at zero (no native text layer exists to extract at
     all); every other scored, non-exempt document is the negative control. Decision 12
-    (`plans/v0.2.md`, I3b) states the floor separates *empty* from *non-empty* and nothing finer, so
+    (`plans/20260727_1543-v0.2.md`, I3b) states the floor separates *empty* from *non-empty* and
+    nothing finer, so
     the midpoint between the highest observed scanned yield and the lowest observed real yield is
     exactly that separator — not a quality bar, just a "did anything come out" check.
     """
@@ -564,7 +567,8 @@ def check_floor_drift(
     """Re-fit both floors from the current corpus and compare against the committed
     `floors.toml` — "nothing here re-fits automatically, so `fitted_on` can go stale while still
     reading as evidence... `make pdf-eval` recomputes the floors and fails if a committed value has
-    drifted" (`plans/v0.2.md`, I3b). A `layout.py`/`textpolicy.py` change that moves either fitted
+    drifted" (`plans/20260727_1543-v0.2.md`, I3b). A `layout.py`/`textpolicy.py` change that moves
+    either fitted
     value is exactly the drift this exists to catch — re-fitting is a gate, not a one-time ceremony.
     """
     import tomllib

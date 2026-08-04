@@ -239,7 +239,7 @@ condition is a claim about the environment, and machine-wide state (a shared cac
 about the local one.*
 
 **Design note, not a defect — `DuplicateIdsError` raises rather than returning an action.**
-`plans/v0.1.md` lists it among `pair()`'s return values. Raising is better: the condition is fatal
+`plans/20260725_1317-v0.1.md` lists it among `pair()`'s return values. Raising is better: the condition is fatal
 for the whole run, and an action every caller must remember to inspect is one a caller will
 eventually forget. Recorded because it is a deliberate divergence from the reviewed plan.
 
@@ -320,7 +320,7 @@ in the retrospective commit. *Lesson: the gate belongs immediately before `git c
 `max_tokens = 60` while leaving `overlap = 64` was rejected by I3's cross-key validation. Pleasant
 confirmation that the check earns its place: the first thing it caught was its own author.
 
-**Design note — the template ships `[retrieval.confidence]` commented out.** `plans/v0.1.md` had
+**Design note — the template ships `[retrieval.confidence]` commented out.** `plans/20260725_1317-v0.1.md` had
 already decided this, and building it made the reason concrete: `pnk init` cannot know anything
 about the corpus the user is about to add, so any threshold it wrote would be a number with no
 provenance. `confidence: unknown` until they fit their own is the only honest default.
@@ -487,7 +487,7 @@ author is thinking about. The check that works is running the commands the READM
 documented `[light]` install had the same shape: co-equal in the README, broken at the first `sync`
 because `pnk init` always stamps sentence-transformers.
 
-**A promise in a section with no increment number belongs to nobody.** `plans/v0.1.md` asked for a
+**A promise in a section with no increment number belongs to nobody.** `plans/20260725_1317-v0.1.md` asked for a
 CI grep gate keeping paid-API clients out of `src/` under "Verification of the whole". No increment
 owned it, so it never shipped — while the invariant it guards is the one `CLAUDE.md` calls
 non-negotiable. Now enforced, and verified in both directions: it passes on the current source and
@@ -497,7 +497,7 @@ path, or it is a wish.*
 ## Planning v0.2 (20260727 17:00)
 
 **A review pass is a change, and a change needs its own review.** Adversarial pass 2 over
-`plans/v0.2.md` returned 5 HIGH — and **four of the five were created by pass 1's own fixes**, not
+`plans/20260727_1543-v0.2.md` returned 5 HIGH — and **four of the five were created by pass 1's own fixes**, not
 survivals of pass 1's findings. Pass 1 correctly rejected a per-page cost estimate as an
 order-of-magnitude under-reservation against whole-document requests; the shape it introduced
 instead was quadratic in input and stopped fitting the model's context window at ~166 pages, so a
@@ -1605,7 +1605,7 @@ ship a duplicate-heading bug at the 0.3.0 release.
 
 ## I9 — Auditing the verification table (20260729 05:40)
 
-**HIGH — the table that verifies everything verified nothing.** `plans/v0.2.md` ends with 98 rows,
+**HIGH — the table that verifies everything verified nothing.** `plans/20260727_1543-v0.2.md` ends with 98 rows,
 each promising a property and naming the test that holds it, under a preamble reading *"a promise in
 a section with no owner is a wish"*. **61 of the 98 test paths did not resolve.** Not because the
 properties went untested — nearly all are tested, usually under a better name than the plan guessed
@@ -2667,7 +2667,7 @@ so a symlinked *document* stays readable, and `..` is never a document.
 **`sync.walk_sources` has the identical shape for the *local* manifest** and is not fixed here: it
 is the user's own configuration rather than a partner's, and changing the engine's document walk is
 not this increment's to do. Reported instead, and now scoped as its own increment and PATCH release
-in `plans/source-walk-containment.md` — which measured a third defect this pass had not: an
+in `plans/20260731_2128-source-walk-containment.md` — which measured a third defect this pass had not: an
 **absolute** local `include` is a raw `NotImplementedError` out of `cli.main`, the same escaping-
 error class L6 spent four passes closing on the partner side.
 
@@ -3080,7 +3080,7 @@ with `--force-unlock` as the human path, `pnk doctor` reports held locks (§6.5)
 guaranteed a two-file diff on every document edit while going stale whenever sync hadn't run —
 dropped from the sidecar (user decision); change detection is index-only, stated in §2.2.
 
-**Pass 7** (20260725 09:52, surfaced while adversarially reviewing `plans/v0.1.md` — the implementation
+**Pass 7** (20260725 09:52, surfaced while adversarially reviewing `plans/20260725_1317-v0.1.md` — the implementation
 plan's review loop reads the design fresh each pass, which is how these escaped passes 1–6).
 *HIGH:* §4.5 claimed model weights go to the shared HF cache on both backends — false for fastembed,
 which defaults to `$TMPDIR/fastembed_cache` (verified upstream): CI's `HF_HOME` cache would never

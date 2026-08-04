@@ -18,14 +18,14 @@ Build plans live in [`plans/`](../plans/); the release history is [`CHANGELOG.md
 
 | File | What it is |
 |---|---|
-| [`links-and-graph.md`](../plans/links-and-graph.md) | **The current build order** — the links release (L*) and the graph release (G*) |
-| [`links-and-graph-log.md`](../plans/links-and-graph-log.md) | That plan's iteration log: how it was reached, never what to do |
-| [`source-walk-containment.md`](../plans/source-walk-containment.md) | A standalone increment, shipped in 0.7.1 — outside both releases above |
-| [`open-corrections.md`](../plans/open-corrections.md) | Numbered corrections for the implementing agent; items are closed in place, never deleted |
-| [`realism-corpus.md`](../plans/realism-corpus.md) | The RFC corpus and the dogfooding KB — both live **outside** this repo |
-| [`corpus-probe-run.md`](../plans/corpus-probe-run.md) | How the second headroom measurement is run against that corpus, and the conversion contract that keeps its frozen questions frozen |
+| [`20260729_0256-links-and-graph.md`](../plans/20260729_0256-links-and-graph.md) | **The current build order** — the links release (L*) and the graph release (G*) |
+| [`20260801_0102-links-and-graph-log.md`](../plans/20260801_0102-links-and-graph-log.md) | That plan's iteration log: how it was reached, never what to do |
+| [`20260731_2128-source-walk-containment.md`](../plans/20260731_2128-source-walk-containment.md) | A standalone increment, shipped in 0.7.1 — outside both releases above |
+| [`20260731_1202-open-corrections.md`](../plans/20260731_1202-open-corrections.md) | Numbered corrections for the implementing agent; items are closed in place, never deleted |
+| [`20260801_0749-realism-corpus.md`](../plans/20260801_0749-realism-corpus.md) | The RFC corpus and the dogfooding KB — both live **outside** this repo |
+| [`20260803_2239-corpus-probe-run.md`](../plans/20260803_2239-corpus-probe-run.md) | How the second headroom measurement is run against that corpus, and the conversion contract that keeps its frozen questions frozen |
 | [`decision-*.md`](../plans/) | A decision record — rationale, not instructions |
-| `v0.1.md`, `v0.2.md` | **Shipped.** Historical build orders, still cited by `check.sh` and `tools/paid_path_gate.py` |
+| `20260725_1317-v0.1.md`, `20260727_1543-v0.2.md` | **Shipped.** Historical build orders, still cited by `check.sh` and `tools/paid_path_gate.py` |
 
 **Two of these documents are written to indirectly.** `CHANGELOG.md` and `RETROSPECTIVES.md` are the
 files every piece of work touches, so a change adds a fragment to
@@ -83,14 +83,14 @@ The docs are built so an increment touches few files. In rough order:
    worth keeping — a real defect, or a fact expensive to rediscover. Same reason, same rule:
    never edit `RETROSPECTIVES.md` directly. Trivia stays in the commit message.
 
-`plans/v0.2.md` carries a DESIGN.md amendment table assigning each spec edit to the increment that
+`plans/20260727_1543-v0.2.md` carries a DESIGN.md amendment table assigning each spec edit to the increment that
 makes it true. **Amendments land with their increment, never in advance** — a spec describing
 unbuilt behaviour is the failure mode the project's README rule exists to prevent. DESIGN sections
 still awaiting an amendment carry a dated note saying so.
 
 **Before assigning a release number, check what has already landed on `main`** ([CLAUDE.md](../CLAUDE.md)).
 Another session or worktree may have cut a release since your branch started, so the number you were
-about to use — or the one a plan assumes — may already be taken. `plans/v0.2.md` assumed it would cut
+about to use — or the one a plan assumes — may already be taken. `plans/20260727_1543-v0.2.md` assumed it would cut
 `0.2.0` at I9; `0.2.0` shipped after I5 and `0.2.1` after that.
 
 And **do not write a number for the release after this one** — name it (see Conventions below). That
@@ -150,7 +150,7 @@ is what stops the next plan from assuming a number that a parallel session has a
 - **Rewrite to the current state; do not layer corrections.** A doc that grows by appending
   "actually, that was wrong" makes every reader traverse the archaeology to learn what is true now.
   State each claim correctly once and delete what it replaced — git holds the history. Measured
-  20260731: `plans/decision-ruamel-yaml.md` reached 297 lines, 156 of them three layers of
+  20260731: `plans/20260731_0602-decision-ruamel-yaml.md` reached 297 lines, 156 of them three layers of
   correction, and collapsed to 110 with nothing load-bearing lost.
 - **Compact on a schedule, not when it hurts.** Review every doc against these conventions monthly,
   alongside the `CLAUDE.md` hygiene pass. Cut recaps, summaries of other sections, superseded

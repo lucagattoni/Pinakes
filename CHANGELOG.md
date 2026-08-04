@@ -336,7 +336,7 @@ property it meant. No shipped behaviour changes.
 
 ### Changed
 
-- **[`plans/links-and-graph.md`](plans/links-and-graph.md) revised after a sixth adversarial pass —
+- **[`plans/20260729_0256-links-and-graph.md`](plans/20260729_0256-links-and-graph.md) revised after a sixth adversarial pass —
   2 HIGH, and the pass-5 fixes verified correct.** Both were narrow, and both were introduced by the
   previous round's own repairs.
 
@@ -364,7 +364,7 @@ property it meant. No shipped behaviour changes.
   ships it, rather than only on the path where the final increment runs; and five amendment rows
   gained a home in their increment's Docs line.
 
-- `plans/links-and-graph.md` revised after adversarial pass 7 (6 HIGH across two reviewers), and
+- `plans/20260729_0256-links-and-graph.md` revised after adversarial pass 7 (6 HIGH across two reviewers), and
   the `pnk link` YAML question settled. L1–L8 are now implementable; G1–G6 are not — G5's gate
   clauses are re-reviewed before G5 is built. L2 was rewritten around four defects: a per-KB delete
   that turned any mid-walk failure into the mass deletion the same section forbids, a delisted
@@ -452,7 +452,7 @@ property it meant. No shipped behaviour changes.
   into what `pnk budget` prints.
 
 - **`docs/VERIFICATION.md`** — every promise this project makes, and the test that holds it, with
-  `tests/test_verification.py` asserting each named test exists. It replaces `plans/v0.2.md`'s
+  `tests/test_verification.py` asserting each named test exists. It replaces `plans/20260727_1543-v0.2.md`'s
   verification table as the *lookup*: that table wrote its test paths before the tests existed, and
   implementation renamed most of them, so **61 of its 98 references did not resolve**. The
   properties were almost all tested — under better names — but a table whose paths cannot be
@@ -470,7 +470,7 @@ property it meant. No shipped behaviour changes.
 
 ### Changed
 
-- **[`plans/links-and-graph.md`](plans/links-and-graph.md) restructured after a third adversarial
+- **[`plans/20260729_0256-links-and-graph.md`](plans/20260729_0256-links-and-graph.md) restructured after a third adversarial
   pass — the links release never needed the golden set.** Two reviewers returned 24 HIGH, and three
   of them collapsed into one root cause: `eval.py` is single-KB in its bones (one connection, one
   manifest, one backend, `retrieved` as local path strings), so a cross-KB question forced through
@@ -509,7 +509,7 @@ property it meant. No shipped behaviour changes.
     direct edit. Both release procedures also omitted `tools/fragments.py --apply`, which would have
     shipped every fragment unspliced.
 
-- **[`plans/links-and-graph.md`](plans/links-and-graph.md) revised after a fourth adversarial pass —
+- **[`plans/20260729_0256-links-and-graph.md`](plans/20260729_0256-links-and-graph.md) revised after a fourth adversarial pass —
   13 HIGH, down from 24, and the first pass with no self-refuting fix.** Five findings collapsed
   into one decision: **the traversal surface serves documents only.** Tag, directory, heading and
   chunk nodes have no `doc_id` and cannot be expressed in the neighbour shape the plan pins with a
@@ -548,7 +548,7 @@ property it meant. No shipped behaviour changes.
   - **The graph release now has a stated fallback**: if the precondition fails, the three increments
     that do not depend on structural edges ship on their own rather than stranding finished work.
 
-- **[`plans/links-and-graph.md`](plans/links-and-graph.md) revised after a fifth adversarial pass —
+- **[`plans/20260729_0256-links-and-graph.md`](plans/20260729_0256-links-and-graph.md) revised after a fifth adversarial pass —
   3 HIGH, down from 13.** All three sat on the seams the fourth pass opened, and one of them was a
   decision resting on a false premise.
 
@@ -638,7 +638,7 @@ property it meant. No shipped behaviour changes.
     project admits it lacks"* and routed to it *"while the numbers are still missing"*. The run
     happened on 20260729 and `STATUS.md` carries its results.
   - **`KB-UPDATES.md`** said *"no increment assigned"* in three places; its `requires_pinakes` half
-    is now assigned to G4 in `plans/links-and-graph.md`.
+    is now assigned to G4 in `plans/20260729_0256-links-and-graph.md`.
 
   **`CLAUDE.md` gains the rule**, because the release procedure is where this is preventable: a
   release makes three documents stale the instant it publishes — STATUS's PyPI table, STATUS's
@@ -701,7 +701,7 @@ property it meant. No shipped behaviour changes.
   Both are stdlib-only and import nothing from this project, so CI's `build` job runs them before
   the package builds.
 
-- **[`plans/links-and-graph.md`](plans/links-and-graph.md) — the build order for the links release
+- **[`plans/20260729_0256-links-and-graph.md`](plans/20260729_0256-links-and-graph.md) — the build order for the links release
   and the graph release, in fourteen increments (L1–L10, G1–G4).**
   `docs/graph/PINAKES_APPROACH.md` had settled *what* to build and *why* across five adversarial
   passes, but its build order (§10) was a single table row; nothing sequenced it, tested it, or
@@ -864,10 +864,10 @@ property it meant. No shipped behaviour changes.
 
 ### Changed
 
-- **[`plans/links-and-graph.md`](plans/links-and-graph.md) rewritten after a second adversarial
+- **[`plans/20260729_0256-links-and-graph.md`](plans/20260729_0256-links-and-graph.md) rewritten after a second adversarial
   pass — six of the first pass's own fixes were wrong.** Two reviewers returned 26 HIGH, 30 MEDIUM
   and 8 LOW against the revision that pass 1 produced, roughly the 40–45% fix-induced rate
-  `plans/v0.2.md`'s iteration log predicts. Still a draft; a third pass is required before any of it
+  `plans/20260727_1543-v0.2.md`'s iteration log predicts. Still a draft; a third pass is required before any of it
   is built.
 
   What was wrong, and now is not:
@@ -930,7 +930,7 @@ property it meant. No shipped behaviour changes.
   since they name work inside a written plan rather than a release.
 
   **The links release was split out of the graph release on 20260729**, while sequencing
-  [`plans/links-and-graph.md`](plans/links-and-graph.md): `pnk link`, `pnk links`, `pinakes_links`
+  [`plans/20260729_0256-links-and-graph.md`](plans/20260729_0256-links-and-graph.md): `pnk link`, `pnk links`, `pinakes_links`
   and reverse-scan need no `schema_version` bump and no rebuild, while structural edges and the
   expansion channel need both. Shipping the first half under a name defined as including the second
   would have reintroduced exactly the ambiguity this convention exists to end — one name meaning two
@@ -1255,7 +1255,7 @@ property it meant. No shipped behaviour changes.
   and under the shipped constants (30,300 tokens per request) it never fires, but it names the exact
   limit rather than letting a real 400 response discover it. A stale `as_of` (older than
   `[budget] max_price_age_days`) refuses to estimate at all, naming the remedy. Verified directly
-  against `plans/v0.2.md`'s own worked examples: 200 pages resolves to exactly 40 requests and
+  against `plans/20260727_1543-v0.2.md`'s own worked examples: 200 pages resolves to exactly 40 requests and
   $14.06 reserved; a single 5-page slice resolves to exactly $0.3515 — both to the last digit the
   plan states.
 
@@ -1442,7 +1442,7 @@ property it meant. No shipped behaviour changes.
 
 ### Fixed
 
-- **`docs/DESIGN.md` §4.6 stated a span invariant that is false for PDFs.** `plans/v0.2.md`
+- **`docs/DESIGN.md` §4.6 stated a span invariant that is false for PDFs.** `plans/20260727_1543-v0.2.md`
   assigned the correction to I5, which shipped in 0.2.0 without it, so the released design claimed
   every citation "can be located exactly in the original file". It cannot for a PDF: the offsets
   address the *pinned extraction*, not the file, and what a PDF citation locates is a page. The
@@ -1451,7 +1451,7 @@ property it meant. No shipped behaviour changes.
 - **`pnk search --source-type` help hid a working filter.** It read "markdown, text or code" while
   `chunk.source_type` has returned `"pdf"` since I5 — the filter worked and was undiscoverable.
 - The `notes` template's `[budget]` comment promised "nothing spends money before v0.4", which
-  `plans/v0.2.md` decision 2 falsified by moving the first paid path into v0.2. It is now
+  `plans/20260727_1543-v0.2.md` decision 2 falsified by moving the first paid path into v0.2. It is now
   version-free and points at `docs/STATUS.md`.
 - `docs/DESIGN.md`'s status line still read "v0.1.1 shipped", two releases stale. The document no
   longer carries a version at all — it is rationale, and `docs/STATUS.md` owns release state.
@@ -1473,7 +1473,7 @@ property it meant. No shipped behaviour changes.
 
 - **A PDF dropped into a fresh KB is silently skipped.** `pnk init` stamps
   `include = ["**/*.md", "**/*.txt"]`, so v0.2's headline feature is off by default and sync reports
-  `0 indexed` explaining nothing. Adding the commented-out `**/*.pdf` line is `plans/v0.2.md`
+  `0 indexed` explaining nothing. Adding the commented-out `**/*.pdf` line is `plans/20260727_1543-v0.2.md`
   decision 6, owned by I9; documented as a caveat in `docs/STATUS.md` and `docs/GUIDE.md` meanwhile.
 - **I6–I9 have no version target.** The plan cuts 0.2.0 at the end of I9; it was released after I5.
   Recorded as an open question in `docs/STATUS.md`.
@@ -1580,7 +1580,7 @@ property it meant. No shipped behaviour changes.
   `pair_adjacency` measures this directly for the tables stratum, though this corpus's own tables
   are small enough that even the wrong reading order keeps a label and its value within the
   metric's 80-character window — a disclosed limitation of this corpus's diagnostic power, not of
-  the metric's design. There is no `word_coverage` floor yet (decision 12, `plans/v0.2.md`): the
+  the metric's design. There is no `word_coverage` floor yet (decision 12, `plans/20260727_1543-v0.2.md`): the
   correct pair to fit it against is (native layer → Claude's output), and no Claude output exists
   before I7b.
 - **I4: the extraction cache.** `extract/cache.py` — one JSON file per
@@ -1742,7 +1742,7 @@ property it meant. No shipped behaviour changes.
 
 ### Added
 
-- **`plans/v0.2.md`**, the reviewed build order for the PDF-extraction release (I1–I9): a free
+- **`plans/20260727_1543-v0.2.md`**, the reviewed build order for the PDF-extraction release (I1–I9): a free
   `pypdfium2` extractor, an opt-in paid Claude-vision extractor, and the budget machinery that
   ships with the first thing that can spend. Reviewed over four adversarial passes (7 HIGH/19
   MEDIUM/8 LOW, 5/18/8, 12/31/17, then three narrow methods — code-reality, arithmetic,
@@ -1811,14 +1811,14 @@ identical to 0.1.0.
   synthesis passed six adversarial review passes (27→7→8→5→1→0 findings).
 - **`Makefile`** — every target wraps the command CI actually runs, so a green `make check` locally
   means what it means on the runner. `make help` lists them.
-- **A close-out on [`plans/v0.1.md`](plans/v0.1.md)** — "What the build taught", written against the
+- **A close-out on [`plans/20260725_1317-v0.1.md`](plans/20260725_1317-v0.1.md)** — "What the build taught", written against the
   15 shipped increments and the 52 retrospective findings: where the plan proved right, where it was
   wrong and whether planning could have caught it, what happened to each named risk, twelve rules
   for the next plan, and the list of what in it is now stale. The headline: no finding invalidated
   any plan-level decision, and every expensive miss was *machinery* — gate mechanism, test fidelity,
   warning policy, metric denominators, write durability — in a plan that specified algorithms
   closely and machinery barely at all.
-- **CI gate: the free path stays free.** `plans/v0.1.md` promised a check that no paid-API client is
+- **CI gate: the free path stays free.** `plans/20260725_1317-v0.1.md` promised a check that no paid-API client is
   imported in `src/` and it never shipped, because the item sat in a section with no increment
   number and so no increment owned it. Now enforced, and verified in both directions — it passes on
   the current source and catches a planted `import openai`.
@@ -1957,7 +1957,7 @@ identical to 0.1.0.
   two-phase sync semantics, WAL concurrency policy, budget accounting by pre-call reservation,
   cross-KB linking via ULID-addressed sidecars, and the v0.1–v0.5 delivery plan.
 
-- `plans/v0.1.md` (20260725 10:04) — implementation plan for the v0.1 vertical slice: 15 ordered
+- `plans/20260725_1317-v0.1.md` (20260725 10:04) — implementation plan for the v0.1 vertical slice: 15 ordered
   increments (I1–I15) with per-increment tests and exit criteria, decisions table (argparse,
   jinja2-rendered manifests, `notes` template, open backend registry), and whole-slice acceptance
   checks. Adversarially reviewed across 5 passes, 28 findings resolved (3 high, 10 medium, 15 low).

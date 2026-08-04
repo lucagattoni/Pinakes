@@ -2,7 +2,7 @@ name: Release
 
 # Publishing is deliberately manual: it runs only when a maintainer pushes a v* tag, never on a
 # merge. PyPI trusted publishing must be configured for this repository first — a human step that
-# cannot be automated from here (plans/v0.1.md, I15).
+# cannot be automated from here (plans/20260725_1317-v0.1.md, I15).
 #
 # Until that human step happens, the PyPI upload is *skipped rather than attempted*, gated on the
 # repository variable PUBLISH_TO_PYPI. Everything before it still runs on every tag — version/tag

@@ -52,7 +52,7 @@ def test_unimplemented_commands_fail_loudly_rather_than_pretending(
     assert main([command]) == EXIT_FAILURE
     err = capsys.readouterr().err
     assert "not implemented yet" in err
-    assert "plans/v0.1.md" in err  # the remedy, not just the complaint
+    assert "plans/20260725_1317-v0.1.md" in err  # the remedy, not just the complaint
 
 
 def test_unknown_command_is_a_usage_error() -> None:
@@ -139,7 +139,7 @@ def test_no_help_text_carries_markdown_emphasis(capsys: pytest.CaptureFixture[st
 
 def test_every_sync_flag_documents_its_scope(capsys: pytest.CaptureFixture[str]) -> None:
     """`pnk sync` is the only command that can spend money or destroy derived state, so a flag
-    whose reach nobody wrote down grows one (plans/v0.2.md, I7c).
+    whose reach nobody wrote down grows one (plans/20260727_1543-v0.2.md, I7c).
 
     Read out of the `--help` a user actually sees, not out of the parser's internals: the promise
     is about what `pnk sync --help` tells someone, so that is the text asserted against.

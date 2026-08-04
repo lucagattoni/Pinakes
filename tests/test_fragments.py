@@ -257,3 +257,42 @@ def test_a_new_category_is_added_in_the_streams_declared_order(repo: Path) -> No
         "new sections follow the stream's declared order"
     )
     assert "- an existing fix" in unreleased
+
+
+def test_the_timestamp_prefix_is_stripped_before_the_category_is_read(repo: Path) -> None:
+    """`YYYYMMDD_HHMM-added-x.md` is an `added` fragment, not a `20260804_0700` one.
+
+    The prefix arrived 20260804 for chronological ordering. `category_of` split the stem on the
+    first hyphen, so without stripping it first every prefixed fragment fails validation with its
+    own date quoted back as the offending category, and `--apply` files it under nothing.
+    """
+    write(repo, "changelog.d/20260804_0700-added-a-thing.md", "- **A thing.** Body.\n")
+    assert run(repo, "--check").returncode == 0
+    assert run(repo, "--stream", "changelog", "--apply").returncode == 0
+    changelog = (repo / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "### Added" in changelog
+    assert "20260804_0700" not in changelog
+    assert "- **A thing.** Body." in changelog
+
+
+def test_a_fragment_without_a_timestamp_prefix_still_validates(repo: Path) -> None:
+    """The convention began 20260804 07:00; refusing files that predate it buys nothing."""
+    write(repo, "changelog.d/added-a-thing.md", "- **A thing.** Body.\n")
+    assert run(repo, "--check").returncode == 0
+
+
+def test_a_prefixed_fragment_with_no_valid_category_is_refused(repo: Path) -> None:
+    """Stripping the prefix must not become a way to smuggle an unknown category past the check."""
+    write(repo, "changelog.d/20260804_0700-invented-a-thing.md", "- body\n")
+    result = run(repo, "--check")
+    assert result.returncode != 0
+    assert "invented" in result.stdout + result.stderr
+
+
+def test_the_error_names_what_the_author_wrote_not_the_date_it_stripped(repo: Path) -> None:
+    """A message quoting the timestamp back sends the author to fix the wrong half of the name."""
+    write(repo, "changelog.d/20260804_0700-nonsense-thing.md", "- body\n")
+    result = run(repo, "--check")
+    output = result.stdout + result.stderr
+    assert "nonsense" in output
+    assert "'20260804_0700'" not in output

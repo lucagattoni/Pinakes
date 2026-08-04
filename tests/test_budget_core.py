@@ -158,7 +158,8 @@ def test_a_prices_toml_with_a_wrong_shaped_models_table_is_a_startup_error(
 
 
 def test_the_200_page_worked_example_still_reserves_the_right_shape() -> None:
-    """`plans/v0.2.md` worked this at 40 requests and $14.06, with `PROMPT_TOKENS = 300`.
+    """`plans/20260727_1543-v0.2.md` worked this at 40 requests and $14.06, with `PROMPT_TOKENS = "
+    "300`.
 
     The plan is a historical record and keeps its number; the constant does not. `PROMPT_TOKENS`
     was **measured** at 571 on 20260729 and raised to 700, so the reservation is now $14.14 — the

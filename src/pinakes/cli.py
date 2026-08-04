@@ -11,7 +11,7 @@ Exit codes are a contract, not an accident:
     2  usage error — argparse's own code for a malformed invocation
 
 The framework is stdlib `argparse`: v0.1's flag surface is small and a dependency would buy
-nothing (plans/v0.1.md, decisions table).
+nothing (plans/20260725_1317-v0.1.md, decisions table).
 """
 
 import argparse
@@ -654,7 +654,7 @@ def run_link(args: argparse.Namespace) -> int:
 
 
 # The v0.1 surface (docs/DESIGN.md §8), in the order a user meets it. `increment` points at
-# plans/v0.1.md, so an unimplemented command tells the user exactly when it arrives.
+# plans/20260725_1317-v0.1.md, so an unimplemented command tells the user exactly when it arrives.
 def _links_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("document", help="a document ULID, or its path within the KB")
     _kb_argument(parser)

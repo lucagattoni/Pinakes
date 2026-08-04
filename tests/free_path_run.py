@@ -1,6 +1,7 @@
 """The whole free path in one process, then a record of everything it imported.
 
-Gate 4 of plans/v0.2.md I7a. `tests/test_paid_path.py` runs this as a **fresh subprocess** and
+Gate 4 of plans/20260727_1543-v0.2.md I7a. `tests/test_paid_path.py` runs this as a **fresh
+subprocess** and
 asserts no paid-API client appears in the `sys.modules` it writes out. In-process the check would
 be defeated by any earlier test's import — the same shape as v0.1's `-wal` test, which was correct
 and then quietly defeated by an environmental fact.

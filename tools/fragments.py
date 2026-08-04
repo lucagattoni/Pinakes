@@ -92,15 +92,31 @@ def fragments_of(stream: Stream, repo: Path) -> list[Path]:
     return sorted(p for p in directory.glob("*.md") if p.name != "README.md")
 
 
+#: `YYYYMMDD_HHMM-`, the timestamp prefix every fragment and plan carries.
+_STAMP = re.compile(r"^\d{8}_\d{4}-")
+
+
+def body_of(path: Path) -> str:
+    """The filename with its `YYYYMMDD_HHMM-` prefix removed.
+
+    The prefix orders `ls` chronologically and dates a fragment without opening it. Everything
+    downstream — the category, the slug — reads what follows it, so the stem is stripped once
+    here rather than at each caller. A fragment *without* a prefix is not an error: the
+    convention began 20260804 07:00 and refusing files that predate it buys nothing.
+    """
+    return _STAMP.sub("", path.stem, count=1)
+
+
 def category_of(stream: Stream, path: Path) -> str | None:
     """The category a fragment's filename declares, validated against the stream's vocabulary."""
     if stream.categories is None:
         return None
-    head = path.stem.split("-", 1)[0]
+    head = body_of(path).split("-", 1)[0]
     if head not in stream.categories:
         raise FragmentError(
-            f"{stream.directory}/{path.name}: filename must start with one of "
-            f"{', '.join(stream.categories)} — e.g. 'added-{path.stem}.md'"
+            f"{stream.directory}/{path.name}: filename must be "
+            f"`YYYYMMDD_HHMM-<category>-<slug>.md` with a category from "
+            f"{', '.join(stream.categories)} — found {head!r}"
         )
     return head
 
@@ -117,7 +133,7 @@ def check(stream: Stream, repo: Path) -> list[str]:
         except FragmentError as exc:
             problems.append(str(exc))
             continue
-        stem = path.stem
+        stem = body_of(path)
         slug = stem.split("-", 1)[1] if category and "-" in stem else stem
         if not _SLUG.fullmatch(slug):
             problems.append(f"{stream.directory}/{path.name}: name must be lowercase-with-hyphens")

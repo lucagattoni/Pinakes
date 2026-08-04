@@ -150,7 +150,7 @@ synthetic rasters.
 
 **(d) The free-vs-paid delta — decision 10's justification.**
 
-The five text-layer twins **`plans/v0.2.md` §I2 names** — one per stratum where `layout.py` does
+The five text-layer twins **`plans/20260727_1543-v0.2.md` §I2 names** — one per stratum where `layout.py` does
 real work, plus the 12-page baseline as a control — each needing `--force` because they are healthy
 by design and the paid path correctly refuses to spend on them otherwise. The scanned and
 pathological strata supply no twin: a raster is not a text-layer twin, and the pathological

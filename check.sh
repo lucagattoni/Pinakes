@@ -44,7 +44,7 @@ fi
 # corpus-regenerates (I2): the sixteen text-layer fixtures must reproduce byte-identically from
 # their own committed generator, and the three scanned ones within the pixel tolerance.
 # SOURCE_DATE_EPOCH exported here explicitly — belt and suspenders alongside the generator's own
-# fallback when unset (plans/v0.2.md, I2): neither should be the only thing standing between a
+# fallback when unset (plans/20260727_1543-v0.2.md, I2): neither should be the only thing standing between a
 # regeneration and a fresh CreationDate rewriting every fixture.
 #
 # The text-layer half always runs — `--skip-scanned` drops the only fixtures needing pypdfium2 and
@@ -60,7 +60,7 @@ else
 fi
 
 # pdf-quality (I3b): the extraction-quality baseline must not drift beyond tolerance, and neither
-# fitted floor may drift from a fresh re-fit — a gate, never a one-time ceremony (plans/v0.2.md).
+# fitted floor may drift from a fresh re-fit — a gate, never a one-time ceremony (plans/20260727_1543-v0.2.md).
 # Skips with its reason when pinakes[pdf] is absent (I1's own exit criterion: green under
 # `--extra light` alone), never silently — `make pdf-eval` is the same command CI runs as its own
 # job, in this commit, not deferred the way the draft plan would have left it until I9.
@@ -128,7 +128,7 @@ uv run --frozen python3 tools/eval_reproducibility_gate.py
 
 # status-header: docs/STATUS.md line 3 — `**Latest release: x.y.z**` — must name
 # pinakes.__version__. It drifted for four consecutive releases while the same sweeps updated
-# every table below it (plans/open-corrections.md, 20260803); a checklist missed it four times,
+# every table below it (plans/20260731_1202-open-corrections.md, 20260803); a checklist missed it four times,
 # which is this project's threshold for turning the item into a gate. Only the version is gated,
 # never the `last reviewed` date beside it — a wall-clock staleness check fails on a quiet
 # weekend with no code change, the same reasoning recorded at prices-toml-parses above. On main

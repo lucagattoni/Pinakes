@@ -544,7 +544,8 @@ def _paid_index(kb: Path, fake_paid: str) -> None:
     ],
 )
 def test_backend_drift(kb: Path, fake_paid: str, case_id: str) -> None:
-    """Decision 9's six named cases (plans/v0.2.md), addressed as `test_backend_drift[<case_id>]`.
+    """Decision 9's six named cases (plans/20260727_1543-v0.2.md), addressed as "
+    "`test_backend_drift[<case_id>]`.
 
     `pairing.py`'s own tests already cover the decision table in isolation; this is the same six
     rules wired all the way through a real `sync()` call — the actual DB row, the actual sidecar,

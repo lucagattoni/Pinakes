@@ -1,7 +1,8 @@
 """The golden set answers the same way however the index was built — a gate, not a comment.
 
 **Why this is a gate and not only a test.** The graph release's decision is an exact per-question
-sign test (`plans/links-and-graph.md`, G5): five questions improving against one regressing is the
+sign test (`plans/20260729_0256-links-and-graph.md`, G5): five questions improving against one
+regressing is the
 difference between shipping a schema bump and not. That arithmetic reads per-question movement as
 evidence about *retrieval*, so any per-question movement caused by anything else is not noise, it
 is a wrong answer. Until G1 there was nothing standing behind that: every tiebreak in the pipeline

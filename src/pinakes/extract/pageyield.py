@@ -15,7 +15,8 @@ loading it"). Moving it here is what lets both callers share one definition, rat
 command growing a second copy of the per-page loop that could disagree with the one that spends.
 
 The floor itself belongs to neither: it is fitted by `make pdf-eval` and shipped in `floors.toml`
-(plans/v0.2.md, I3b). **Its blind spot is stated rather than discovered** — the fitting population
+(plans/20260727_1543-v0.2.md, I3b). **Its blind spot is stated rather than discovered** — the
+fitting population
 contained no bad-but-nonzero case, so the floor separates *empty* from *non-empty* and nothing
 finer. A page rendered in an invisible text mode yields characters while being useless text, clears
 the floor, and still needs the paid path. `--force` is the documented escape.
