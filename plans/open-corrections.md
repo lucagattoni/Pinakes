@@ -14,7 +14,10 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**No live items, as of 20260804 04:20.** The one item raised on 20260803 was built and merged the
+**One live item, raised 20260804 05:00** — the first defect the RFC realism corpus surfaced, and it
+destroys user work.
+
+**Earlier state, for the record: no live items as of 20260804 04:20.** The one item raised on 20260803 was built and merged the
 same evening. Beyond it there is no pinakes code work: the links release is complete, the graph
 release is **blocked** at G2's measurement ([`links-and-graph.md`](links-and-graph.md)), and what
 unblocks it is a corpus ([`realism-corpus.md`](realism-corpus.md)).
@@ -23,7 +26,50 @@ unblocks it is a corpus ([`realism-corpus.md`](realism-corpus.md)).
 
 ## Live
 
-**None.** Anything raised goes here, above the table.
+### 1 · `pnk doctor`'s model-coherence remedy destroys an interrupted sync's work
+
+**Found by using pinakes, not by reading it** — the RFC realism corpus, 20260804, on a first sync
+of 300 documents killed at ~106 by an unrelated process death.
+
+**Current.** `sync.py:964` writes the embedding identity keys with `set_meta` **after** the document
+loop and `_scan_linked_kbs`, then commits. An interrupted first sync therefore leaves `meta`
+carrying `schema_version` and nothing else, and `pnk doctor` reports:
+
+```text
+FAIL model coherence: the index does not match the configured model — embedding_dim: index
+     has '(absent)', manifest says '384'; embedding_model: index has '(absent)', manifest
+     says 'BAAI/bge-small-en-v1.5'; embedding_provider: index has '(absent)', manifest says
+     'fastembed'.
+     → Run `pnk sync --rebuild`. Embeddings are meaningless across models: a KB that silently
+       returned results here would be returning garbage.
+```
+
+**Why it is a defect and not a warning.** The check cannot distinguish two states it treats
+identically: *the model changed under the index* — genuinely fatal, `--rebuild` correct — and *the
+first sync never finished* — benign, and `--rebuild` is **the worst available action**, discarding
+every embedding that survived. On this corpus that was about an hour of CPU. A first-time user who
+follows the printed remedy loses all of it, and the remedy is stated imperatively with a rationale
+that makes it sound unavoidable.
+
+**Required.** Split the two states on **absent vs different**, because they are distinguishable:
+
+* Identity keys **absent** → the index was never completed. This is not a coherence failure; report
+  it as its own check (WARN, not FAIL) whose remedy is `pnk sync` — incremental, and it keeps the
+  work already done. Say that it keeps it.
+* Identity keys **present and different from the manifest** → the existing FAIL, unchanged, remedy
+  `pnk sync --rebuild`.
+* A partial `meta` — some identity keys present, some absent — is neither, and must not silently
+  fall into the benign branch. Treat it as the FAIL.
+
+**Tests.** One per branch, and a test asserting the absent-key path's remedy does **not** contain
+`--rebuild` — that string is the whole defect, and a test that only checks the check's *name* would
+pass with the destructive remedy still printed.
+
+**Do not "fix" this by writing the identity keys earlier.** They are written after the loop
+deliberately; moving them would make a half-built index claim coherence with a model it was only
+partly embedded under, which is the failure this check exists to catch. The defect is in the
+diagnosis, not the write order.
+
 
 ---
 
