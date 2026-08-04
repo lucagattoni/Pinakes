@@ -14,10 +14,9 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**Nine live items as of 20260804 13:10.** All but one came from *building* the RFC realism
-corpus rather than from reading the code — which is what that corpus was for. Three of the nine
-(1, 5, 8) are the interrupted-sync trio: **built on `20260804_1218-interrupted-sync`, not yet
-merged**, so they stay live until that branch lands. The rest are unclaimed.
+**Six live items as of 20260804 13:21, all unclaimed.** Every one came from *building* the RFC
+realism corpus rather than from reading the code — which is what that corpus was for. The
+interrupted-sync trio that stood here closed with `20260804_1218-interrupted-sync`.
 
 The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
 finished. Note what is **not** here: the links release is complete and the graph release is
@@ -29,17 +28,8 @@ so none of these unblocks it — the corpus does
 
 ## Live
 
-### 1 · The sync lock's timestamp is UTC; every other timestamp is local
 
-**Verified at source 20260804 08:30.** `lock.py:138` writes `datetime.now(UTC).strftime("%Y%m%d %H:%M")`; `sync.py:709` writes `datetime.now().strftime(...)`. **Identical format, no marker, different clocks.** In Europe/Rome in August a lock taken 30 seconds ago reads as **two hours old**.
-
-**Why it is the most dangerous of these:** the age is the evidence a user weighs before `pnk sync --force-unlock`, and the documented remedy for a stale lock. A lock that looks two hours old but is live gets force-unlocked *against a running sync*.
-
-**Required — direction settled 20260804 11:32 by the project-wide move to UTC: make both UTC.** `lock.py` is already right; `sync.py:709` and `sync.py:808` are what change. This was previously written as *prefer local for both*, on the reasoning that a human compares the manifest's stamp against a wall clock; that reasoning is superseded, and the fix is now the cheaper half. A test that sets a non-UTC `TZ`, takes a lock, and asserts the reported age is under a minute; it fails today under any non-UTC zone and passes under `TZ=UTC`, which is why the test must set the zone rather than inherit it.
-
----
-
-### 2 · `strategy = "structural"` degrades to size-based chunking in silence
+### 1 · `strategy = "structural"` degrades to size-based chunking in silence
 
 **Measured on the RFC corpus:** **106 806 chunks, every one with `heading_path` empty** — over 300 RFCs, the most rigidly sectioned plain text in existence. The heading grammar is Markdown-shaped; RFC section numbering is not, so nothing matches and the strategy quietly becomes size-based. Nothing warns: `grep heading src/pinakes/doctor.py` returns nothing.
 
@@ -49,7 +39,7 @@ so none of these unblocks it — the corpus does
 
 ---
 
-### 3 · The `[light]` first-sync error prescribes the 2 GB install to a user who chose `[light]`
+### 2 · The `[light]` first-sync error prescribes the 2 GB install to a user who chose `[light]`
 
 A first sync on a `[light]` install fails naming `sentence-transformers` — the torch dependency the extra exists to avoid — while `fastembed` is installed and visible. The manifest edit (two `provider` lines) is the actual fix and the message does not mention it, though `README.md` and `docs/GUIDE.md` both do.
 
@@ -57,7 +47,7 @@ A first sync on a `[light]` install fails naming `sentence-transformers` — the
 
 ---
 
-### 4 · `pnk init` cannot adopt a directory that already has content
+### 3 · `pnk init` cannot adopt a directory that already has content
 
 `_check_target` refuses a non-empty directory, so a KB cannot be initialised inside an existing repository — which is what [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) prescribes and what everyone does: create the repo, clone it, then init. A `.git`, a README and a `pyproject.toml` are already "not empty", and the message *"clear this one first"* is alarming when the directory holds the documents.
 
@@ -65,15 +55,8 @@ A first sync on a `[light]` install fails naming `sentence-transformers` — the
 
 ---
 
-### 5 · The first sync is multi-hour and completely silent
 
-~2.4 documents/minute on CPU; 300 documents ran over two hours with no output. **"Working" is indistinguishable from "hung"**, which is what makes findings 1 and 2 expensive: a user who cannot tell reaches for the remedy, and the remedies destroy work.
-
-**Required:** periodic progress on a TTY — documents done / total and a rate. Not a spinner: the number is what distinguishes slow from stuck. Silent when not a TTY, so `--ci` and hook output stay clean.
-
----
-
-### 6 · Every document is titled by its filename
+### 4 · Every document is titled by its filename
 
 All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so search results are unreadable. `sync` mints the title from the filename when the document has no Markdown H1 — correct for Markdown, useless for anything else.
 
@@ -81,60 +64,14 @@ All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so searc
 
 ---
 
-### 7 · `pnk doctor` prints the operator's home directory
+### 5 · `pnk doctor` prints the operator's home directory
 
 Absolute paths in output that is the natural thing to paste into an issue. **Required:** print paths relative to the KB root where they are inside it. Minor, but it is the one command whose output gets shared.
 
 ---
 
-### 8 · `pnk doctor`'s model-coherence remedy destroys an interrupted sync's work
 
-**Found by using Pinakes, not by reading it** — the RFC realism corpus, 20260804, on a first sync
-of 300 documents killed at ~106 by an unrelated process death.
-
-**Current.** `sync.py:964` writes the embedding identity keys with `set_meta` **after** the document
-loop and `_scan_linked_kbs`, then commits. An interrupted first sync therefore leaves `meta`
-carrying `schema_version` and nothing else, and `pnk doctor` reports:
-
-```text
-FAIL model coherence: the index does not match the configured model — embedding_dim: index
-     has '(absent)', manifest says '384'; embedding_model: index has '(absent)', manifest
-     says 'BAAI/bge-small-en-v1.5'; embedding_provider: index has '(absent)', manifest says
-     'fastembed'.
-     → Run `pnk sync --rebuild`. Embeddings are meaningless across models: a KB that silently
-       returned results here would be returning garbage.
-```
-
-**Why it is a defect and not a warning.** The check cannot distinguish two states it treats
-identically: *the model changed under the index* — genuinely fatal, `--rebuild` correct — and *the
-first sync never finished* — benign, and `--rebuild` is **the worst available action**, discarding
-every embedding that survived. On this corpus that was about an hour of CPU. A first-time user who
-follows the printed remedy loses all of it, and the remedy is stated imperatively with a rationale
-that makes it sound unavoidable.
-
-**Required.** Split the two states on **absent vs different**, because they are distinguishable:
-
-* Identity keys **absent** → the index was never completed. This is not a coherence failure; report
-  it as its own check (WARN, not FAIL) whose remedy is `pnk sync` — incremental, and it keeps the
-  work already done. Say that it keeps it.
-* Identity keys **present and different from the manifest** → the existing FAIL, unchanged, remedy
-  `pnk sync --rebuild`.
-* A partial `meta` — some identity keys present, some absent — is neither, and must not silently
-  fall into the benign branch. Treat it as the FAIL.
-
-**Tests.** One per branch, and a test asserting the absent-key path's remedy does **not** contain
-`--rebuild` — that string is the whole defect, and a test that only checks the check's *name* would
-pass with the destructive remedy still printed.
-
-**Do not "fix" this by writing the identity keys earlier.** They are written after the loop
-deliberately; moving them would make a half-built index claim coherence with a model it was only
-partly embedded under, which is the failure this check exists to catch. The defect is in the
-diagnosis, not the write order.
-
-
----
-
-### 9 · The first sync may be using one core of ten, and nobody has measured which
+### 6 · The first sync may be using one core of ten, and nobody has measured which
 
 **Raised 20260804 13:10, from the RFC corpus run.** 300 documents took over two hours at ~2.4
 documents/minute. `sync.py:1863` embeds one document at a time — `backend.embed([chunk.text for
@@ -177,6 +114,9 @@ minutes it returns. Recorded so the analysis is not redone.
 
 | Was | Closed by |
 |---|---|
+| `pnk doctor`'s model-coherence remedy destroyed an interrupted sync's work — a first sync killed mid-run leaves `meta` with no embedding identity, which read as a model *mismatch* and printed `pnk sync --rebuild`, discarding every embedding already written | 20260804 13:21. `search.py` raises a new `IncompleteIndexError` only when **none** of the identity keys are present; `doctor.py` reports it as its own check, `sync completeness`, WARN, remedy `pnk sync`. A *partial* `meta` falls through to `CoherenceError` — a missing key never equals the expected value — so it can never land in the benign branch. Write order deliberately unchanged: moving the identity write earlier would let a half-built index claim coherence with a model it was only partly embedded under |
+| The sync lock's timestamp was UTC while every other stamp was local — identical format, no marker, different clocks, so in summer a lock taken 30 seconds ago read as two hours old | 20260804 13:21. `sync.py`'s `stamp` and `_estimate_only`'s price clock both use `datetime.now(UTC)`, matching `lock.py`. Pinned by tests that run under a non-UTC timezone — the first draft used the file's own `run()` helper, which hardcodes `now=`, and would have passed whichever clock the code used |
+| The first sync was multi-hour and completely silent — ~2.4 documents/minute, 300 documents over two hours with no output, so "working" was indistinguishable from "hung" | 20260804 13:21. `SyncOptions.progress` is called `(done, total)` after each document; the CLI wires a throttled, self-overwriting line on a TTY when not `--quiet`. An adversarial review caught the closing newline firing only at `done >= total`, so a `[budget]` cap or any early exit left a `\r`-terminated line for the report to print onto — `finish()` is now called unconditionally in a `finally` |
 | `uv add "pinakes[light]"` failed in the one place a KB user runs it — a knowledge-base directory has no `pyproject.toml`, so the documented install line exits `No pyproject.toml found` | 20260804 13:10. `docs/GUIDE.md` leads with the two forms that work in a bare directory — `uv init` first, or `uvx` with no install at all. The plain `uv add` lines stay, since a KB inside an existing project is the other real case |
 | Same-host lock reclaim was documented in `pnk doctor` and not in the GUIDE, which offered only `--force-unlock` — the destructive remedy — for a symptom the safe path already handles | 20260804 13:10. The GUIDE's troubleshooting row now says a lock left by a dead process **on this host is reclaimed automatically** by re-running `pnk sync`, and bounds `--force-unlock` to another host. It also says to check the process rather than the age, because the lock's clock is UTC and an older KB's manifest is local |
 | `corpus-probe-run.md` required a per-kind edge census and no tool emitted one | Shipped 20260804. `edge_census()` reads the count off the same in-memory `Graph` the traversal walks — no re-query, no parallel computation — and always returns every kind, **including the zeroes**, since a kind absent from the output is indistinguishable from a kind at zero. Its own review caught the first version counting hub buckets of one, which would have made `co-located` and `shared-tag` unable to report 0 on any populated corpus — the exact case it exists to surface |
