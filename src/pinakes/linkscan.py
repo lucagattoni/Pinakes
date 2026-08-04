@@ -237,7 +237,7 @@ def partner_sources(root: Path) -> tuple[KbId, list[str], list[str], list[str]]:
     meant recording inbound links from documents the partner's own KB does not contain.
 
     Read with `tomllib` directly rather than through `manifest.load`, which validates the *whole*
-    file against this pinakes' schema. A partner may legitimately be running a newer version with
+    file against this Pinakes' schema. A partner may legitimately be running a newer version with
     keys we do not know — `[kb] requires_pinakes` (G4) exists precisely for that — and refusing to
     read a neighbour's inbound links because its manifest mentions a key we have not shipped yet
     would make every connected KB a version dependency of every other.
@@ -283,7 +283,7 @@ def sidecars_under(
     partner does not consider part of its KB is not something this KB may record links from.
 
     **Every input here is partner-controlled, and none of it went through `manifest.load`.** That
-    bypass is deliberate — a partner may run a newer pinakes with keys this one does not know — but
+    bypass is deliberate — a partner may run a newer Pinakes with keys this one does not know — but
     it also skipped the validation `load` performs, so this function has to do it:
 
     * a `roots` entry that resolves outside the partner KB is refused. `manifest._sources` already

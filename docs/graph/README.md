@@ -3,7 +3,7 @@
 Thirteen investigations — twelve external projects plus the in-house precedent — and the synthesis
 that turns them into a gated build order for **the links release** and **the graph release**.
 Research, not specification: where these disagree with [`../DESIGN.md`](../DESIGN.md), DESIGN wins;
-where they disagree with [`../../plans/20260729_0256-links-and-graph.md`](../../plans/20260729_0256-links-and-graph.md) about
+where they disagree with [`../../plans/20260729_0256-links-and-graph.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260729_0256-links-and-graph.md) about
 what is built when, the plan wins.
 
 **Partly built.** The links release this research shaped shipped in 0.5.0 and 0.6.0, and G1, G2
@@ -14,8 +14,8 @@ corpus, not on code. [`../STATUS.md`](../STATUS.md) is the authority on what exi
 
 | Doc | What it is |
 |---|---|
-| [**PINAKES_APPROACH.md**](PINAKES_APPROACH.md) | **The synthesis.** The Pinakes graph: lazy, agent-driven, budget-tunable. §9 is the eval gate each channel must pass; §10 is its build order, sequenced into increments by [`plans/20260729_0256-links-and-graph.md`](../../plans/20260729_0256-links-and-graph.md). Five adversarial passes |
-| [**GRAPH_RAG.md**](GRAPH_RAG.md) | The research record — what the literature actually says about graphs, RAG and agents, and what pinakes should take from it |
+| [**PINAKES_APPROACH.md**](PINAKES_APPROACH.md) | **The synthesis.** The Pinakes graph: lazy, agent-driven, budget-tunable. §9 is the eval gate each channel must pass; §10 is its build order, sequenced into increments by [`plans/20260729_0256-links-and-graph.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260729_0256-links-and-graph.md). Five adversarial passes |
+| [**GRAPH_RAG.md**](GRAPH_RAG.md) | The research record — what the literature actually says about graphs, RAG and agents, and what Pinakes should take from it |
 
 ## Investigations
 
@@ -45,7 +45,7 @@ These are read-only references. **Never copy code from the three marked ⛔.**
 - **Youtu-GraphRAG** ships a custom licence forbidding commercial and production use. Its README
   badge says MIT and is **wrong** — the `LICENSE` file is the truth.
 
-pinakes is Apache-2.0 and `pnk serve` is a network service, so a copyleft obligation would reach
+Pinakes is Apache-2.0 and `pnk serve` is a network service, so a copyleft obligation would reach
 anyone embedding it. The same reasoning ruled out PyMuPDF in favour of `pypdfium2`
 (`plans/20260727_1543-v0.2.md`, decision 1). **Ideas and measured results are free to reuse; source is not** —
 read them, then write it yourself. Stated once in

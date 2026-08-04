@@ -33,8 +33,9 @@ pdf = ["pypdfium2>=5.12"]                 # free PDF extraction (§4.5)
 claude = ["anthropic>=0.116", "pinakes[pdf]"]  # opt-in paid Claude-vision extractor; needs [pdf] too
 
 [project.urls]
-Homepage = "https://github.com/lucagattoni/Pinakes"
-Design = "https://github.com/lucagattoni/Pinakes/blob/main/docs/DESIGN.md"
+Homepage = "https://github.com/lucagattoni/pinakes"
+Documentation = "https://lucagattoni.github.io/pinakes/"
+Design = "https://github.com/lucagattoni/pinakes/blob/main/docs/DESIGN.md"
 
 [project.scripts]
 pnk = "pinakes.cli:main"

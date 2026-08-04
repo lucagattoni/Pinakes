@@ -2,13 +2,13 @@
 
 **Status: mostly proposal. Decided 20260728 18:39.** Its minimum — the `requires_pinakes` pre-pass
 (§4, §7) — **shipped in 0.6.0**, as G4 of
-[`plans/20260729_0256-links-and-graph.md`](../plans/20260729_0256-links-and-graph.md); every field rule is in
+[`plans/20260729_0256-links-and-graph.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260729_0256-links-and-graph.md); every field rule is in
 [MANIFEST.md](MANIFEST.md) and the reasoning in [DESIGN §2.1](DESIGN.md#21-the-manifest--pinakestoml).
 Everything else here — `pnk upgrade`, the template-drift gate, doctor reporting drift — is still a
 proposal, and `pnk upgrade` stays template-release work. [STATUS.md](STATUS.md) is the authority on
 what exists.
 
-This note answers one question the build plans had not asked: **when pinakes changes, what happens
+This note answers one question the build plans had not asked: **when Pinakes changes, what happens
 to a KB somebody already has?**
 
 ---
@@ -47,7 +47,7 @@ Three concrete cases on `main` today:
    *template*, which only affects `pnk init`, so **every KB created before I9 stays PDF-blind
    permanently.** v0.2's headline feature never reaches them.
 2. **I6a's budget keys.** `daily_eur` and `max_price_age_days` landed with defaults, so existing KBs
-   keep working — but a KB whose owner *sets* one is then unreadable by any earlier pinakes
+   keep working — but a KB whose owner *sets* one is then unreadable by any earlier Pinakes
    (§4).
 3. **The one drift signal that exists does not fire.** `doctor._template` compares declared version
    strings only (`doctor.py:135`), and I9 as drafted changes template content without bumping
@@ -55,7 +55,7 @@ Three concrete cases on `main` today:
 
 ## 4. Compatibility posture
 
-Verified behaviour when a file contains a key the running pinakes does not know:
+Verified behaviour when a file contains a key the running Pinakes does not know:
 
 | File | Behaviour | Direction |
 |---|---|---|
@@ -71,12 +71,12 @@ REMEDY : Unknown keys are rejected rather than ignored — a typo would otherwis
          with default behaviour while believing you had configured something.
 ```
 
-The refusal is correct; **the diagnosis is wrong.** The user's problem is an out-of-date pinakes,
+The refusal is correct; **the diagnosis is wrong.** The user's problem is an out-of-date Pinakes,
 and the message tells them they made a spelling mistake.
 
 ### Decided
 
-- **Downgrade is unsupported.** A KB may be opened by the pinakes that wrote it, or newer. An older
+- **Downgrade is unsupported.** A KB may be opened by the Pinakes that wrote it, or newer. An older
   one refuses, **naming the version required**. This makes explicit what `store.py` already does.
 - **Strictness is unchanged.** Unknown keys stay a hard error — the typo protection is worth more
   than graceful degradation, and cross-version sharing is not a goal.

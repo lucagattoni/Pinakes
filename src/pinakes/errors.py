@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 class PinakesError(Exception):
-    """Base class for every failure pinakes reports to a human."""
+    """Base class for every failure Pinakes reports to a human."""
 
     def __init__(self, message: str, *, remedy: str) -> None:
         super().__init__(message)
@@ -270,7 +270,7 @@ class ExtractorMissingError(PinakesError):
 
 
 class ApiKeyMissingError(PinakesError):
-    """The paid extractor has no key, and pinakes will not go looking for one.
+    """The paid extractor has no key, and Pinakes will not go looking for one.
 
     Named for `PINAKES_ANTHROPIC_API_KEY` rather than the SDK's `ANTHROPIC_API_KEY` deliberately:
     the SDK reads its own variable out of whatever environment it happens to be in, so a key

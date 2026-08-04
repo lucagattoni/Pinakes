@@ -17,7 +17,7 @@ undetectable after the fact.
 
 The frozen questions live in the corpus repo as **plain data** —
 `eval/multihop-questions.yaml`: `id`, `question`, `evidence` (2+ document filenames), `why` — by
-design: the author was barred from reading pinakes internals, so it could not have written the
+design: the author was barred from reading Pinakes internals, so it could not have written the
 eval schema. The probe reads `<kb>/eval/questions.yaml` in the **`Question` schema**:
 `id`, `question`, `kind: multi-hop`, `expect`, scripted `hops` (each hop a `query` + `expect`).
 Someone must convert, and conversion touches frozen material. These are the rules.
@@ -51,7 +51,7 @@ Someone must convert, and conversion touches frozen material. These are the rule
 
 Preconditions: the corpus repo cloned clean at its frozen sha; `pinakes` at the current release
 from PyPI, `[light]`; the corpus synced (`pnk sync`) at the current `schema_version`. Then, from
-the pinakes repo:
+the Pinakes repo:
 
 ```bash
 uv run python3 tools/reachable_ceiling_probe.py --kb <corpus-path> --json

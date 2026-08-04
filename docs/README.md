@@ -1,4 +1,16 @@
-# pinakes documentation
+# Pinakes documentation
+
+**Everything in this directory is published** to
+[lucagattoni.github.io/pinakes](https://lucagattoni.github.io/pinakes/) by
+[`.github/workflows/docs.yml`](../.github/workflows/docs.yml) on every push to `main`. The site is a
+*view* over these files, never a second copy — which is why nothing was moved to build it: these
+filenames are load-bearing in code (`tools/fragments.py` writes `RETROSPECTIVES.md`,
+`tools/status_header_gate.py` and CI parse `STATUS.md`, `tests/test_verification.py` reads
+`VERIFICATION.md`). Chapter numbers live in `mkdocs.yml`'s `nav` and are applied by JavaScript, so
+the Markdown here stays clean for GitHub. Two files sit outside the set above: `index.md` is the
+site's landing page and nothing else links to it, and **this file is excluded from the site** — it
+is the agent-facing routing table, and MkDocs will not accept it and `index.md` in one directory
+anyway.
 
 | Doc | Answers |
 |---|---|
@@ -10,7 +22,7 @@
 | [**VERIFICATION.md**](VERIFICATION.md) | *What holds this promise?* Every claimed property and the test that checks it — `tests/test_verification.py` asserts each one exists |
 | [**DESIGN.md**](DESIGN.md) | *Why is it built this way?* Architecture, storage, sync semantics, concurrency, trade-offs |
 | [**RETROSPECTIVES.md**](RETROSPECTIVES.md) | *What did we learn?* Per-increment findings, and the design's own review passes |
-| [**KB-UPDATES.md**](KB-UPDATES.md) | *What happens to a KB somebody already has when pinakes changes?* Design note — **mostly proposal**; its `requires_pinakes` half is built (G4), the rest is not |
+| [**KB-UPDATES.md**](KB-UPDATES.md) | *What happens to a KB somebody already has when Pinakes changes?* Design note — **mostly proposal**; its `requires_pinakes` half is built (G4), the rest is not |
 | [**graph/**](graph/) | Graph-retrieval research shaping the links and graph releases — thirteen investigations plus the synthesis |
 
 Build plans live in [`plans/`](../plans/); the release history is [`CHANGELOG.md`](../CHANGELOG.md).
@@ -59,7 +71,7 @@ When an increment lands, this table says which file to edit — usually exactly 
 | How to cut a release, step by step | **[`RELEASING.md`](RELEASING.md)** | `CLAUDE.md` carries the *rules* about when and the traps; this is the procedure |
 | Which test holds a given promise | **VERIFICATION.md** | a plan's own table records what was *predicted*, never what exists |
 
-The README is deliberately **version-free**: it describes what pinakes *is*, never what release you
+The README is deliberately **version-free**: it describes what Pinakes *is*, never what release you
 are on. That is why it does not go stale.
 
 ## Landing a new increment
@@ -168,3 +180,12 @@ is what stops the next plan from assuming a number that a parallel session has a
   run had happened, and a design note saying "no increment assigned" for work a plan had since
   assigned. Each was a single edit; none would have been found by reading the diff.
 - `make check` formats Python **inside Markdown fences**, so a docs-only commit can fail the gate.
+- **A link out of `docs/` is written absolute; a link inside it stays relative.** `plans/`,
+  `CLAUDE.md`, `changelog.d/` and `tools/` have no page on the site, so a relative `../plans/x.md`
+  renders on GitHub and dangles on the site. Write
+  `https://github.com/lucagattoni/pinakes/blob/main/plans/x.md`, which works in both. `make docs`
+  runs `--strict` and fails on the difference, and so does the `docs` workflow on every PR.
+- **Heading anchors are GitHub's, on both surfaces.** `mkdocs_hooks.py` installs GitHub's slug
+  algorithm because neither Python-Markdown's default nor pymdownx's matches it, and every
+  cross-document anchor here was written against GitHub. Never renumber or rename a heading to fix
+  a site link — that fixes the site by breaking the copy people already read.

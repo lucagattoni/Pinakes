@@ -1,17 +1,21 @@
 # pinakes — task runner.
 #
-# Every target wraps the command CI actually runs (.github/workflows/ci.yml), so a green `make
-# check` locally means the same thing it means on the runner. `--frozen` everywhere: the lockfile
-# is the contract, and a target that silently re-resolves it would hide the drift CI would catch.
+# Every target wraps the command CI actually runs (.github/workflows/ci.yml, and docs.yml for the
+# two docs targets), so a green `make check` locally means the same thing it means on the runner.
+# `--frozen` everywhere: the lockfile is the contract, and a target that silently re-resolves it
+# would hide the drift CI would catch.
 #
 # `check` is the gate; check.sh remains its shell entrypoint (git hooks and docs reference it).
 
 .DEFAULT_GOAL := help
 SHELL := /bin/sh
 DEMO_KB := tests/demo-kb
+# mkdocs is deliberately not a project dependency — it would pull a docs toolchain into the
+# environment `check` and the release wheel resolve. `--no-project` runs it from an ephemeral one.
+DOCS := uv run --no-project --with-requirements requirements-docs.txt mkdocs
 
 .PHONY: help install check fmt fmt-check lint types types-fast test test-model eval demo doctor \
-        budget corpus pdf-eval build smoke clean release-check
+        budget corpus pdf-eval build smoke clean release-check docs docs-serve
 
 help:  ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -75,6 +79,12 @@ release-check:  ## Verify the git tag you are about to push matches pinakes.__ve
 	echo "tag to push:     v$$version"; \
 	echo "publishing is manual by design: git tag -a v$$version -m ... && git push origin v$$version"
 
+docs:  ## Build the docs site into site/ — --strict, exactly what the docs workflow runs
+	$(DOCS) build --strict
+
+docs-serve:  ## Preview the docs site at http://127.0.0.1:8000 with live reload
+	$(DOCS) serve
+
 clean:  ## Remove build artifacts and caches (never touches .pinakes/ or the lockfile)
-	rm -rf dist build .pytest_cache .ruff_cache
+	rm -rf dist build site .pytest_cache .ruff_cache
 	find . -name '__pycache__' -type d -prune -exec rm -rf {} +

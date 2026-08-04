@@ -2,7 +2,7 @@
 
 **Audience: the agent cutting it. Goal: executor.** Follow it in order; nothing here is a judgement
 call. The *rules* about when to release, and the traps that have cost this project a release before,
-stay in [`CLAUDE.md`](../CLAUDE.md) — this file is the procedure they point at.
+stay in [`CLAUDE.md`](https://github.com/lucagattoni/pinakes/blob/main/CLAUDE.md) — this file is the procedure they point at.
 
 Extracted from `CLAUDE.md` on 20260801 02:07, when that file crossed its own size guardrail. Nothing
 was dropped in the move.

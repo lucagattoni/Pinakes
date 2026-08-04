@@ -10,6 +10,10 @@ dist/
 .venv/
 venv/
 
+# The rendered docs site. `mkdocs build` writes it here; Pages builds its own copy from
+# .github/workflows/docs.yml, so a committed one could only ever be a stale second answer.
+site/
+
 # Tooling
 .pytest_cache/
 .ruff_cache/

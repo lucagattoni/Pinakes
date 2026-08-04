@@ -1,0 +1,147 @@
+site_name: Pinakes
+site_description: A portable, agent-first knowledge base. One directory = one KB — your documents are the truth, the index is derived state, and the retrieval path costs nothing to run.
+site_url: https://lucagattoni.github.io/pinakes/
+site_author: Luca Gattoni
+
+repo_url: https://github.com/lucagattoni/pinakes
+repo_name: lucagattoni/pinakes
+edit_uri: edit/main/docs/
+
+# docs/ is the source, unmoved: these filenames are load-bearing in code — `tools/fragments.py`
+# writes to docs/RETROSPECTIVES.md, `tools/status_header_gate.py` and CI parse docs/STATUS.md,
+# `tests/test_verification.py` reads docs/VERIFICATION.md. The site is a view over them, never a
+# second copy. The repo README stays the GitHub landing page and links here.
+docs_dir: docs
+site_dir: site
+use_directory_urls: true
+
+# docs/README.md is the agent-facing routing table ("which file owns which fact"), not a landing
+# page — and MkDocs would refuse it and index.md in the same directory anyway. It stays in the
+# repo, where the agents that read it live; index.md links to it on GitHub.
+exclude_docs: |
+  /README.md
+
+# Broken internal links and anchors fail the build (`--strict` in CI). Absolute links are
+# deliberate — they point at repo files outside docs/ (plans/, CLAUDE.md, changelog.d/), which
+# have no page on this site.
+validation:
+  omitted_files: warn
+  absolute_links: ignore
+  unrecognized_links: warn
+  anchors: warn
+
+theme:
+  name: material
+  language: en
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    # Light
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    # Dark
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    # Left column — collapsible nav
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    # Right column — on-this-page TOC (kept separate, NOT integrated, so it stays a 3rd column)
+    - toc.follow
+    # Search + code ergonomics
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  # The slugifier is installed by mkdocs_hooks.py, not named here: every cross-document anchor in
+  # these files was written against GitHub's algorithm, and neither Python-Markdown's default nor
+  # pymdownx's matches it. The hook explains both mismatches.
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+# Loaded by file path relative to this config, so it needs nothing on sys.path.
+hooks:
+  - mkdocs_hooks.py
+
+extra_css:
+  - stylesheets/external-links.css
+
+extra_javascript:
+  - javascripts/external-links.js
+  - javascripts/section-numbering.js
+
+# Left navigation tree — simple → deep. Chapters are numbered here rather than in the Markdown, so
+# the source files stay clean for GitHub; javascripts/section-numbering.js derives each page's
+# number from its nav label.
+nav:
+  - Home: index.md
+  - 1. Guide: GUIDE.md
+  - 2. Reference:
+      - 2.1 CLI: CLI.md
+      - 2.2 Manifest and sidecar: MANIFEST.md
+      - 2.3 Verification: VERIFICATION.md
+  - 3. Concepts:
+      - 3.1 Design: DESIGN.md
+      - 3.2 Updating an existing KB: KB-UPDATES.md
+  - 4. Project:
+      - 4.1 Status — what ships today: STATUS.md
+      - 4.2 The measurement run: MEASUREMENT-RUN.md
+      - 4.3 Cutting a release: RELEASING.md
+      - 4.4 Retrospectives: RETROSPECTIVES.md
+  - 5. Graph research:
+      - graph/README.md
+      - 5.1 The pinakes approach: graph/PINAKES_APPROACH.md
+      - 5.2 What the literature says: graph/GRAPH_RAG.md
+      - 5.3 ClaudeKB: graph/claudekb.md
+      - 5.4 LightRAG: graph/lightrag.md
+      - 5.5 Microsoft GraphRAG: graph/microsoft-graphrag.md
+      - 5.6 Graphiti: graph/graphiti.md
+      - 5.7 HippoRAG 2: graph/hipporag.md
+      - 5.8 fast-graphrag: graph/fast-graphrag.md
+      - 5.9 Graph-R1: graph/graph-r1.md
+      - 5.10 datastax/graph-rag: graph/datastax-graph-rag.md
+      - 5.11 code-graph-rag: graph/code-graph-rag.md
+      - 5.12 MiniRAG: graph/minirag.md
+      - 5.13 LinearRAG: graph/linearrag.md
+      - 5.14 LogicRAG: graph/logicrag.md
+      - 5.15 Youtu-GraphRAG: graph/youtu-graphrag.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/lucagattoni/pinakes
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/pinakes/

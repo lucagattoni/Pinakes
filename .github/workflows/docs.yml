@@ -1,0 +1,65 @@
+name: docs
+
+# Build the MkDocs site on every PR (--strict, so a broken internal link or anchor fails the
+# check), and deploy to GitHub Pages on push to main.
+#
+# Path-filtered on purpose: this is a *view* over docs/, and a change to src/ cannot break it.
+# `mkdocs_hooks.py` is in the filter because it decides how heading anchors are slugged — the
+# thing --strict validates.
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - mkdocs_hooks.py
+      - requirements-docs.txt
+      - .github/workflows/docs.yml
+  pull_request:
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - mkdocs_hooks.py
+      - requirements-docs.txt
+      - .github/workflows/docs.yml
+
+permissions:
+  contents: read
+
+# One deploy at a time. `cancel-in-progress: false` so a queued deploy finishes rather than being
+# dropped — a cancelled Pages deploy leaves the site on the previous commit with no failure shown.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: requirements-docs.txt
+      # uv provisions Python + an ephemeral env from requirements-docs.txt, then builds. mkdocs is
+      # deliberately not a project dependency: --no-project keeps it out of the resolution that
+      # `check` and the release wheel share.
+      - run: uv run --no-project --with-requirements requirements-docs.txt mkdocs build --strict
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    # Only publish from main, never from a PR.
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

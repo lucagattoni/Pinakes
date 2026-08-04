@@ -36,26 +36,26 @@ else in the repo, that copy is the stale one.
 | `id` | ✅ | ULID. **Permanent.** The authority in every `pnk://` URI. Never edit, never regenerate |
 | `template` | | The blueprint and its own version, e.g. `notes@1.0` — the *template's* version, not the package's |
 | `created` | | `YYYYMMDD HH:MM` |
-| `requires_pinakes` | | The oldest pinakes that can read this KB, as a **floor only**: `">=0.6"`. Absent means no floor declared, which is not an error — see below |
+| `requires_pinakes` | | The oldest Pinakes that can read this KB, as a **floor only**: `">=0.6"`. Absent means no floor declared, which is not an error — see below |
 
 ### `requires_pinakes` — the compatibility floor
 
 A manifest is forward-**incompatible** on purpose: an unknown key is a hard error, because a typo
 that silently left you on defaults is worse than a refusal. The cost is that a KB written by a newer
-pinakes fails on the first key this build has never heard of, and reports it as a spelling mistake
-when the user's real problem is an out-of-date pinakes. This field lets the manifest say so first.
+Pinakes fails on the first key this build has never heard of, and reports it as a spelling mistake
+when the user's real problem is an out-of-date Pinakes. This field lets the manifest say so first.
 
 - **Read before every other key**, in a pre-pass over the raw TOML. The ordering is the whole point:
   after strict validation the parse has already died on the unknown key, so the field would be
   unreachable in exactly the case it exists for.
-- **A floor only.** `>=` is the sole accepted operator, because a KB is readable by the pinakes that
+- **A floor only.** `>=` is the sole accepted operator, because a KB is readable by the Pinakes that
   wrote it or any newer one and there is no ceiling to express. `"0.6"`, `"<=0.6"` and `"==0.6"` are
   each refused by name rather than half-honoured.
 - **Absence means compatible.** Every KB written before this field existed lacks it.
-- **It cannot explain a key retroactively.** A pinakes built before the field existed has no
+- **It cannot explain a key retroactively.** A Pinakes built before the field existed has no
   pre-pass and fails on `requires_pinakes` itself. It only ever helps for keys added *after* it
   shipped — which is also why `pnk init` does **not** stamp it: a fresh KB carries no key an older
-  pinakes would choke on, so a stamped floor would lock out readers for no gain.
+  Pinakes would choke on, so a stamped floor would lock out readers for no gain.
 
 Nothing updates the field on a KB whose owner never edits it, so it is a lower bound rather than a
 promise. The wider design note is [KB-UPDATES.md](KB-UPDATES.md).
@@ -133,7 +133,7 @@ in the output would reveal it.
 | `final_k` | `8` | Passages actually returned. `pnk search -k` overrides per query |
 | `rerank` | `local` | `local` or `none` |
 | `vector_tier` | `auto` | `auto`, `numpy` or `sqlite-vec`. **Only the NumPy tier is built** — `sqlite-vec` is the template release |
-| `adjacent_k` | `8` | Neighbours kept per expansion when traversing links, applied **after** ranking. Server-capped at 64 whatever this says, and a value above that is refused at parse time rather than silently clamped. **Not stamped into the template**: `pinakes.toml` hard-errors on an unknown key, so a manifest carrying `adjacent_k` cannot be read by any pinakes released before it existed |
+| `adjacent_k` | `8` | Neighbours kept per expansion when traversing links, applied **after** ranking. Server-capped at 64 whatever this says, and a value above that is refused at parse time rather than silently clamped. **Not stamped into the template**: `pinakes.toml` hard-errors on an unknown key, so a manifest carrying `adjacent_k` cannot be read by any Pinakes released before it existed |
 
 Three separate *pipeline* widths rather than one `top_k` (`adjacent_k` is not one of them — it bounds link traversal, not retrieval), because they are three different cut-offs.
 
@@ -185,7 +185,7 @@ ongoing exposure; a one-run `--extract=<backend>` override is not.
 
 Every euro value is parsed as an exact `Decimal`, never a float — a hard cap compared against a
 binary approximation of the number you typed is not actually hard. Write them as ordinary TOML
-numbers (`0.05`); the exactness is on pinakes's side.
+numbers (`0.05`); the exactness is on Pinakes's side.
 
 ## `[[links.kb]]`
 
@@ -249,7 +249,7 @@ away would be data loss. Comments, quoting style, block scalars, blank lines and
 all survive a rewrite, and a value is stored exactly as you wrote it — `country: NO` stays `NO`
 rather than becoming `false`.
 
-Bounds on that, all of them things pinakes or YAML does rather than choices about your keys:
+Bounds on that, all of them things Pinakes or YAML does rather than choices about your keys:
 
 | Bound | What happens |
 |---|---|

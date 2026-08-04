@@ -1,4 +1,4 @@
-# Guide — using pinakes
+# Guide — using Pinakes
 
 How to build, feed, search and share a knowledge base. Every command here was run against 0.2.0
 (20260728 16:40); the output shown is real.
@@ -37,7 +37,7 @@ uvx --from "pinakes[light]" pnk --version
 [STATUS](STATUS.md#the-surface-you-can-use-today) marked "on `main`, unreleased":
 
 ```bash
-uv add "pinakes[light] @ git+https://github.com/lucagattoni/Pinakes"
+uv add "pinakes[light] @ git+https://github.com/lucagattoni/pinakes"
 ```
 
 | Extra | Pulls | Gives you |
@@ -144,7 +144,7 @@ you to guess:
 1 file(s) matched no `include` pattern: .pdf (1) — add "**/*.pdf" to `[sources] include` to index them, or `exclude` them to silence this.
 ```
 
-That line lists any file pinakes could have indexed but had no pattern for, grouped by extension.
+That line lists any file Pinakes could have indexed but had no pattern for, grouped by extension.
 Files it could not read either way — images, archives, anything not valid UTF-8 — are never
 mentioned, since adding a glob for them would only produce a failed document. It also names
 `pinakes[pdf]` when a PDF is waiting and the extractor is not installed, because adding the glob
@@ -402,8 +402,8 @@ them and `pnk links` traverses them: see [Following links between two KBs](#foll
 | `no extractor for .pdf` | `[pdf]` extra missing | `uv add "pinakes[pdf]"` |
 | Queries refuse to run, naming a model mismatch | Embedding model changed since the index was built | `pnk sync --rebuild` — free |
 | Index refuses to open, naming `schema_version` | Index predates 0.2.0 | `pnk sync --rebuild`. There are no migrations, by design |
-| `this KB requires pinakes >=X (this build is Y)` | The KB was written by a newer pinakes and declares a floor | Upgrade: `uv add --upgrade pinakes`. Downgrading a KB is not supported — nothing rewrites a manifest you own |
-| `unknown key(s)` in a KB you did not edit | The same cause, on a KB that declares **no** floor, so the refusal can only report the symptom | Upgrade pinakes. Unknown keys stay a hard error by design ([MANIFEST](MANIFEST.md#requires_pinakes--the-compatibility-floor)) |
+| `this KB requires pinakes >=X (this build is Y)` | The KB was written by a newer Pinakes and declares a floor | Upgrade: `uv add --upgrade pinakes`. Downgrading a KB is not supported — nothing rewrites a manifest you own |
+| `unknown key(s)` in a KB you did not edit | The same cause, on a KB that declares **no** floor, so the refusal can only report the symptom | Upgrade Pinakes. Unknown keys stay a hard error by design ([MANIFEST](MANIFEST.md#requires_pinakes--the-compatibility-floor)) |
 | `confidence: unknown` on every search | No fitted `[retrieval.confidence]` | Expected. Calibrate against your own golden set ([above](#about-that-confidence-unknown)) |
 | Sync exits non-zero listing documents | Per-document failures, isolated by design | `pnk doctor` lists them with the error; the rest of the corpus indexed fine |
 | A sync seems stuck behind a lock | A killed sync, or another machine | `pnk doctor` reports the holder and age; `pnk sync --force-unlock` if it is not this host |
@@ -475,7 +475,7 @@ values are never reinterpreted: `country: NO` stays the string `NO` rather than 
 `false`.
 
 The one thing that changes about *layout* is exactly that indentation — the first time anything
-rewrites the file, pinakes re-emits a block sequence as `- to:` at the left margin, which is why the
+rewrites the file, Pinakes re-emits a block sequence as `- to:` at the left margin, which is why the
 output above is flush. It happens once. [MANIFEST](MANIFEST.md#the-sidecar--filepnkyaml) lists the
 full set of bounds, including the `pnk://self/…` expansion you can see below.
 

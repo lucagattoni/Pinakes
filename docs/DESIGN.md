@@ -1,6 +1,6 @@
-# pinakes — a portable, agent-first knowledge base
+# Pinakes — a portable, agent-first knowledge base
 
-**Repo:** github.com/lucagattoni/Pinakes (PUBLIC) · **Licence:** Apache-2.0 · **Python:** 3.13+
+**Repo:** github.com/lucagattoni/pinakes (PUBLIC) · **Licence:** Apache-2.0 · **Python:** 3.13+
 **Package:** `pinakes` · **Command:** `pnk` · **Tooling:** uv
 **Design date:** 20260725 09:52 (review pass 7) · **Last reviewed against the code:** 20260728 16:40
 
@@ -17,7 +17,7 @@ deliberately does not track releases:
 | Whether something is **built yet** | [STATUS.md](STATUS.md) — the only place that says so |
 | **How to use** it | [GUIDE.md](GUIDE.md) |
 | A **flag** or a **manifest field** | [CLI.md](CLI.md) · [MANIFEST.md](MANIFEST.md) |
-| What is **going to be built**, in order | [`plans/`](../plans/) |
+| What is **going to be built**, in order | [`plans/`](https://github.com/lucagattoni/pinakes/tree/main/plans/) |
 
 Sections whose amendment is assigned to an unshipped increment carry a dated **⏳ pending** note
 saying so, rather than describing behaviour that does not exist.
@@ -127,13 +127,13 @@ the registered extractors (`extract/__init__.py`) **without importing either**, 
 rejected before either extra could matter.
 
 **Rejecting unknown keys makes the manifest forward-incompatible, and one field pays that debt.**
-Strictness is worth its cost against typos, but it means a manifest from a *newer* pinakes fails on
+Strictness is worth its cost against typos, but it means a manifest from a *newer* Pinakes fails on
 the first key this build has not heard of — and the refusal, though correct, diagnoses a spelling
-mistake when the real problem is an out-of-date pinakes. `[kb] requires_pinakes` states the oldest
+mistake when the real problem is an out-of-date Pinakes. `[kb] requires_pinakes` states the oldest
 version that can read the KB, and is read in a **pre-pass over the raw TOML, before any of the above
 runs**. The ordering is not an implementation detail: read afterwards, the parse has already died on
 the unknown key and the field is unreachable in the only situation it exists for. It is a floor
-only — a KB may be opened by the pinakes that wrote it or a newer one, never an older one — so there
+only — a KB may be opened by the Pinakes that wrote it or a newer one, never an older one — so there
 is no specifier grammar to support and no parsing dependency to take on. Its absence means no floor
 declared, never a refusal, because every KB written before it existed lacks it. What it cannot do is
 explain a key retroactively: a build without the pre-pass fails on `requires_pinakes` itself, so the
@@ -181,7 +181,7 @@ re-billed or silently overwritten by whatever free backend the manifest names. T
 (existing `provenance` keys survive) and happens only when a *paid* extraction actually ran, or was
 explicitly discarded by `--force` (§6.4) — never for the common, no-money-involved case of an
 ordinary free extraction. This write costs the file nothing: the sidecar
-is read and written through a **round-trip YAML parser**, so `write()` reconciles the keys pinakes
+is read and written through a **round-trip YAML parser**, so `write()` reconciles the keys Pinakes
 owns *into the document that was read* rather than rendering a fresh one — comments, quoting, block
 scalars, blank lines and the author's own key order all survive.
 
@@ -195,7 +195,7 @@ disk because ruamel preserves the source form. Corruption reduced, not eliminate
 [KB-UPDATES.md](KB-UPDATES.md) §5 — a file a person edits needs a parser that can put it back.
 
 The promise is now **byte-identical**, which is testable in a way "untouched" was not, and it is
-bounded by what pinakes normalises by design (`pnk://self/…` expansion; canonical key ordering on a
+bounded by what Pinakes normalises by design (`pnk://self/…` expansion; canonical key ordering on a
 *minted* sidecar only), by what the parser normalises (block-sequence and nested-mapping
 indentation, which follows the dumper rather than the source), and by what YAML does not carry
 (CRLF, a BOM, `---`/`...` markers). One limitation is pinned rather than fixed: a comment is stored
@@ -800,7 +800,7 @@ Phase-2 rules, applied in order:
 | Path gone, *several* new paths share that hash (duplicate content) | Ambiguous — do not guess. Prefer a candidate whose adjacent sidecar already carries the old ID; failing that, mint fresh IDs for all of them and report the ambiguity. Silently attaching an ID to the wrong duplicate would silently redirect every inbound link |
 | New path with an adjacent sidecar | Adopt its ID after a uniqueness check |
 | New path, no sidecar | Mint a ULID, write the sidecar |
-| New path, a sidecar that **will not parse** | **Never mint over it.** The walk drops an unreadable sidecar so one bad file cannot stop the others — which makes the document *look* like the row above, while the file still holds its permanent ULID. A `failures` row; the file is left byte-identical and the document is not indexed. The walk had to swallow the parse error to keep walking, so the mint path **re-reads that one file to name it** — "already exists" alone reads like a pinakes bug and says nothing about the character the user mistyped. Distinguishing these two rows is the whole point: writing a freshly minted id over a sidecar replaces a permanent ULID with a different one, and every inbound link points at the old one with no migration by design |
+| New path, a sidecar that **will not parse** | **Never mint over it.** The walk drops an unreadable sidecar so one bad file cannot stop the others — which makes the document *look* like the row above, while the file still holds its permanent ULID. A `failures` row; the file is left byte-identical and the document is not indexed. The walk had to swallow the parse error to keep walking, so the mint path **re-reads that one file to name it** — "already exists" alone reads like a Pinakes bug and says nothing about the character the user mistyped. Distinguishing these two rows is the whole point: writing a freshly minted id over a sidecar replaces a permanent ULID with a different one, and every inbound link points at the old one with no migration by design |
 | An **indexed** document's sidecar stops parsing, content unchanged | The same `failures` row, and the run continues. Pairing yields `RefreshMetadata` here rather than `Mint`, and that branch re-reads the sidecar too — so the three ways one broken file can be met (`Mint`, `Reembed`, `RefreshMetadata`) report it identically instead of three different ways |
 | Path gone, no hash match | Mark `state = deleted` (soft). **Leave the sidecar on disk** and report it as orphaned |
 | Same ID in two sidecars | Hard error naming both paths. Never silently renumber — that would break every inbound link |
@@ -1051,7 +1051,7 @@ enough to treat as theoretical.
 ## 8. Delivery plan
 
 > **What has actually shipped is [STATUS.md](STATUS.md); the ordered build order is
-> [`plans/`](../plans/).** This section carries only *why* the order is what it is.
+> [`plans/`](https://github.com/lucagattoni/pinakes/tree/main/plans/).** This section carries only *why* the order is what it is.
 
 **The first release had to be a thin vertical slice, end to end** — `init → sync → search`, plus
 `doctor`, `install-hooks` and `serve`. Two orderings inside it were forced rather than chosen: the
@@ -1073,7 +1073,7 @@ cut, and [STATUS](STATUS.md#release-roadmap) is where the mapping lives.
 | Release | Why here |
 |---|---|
 | PDF extraction, completed by the paid-extraction release | Parsing is the single biggest quality risk (§9), so it is isolated from core-design feedback rather than mixed into it. Scope covers **both** paths: the free `pypdfium2` default, and the opt-in paid Claude-vision extractor that is the only answer to a scanned page (§9) — which is what drags the budget machinery into this release, per the governing rule below |
-| the links release — cross-KB links | Needs two populated KBs to be worth anything. Build order: [`plans/20260729_0256-links-and-graph.md`](../plans/20260729_0256-links-and-graph.md) |
+| the links release — cross-KB links | Needs two populated KBs to be worth anything. Build order: [`plans/20260729_0256-links-and-graph.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260729_0256-links-and-graph.md) |
 | the graph release — structural edges and the expansion channel | Edges are only worth deriving once there is a link graph to derive them beside, and the channel is gated on the golden set. **Measured 20260801: a golden set is not sufficient — the gate is only as strong as the corpus underneath it.** A corpus small enough that retrieval already returns every document, or flat enough that its derived edges connect everything to everything at one weight, cannot distinguish a channel that helps from one that does nothing. That is a precondition on the *corpus*, and it was discovered by running the measurement before the schema change rather than after ([STATUS](STATUS.md#release-roadmap)) |
 | the graph release (staged) — graph channels | Each is **eval-gated rather than scheduled** — it ships only if the golden set justifies it (`graph/PINAKES_APPROACH.md` §9) |
 | the deep release — `pnk ask --deep` | A paid loop and its guardrails ship together, never apart — and the guardrails are already here: the §5 accountant, the ledger and all three enforced windows ship with the paid extractor, so the deep release adds the loop, not the machinery |

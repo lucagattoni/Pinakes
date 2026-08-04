@@ -1,11 +1,11 @@
-# Graph, RAG and agents — what the research says, and what pinakes should do
+# Graph, RAG and agents — what the research says, and what Pinakes should do
 
 > ℹ️ **Version numbers below reflect the convention in use when this was written.** Unbuilt
 > work is now **named, not numbered** ([STATUS.md](../STATUS.md)). This record is left as it was.
 
 **Status:** research summary + recommendations · **Date:** 20260725 15:12 (file mtime — the doc
 predates its commit)
-**Scope:** whether pinakes should acquire a graph layer, and if so, which one
+**Scope:** whether Pinakes should acquire a graph layer, and if so, which one
 **Relates to:** [`../DESIGN.md`](../DESIGN.md) §4 (retrieval), §6.2 (links), §8 (roadmap)
 **Superseded as the decision layer by** [`PINAKES_APPROACH.md`](PINAKES_APPROACH.md), which turns
 R1–R7 below into a gated build order after twelve further investigations. This file records what
@@ -23,7 +23,7 @@ The obvious way to get that structure is to extract it up front: run an LLM over
 pull out entities and relations, build a knowledge graph, then query it. That is Microsoft GraphRAG,
 and it works. It is also the single most expensive thing you can do to a corpus.
 
-**The question for pinakes is not "is structure valuable" — it plainly is — but "how much of it can
+**The question for Pinakes is not "is structure valuable" — it plainly is — but "how much of it can
 be had for €0."** The free-path principle (DESIGN §1) is not a nice-to-have here; it decides the
 answer.
 
@@ -38,7 +38,7 @@ usage. Published figures: a moderately sized document set runs $5–20 in API ca
 reported enterprise case hit ~$47,000 to index 100k internal documents — before answering a single
 question.
 
-For pinakes this is disqualifying twice over. It breaks the free path, and it breaks something
+For Pinakes this is disqualifying twice over. It breaks the free path, and it breaks something
 subtler and more important: **DESIGN §4.1 relies on re-indexing being free.** That is what removes
 cost pressure from improving chunking or swapping embedding models. An LLM-extraction step in `pnk
 sync` would make `--rebuild` an expense, and the truth/derived split (§2) would quietly stop being
@@ -70,12 +70,12 @@ queries where vector RAG manages ~34%, while losing badly to structure-aware chu
 vs ~72%) when the answer is one date or clause in one known document.
 
 **Reading:** a graph layer must be *additive and routed*, never a replacement for the hybrid pipeline.
-Most queries against a pinakes KB will be local lookups, and those are exactly the ones a graph makes
+Most queries against a Pinakes KB will be local lookups, and those are exactly the ones a graph makes
 worse.
 
 ---
 
-## 3. Where pinakes already stands
+## 3. Where Pinakes already stands
 
 Worth stating plainly, because it changes what is left to build:
 
@@ -87,7 +87,7 @@ Worth stating plainly, because it changes what is left to build:
 - **RRF over BM25 + vector (§4.1) is the fusion pattern the 2025/26 systems converged on.** Adding a
   graph channel means adding a third ranked list to a fusion that already exists — not a new pipeline.
 - **DESIGN §4.3 already made the agentic call**: multi-hop via composable tools driven by the
-  caller's agent, not an agent framework inside pinakes. That is the Graph-R1 loop, executed on
+  caller's agent, not an agent framework inside Pinakes. That is the Graph-R1 loop, executed on
   someone else's token budget. It is the correct architecture and it should not be revisited.
 
 **So the recommendation is not "adopt GraphRAG."** It is: recognise that the cheap 80% of a graph is
@@ -146,7 +146,7 @@ otherwise (R7).
 
 ### R5 — If entity extraction is ever added, make it lazy, agent-driven, and write-back to sidecars.
 
-The SubQRAG pattern, adapted to pinakes' truth/derived split:
+The SubQRAG pattern, adapted to Pinakes' truth/derived split:
 
 - Never at sync. Only on an explicit, budgeted `--deep` path (v0.4 machinery, already specified).
 - Only for the specific gap the current query hit — not the corpus, not the document set.
@@ -162,7 +162,7 @@ form of LLM extraction consistent with this design.
 `pinakes_links(doc_id, rel?, direction?, depth?)` returning neighbours plus the same confidence
 signal as `pinakes_search`. The calling agent runs think → traverse → rethink in its own context, on
 its own subscription — §4.3's existing bet, extended to edges. Resist adding a traversal *policy*
-inside pinakes; that is the "second, worse agent framework" already flagged in §9.
+inside Pinakes; that is the "second, worse agent framework" already flagged in §9.
 
 ### R7 — Measure before shipping any of it.
 
@@ -176,7 +176,7 @@ discipline applied to a new channel.
 
 ## 5. Prior art worth tracking
 
-| Project | Stars (mid-2026) | Relevance to pinakes |
+| Project | Stars (mid-2026) | Relevance to Pinakes |
 |---|---|---|
 | [LightRAG](https://github.com/HKUDS/LightRAG) | ~28k | Dual-level entity/relation indexing; most actively developed in the space. Read for its retrieval-mode routing |
 | [microsoft/graphrag](https://github.com/microsoft/graphrag) | ~31k | Reference implementation. Read as the *cost* case study; LazyGraphRAG is not yet in the OSS library |
@@ -201,10 +201,10 @@ SubQRAG (arXiv 2510.07718) · EcphoryRAG (arXiv 2510.08958) · Graph-R1 (arXiv 2
 | R3 | Structural edges from existing index data | v0.3 | €0 |
 | R4 | PPR as a third RRF channel, default `off` | v0.3–v0.4 | €0 |
 | R5 | Lazy extraction → sidecar write-back, only if ever needed | v0.4+ | budgeted |
-| R6 | Expose traversal as a tool; no traversal policy inside pinakes | v0.3 | €0 |
+| R6 | Expose traversal as a tool; no traversal policy inside Pinakes | v0.3 | €0 |
 | R7 | Multi-hop golden-set coverage before R3/R4 ship | v0.3 | €0 |
 
-The short version: **pinakes does not need GraphRAG, because it already has the part of GraphRAG that
+The short version: **Pinakes does not need GraphRAG, because it already has the part of GraphRAG that
 was worth having.** Typed, human-authored, committed links are a better graph than an LLM extractor
 produces, and they cost nothing. The work that remains is traversal and ranking over that graph — and
 the research consensus of 2025/26 is that this is where the value was all along.

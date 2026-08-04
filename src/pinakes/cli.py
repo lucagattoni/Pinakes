@@ -27,7 +27,7 @@ from pinakes import __version__
 from pinakes.errors import NotImplementedYetError, PinakesError
 from pinakes.manifest import Manifest
 
-DESIGN_URL = "https://github.com/lucagattoni/Pinakes/blob/main/docs/DESIGN.md"
+DESIGN_URL = "https://github.com/lucagattoni/pinakes/blob/main/docs/DESIGN.md"
 
 EXIT_OK = 0
 EXIT_FAILURE = 1

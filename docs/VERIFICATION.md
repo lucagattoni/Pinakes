@@ -9,7 +9,7 @@ verifies nothing; it is the wish it warned about, wearing the table's clothes.
 
 So the plan keeps its predictions, as the historical record of what was intended, and **this file is
 the resolved mapping**: what must be true, and the test that actually holds it, in the tree as it
-stands. [`tests/test_verification.py`](../tests/test_verification.py) asserts every test named below
+stands. [`tests/test_verification.py`](https://github.com/lucagattoni/pinakes/blob/main/tests/test_verification.py) asserts every test named below
 exists — so this table can go stale exactly once, in the commit that breaks it, and not silently.
 
 A row saying **none** is a promise with no test. There are none today; if you add a row, add its
@@ -564,7 +564,7 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | What must be true | Increment | Where it is checked |
 |---|---|---|
 | the floor is read **before** strict validation | G4 | `tests/test_manifest_compat.py::test_the_pre_pass_runs_before_strict_validation` |
-| a KB needing a newer pinakes names both versions | G4 | `tests/test_manifest_compat.py::test_a_manifest_requiring_a_newer_pinakes_names_the_version` |
+| a KB needing a newer Pinakes names both versions | G4 | `tests/test_manifest_compat.py::test_a_manifest_requiring_a_newer_pinakes_names_the_version` |
 | an absent floor is not an error | G4 | `tests/test_manifest_compat.py::test_an_absent_requires_pinakes_is_not_an_error` |
 | a floor this build exactly meets is accepted | G4 | `tests/test_manifest_compat.py::test_a_floor_this_build_meets_exactly_is_accepted`, `tests/test_manifest_compat.py::test_a_shorter_floor_compares_as_the_same_version`, `tests/test_manifest_compat.py::test_a_longer_floor_of_trailing_zeros_is_the_same_version` |
 | only a floor is accepted — no ceiling, no bare version | G4 | `tests/test_manifest_compat.py::test_a_floor_that_is_not_a_lower_bound_is_refused` |

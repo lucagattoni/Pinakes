@@ -102,7 +102,7 @@ That framing is what made it look like a foot-gun rather than a defect, and it d
 *their* `include` writes sidecars into *your* tree, relative to your clone. It is the same
 untrusted-input argument the partner-side fix rests on — one repository hop further away.
 
-It also writes where CLAUDE.md says pinakes may not: a sidecar minted outside the KB is a file
+It also writes where CLAUDE.md says Pinakes may not: a sidecar minted outside the KB is a file
 created in a directory the tool was never pointed at.
 
 ## What to build
