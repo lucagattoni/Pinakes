@@ -23,6 +23,9 @@ Build plans live in [`plans/`](../plans/); the release history is [`CHANGELOG.md
 | [`20260731_2128-source-walk-containment.md`](../plans/20260731_2128-source-walk-containment.md) | A standalone increment, shipped in 0.7.1 — outside both releases above |
 | [`20260731_1202-open-corrections.md`](../plans/20260731_1202-open-corrections.md) | Numbered corrections for the implementing agent; items are closed in place, never deleted |
 | [`20260801_0749-realism-corpus.md`](../plans/20260801_0749-realism-corpus.md) | The RFC corpus and the dogfooding KB — both live **outside** this repo |
+| [`20260804_1016-template-release.md`](../plans/20260804_1016-template-release.md) | The template release — the ecosystem, `pnk upgrade`, the `sqlite-vec` tier. Reviewed (36 findings) and revised; its four decisions taken 20260804 |
+| [`20260804_1016-graph-remainder-reentry.md`](../plans/20260804_1016-graph-remainder-reentry.md) | What must be re-verified about G3/G5/G6 **if** the blocking measurement is ever passed — a re-entry checklist, not a plan |
+| [`20260804_1016-staged-channel-gates.md`](../plans/20260804_1016-staged-channel-gates.md) | The **gates** for the PPR channel and the `[ner]` extra — what measurement would justify each, and what would refuse it. Deliberately not implementation plans |
 | [`20260803_2239-corpus-probe-run.md`](../plans/20260803_2239-corpus-probe-run.md) | How the second headroom measurement is run against that corpus, and the conversion contract that keeps its frozen questions frozen |
 | [`decision-*.md`](../plans/) | A decision record — rationale, not instructions |
 | `20260725_1317-v0.1.md`, `20260727_1543-v0.2.md` | **Shipped.** Historical build orders, still cited by `check.sh` and `tools/paid_path_gate.py` |

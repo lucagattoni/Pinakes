@@ -538,6 +538,13 @@ No stored `degree` — that would be derived state inside derived state.
 > the weight now** — G3 is blocked, nothing has been measured against a real corpus end to end, and
 > a weight changed on an argument rather than a measurement is the thing decision 13 froze the table
 > to prevent.
+>
+> **Resolved 20260804 10:16 — defer, and measure it as a G5 leg.** Keeping it, damping it or capping
+> out-degree all decide a frozen weight on an argument; only a measurement does not. G3 may
+> therefore be built with this table as frozen, carrying a *measured at G5* marker on the `authored`
+> row. That satisfies this warning's intent — that the weight not be discovered by a gate that
+> passes — rather than its literal "re-decided before G3 is built", and the user took the reading
+> ([`20260804_1016-graph-remainder-reentry.md`](../plans/20260804_1016-graph-remainder-reentry.md)).
 
 | Edge | Connects | Weight at read |
 |---|---|---|
