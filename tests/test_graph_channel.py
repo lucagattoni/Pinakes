@@ -908,7 +908,7 @@ def test_a_newly_found_question_at_low_confidence_does_not_veto_the_win(tmp_path
     after = [
         *[
             row(
-                "m%d" % index,
+                f"m{index}",
                 "multi-hop",
                 hit=index < 5,
                 confidence="low" if index < 5 else "medium",
@@ -934,7 +934,7 @@ def test_a_question_that_lost_confidence_stops_the_gate(tmp_path: Path) -> None:
     after = [
         *[
             row(
-                "m%d" % index,
+                f"m{index}",
                 "multi-hop",
                 hit=index < 8,
                 confidence="low" if index == 0 else "medium",
