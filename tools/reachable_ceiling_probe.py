@@ -64,18 +64,22 @@ shape below is refused by name, before a backend is even loaded:
   under the fake backend (9 failing / 3 liftable): one unmatched tag took `failing` to 10 and left
   `liftable` at 3; the same tag on every multi-hop question took the run to 18 failing / 0
   liftable, in silence;
+* two identical hops in one question — one retrieval written twice, clearing the `MIN_HOPS`
+  floor while asking a single question;
 * a golden set with no `multi-hop` question at all, whose every figure would be a zero
   indistinguishable from a measured one.
 
 All of them are likely on a real corpus rather than hypothetical: a converted question set is
 hand-written, and `hops` is the part of the schema a reader can miss.
 
-**Every output names the corpus it measured, and what produced the numbers** — root path
-(absolute and resolved), kb-ulid, and the retrieval and embedding settings, in the text and the
-JSON alike. Two runs against two corpora otherwise produce artifacts that cannot be told apart,
-and the first thing anyone does with this tool is run it against something other than the demo KB;
-`failing` is a function of `final_k`, fusion and reranking, so the corpus's name alone does not
-identify a measurement.
+**Every output names all three inputs the numbers are a function of** — the corpus (root path,
+absolute and resolved, plus kb-ulid and when its index was built), the golden set (path, sha256,
+how many questions and how many of them multi-hop), and the pipeline (embedding, reranker and
+retrieval settings, each down to the model and revision that select the weights). Two runs
+otherwise produce artifacts that cannot be told apart, and every one of the three has been
+measured moving a figure while the other two stayed identical: a different corpus, a rewritten
+golden set, a swapped reranker. `failing` is `expect` in the top `final_k` after fusion and
+reranking — the corpus's name alone does not identify a measurement.
 
 Usage:
     python3 tools/reachable_ceiling_probe.py                    # real models, the measurement
@@ -86,6 +90,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import posixpath
 import shutil
@@ -456,15 +461,6 @@ def check_measurable(
 
     for question in questions:
         measured = question.kind == "multi-hop"
-        # What a problem costs, as a sentence of its own rather than a clause spliced into three
-        # others. A hop on a `lexical` question is validated like any other and moves nothing, and
-        # telling its author it "would be counted failing" is the same over-claim in reverse.
-        cost = (
-            "It is counted, and moves the figures this probe prints."
-            if measured
-            else "No figure this probe prints moves — it measures `multi-hop` questions only — "
-            "but the golden set is wrong all the same."
-        )
         # The last hop is the only one that carries the question's filters (`probe`), so it is
         # the only one whose filters can decide a verdict.
         if measured and question.hops and question.filters != Filters():
@@ -508,26 +504,39 @@ def check_measurable(
                     f"golden set that names a document the index does not hold is not one to "
                     f"measure a release precondition against."
                 )
+        unreachable_for_a_non_channel_reason = (
+            "The hop is recorded failing-and-unreachable for a reason that is not about the channel"
+        )
+        seen_hops: set[tuple[str, str]] = set()
         for index, hop in enumerate(question.hops):
+            if measured and (hop.query, hop.expect) in seen_hops:
+                problems.append(
+                    f"{question.id!r} hop {index}: identical to an earlier hop, `query` and "
+                    f"`expect` alike. That is one retrieval written twice, so the question clears "
+                    f"the {MIN_HOPS}-hop floor while asking a single question — and a hop that "
+                    f"repeats one already landed can move `liftable` upward, the direction a floor "
+                    f"reads as headroom."
+                )
+            seen_hops.add((hop.query, hop.expect))
             if not hop.query.strip():
                 problems.append(
                     f"{question.id!r} hop {index}: an empty `query`. It retrieves nothing on its "
-                    f"own terms, so the hop fails for the query rather than for the corpus — the "
-                    f"same silent deflation as a mistyped path. {cost}"
+                    f"own terms, so it fails for the query rather than for the corpus. "
+                    f"{_consequence(measured, 'That hop is counted failing')}"
                 )
             if hop.expect not in documents:
                 problems.append(
                     f"{question.id!r} hop {index}: `expect` names {hop.expect!r}, which is not an "
                     f"active document in this index{_near_miss(hop.expect, documents)}. It "
-                    f"resolves to no document at all, so the hop is recorded "
-                    f"failing-and-unreachable. {cost}"
+                    f"resolves to no document at all. "
+                    f"{_consequence(measured, 'The hop is recorded failing-and-unreachable')}"
                 )
             elif documents[hop.expect] not in chunked:
                 problems.append(
                     f"{question.id!r} hop {index}: `expect` names {hop.expect!r}, which the index "
                     f"holds with no chunks. Every node the channel walks is built from chunks, so "
-                    f"this document can neither be retrieved nor reached, and the hop is recorded "
-                    f"failing-and-unreachable for a reason that is not about the channel. {cost} "
+                    f"this document can neither be retrieved nor reached. "
+                    f"{_consequence(measured, unreachable_for_a_non_channel_reason)} "
                     f"Re-sync, or point the hop at a document with content in it."
                 )
     if not problems:
@@ -541,6 +550,22 @@ def check_measurable(
         f"rather than measured: each line above is either an input that silently moves the count "
         f"this probe exists to produce, or a golden set defect that makes the corpus the wrong "
         f"one to measure — and it says which."
+    )
+
+
+def _consequence(measured: bool, recorded: str) -> str:
+    """The half of a problem that depends on whether this probe measures the question at all.
+
+    The whole consequence, not a trailing qualifier on one: `probe` walks `multi-hop` questions
+    only, so for any other kind *nothing is recorded*, and a message that asserts the recording
+    and then denies its effect contradicts itself in two sentences. Saying "the hop is recorded
+    failing-and-unreachable" to the author of a `lexical` question is simply false.
+    """
+    if measured:
+        return f"{recorded}, which moves the figures this probe prints."
+    return (
+        "This probe measures `multi-hop` questions only, so nothing is recorded for it and no "
+        "figure printed here moves — the golden set is wrong all the same."
     )
 
 
@@ -928,6 +953,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ),
             ]
             after = _tables(connection)
+            # The golden set's own identity, read while the file is certainly still there:
+            # `--fake` measures a copy inside a temporary directory that is gone by the time the
+            # payload is printed.
+            golden_set_path = str(questions_path.resolve())
+            digest = hashlib.sha256(questions_path.read_bytes()).hexdigest()
+            multi_hop_questions = sum(1 for q in questions if q.kind == "multi-hop")
+            golden_set = {
+                "path": golden_set_path,
+                "sha256": digest,
+                "questions": len(questions),
+                "multi_hop": multi_hop_questions,
+            }
             meta = store.get_meta(connection)
             schema = meta.get("schema_version", "?")
             # A corpus edited since its last sync is measured as it stood then, and
@@ -951,17 +988,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         "index_built_at": built_at,
         "tables_before": before,
         "tables_after": after,
+        # The golden set is the input every figure below is computed *from*, and it is the one a
+        # refuse-edit-re-run loop changes most often: rewriting the hop queries alone moved
+        # demo-kb from 9 failing / 3 liftable to 18 / 9 with every other field here identical.
+        # A digest, not the questions: the artifact identifies its input, it does not copy it.
+        "golden_set": golden_set,
         "embedding": {
             "provider": manifest.embedding.provider,
             "model": manifest.embedding.model,
             "dim": manifest.embedding.dim,
+            # The revision pins the weights as surely as the model name does, and changing it
+            # needs no re-sync — so nothing else recorded here would move with it.
+            "revision": manifest.embedding.revision,
         },
         # The reranker's own model, not only the mode. `lands` is `expect in` the top `final_k`
         # *after* reranking, so a different reranker is a different measurement: swapping one fake
         # for another moved demo-kb from 9 failing / 3 liftable to 18 / 12 with every other
         # recorded field identical. `eval.py`'s header carries this block for the same reason.
         "rerank": (
-            {"provider": manifest.rerank.provider, "model": manifest.rerank.model}
+            {
+                "provider": manifest.rerank.provider,
+                "model": manifest.rerank.model,
+                "revision": manifest.rerank.revision,
+            }
             if settings.rerank == "local"
             else None
         ),
@@ -987,6 +1036,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(payload, indent=2))
     else:
         print(f"kb {kb_root}  (kb-ulid {manifest.kb.id})")
+        print(
+            f"golden set {golden_set_path} (sha256 {digest[:12]}, "
+            f"{multi_hop_questions} multi-hop of {len(questions)})"
+        )
         if args.fake:
             print("measured with --fake: a temporary copy of the demo KB, hashing backend")
         print()

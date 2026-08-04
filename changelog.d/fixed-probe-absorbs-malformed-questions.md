@@ -14,9 +14,11 @@
   spelling the index holds when a path differs only in case, `./` or Unicode normalisation. A
   seventh shape joined them after review: a question whose `filters` admit no document, or do
   not admit its own last hop's `expect` — applied to the last hop, they decide whether it can
-  land at all. A question's own `expect` naming a missing document refuses too, and says plainly
-  that it moves no figure the probe prints — the probe measures hops — while still being a golden
-  set no release precondition should be measured against. Measured under the offline fake backend, where demo-kb reads 18 multi-hop / 9 failing / 3
+  land at all, and so does a question whose two hops are identical — one retrieval written twice,
+  clearing the hop floor while asking a single question. A question's own `expect` naming a
+  missing document refuses too, and says plainly that it moves no figure the probe prints (the
+  probe measures hops) while still being a golden set no release precondition should be measured
+  against. Measured under the offline fake backend, where demo-kb reads 18 multi-hop / 9 failing / 3
   liftable: one mistyped hop path took `failing` to 10 and left `liftable` at 3; one hops-less
   question took the denominator to 19 and moved nothing else; one unmatched `tags` filter took
   `failing` to 10, and the same filter on every multi-hop question took the run to 18 failing / 0
@@ -36,7 +38,11 @@
   `failing` is `expect` in the top `final_k` after fusion and reranking, every one of those a
   per-KB manifest key, so naming the corpus alone still left two artifacts indistinguishable:
   swapping one fake reranker for another moved demo-kb from 9 failing / 3 liftable to 18 / 12
-  with every other recorded field identical. The closing prose no longer prints a hardcoded
+  with every other recorded field identical. The **golden set** is identified too — path, sha256
+  and how many questions of which kind — because it is the input every figure is computed from
+  and the one a refuse-edit-re-run loop changes most often: rewriting only the hop queries moved
+  the same corpus from 9 failing / 3 liftable to 18 / 9 with every other field equal.
+  The closing prose no longer prints a hardcoded
   `>= 7` precondition — the threshold belongs to the measurement plan for the corpus in hand, and
   the tool measures whichever corpus `--kb` names — and it now states both of the precondition's
   clauses, having named only the liftable one.

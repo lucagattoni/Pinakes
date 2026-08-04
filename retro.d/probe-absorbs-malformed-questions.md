@@ -114,6 +114,31 @@ about the shape of that answer, and the real reading is 18 / 1 / 1. A user-facin
 the real measurement. **Every measured number carries the configuration that produced it, or it is
 a different claim than the one intended.**
 
+**MEDIUM — four passes, and the identity question kept moving outward one input at a time.** Pass
+one: the artifact did not name the corpus. Pass three: it named the corpus but not the pipeline.
+Pass four: it named corpus and pipeline but not the **golden set** — the input every printed figure
+is computed *from*, and the one this branch's own refuse-edit-re-run loop changes most often.
+Demonstrated on one corpus, one index, one manifest, rewriting only the hop queries into a generic
+word: 9 failing / 3 liftable became 18 / 9, and every recorded field except `reports` compared
+equal. The payload now carries the golden set's resolved path, a sha256 of its bytes and its
+counts, plus `revision` on both model blocks — a revision selects weights as surely as a model name
+and needs no re-sync, so nothing else recorded would move with it. **The general form: an artifact
+must identify every input its numbers are a function of, and the way to find them is to enumerate
+the function's arguments, not to wait for a reviewer to name one.**
+
+**LOW — the contradiction moved instead of leaving.** The per-kind wording was fixed once by
+appending the conditional sentence to the end, which left "the hop is recorded
+failing-and-unreachable. No figure this probe prints moves" — an assertion and its denial, one
+sentence apart, in a message the previous commit claimed to have fixed. The consequence is now
+*entirely* inside the conditional (`_consequence`), so a non-`multi-hop` question is told nothing
+was recorded at all, and the test asserts the class ("no line may claim a hop was recorded")
+instead of one superseded string.
+
+**LOW — one more absorption, found by asking what `check_measurable` does not compare.** Every hop
+was validated on its own and never against its siblings, so two byte-identical hops passed:
+`MIN_HOPS` satisfied, one retrieval written twice, and `liftable` moved from 3 to 4 on demo-kb —
+upward again. A YAML copy-paste is the realistic route.
+
 **The fix removes the place the defect could live, not just the symptom.** `_doc_id` is gone;
 `check_measurable` validates the golden set against the active `documents` rows *and* the chunked
 subset up front, and `probe` is handed the resulting map, so an unknown path has exactly one place

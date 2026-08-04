@@ -1,5 +1,6 @@
 """The scoreboard, against the real demo KB — the thing that makes retrieval changes decidable."""
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -916,21 +917,48 @@ def test_the_artifact_records_the_configuration_that_produced_the_numbers(demo: 
     assert payload["retrieval"]["fusion"] == manifest.retrieval.fusion
     assert payload["retrieval"]["adjacent_k"] == manifest.retrieval.adjacent_k
     assert payload["retrieval"]["rerank"] == manifest.retrieval.rerank
-    assert payload["rerank"] == {"provider": "fake", "model": "overlap-reranker"}
+    assert payload["rerank"] == {
+        "provider": "fake",
+        "model": "overlap-reranker",
+        "revision": manifest.rerank.revision,
+    }
     assert payload["embedding"]["dim"] == DIM  # the fake's, not the committed model's
     assert payload["embedding"]["model"] == "hashing"
-    assert payload["index_built_at"] != "?"
+    assert payload["embedding"]["revision"] == manifest.embedding.revision
+    # The value, not merely the key: `_fake_kb` syncs at a fixed clock, so a payload that filled
+    # the field with anything at all would pass a presence check and fail this one.
+    assert payload["index_built_at"] == "20260725 18:30"
+
+    # The golden set is the input every figure is computed from, and the one a refuse-edit-re-run
+    # loop changes most often — two runs over one corpus with two question sets were otherwise
+    # identical in every recorded field.
+    assert payload["golden_set"]["path"].endswith("eval/questions.yaml")
+    assert payload["golden_set"]["multi_hop"] == sum(
+        1
+        for question in load_questions(DEMO / "eval" / "questions.yaml")
+        if question.kind == "multi-hop"
+    )
+    assert (
+        payload["golden_set"]["sha256"]
+        == hashlib.sha256((DEMO / "eval" / "questions.yaml").read_bytes()).hexdigest()
+    )
 
     text = _run_probe("--fake").stdout
     assert f"final_k {manifest.retrieval.final_k}" in text
     assert "hashing" in text
     assert "overlap-reranker" in text
+    assert payload["golden_set"]["sha256"][:12] in text
 
 
 def test_a_hop_problem_on_a_question_the_probe_never_measures_says_so(demo: Path) -> None:
     """`load_questions` allows hops on any kind, and the probe measures only `multi-hop`. The
     refusal must not tell the author of a `lexical` question that a figure moved — the same
-    over-claim as the reverse, and the closing "it says which" has to be true of every line."""
+    over-claim as the reverse, and the closing "it says which" has to be true of every line.
+
+    Both hop branches are exercised: an empty `query` and an unknown `expect`. The first attempt
+    at this fix moved the conditional to the end of the sentence, so the message still asserted
+    "the hop is recorded failing-and-unreachable" and then denied its effect one clause later.
+    """
     _write_golden_set(
         demo,
         [
@@ -939,7 +967,10 @@ def test_a_hop_problem_on_a_question_the_probe_never_measures_says_so(demo: Path
                 "question": "What may not be done with material acquired using public money?",
                 "kind": "lexical",
                 "expect": ["docs/deaccession-policy.md"],
-                "hops": [{"query": "", "expect": "docs/deaccession-policy.md"}],
+                "hops": [
+                    {"query": "", "expect": "docs/deaccession-policy.md"},
+                    {"query": "public money", "expect": "docs/no-such-document.md"},
+                ],
             },
             {
                 "id": "an-intact-multi-hop",
@@ -957,11 +988,11 @@ def test_a_hop_problem_on_a_question_the_probe_never_measures_says_so(demo: Path
 
     assert completed.returncode != 0
     assert "a-lookup-carrying-hops" in completed.stderr
-    assert "No figure this probe prints moves" in completed.stderr
-    # And the sentence is whole: the first attempt spliced this clause mid-sentence and rendered
-    # "so no figure moves for the query rather than for the corpus — the same silent deflation",
-    # which asserts and denies the same thing in one line.
-    assert "so no figure moves for the query" not in completed.stderr
+    assert "nothing is recorded for it" in completed.stderr
+    # The class, not one superseded string: the only problems in this run belong to the question
+    # the probe does not measure, so no line of it may claim a hop was recorded at all.
+    assert "is recorded failing" not in completed.stderr
+    assert "is counted failing" not in completed.stderr
 
 
 def test_a_mistyped_path_is_not_also_blamed_on_the_filters(demo: Path) -> None:
@@ -990,6 +1021,34 @@ def test_a_mistyped_path_is_not_also_blamed_on_the_filters(demo: Path) -> None:
     assert "1 problem(s)" in completed.stderr
     assert "docs/funding-sourses.md" in completed.stderr
     assert "do not admit the last hop's own `expect`" not in completed.stderr
+
+
+def test_the_probe_refuses_a_question_whose_two_hops_are_identical(demo: Path) -> None:
+    """One retrieval written twice clears the `MIN_HOPS` floor while asking a single question, and
+    a hop repeating one already landed moves `liftable` upward — measured on demo-kb under the
+    fake backend: duplicating one question's last hop took liftable 3 to 4, exit 0. A YAML
+    copy-paste is the realistic route to it."""
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "one-hop-written-twice",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md"],
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                ],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    assert "one-hop-written-twice" in completed.stderr
+    assert "identical to an earlier hop" in completed.stderr
 
 
 def test_a_well_formed_golden_set_is_not_refused(demo: Path) -> None:
