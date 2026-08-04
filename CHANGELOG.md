@@ -10,6 +10,140 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] — 20260804 08:40
+
+### Added
+
+- **`tools/status_header_gate.py` — `docs/STATUS.md`'s header can no longer drift from the
+  released version.** Line 3 must start with exactly `**Latest release: x.y.z**` and name
+  `pinakes.__version__`; a missing, moved or reformatted line fails as loudly as a wrong version.
+  Wired into `check.sh` and its own CI job with a negative check proving it can still fail. The
+  header had drifted for four consecutive releases (0.5.0 → 0.7.1) while the release sweeps
+  updated every table below it — a checklist missed it four times, which is this project's
+  threshold for turning an item into a gate. Only the version is gated, never the `last reviewed`
+  date beside it: a wall-clock staleness check would fail a quiet weekend with no code change.
+
+### Changed
+
+- **`[budget] per_operation_eur` default raised `0.05` → `0.30`.** The cap bounds one whole
+  invocation, not one API call. Measured against the bundled prices (`claude-opus-5`, $5/$25 per
+  Mtok, `usd_per_eur` 1.08), one synthesis round costs €0.083 at 8k-in/2k-out and €0.148 at
+  12k-in/4k-out — so the old default admitted **zero** rounds of any multi-call paid operation and
+  refused it before it began. `0.30` admits two such rounds. `confirm_above_eur` stays at `0.01`,
+  so a paid operation still prompts before it spends: this raises the ceiling, never the silence
+  below it. **Existing KBs are unaffected** — `pnk init` writes the value into the manifest, so only
+  a KB omitting the key, or a newly `pnk init`ed one, sees the new default.
+- **`[budget] monthly_eur` default raised `5.00` → `30.00`**, in proportion, so the pair still
+  allows roughly a hundred paid operations a month as it did before. At `5.00` the raised
+  per-operation cap would have left only sixteen. `daily_eur` stays `1.00` and is now **the binding
+  sequence limit**: three full-cap operations a day, and 1.00/day over a 30-day month is 30.00, so
+  the monthly ceiling is reached only in a 31-day month at full daily spend. That is deliberate —
+  the burst limiter is the one doing the work, and the monthly cap is the backstop behind it.
+
+- **The paid extractor's API key is `PINAKES_ANTHROPIC_API_KEY`, and pinakes now passes it to the
+  SDK explicitly.** `anthropic.Anthropic()` was constructed without `api_key`, so the SDK read
+  `ANTHROPIC_API_KEY` out of whatever environment it happened to be in. On any machine where that
+  variable is exported for some other tool — an editor, an agent, an inherited shell — the paid
+  path had a live key nobody aimed at it, and the *"deliberate act of supplying the key"* the
+  design counts as a defence was not one. `resolve_api_key` reads the pinakes-specific name,
+  refuses a missing or blank value by name with a remedy, and **has no fallback to
+  `ANTHROPIC_API_KEY`** — a fallback would restore the whole defect silently. **Breaking for anyone
+  running the paid extractor:** rename the variable in your `.env`. The free path is untouched, and
+  the caps and the enumerated allowlist bound spend exactly as before.
+
+### Fixed
+
+- **Seven stale "unreleased" claims corrected across the docs, and the release procedure now
+  catches the class.** The paid Claude-vision extractor shipped in 0.3.0, but `docs/GUIDE.md` and
+  `docs/MANIFEST.md` still said "in no release yet" — the troubleshooting table sent a scanned-PDF
+  user to a release it claimed did not exist, and now gives the remedy (`pinakes[pdf,claude]`,
+  `--extract=claude-vision`). G4 (0.6.0) and I8/I9 (0.4.0) were still "unreleased" in
+  `docs/KB-UPDATES.md` and `docs/STATUS.md`'s ledger; STATUS's header said 0.4.1 with 0.7.1 in its
+  own tables. `docs/RELEASING.md`'s sweep now names the header line and ends with a grep for
+  release-falsified claims, because a checklist of sections missed this class four releases running.
+
+- **Nine wrong public claims corrected, found by a full documentation audit against the code.** The
+  README told readers `pnk link` was "still to come" — it shipped in 0.6.0. `docs/GUIDE.md` said
+  twice that *"nothing here spends money, and nothing can"*, three lines below the row instructing
+  `--extract=claude-vision`; `docs/MANIFEST.md` said the budget was inert. Both have been false
+  since 0.3.0. `docs/CLI.md` published an exit-code contract giving `2` for an unknown backend name,
+  which exits `1`. `docs/MANIFEST.md` gave the wrong base for `[sources] include` — patterns are
+  relative to each `roots` entry, so the documented `docs/**/*.md` under `roots = ["docs/"]` indexes
+  nothing — and said an alias in a sidecar link resolves on write when it is a hard error at read.
+  `docs/graph/README.md` said "nothing here is built" of research whose links release shipped.
+
+- **`tools/reachable_ceiling_probe.py` refuses a golden set it cannot measure, instead of
+  reporting a number that looks valid.** Six shapes of malformed question used to be absorbed in
+  silence, each of them moving the count the graph release's precondition binds on: a hop whose
+  `expect` named a path the index does not hold (it resolved to no document and was recorded
+  failing-and-unreachable); a hop whose `expect` named a document the index holds **with no
+  chunks**, which no retrieval or expansion can ever produce, so a correctly spelled path
+  corrupted the verdict the same way; a `multi-hop` question with **no** `hops`, which counted in
+  the multi-hop denominator, yielded no verdict and so could never be `failing`; a `multi-hop`
+  question with **one** hop, measured as a single search and able to move `liftable` *upward* —
+  the dangerous direction, since the precondition is a floor; a hop with an empty `query`; and a
+  golden set with no `multi-hop` question at all, every figure of which would be a zero
+  indistinguishable from a measured one. All now stop the run with a named error listing every
+  offending question and path, before a backend is loaded, with a `did you mean` hint naming the
+  spelling the index holds when a path differs only in case, `./` or Unicode normalisation. A
+  seventh joined them after review: a question whose `filters` admit no document, or do
+  not admit its own last hop's `expect` — applied to the last hop, they decide whether it can
+  land at all. An eighth refuses a question whose two hops are the same retrieval — the same
+  `expect` and a `query` differing at most in case or spacing, which the index folds away — since
+  that clears the two-hop floor while asking a single question, and a hop repeating one already
+  landed moves `liftable` upward. A question's own `expect` naming a missing document refuses too,
+  and says plainly that it moves no figure the probe prints (the probe measures hops) while still
+  being a golden set no release precondition should be measured against.
+  Measured under the offline fake backend, where demo-kb reads 18 multi-hop / 9 failing / 3
+  liftable: one mistyped hop path took `failing` to 10 and left `liftable` at 3; one hops-less
+  question took the denominator to 19 and moved nothing else; one unmatched `tags` filter took
+  `failing` to 10, and the same filter on every multi-hop question took the run to 18 failing / 0
+  liftable. (The real `[light]` reading of that corpus is 18 / 1 / 1: the same
+  single mistyped path would there take `failing` from 1 to 2, the same defect as a far larger
+  share of a far smaller number.)
+- **The template's `eval/questions.yaml` documents `hops`.** It described `id`, `question`,
+  `expect` and `kind` and never mentioned the key at all, which is how a hand-written question set
+  arrives without one — the trap was armed by our own scaffold.
+- **The probe no longer discards `--kb` when `--fake` is given, and every output names the KB it
+  measured.** `--kb <corpus> --fake` silently measured a copy of the demo KB and reported its
+  numbers under no particular name; the two are now mutually exclusive at the argparse level. Both
+  output formats carry the KB root — absolute and resolved, so two runs from two working
+  directories cannot label two corpora identically — its kb-ulid, whether a fake backend produced
+  the numbers, **and the settings that produced them** (`kb_root`, `kb_id`, `fake_backend` — the
+  `--fake` flag — plus `embedding`, `rerank`, `retrieval` and `index_built_at` in the JSON).
+  `failing` is `expect` in the top `final_k` after fusion and reranking, every one of those a
+  per-KB manifest key, so naming the corpus alone still left two artifacts indistinguishable:
+  swapping one fake reranker for another moved demo-kb from 9 failing / 3 liftable to 18 / 12
+  with every other recorded field identical. The **golden set** is identified too — path, sha256
+  and how many questions of which kind — because it is the input every figure is computed from
+  and the one a refuse-edit-re-run loop changes most often: rewriting only the hop queries moved
+  the same corpus from 9 failing / 3 liftable to 18 / 9 with every other field equal.
+  The closing prose no longer prints a hardcoded
+  `>= 7` precondition — the threshold belongs to the measurement plan for the corpus in hand, and
+  the tool measures whichever corpus `--kb` names — and it now states both of the precondition's
+  clauses, having named only the liftable one.
+
+- **`docs/VERIFICATION.md` now has rows for 0.7.1, and one row stops overstating what its test
+  checks.** 0.7.1 shipped seventeen tests holding the source-walk containment guarantees — including
+  that no sidecar is minted outside the KB — and touched the verification table not at all, while
+  `README.md` tells readers that table maps *every* promise to the test that holds it. Twelve rows
+  added. The gate could not have caught this: it walks from the table to the tests, proving no row
+  is fiction, and structurally cannot prove no guarantee is un-rowed — so the landing checklist in
+  `docs/README.md` gains the step that is the only thing standing between the table and this class
+  of omission. Separately, *"every non-OK check carries a remedy"* is now stated as what it is —
+  spot-checked on five of the ≥29 checks `pnk doctor` produces, in one unsynced fixture — with a
+  pointer to the sibling row that does enumerate.
+
+- **Six more documentation corrections from the same audit.** `CLAUDE.md` named the links-and-graph
+  plan as *the* build order without saying that plan is closed — an executor doc pointing an agent
+  at increments its own first line says are unbuildable. `docs/MANIFEST.md` still called traversal
+  "the links release" and `docs/STATUS.md` still carried that name in two capability rows, after the
+  name left the unbuilt-work table at 0.6.0; both rows also said "built" where the file's own
+  preamble reserves that word for *released*. `docs/DESIGN.md`'s risk register quoted a false-abstain
+  rate of 0.03 superseded on 20260801 (now 0.015, with the models and question count corrected), and
+  `docs/GUIDE.md` still hedged the spend ledger as something that does not exist yet — it shipped in
+  0.3.0 and `CLAUDE.md` treats it as an invariant.
+
 ## [0.7.1] — 20260801 13:42
 
 ### Fixed
@@ -1993,7 +2127,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.8.0
 [0.7.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.7.1
 [0.7.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.7.0
 [0.6.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.6.0
