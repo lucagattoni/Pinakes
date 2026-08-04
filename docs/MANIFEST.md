@@ -189,7 +189,8 @@ numbers (`0.05`); the exactness is on pinakes's side.
 
 ## `[[links.kb]]`
 
-Connected KBs. The schema ships today because IDs cannot be retrofitted; traversal is the links release.
+Connected KBs. The schema ships in v0.1 because IDs cannot be retrofitted; traversal (`pnk links`,
+`pinakes_links`) shipped in 0.5.0 and authoring (`pnk link`) in 0.6.0.
 
 | Key | Notes |
 |---|---|
