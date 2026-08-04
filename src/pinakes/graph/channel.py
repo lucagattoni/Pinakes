@@ -237,6 +237,7 @@ class _Walk:
         self._contributed: set[int] = set()
         """Document nodes whose member chunks have already been contributed."""
 
+        self._roots: set[int] = set()
         self._root_documents: set[int] = set()
         self._emitted: dict[int, Reached] = {}
         self._nodes: dict[int, tuple[str, str]] = {}
@@ -247,7 +248,8 @@ class _Walk:
 
     def run(self, roots: Sequence[int], *, depth: int, limit: int) -> list[Reached]:
         frontier = self._root_nodes(roots)
-        self._expanded |= set(frontier)
+        self._roots = set(frontier)
+        self._expanded |= self._roots
         for distance in range(1, max(0, depth) + 1):
             if not frontier:
                 break
@@ -298,17 +300,25 @@ class _Walk:
     def _accept(self, found: Mapping[int, _Candidate], distance: int) -> list[int]:
         """Emit what this hop found, and return the chunk nodes the next hop expands from.
 
-        **Ordered by node key, never by node id.** A surrogate `nodes.id` is minted per derivation,
-        so iterating a hop's finds in id order would make the *next* hop's expansion order — and
-        therefore which document claims a shared hub, and therefore which candidates that
-        document's `adjacent_k` cut keeps — depend on how the index happened to be built. That is
-        G1's defect in a new place: one golden-set question changing answer between an incremental
-        sync and a `--rebuild`, with no edge having changed.
+        **A root is never emitted, only expanded.** It is already in the list this channel is a
+        third input to, so a vote for it can at best reorder the fused top-*k* — while the slot it
+        takes is one the `limit` cut then denies a chunk fusion has *not* seen. With twenty roots
+        against a fifty-row list that is up to 40% of the channel spent re-ranking what it was
+        given. `graph.traverse` skips its start node for the same reason, one root at a time.
+
+        **Ordered by `(documents.path, chunks.ordinal)`, never by node id.** A surrogate `nodes.id`
+        is minted per derivation, so iterating a hop's finds in id order would make the *next*
+        hop's expansion order — and therefore which document claims a shared hub, and therefore
+        which candidates that document's `adjacent_k` cut keeps — depend on how the index happened
+        to be built. That is G1's defect in a new place: one golden-set question changing answer
+        between an incremental sync and a `--rebuild`, with no edge having changed.
         """
         following: list[int] = []
         for node, candidate in sorted(found.items(), key=lambda item: self._position(item[1].key)):
             chunk_id = self._chunk_id(candidate.key)
             if chunk_id is None:  # pragma: no cover — every chunk node names a live chunk
+                continue
+            if node in self._roots:
                 continue
             self._emitted.setdefault(
                 chunk_id,

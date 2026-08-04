@@ -657,6 +657,26 @@ def test_distance_breaks_a_tie_the_query_cannot(tmp_path: Path) -> None:
     ], "the arm removes distance from the comparison, leaving the node key"
 
 
+def test_a_root_is_expanded_but_never_emitted(tmp_path: Path) -> None:
+    """A root is already in the list the channel is a third input to. A vote for it can at best
+    reorder the fused top-*k*, while the slot it takes is one the `limit` cut then denies a chunk
+    fusion has not seen — up to 40% of a fifty-row list at twenty roots. Expanded, never emitted;
+    `graph.traverse` skips its start node for the same reason."""
+    corpus = one_long_document(tmp_path / "kb")
+    first = chunk_id_of(corpus, "docs/long.md", 0)
+    second = chunk_id_of(corpus, "docs/long.md", 1)
+
+    alone = {candidate.chunk_id for candidate in walk(corpus, [first])}
+    assert second in alone, "ordinal 1 is a sibling of ordinal 0 and must be reachable"
+
+    both = {candidate.chunk_id for candidate in walk(corpus, [first, second])}
+    assert first not in both and second not in both, (
+        "with both as roots neither may be emitted — and the walk must still have happened"
+    )
+    assert both, "expansion still runs from a root; only its own row is withheld"
+    assert chunk_id_of(corpus, "docs/long.md", 2) in both
+
+
 # --------------------------------------------------------------------------------------------
 # Decision 16: the released surface does not move
 
