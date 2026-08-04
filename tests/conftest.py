@@ -59,7 +59,7 @@ def paid_runnable() -> bool:
     """
     return (
         find_spec("anthropic") is not None
-        and bool(os.environ.get("ANTHROPIC_API_KEY"))
+        and bool(os.environ.get("PINAKES_ANTHROPIC_API_KEY"))
         and os.environ.get("PINAKES_ALLOW_SPEND") == "1"
     )
 

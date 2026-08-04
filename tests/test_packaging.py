@@ -115,7 +115,7 @@ def test_pdf_runnable_requires_all_three_conditions(
 def test_paid_runnable_requires_all_three_conditions(monkeypatch: pytest.MonkeyPatch) -> None:
     """`anthropic` importable, a key present, and the pytest-only opt-in — all three, not two."""
     monkeypatch.setattr(conftest, "find_spec", _spec_present)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("PINAKES_ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("PINAKES_ALLOW_SPEND", "1")
     assert conftest.paid_runnable() is True
 
@@ -123,9 +123,9 @@ def test_paid_runnable_requires_all_three_conditions(monkeypatch: pytest.MonkeyP
     assert conftest.paid_runnable() is False  # anthropic not importable
     monkeypatch.setattr(conftest, "find_spec", _spec_present)
 
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("PINAKES_ANTHROPIC_API_KEY", raising=False)
     assert conftest.paid_runnable() is False  # no key present
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("PINAKES_ANTHROPIC_API_KEY", "test-key")
 
     monkeypatch.setenv("PINAKES_ALLOW_SPEND", "0")
     assert conftest.paid_runnable() is False  # opt-in set, but not to exactly "1"
