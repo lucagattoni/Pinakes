@@ -44,14 +44,41 @@ report named* rather than *the property the measurement needs*.
 * **An empty hop `query`**, absorbed the same way, and **a golden set with no `multi-hop` question
   at all**, whose entirely-zero report is indistinguishable from a measured one.
 
+**MEDIUM — the second review pass found the same hole again, in the key nobody had looked at.**
+`question.filters` is applied to the last hop and was never validated. A `tags`, `path_prefix` or
+`source_type` the index does not hold makes that hop unable to land whatever the corpus contains.
+Measured on demo-kb under the fake backend, against its 9 failing / 3 liftable: one such filter
+took `failing` to 10; the same filter across every multi-hop question took the run to **18 failing
+/ 0 liftable**, exit 0, unremarked. (The review pass that found it quoted only the second figure
+for a single question — checking it is what caught the difference, which is the M5 lesson applied
+to the fix's own write-up.) It is the empty-`query` defect wearing a different key, it moves *both*
+binding clauses, and `failing` moves upward. Two review passes each found one more instance of a
+class the first fix was supposed to have closed, which is the actual lesson: **the guard has to be
+written from the list of everything the measurement consumes, not from the list of bugs already
+reported.** What `probe()` consumes is now the checklist — `hops`, each hop's `query` and `expect`,
+the document behind that path, and `filters`. It is validated through `search`'s own `_filter_sql`
+rather than a hand-written copy, so the check cannot drift from the semantics it is checking.
+
 **MEDIUM — a test can pin a claim it cannot falsify.** `test_the_probe_names_the_kb_it_measured`
 ran only `--fake`, and `--fake` measures a copy of the demo KB: every assertion in it was satisfied
 by a probe that ignored `--kb` and hardcoded the demo path, which is the very defect the test
 names. It now runs a real `--kb` against a KB deliberately not called `demo-kb` (a small runner
-script registers the fake backend in the subprocess), and asserts the recorded root is absolute and
-resolved — a relative `--kb` recorded verbatim would label two corpora identically again from two
-working directories. **A test whose fixture is the default cannot detect "always reports the
-default".**
+script registers the fake backend in the subprocess). **A test whose fixture is the default cannot
+detect "always reports the default".**
+
+The same mistake then repeated one layer down, and is worth recording because it is so easy to
+miss twice: the replacement asserted that `kb_root` is *resolved*, using `tmp_path` — which is
+already absolute and already resolved, so dropping the `.resolve()` left the entire suite green.
+An assertion whose fixture already satisfies the property tests nothing. It now also runs with a
+**relative** `--kb` from the corpus's own parent directory, which is the only shape that can fail.
+
+**MEDIUM — naming the corpus is not naming the measurement.** The artifact recorded which KB was
+measured and not what produced the numbers. `failing` is `hop.expect in` the top `final_k`
+passages, downstream of `candidates_per_source`, `fusion`, `fusion_top_k`, `rerank` and
+`vector_tier` — all per-KB manifest keys. Two artifacts from two configurations of the *same*
+corpus were indistinguishable, the exact defect the KB-naming fix was written to close, one level
+in. `eval.py`'s artifact header already recorded the same set for the same reason; this one now
+does too.
 
 **MEDIUM — quoting a number without its backend.** The first commit message and changelog fragment
 said "measured on demo-kb: `failing` 9 → 10" without saying the numbers were the hashing fake's;

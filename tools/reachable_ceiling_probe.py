@@ -59,15 +59,23 @@ shape below is refused by name, before a backend is even loaded:
   figure; with one it is measured as a single search and moves `liftable` **upward**, which is the
   dangerous direction — the precondition is a floor;
 * a hop with an empty `query`, which fails on its own terms rather than the corpus's;
+* a question whose `filters` admit no document, or do not admit its own last hop's `expect`. They
+  are applied to the last hop, so they decide whether it can land at all. Measured on demo-kb
+  under the fake backend (9 failing / 3 liftable): one unmatched tag took `failing` to 10 and left
+  `liftable` at 3; the same tag on every multi-hop question took the run to 18 failing / 0
+  liftable, in silence;
 * a golden set with no `multi-hop` question at all, whose every figure would be a zero
   indistinguishable from a measured one.
 
 All of them are likely on a real corpus rather than hypothetical: a converted question set is
 hand-written, and `hops` is the part of the schema a reader can miss.
 
-**Every output names the corpus it measured** — root path and kb-ulid, in the text and the JSON
-alike. Two runs against two corpora otherwise produce artifacts that cannot be told apart, and the
-first thing anyone does with this tool is run it against something other than the demo KB.
+**Every output names the corpus it measured, and what produced the numbers** — root path
+(absolute and resolved), kb-ulid, and the retrieval and embedding settings, in the text and the
+JSON alike. Two runs against two corpora otherwise produce artifacts that cannot be told apart,
+and the first thing anyone does with this tool is run it against something other than the demo KB;
+`failing` is a function of `final_k`, fusion and reranking, so the corpus's name alone does not
+identify a measurement.
 
 Usage:
     python3 tools/reachable_ceiling_probe.py                    # real models, the measurement
@@ -86,7 +94,7 @@ import sys
 import tempfile
 import unicodedata
 import zlib
-from collections.abc import Iterable, Mapping, Sequence, Set
+from collections.abc import Callable, Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -374,6 +382,29 @@ def documents_with_chunks(connection: sqlite3.Connection) -> set[str]:
     return {str(row["doc_id"]) for row in connection.execute("SELECT DISTINCT doc_id FROM chunks")}
 
 
+def documents_selected_by(
+    connection: sqlite3.Connection, filters: Filters, *, path: str | None = None
+) -> int:
+    """How many active documents a hop's `filters` admit — optionally, whether they admit `path`.
+
+    Built through `search`'s own `_filter_sql`, private and imported anyway on purpose: a second
+    hand-written copy of the filter semantics would validate something the measurement does not
+    use, and would go stale the moment `Filters` grows a field — it already carries
+    `modified_after`/`modified_before`, which no golden set here uses yet.
+
+    Imported inside the function, the way `tests/test_search_reproducibility.py` reaches for
+    `_vector`: it is the one private name this file needs, and it stays visible at its use.
+    """
+    from pinakes.search import _filter_sql  # pyright: ignore[reportPrivateUsage]
+
+    where, parameters = _filter_sql(filters)
+    sql = f"SELECT COUNT(*) AS n FROM documents d WHERE {where}"
+    if path is not None:
+        sql += " AND d.path = ?"
+        parameters = [*parameters, path]
+    return int(connection.execute(sql, parameters).fetchone()["n"])
+
+
 MIN_HOPS = 2
 """What `kind: multi-hop` claims: the answer needs at least two retrievals.
 
@@ -390,6 +421,7 @@ def check_measurable(
     documents: Mapping[str, str],
     *,
     chunked: Set[str],
+    selected: Callable[[Filters, str | None], int],
     source: Path,
 ) -> None:
     """Refuse the whole run if any question would be absorbed instead of measured.
@@ -398,9 +430,15 @@ def check_measurable(
     question set one refusal at a time, re-syncing a corpus in between, is how a second typo gets
     found after the number has already been reported.
 
-    `documents` is `active_documents`; `chunked` is `documents_with_chunks`. Both are needed
-    because "the index has this path" and "a hop could land it" are different questions, and only
-    the second one is what the verdict depends on.
+    `documents` is `active_documents`; `chunked` is `documents_with_chunks`; `selected` counts what
+    a `Filters` admits (`documents_selected_by`). Three sources rather than one because "the index
+    has this path", "a hop could land it" and "this hop's own filters admit it" are different
+    questions, and the verdict depends on all three.
+
+    Only a `multi-hop` question's *consequence* is a moved count — it is the sole kind `probe`
+    measures. Problems on any other kind are still refused, because a golden set that names
+    documents its index does not hold is not one to measure a release precondition against, but
+    they are labelled as what they are rather than as a corrupted figure.
     """
     problems: list[str] = []
     if not any(question.kind == "multi-hop" for question in questions):
@@ -411,7 +449,33 @@ def check_measurable(
         )
 
     for question in questions:
-        if question.kind == "multi-hop" and len(question.hops) < MIN_HOPS:
+        measured = question.kind == "multi-hop"
+        # What the reader is told a problem costs. A hop on a `lexical` question is validated
+        # like any other and moves nothing, and saying it "would be counted failing" of a
+        # question this probe never reads is the same over-claim in the other direction.
+        cost = (
+            "the hop would be counted failing-and-unreachable"
+            if measured
+            else "this probe never measures this question — only `multi-hop` — so no figure moves"
+        )
+        # The last hop is the only one that carries the question's filters (`probe`), so it is
+        # the only one whose filters can decide a verdict.
+        if measured and question.hops and question.filters != Filters():
+            last = question.hops[-1]
+            if selected(question.filters, None) == 0:
+                problems.append(
+                    f"{question.id!r}: `filters` admit no active document at all. They are applied "
+                    f"to the last hop, so it cannot land whatever the corpus holds: the question "
+                    f"is counted failing on its own filters rather than on the corpus, and the "
+                    f"count moves upward — the direction a floor reads as headroom."
+                )
+            elif selected(question.filters, last.expect) == 0:
+                problems.append(
+                    f"{question.id!r}: `filters` do not admit the last hop's own `expect` "
+                    f"({last.expect!r}). The filtered search cannot return it, so the hop is "
+                    f"counted failing for a reason that is not about the corpus."
+                )
+        if measured and len(question.hops) < MIN_HOPS:
             problems.append(
                 f"{question.id!r}: kind `multi-hop` with {len(question.hops)} hop(s), fewer than "
                 f"the {MIN_HOPS} the kind claims. With none it counts in the multi-hop "
@@ -438,23 +502,22 @@ def check_measurable(
             if not hop.query.strip():
                 problems.append(
                     f"{question.id!r} hop {index}: an empty `query`. It retrieves nothing on its "
-                    f"own terms, so the hop is counted failing for the query rather than for the "
-                    f"corpus — the same silent deflation as a mistyped path."
+                    f"own terms, so {cost} for the query rather than for the corpus — the same "
+                    f"silent deflation as a mistyped path."
                 )
             if hop.expect not in documents:
                 problems.append(
                     f"{question.id!r} hop {index}: `expect` names {hop.expect!r}, which is not an "
-                    f"active document in this index{_near_miss(hop.expect, documents)}. The hop "
-                    f"would resolve to no document at all and be counted "
-                    f"failing-and-unreachable."
+                    f"active document in this index{_near_miss(hop.expect, documents)}. It "
+                    f"resolves to no document at all, so {cost}."
                 )
             elif documents[hop.expect] not in chunked:
                 problems.append(
                     f"{question.id!r} hop {index}: `expect` names {hop.expect!r}, which the index "
                     f"holds with no chunks. Every node the channel walks is built from chunks, so "
-                    f"this document can neither be retrieved nor reached and the hop would be "
-                    f"counted failing-and-unreachable for a reason that is not about the channel. "
-                    f"Re-sync, or point the hop at a document with content in it."
+                    f"this document can neither be retrieved nor reached and {cost} — for a reason "
+                    f"that is not about the channel. Re-sync, or point the hop at a document with "
+                    f"content in it."
                 )
     if not problems:
         return
@@ -479,16 +542,35 @@ def _near_miss(path: str, documents: Mapping[str, str]) -> str:
     """
 
     def key(value: str) -> str:
-        return unicodedata.normalize("NFC", value).casefold().removeprefix("./")
+        return unicodedata.normalize("NFC", value.removeprefix("./")).casefold()
 
     wanted = key(path)
     for candidate in documents:
         if key(candidate) == wanted:
-            return (
-                f" — the index holds {candidate!r}, which differs only in case, `./` or Unicode "
-                f"normalisation"
-            )
+            difference = _difference(path, candidate)
+            return f" — the index holds {candidate!r}, differing only in {difference}"
     return ""
+
+
+def _difference(path: str, candidate: str) -> str:
+    """Which of the three invisible differences it is.
+
+    Naming it is the point: for an NFC/NFD mismatch the hint prints a candidate that *renders
+    identically* to the path just rejected, and "did you mean the same thing" is not a message
+    anyone can act on.
+    """
+    reasons: list[str] = []
+    stripped, other = path.removeprefix("./"), candidate.removeprefix("./")
+    if (stripped, other) != (path, candidate):
+        reasons.append("a leading `./`")
+    if stripped != other:
+        if stripped.casefold() == other.casefold():
+            reasons.append("letter case")
+        elif unicodedata.normalize("NFC", stripped) == unicodedata.normalize("NFC", other):
+            reasons.append("Unicode normalisation (NFC vs NFD — the two render identically)")
+        else:
+            reasons.append("letter case and Unicode normalisation")
+    return " and ".join(reasons) or "nothing this check can name"
 
 
 # --------------------------------------------------------------------------------------------
@@ -801,6 +883,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 questions,
                 documents,
                 chunked=documents_with_chunks(connection),
+                selected=lambda filters, path: documents_selected_by(
+                    connection, filters, path=path
+                ),
                 source=questions_path,
             )
             backend = load_backend(manifest.embedding)
@@ -836,8 +921,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         finally:
             connection.close()
 
-    # Which corpus this is, in both formats. Every other number here is meaningless without it,
-    # and two runs against two KBs were otherwise indistinguishable on inspection.
+    # Which corpus this is *and* what produced the numbers, in both formats. Every figure here is
+    # meaningless without the first, and `failing` is a function of the second: `lands` asks
+    # whether a hop's document is in the top `final_k` of a pipeline whose fusion, reranking and
+    # candidate widths are all per-KB manifest keys. `eval.py`'s artifact header records the same
+    # set for the same reason — two artifacts from two configurations are otherwise
+    # indistinguishable on inspection.
+    settings = manifest.retrieval
     payload = {
         "kb_root": kb_root,
         "kb_id": manifest.kb.id,
@@ -845,7 +935,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         "schema_version": schema,
         "tables_before": before,
         "tables_after": after,
-        "adjacent_k": manifest.retrieval.adjacent_k,
+        "embedding": {
+            "provider": manifest.embedding.provider,
+            "model": manifest.embedding.model,
+            "dim": manifest.embedding.dim,
+        },
+        "retrieval": {
+            "candidates_per_source": settings.candidates_per_source,
+            "fusion": settings.fusion,
+            "fusion_top_k": settings.fusion_top_k,
+            "final_k": settings.final_k,
+            "rerank": settings.rerank,
+            "vector_tier": settings.vector_tier,
+            "adjacent_k": settings.adjacent_k,
+        },
         "depth": DEPTH,
         "dropped": sorted(set(args.drop)),
         "reports": [report.as_dict() for report in reports],
@@ -859,21 +962,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         print()
         print(_render(reports))
         print(
-            f"\nschema_version {schema}, adjacent_k {manifest.retrieval.adjacent_k}, "
+            f"\nschema_version {schema}, embedding {manifest.embedding.provider}/"
+            f"{manifest.embedding.model} dim {manifest.embedding.dim}, final_k {settings.final_k}, "
+            f"rerank {settings.rerank}, adjacent_k {settings.adjacent_k}, "
             f"depth {DEPTH} logical hops"
         )
         print(f"tables unchanged: {before == after}")
         if args.drop:
             print(f"derived without: {', '.join(sorted(set(args.drop)))}")
-        # No threshold is printed. The number a liftable count is read against belongs to the
+        # No threshold is printed. The number these counts are read against belongs to the
         # measurement plan for the corpus in hand, and this tool measures whichever corpus `--kb`
         # names: a hardcoded ">= 7" was a claim about one KB printed under the numbers of another.
         print(
-            "\nThe precondition is the *without-authored* liftable count above, read against the\n"
-            "threshold this corpus's measurement plan sets — not against a number this tool\n"
-            "carries. The with-authored figure is recorded and licenses nothing: a corpus\n"
-            "reachable only through links its own author wrote cannot say whether derived\n"
-            "structure helps. `at-seed` is the part of `liftable` that traverses no edge at all."
+            "\nThe precondition has two clauses, both on the *without-authored* row above: enough\n"
+            "multi-hop questions failing today, and enough of those liftable. Both thresholds\n"
+            "belong to this corpus's measurement plan, not to this tool. The with-authored figure\n"
+            "is recorded and licenses nothing: a corpus reachable only through links its own\n"
+            "author wrote cannot say whether derived structure helps. `at-seed` is the part of\n"
+            "`liftable` that traverses no edge at all."
         )
     return 0
 
