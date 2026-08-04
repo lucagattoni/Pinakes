@@ -116,7 +116,11 @@ records keep the numbers they were written with** and carry a header note: `CHAN
 
 The build order is [`plans/links-and-graph.md`](plans/links-and-graph.md) — **not** "the newest
 file in `plans/`", which also holds shipped plans, an iteration log, standalone increments and
-decision records ([`docs/README.md`](docs/README.md) tells them apart). Never batch increments; each
+decision records ([`docs/README.md`](docs/README.md) tells them apart). **That plan is currently
+closed** — the links release is complete and the graph release is blocked on a corpus — so the live
+work is [`plans/realism-corpus.md`](plans/realism-corpus.md),
+[`plans/corpus-probe-run.md`](plans/corpus-probe-run.md) and whatever
+[`plans/open-corrections.md`](plans/open-corrections.md) lists as live. Never batch increments; each
 is a separate, bisectable landing:
 
 1. Own worktree, branch `YYYYMMDD_HHMM-i<N>-<slug>`.

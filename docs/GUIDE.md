@@ -381,8 +381,8 @@ A KB is a directory. Move it, copy it, commit it, hand it to someone — `.pinak
 and rebuilds for free with `pnk sync --rebuild`.
 
 **Commit `docs/`, `pinakes.toml` and every sidecar. Never commit `.pinakes/`** — the shipped
-`.gitignore` already covers it, which is what keeps your index (and, once it exists, your spend
-ledger) off any remote.
+`.gitignore` already covers it, which is what keeps your index and your spend ledger off any
+remote.
 
 ⚠️ **Publishing a KB repo publishes every sidecar**, not just your documents — titles, tags and
 `provenance.source` URLs included. Those routinely carry more signal than people expect. The engine
