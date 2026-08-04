@@ -2,8 +2,12 @@
 
 import shutil
 import subprocess
+import time
 from collections.abc import Iterator, Sequence
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -170,6 +174,38 @@ def test_first_sync_mints_sidecars_indexes_and_embeds(kb: Path) -> None:
         assert hits == 1
     finally:
         connection.close()
+
+
+def test_progress_callback_is_driven_once_per_action_in_order(kb: Path) -> None:
+    """Item 6: `sync()` does no I/O of its own — `ask` is the existing precedent — so a caller that
+    wants to show progress on a multi-hour, CPU-only run supplies a callback rather than `sync()`
+    probing `sys.stdout.isatty()` itself. `(done, total)` must count every action `pair()` produced
+    (including a `Skip`, since "300 documents ran" is what a corpus this size looks like even when
+    most of them are unchanged), start at 1, and never exceed `total`."""
+    write(kb, "a.md", "# A\n\nSome text.\n")
+    write(kb, "b.md", "# B\n\nMore text.\n")
+    write(kb, "c.md", "# C\n\nYet more text.\n")
+
+    calls: list[tuple[int, int]] = []
+
+    def record(done: int, total: int) -> None:
+        calls.append((done, total))
+
+    report = run(kb, progress=record)
+    assert report.ok
+
+    assert calls, "a non-empty sync must drive the callback at least once"
+    totals = {total for _, total in calls}
+    assert totals == {3}, "total must be stable across the whole run"
+    assert [done for done, _ in calls] == [1, 2, 3], "done must count up from 1 with no gaps"
+
+
+def test_progress_defaults_to_none_and_is_never_called(kb: Path) -> None:
+    """The default changes nothing about a run that supplies no callback — every other test in
+    this file calls `run()` this way, so this is the coverage-of-intent record for that default."""
+    write(kb, "a.md", "# A\n\nSome text.\n")
+    report = run(kb)  # progress=None, implicitly
+    assert report.ok
 
 
 def test_a_second_sync_changes_nothing(kb: Path) -> None:
@@ -408,6 +444,100 @@ def test_a_busy_lock_reports_and_exits_cleanly(kb: Path) -> None:
 
     report = run(kb)
     assert report.busy
+
+
+def test_a_real_sync_stamps_utc_not_local_under_a_non_utc_timezone(
+    monkeypatch: pytest.MonkeyPatch, kb: Path
+) -> None:
+    """Item 2, `sync.py:709`. `lock.py` already stamps `datetime.now(UTC)`; before this fix
+    `sync.py`'s own `stamp` — written into `meta['built_at']`, every sidecar's `created`, and every
+    failure's `happened` — was `datetime.now()`, local. Two timestamps in the identical
+    `%Y%m%d %H:%M` format with no timezone marker, read from different clocks: in a zone ahead of
+    UTC, a lock taken seconds ago would read as hours old next to a `sync.py` stamp from the same
+    moment — the evidence a user weighs before `pnk sync --force-unlock`.
+
+    `TZ` is set explicitly (never inherited): this fails under any non-UTC zone before the fix and
+    passes only once the clock is UTC, which is why running CI in UTC alone could never have caught
+    it. `now=None` here, deliberately — every other test in this file passes a fixed `now=` string
+    specifically to bypass the real clock, which is exactly what must not happen here.
+    """
+    write(kb, "a.md", "# A\n\nSome text.\n")
+    monkeypatch.setenv("TZ", "Pacific/Kiritimati")  # UTC+14 — the largest UTC offset that exists
+    time.tzset()
+    try:
+        before = datetime.now(UTC)
+        # Not `run()`: its helper hardcodes `now="20260725 16:00"` for every other test in this
+        # file precisely to bypass the real clock — the one thing this test must not do.
+        sync(load(kb), options=SyncOptions(), backend_factory=fake_factory)
+        after = datetime.now(UTC)
+    finally:
+        monkeypatch.delenv("TZ", raising=False)
+        time.tzset()
+
+    connection = store.connect_ro(kb / ".pinakes" / "index.db")
+    try:
+        built_at = store.get_meta(connection)["built_at"]
+    finally:
+        connection.close()
+
+    recorded = datetime.strptime(built_at, "%Y%m%d %H:%M").replace(tzinfo=UTC)
+    # Minute-granularity format: a same-run window can only be missed by whole hours, which is
+    # exactly the size a local stamp under UTC+14 would be off by, and a UTC one cannot be.
+    assert before.replace(second=0, microsecond=0) - timedelta(minutes=1) <= recorded
+    assert recorded <= after.replace(second=0, microsecond=0) + timedelta(minutes=1)
+
+
+def test_estimate_only_stamps_utc_not_local_under_a_non_utc_timezone(
+    monkeypatch: pytest.MonkeyPatch, kb: Path
+) -> None:
+    """Item 2, `sync.py:808` (`_estimate_only`'s own clock, used to check `prices.toml` staleness).
+    Isolated from the network and from real pricing — `default_transport`/`estimate_only`
+    (`extract.claude`) and `estimate_document` (`budget.estimate`) are faked — so the only thing
+    under test is the timestamp `_estimate_only` computes itself; `page_count` still runs for real
+    against a genuine one-page fixture, since faking it would leave nothing to walk.
+    """
+    manifest_path = kb / "pinakes.toml"
+    manifest_path.write_text(
+        manifest_path.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]', 'include = ["**/*.md", "**/*.pdf"]'
+        )
+        + '\n[extraction]\nbackend = "claude-vision"\nmodel = "claude-opus-5"\n',
+        encoding="utf-8",
+    )
+    (kb / "docs" / "report.pdf").write_bytes(
+        (Path(__file__).parent / "pdf-corpus" / "baseline-1p.pdf").read_bytes()
+    )
+
+    captured: dict[str, str] = {}
+
+    def fake_estimate_document(**kwargs: Any) -> Any:
+        captured["now"] = str(kwargs["now"])
+        return SimpleNamespace(total_eur=Decimal("0.0000"))
+
+    def fake_default_transport() -> object:
+        return object()
+
+    def fake_estimate_only(*args: object, **kwargs: object) -> tuple[int, int]:
+        return (100, 1)
+
+    monkeypatch.setattr("pinakes.extract.claude.default_transport", fake_default_transport)
+    monkeypatch.setattr("pinakes.extract.claude.estimate_only", fake_estimate_only)
+    monkeypatch.setattr("pinakes.budget.estimate.estimate_document", fake_estimate_document)
+
+    monkeypatch.setenv("TZ", "Pacific/Kiritimati")  # UTC+14 — the largest UTC offset that exists
+    time.tzset()
+    try:
+        before = datetime.now(UTC)
+        run(kb, estimate_only=True)
+        after = datetime.now(UTC)
+    finally:
+        monkeypatch.delenv("TZ", raising=False)
+        time.tzset()
+
+    assert "now" in captured, "estimate_document must have been reached for a matched PDF"
+    recorded = datetime.strptime(captured["now"], "%Y%m%d %H:%M").replace(tzinfo=UTC)
+    assert before.replace(second=0, microsecond=0) - timedelta(minutes=1) <= recorded
+    assert recorded <= after.replace(second=0, microsecond=0) + timedelta(minutes=1)
 
 
 def _add_pdf_support(kb: Path) -> None:

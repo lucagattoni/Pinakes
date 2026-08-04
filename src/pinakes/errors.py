@@ -225,6 +225,25 @@ class CoherenceError(PinakesError):
         self.differences = dict(differences)
 
 
+class IncompleteIndexError(PinakesError):
+    """The index carries none of the embedding identity keys yet — a first sync started and did
+    not finish (`sync.py` writes them only after the document loop completes), not a model that
+    changed under a completed index. Distinct from `CoherenceError` on purpose: the two share a
+    symptom — the identity keys do not match what the manifest expects — but not a cause, and
+    `--rebuild` on this one discards every embedding an interrupted sync already wrote.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            "the index has no embedding identity recorded yet — an earlier `pnk sync` did not "
+            "finish.",
+            remedy=(
+                "Run `pnk sync`. It resumes incrementally and keeps every embedding already "
+                "written — no rebuild is needed, unlike a genuine model mismatch."
+            ),
+        )
+
+
 class ExtractionCoherenceError(PinakesError):
     """A *free*-backend extraction is stale (§4.4, decision 13). A paid mismatch only WARNs and
     marks affected results `stale_extraction` — extracted text does not go meaningless the way an

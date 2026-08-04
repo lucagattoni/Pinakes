@@ -25,7 +25,7 @@ import numpy as np
 
 from pinakes import store
 from pinakes.embed import EmbeddingBackend, Reranker
-from pinakes.errors import CoherenceError, ExtractionCoherenceError
+from pinakes.errors import CoherenceError, ExtractionCoherenceError, IncompleteIndexError
 from pinakes.extract import fingerprint as extraction_fingerprint
 from pinakes.extract import is_paid_backend, registered_extractors
 from pinakes.ids import DocId
@@ -104,7 +104,17 @@ def check_coherence(connection: sqlite3.Connection, manifest: Manifest) -> dict[
     """Refuse to query an index built by a different model (unchanged, §4.4) or extracted by a
     free backend whose fingerprint has since moved on. Returns the doc_ids whose *paid* extraction
     is stale instead of refusing for them — the caller marks affected passages, never withholds
-    them (decision 13)."""
+    them (decision 13).
+
+    **Absent vs different, and why they cannot share an exception.** `sync.py` writes the
+    embedding identity keys only after the document loop finishes, so an interrupted first sync
+    leaves none of them in `meta` — that is *"never finished"*, not *"built under a different
+    model"*, and the two need different remedies: `--rebuild` on the first discards every
+    embedding an interrupted sync already wrote. Only when **none** of the expected keys are
+    present is it read as incomplete; even one present key means a sync did finish writing
+    identity once, so a *partial* `meta` — some keys present, some absent — falls to
+    `CoherenceError` like a genuine mismatch, never silently into the benign branch.
+    """
     meta = store.get_meta(connection)
     expected = {
         "embedding_provider": manifest.embedding.provider,
@@ -113,6 +123,9 @@ def check_coherence(connection: sqlite3.Connection, manifest: Manifest) -> dict[
     }
     if manifest.embedding.revision:
         expected["embedding_revision"] = manifest.embedding.revision
+
+    if not any(key in meta for key in expected):
+        raise IncompleteIndexError()
 
     differences = {
         key: (meta.get(key, "(absent)"), value)

@@ -22,7 +22,7 @@ import sqlite3
 import subprocess
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, cast
@@ -140,6 +140,14 @@ class SyncOptions:
     Ordinary syncs skip a partner scanned within `linkscan.TTL_MINUTES`, because the walk runs on
     `post-commit` and `post-merge` and a partner with a thousand sidecars costs a thousand reads.
     This is the flag for "I know the other KB just changed"."""
+    progress: Callable[[int, int], None] | None = None
+    """Called `(done, total)` after each document action in the loop `_run` drives — `done` counts
+    from 1, `total` is `len(result.actions)` for this run. `None` (the default) calls nothing.
+
+    The same shape as `ask`: `sync()` does no I/O beyond the filesystem, so whether and how to
+    show progress is the caller's call, not a `sys.stdout.isatty()` probe made here. A CPU-only
+    embedding run measured at ~2.4 documents/minute — 300 documents over two hours with nothing
+    printed makes "working" and "hung" indistinguishable, which is what `cli.py` uses this for."""
 
 
 @dataclass(slots=True)
@@ -706,7 +714,10 @@ def sync(
     now: str | None = None,
 ) -> SyncReport:
     options = options or SyncOptions()
-    stamp = now or datetime.now().strftime("%Y%m%d %H:%M")
+    # UTC, like `lock.py`'s own stamp (docs/DESIGN.md's project-wide move to UTC, 20260804 11:32):
+    # a local stamp here read next to the lock's UTC one is what made a lock taken 30 seconds ago
+    # look two hours old in a UTC+2 zone.
+    stamp = now or datetime.now(UTC).strftime("%Y%m%d %H:%M")
 
     if options.scan_links and options.sidecars_only:
         # Refused rather than silently resolved: `--sidecars-only` returns before the index is even
@@ -762,6 +773,7 @@ def _estimate_only(manifest: Manifest, options: SyncOptions) -> SyncReport:
     Refuses on a free backend rather than reporting €0.00: "nothing to estimate" and "this run
     would cost nothing" are different answers, and only the first one is true.
     """
+    from datetime import UTC as _UTC
     from datetime import datetime as _datetime
 
     from pinakes.budget.estimate import TIMESTAMP_FORMAT, estimate_document
@@ -805,7 +817,7 @@ def _estimate_only(manifest: Manifest, options: SyncOptions) -> SyncReport:
             pages=pages,
             model=manifest.extraction.model,
             prices=prices,
-            now=_datetime.now().strftime(TIMESTAMP_FORMAT),
+            now=_datetime.now(_UTC).strftime(TIMESTAMP_FORMAT),
             max_price_age_days=manifest.budget.max_price_age_days,
         )
         lines.append(
@@ -933,7 +945,8 @@ def _run(
         backend = _backend_if_needed(manifest, options, result.actions, backend_factory)
         sidecar_by_document = {sidecar.document_path: sidecar for sidecar in sidecars}
 
-        for action in result.actions:
+        total = len(result.actions)
+        for done, action in enumerate(result.actions, start=1):
             _apply(
                 action,
                 manifest=manifest,
@@ -946,6 +959,8 @@ def _run(
                 extraction_backend=extraction_backend,
                 protected_by_hash=protected_by_hash,
             )
+            if options.progress is not None:
+                options.progress(done, total)
             if report.budget_exhausted:
                 # A cap does not un-breach itself, so every remaining document would fail for the
                 # same reason and the report would carry N identical failures instead of one fact.

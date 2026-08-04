@@ -517,6 +517,32 @@ def print_sync_report(report: "SyncReport", *, quiet: bool) -> None:
         print(line, file=sys.stderr)
 
 
+def _progress_printer() -> Callable[[int, int], None]:
+    """A `SyncOptions.progress` callback for a real terminal: `done/total` and a rate, on one line
+    it overwrites in place — not a spinner, because the number is what tells slow from stuck on a
+    multi-hour, CPU-only sync. Throttled to roughly once a second so a fast run (or a small KB)
+    does not spend more time printing than syncing.
+    """
+    import time
+
+    start = time.monotonic()
+    last_shown: float | None = None
+
+    def progress(done: int, total: int) -> None:
+        nonlocal last_shown
+        now = time.monotonic()
+        finished = done >= total
+        if not finished and last_shown is not None and now - last_shown < 1.0:
+            return
+        last_shown = now
+        elapsed = now - start
+        rate = (done / elapsed * 60) if elapsed > 0 else 0.0
+        line = f"\rsyncing: {done}/{total} documents ({rate:.1f}/min)"
+        print(line, end="\n" if finished else "", flush=True)
+
+    return progress
+
+
 def run_sync(args: argparse.Namespace) -> int:
     """`pnk sync`. Exit 0 on success (including a busy lock), 1 if any document failed."""
     from pinakes import manifest as manifest_module
@@ -545,6 +571,9 @@ def run_sync(args: argparse.Namespace) -> int:
             # filesystem, so it is told whether one is attached rather than probing for it.
             interactive=sys.stdin.isatty(),
             ask=input,
+            # `-q` prints only problems (see `print_sync_report`), and a hook can inherit a real
+            # tty while still asking for quiet — so both gates apply, not just the tty check.
+            progress=_progress_printer() if sys.stdout.isatty() and not args.quiet else None,
         ),
     )
 

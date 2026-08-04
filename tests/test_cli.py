@@ -9,6 +9,7 @@ import pytest
 from pinakes import __version__
 from pinakes.cli import COMMANDS, EXIT_FAILURE, EXIT_OK, EXIT_USAGE, main
 from pinakes.errors import NotImplementedYetError, PinakesError
+from pinakes.manifest import Manifest
 
 # docs/DESIGN.md §8's command list, by the release that introduced each. Hard-coded rather than
 # derived from COMMANDS: a test that reads the same source it checks would pass even if a command
@@ -164,3 +165,65 @@ def test_every_sync_flag_documents_its_scope(capsys: pytest.CaptureFixture[str])
             assert phrase in flat, (
                 f"`pnk sync {flag}` no longer states its limit in --help: expected {phrase!r}"
             )
+
+
+def test_progress_printer_throttles_shows_a_rate_and_always_shows_the_last_call(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Item 6: a multi-hour, silent `pnk sync` is what makes "working" and "hung" indistinguishable
+    — `cli._progress_printer` is the TTY-side half of the fix. Throttled to about once a second so
+    a fast sync does not spend more time printing than syncing, but the first and the final call
+    (`done == total`) are never throttled away: the first proves the run started, the last must
+    both show and end the line so nothing else prints on top of it.
+    """
+    from pinakes.cli import _progress_printer  # pyright: ignore[reportPrivateUsage]
+
+    # One value consumed by `_progress_printer()` itself (`start`), then one per `progress()` call.
+    clock = iter([0.0, 0.0, 0.3, 1.2, 2.5])
+    monkeypatch.setattr("time.monotonic", lambda: next(clock))
+    progress = _progress_printer()
+
+    progress(1, 4)  # t=0.0: first call, always shown
+    progress(2, 4)  # t=0.3: <1s since last shown, suppressed
+    progress(3, 4)  # t=1.2: >=1s since last shown, shown
+    progress(4, 4)  # t=2.5: done == total, always shown, ends the line
+
+    out = capsys.readouterr().out
+    assert "1/4" in out and "3/4" in out and "4/4" in out
+    assert "2/4" not in out, "the throttled call must not print at all"
+    assert out.count("\r") == 3, "one overwrite per line actually shown"
+    assert out.endswith("\n"), "the final call must end the line, not leave the cursor mid-line"
+
+
+def test_run_sync_wires_progress_only_for_a_quiet_free_tty(
+    monkeypatch: pytest.MonkeyPatch, kb_root: Path
+) -> None:
+    """`-q` prints only problems (`print_sync_report`'s own rule) and a git hook can still inherit
+    a real tty, so both gates must apply to progress, not just the tty check — otherwise `pnk sync
+    --quiet` from a hook run interactively would print progress lines `-q` promises to suppress."""
+    import pinakes.cli as cli_module
+    from pinakes.sync import SyncOptions, SyncReport
+
+    captured: dict[str, object] = {}
+
+    def fake_sync(loaded: Manifest, *, options: SyncOptions) -> SyncReport:
+        del loaded
+        captured["progress"] = options.progress
+        return SyncReport()
+
+    monkeypatch.setattr("pinakes.sync.sync", fake_sync)
+
+    for isatty, quiet, expect_progress in (
+        (True, False, True),
+        (True, True, False),
+        (False, False, False),
+        (False, True, False),
+    ):
+        captured.clear()
+        monkeypatch.setattr(cli_module.sys.stdout, "isatty", lambda v=isatty: v)
+        args = ["sync", "--kb", str(kb_root)]
+        if quiet:
+            args.append("--quiet")
+        cli_module.main(args)
+        has_progress = captured.get("progress") is not None
+        assert has_progress is expect_progress, (isatty, quiet, expect_progress)
