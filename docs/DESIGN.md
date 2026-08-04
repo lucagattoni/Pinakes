@@ -17,7 +17,7 @@ deliberately does not track releases:
 | Whether something is **built yet** | [STATUS.md](STATUS.md) — the only place that says so |
 | **How to use** it | [GUIDE.md](GUIDE.md) |
 | A **flag** or a **manifest field** | [CLI.md](CLI.md) · [MANIFEST.md](MANIFEST.md) |
-| What is **going to be built**, in order | [`plans/`](../plans/) |
+| What is **going to be built**, in order | [`plans/`](https://github.com/lucagattoni/Pinakes/tree/main/plans/) |
 
 Sections whose amendment is assigned to an unshipped increment carry a dated **⏳ pending** note
 saying so, rather than describing behaviour that does not exist.
@@ -1051,7 +1051,7 @@ enough to treat as theoretical.
 ## 8. Delivery plan
 
 > **What has actually shipped is [STATUS.md](STATUS.md); the ordered build order is
-> [`plans/`](../plans/).** This section carries only *why* the order is what it is.
+> [`plans/`](https://github.com/lucagattoni/Pinakes/tree/main/plans/).** This section carries only *why* the order is what it is.
 
 **The first release had to be a thin vertical slice, end to end** — `init → sync → search`, plus
 `doctor`, `install-hooks` and `serve`. Two orderings inside it were forced rather than chosen: the
@@ -1073,7 +1073,7 @@ cut, and [STATUS](STATUS.md#release-roadmap) is where the mapping lives.
 | Release | Why here |
 |---|---|
 | PDF extraction, completed by the paid-extraction release | Parsing is the single biggest quality risk (§9), so it is isolated from core-design feedback rather than mixed into it. Scope covers **both** paths: the free `pypdfium2` default, and the opt-in paid Claude-vision extractor that is the only answer to a scanned page (§9) — which is what drags the budget machinery into this release, per the governing rule below |
-| the links release — cross-KB links | Needs two populated KBs to be worth anything. Build order: [`plans/20260729_0256-links-and-graph.md`](../plans/20260729_0256-links-and-graph.md) |
+| the links release — cross-KB links | Needs two populated KBs to be worth anything. Build order: [`plans/20260729_0256-links-and-graph.md`](https://github.com/lucagattoni/Pinakes/blob/main/plans/20260729_0256-links-and-graph.md) |
 | the graph release — structural edges and the expansion channel | Edges are only worth deriving once there is a link graph to derive them beside, and the channel is gated on the golden set. **Measured 20260801: a golden set is not sufficient — the gate is only as strong as the corpus underneath it.** A corpus small enough that retrieval already returns every document, or flat enough that its derived edges connect everything to everything at one weight, cannot distinguish a channel that helps from one that does nothing. That is a precondition on the *corpus*, and it was discovered by running the measurement before the schema change rather than after ([STATUS](STATUS.md#release-roadmap)) |
 | the graph release (staged) — graph channels | Each is **eval-gated rather than scheduled** — it ships only if the golden set justifies it (`graph/PINAKES_APPROACH.md` §9) |
 | the deep release — `pnk ask --deep` | A paid loop and its guardrails ship together, never apart — and the guardrails are already here: the §5 accountant, the ledger and all three enforced windows ship with the paid extractor, so the deep release adds the loop, not the machinery |

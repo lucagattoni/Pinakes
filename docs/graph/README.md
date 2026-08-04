@@ -3,7 +3,7 @@
 Thirteen investigations — twelve external projects plus the in-house precedent — and the synthesis
 that turns them into a gated build order for **the links release** and **the graph release**.
 Research, not specification: where these disagree with [`../DESIGN.md`](../DESIGN.md), DESIGN wins;
-where they disagree with [`../../plans/20260729_0256-links-and-graph.md`](../../plans/20260729_0256-links-and-graph.md) about
+where they disagree with [`../../plans/20260729_0256-links-and-graph.md`](https://github.com/lucagattoni/Pinakes/blob/main/plans/20260729_0256-links-and-graph.md) about
 what is built when, the plan wins.
 
 **Partly built.** The links release this research shaped shipped in 0.5.0 and 0.6.0, and G1, G2
@@ -14,7 +14,7 @@ corpus, not on code. [`../STATUS.md`](../STATUS.md) is the authority on what exi
 
 | Doc | What it is |
 |---|---|
-| [**PINAKES_APPROACH.md**](PINAKES_APPROACH.md) | **The synthesis.** The Pinakes graph: lazy, agent-driven, budget-tunable. §9 is the eval gate each channel must pass; §10 is its build order, sequenced into increments by [`plans/20260729_0256-links-and-graph.md`](../../plans/20260729_0256-links-and-graph.md). Five adversarial passes |
+| [**PINAKES_APPROACH.md**](PINAKES_APPROACH.md) | **The synthesis.** The Pinakes graph: lazy, agent-driven, budget-tunable. §9 is the eval gate each channel must pass; §10 is its build order, sequenced into increments by [`plans/20260729_0256-links-and-graph.md`](https://github.com/lucagattoni/Pinakes/blob/main/plans/20260729_0256-links-and-graph.md). Five adversarial passes |
 | [**GRAPH_RAG.md**](GRAPH_RAG.md) | The research record — what the literature actually says about graphs, RAG and agents, and what pinakes should take from it |
 
 ## Investigations

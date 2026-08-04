@@ -201,6 +201,13 @@ and after numbers in the commit message.
 which fact) and the per-increment landing checklist. `docs/DESIGN.md` is rationale only; it changes
 only when the *reasoning* changes, never for a new flag or field alone.
 
+**`docs/` is published** to [lucagattoni.github.io/Pinakes](https://lucagattoni.github.io/Pinakes/)
+on every push to `main`, so a docs edit now has a second renderer that a PR gates with
+`mkdocs build --strict`. Two rules follow, both in `docs/README.md` § Conventions: a link *out* of
+`docs/` is absolute (`plans/`, `CLAUDE.md`, `changelog.d/` have no page there), and a heading is
+never renamed to fix a site anchor — `mkdocs_hooks.py` makes the site match GitHub, not the
+reverse. Run `make docs` before landing a docs change.
+
 - **README and DESIGN.md are deliberately version-free** — they describe what pinakes *is*, never
   which release it's on. Never reintroduce a version number or "as of vX" claim into their prose
   (CHANGELOG.md `[0.2.1]` — a 20260728 restructure existed specifically to stop that drift).

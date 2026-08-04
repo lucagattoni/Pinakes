@@ -6,9 +6,9 @@ This run is what replaces intuition about extraction *quality* with numbers.
 
 > **Fixture provenance is a different job, and it is done separately.** Four branches now carry
 > bodies captured from the live API by
-> [`tools/record_claude_fixtures.py`](../tools/record_claude_fixtures.py), and every fixture
+> [`tools/record_claude_fixtures.py`](https://github.com/lucagattoni/Pinakes/blob/main/tools/record_claude_fixtures.py), and every fixture
 > declares its own provenance
-> ([`tests/fixtures/claude/README.md`](../tests/fixtures/claude/README.md)). To re-record a branch,
+> ([`tests/fixtures/claude/README.md`](https://github.com/lucagattoni/Pinakes/blob/main/tests/fixtures/claude/README.md)). To re-record a branch,
 > use that tool rather than this runbook — the two spend on different things and answer different
 > questions.
 

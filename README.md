@@ -8,9 +8,12 @@
 [![PyPI](https://img.shields.io/pypi/v/pinakes.svg)](https://pypi.org/project/pinakes/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/)
+[![Docs](https://img.shields.io/badge/docs-lucagattoni.github.io%2FPinakes-blue.svg)](https://lucagattoni.github.io/Pinakes/)
 
-📖 **[Guide](docs/GUIDE.md)** · **[CLI](docs/CLI.md)** · **[Manifest](docs/MANIFEST.md)** ·
-**[Design](docs/DESIGN.md)** · **[What ships today](docs/STATUS.md)**
+📖 **[Documentation site](https://lucagattoni.github.io/Pinakes/)** — searchable, and the same
+files rendered below: **[Guide](docs/GUIDE.md)** · **[CLI](docs/CLI.md)** ·
+**[Manifest](docs/MANIFEST.md)** · **[Design](docs/DESIGN.md)** ·
+**[What ships today](docs/STATUS.md)**
 
 ---
 
@@ -107,6 +110,8 @@ make eval       # golden-set evaluation against the recorded baseline
 make corpus     # regenerate the synthetic PDF corpus in place
 make pdf-eval   # extraction-quality baseline + floor-drift check (needs [pdf])
 make budget     # the demo KB's spend ledger (free: it only reads)
+make docs       # build the documentation site (--strict — exactly what CI runs)
+make docs-serve # preview it at http://127.0.0.1:8000 with live reload
 make help       # all targets
 ```
 

@@ -1,5 +1,17 @@
 # pinakes documentation
 
+**Everything in this directory is published** to
+[lucagattoni.github.io/Pinakes](https://lucagattoni.github.io/Pinakes/) by
+[`.github/workflows/docs.yml`](../.github/workflows/docs.yml) on every push to `main`. The site is a
+*view* over these files, never a second copy — which is why nothing was moved to build it: these
+filenames are load-bearing in code (`tools/fragments.py` writes `RETROSPECTIVES.md`,
+`tools/status_header_gate.py` and CI parse `STATUS.md`, `tests/test_verification.py` reads
+`VERIFICATION.md`). Chapter numbers live in `mkdocs.yml`'s `nav` and are applied by JavaScript, so
+the Markdown here stays clean for GitHub. Two files sit outside the set above: `index.md` is the
+site's landing page and nothing else links to it, and **this file is excluded from the site** — it
+is the agent-facing routing table, and MkDocs will not accept it and `index.md` in one directory
+anyway.
+
 | Doc | Answers |
 |---|---|
 | [**GUIDE.md**](GUIDE.md) | *How do I use this?* Install, first KB, PDFs, search, hooks, MCP, troubleshooting |
@@ -168,3 +180,12 @@ is what stops the next plan from assuming a number that a parallel session has a
   run had happened, and a design note saying "no increment assigned" for work a plan had since
   assigned. Each was a single edit; none would have been found by reading the diff.
 - `make check` formats Python **inside Markdown fences**, so a docs-only commit can fail the gate.
+- **A link out of `docs/` is written absolute; a link inside it stays relative.** `plans/`,
+  `CLAUDE.md`, `changelog.d/` and `tools/` have no page on the site, so a relative `../plans/x.md`
+  renders on GitHub and dangles on the site. Write
+  `https://github.com/lucagattoni/Pinakes/blob/main/plans/x.md`, which works in both. `make docs`
+  runs `--strict` and fails on the difference, and so does the `docs` workflow on every PR.
+- **Heading anchors are GitHub's, on both surfaces.** `mkdocs_hooks.py` installs GitHub's slug
+  algorithm because neither Python-Markdown's default nor pymdownx's matches it, and every
+  cross-document anchor here was written against GitHub. Never renumber or rename a heading to fix
+  a site link — that fixes the site by breaking the copy people already read.

@@ -9,7 +9,7 @@ verifies nothing; it is the wish it warned about, wearing the table's clothes.
 
 So the plan keeps its predictions, as the historical record of what was intended, and **this file is
 the resolved mapping**: what must be true, and the test that actually holds it, in the tree as it
-stands. [`tests/test_verification.py`](../tests/test_verification.py) asserts every test named below
+stands. [`tests/test_verification.py`](https://github.com/lucagattoni/Pinakes/blob/main/tests/test_verification.py) asserts every test named below
 exists — so this table can go stale exactly once, in the commit that breaks it, and not silently.
 
 A row saying **none** is a promise with no test. There are none today; if you add a row, add its

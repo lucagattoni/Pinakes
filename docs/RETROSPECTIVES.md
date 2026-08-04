@@ -4,7 +4,7 @@
 > work is now **named, not numbered** ([STATUS.md](STATUS.md)). This record is left as it was.
 
 One section per increment of the project's build plans (`plans/`), written during that increment's
-retrospective review (the workflow is in [`CLAUDE.md`](../CLAUDE.md)). Only findings worth keeping
+retrospective review (the workflow is in [`CLAUDE.md`](https://github.com/lucagattoni/Pinakes/blob/main/CLAUDE.md)). Only findings worth keeping
 land here: a real defect the review caught, or a fact that would be expensive to rediscover. Fixes
 themselves live in the commits; this file records *what was learned*.
 
@@ -22,7 +22,7 @@ The seven **pre-implementation** design review passes are at the foot of this fi
 Added 20260801 01:11. Forty-odd sections in date order is an archive, not something anyone reads
 before starting work — so this table is the way in. It is keyed on **what you are about to do**, not
 on when the lesson was learned, and it is deliberately short: only the classes that have recurred.
-A rule that hardened into a standing instruction lives in [`CLAUDE.md`](../CLAUDE.md); this file is
+A rule that hardened into a standing instruction lives in [`CLAUDE.md`](https://github.com/lucagattoni/Pinakes/blob/main/CLAUDE.md); this file is
 where the evidence for it is.
 
 | About to… | Read | Because |
