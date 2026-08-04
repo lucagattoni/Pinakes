@@ -65,13 +65,22 @@ it that way.
 
 ## The ranking handed to RRF
 
-`(distance, -cosine, -weight, node_key)`. §4A scores expanded chunks by *"edge weight and link
-distance"* and ranks chunk neighbours *"by cosine against the query embedding"*; distance first is
-the reading that keeps a two-hop chunk from outranking a one-hop one on similarity alone, which is
-the bound the depth cap exists to impose. The final tiebreak is the **node key**
-(`<doc-ulid>:<ordinal>`), never `chunks.id` — the rowid G1 measured moving between an incremental
-sync and a `--rebuild`, which is exactly how a channel could change one golden-set answer without
-any edge changing.
+`(-cosine, distance, -weight, node_key)` — **cosine first, distance as a tiebreak.**
+
+G5's spec says *"chunk neighbours rank by cosine"* and APPROACH §4A says *"score expanded chunks by
+edge weight and link distance"*, so both terms are here and the order between them is a choice.
+Distance-first was written first and is **wrong**, for a reason worth recording: the list is cut at
+`candidates_per_source`, so with distance as the primary key every one-hop chunk precedes every
+two-hop one — and on any corpus where one hop already finds that many chunks, **depth 2 contributes
+nothing to the output at all**. The channel would be depth-1 wearing a depth-2 budget, and the
+reachability ceiling that licensed this increment was measured at two logical hops
+(`plans/20260804_1442-decision-g3-go.md`). Cosine first lets a two-hop chunk compete on merit;
+distance still decides where cosine cannot, which is where the graph's own proximity is the only
+evidence available.
+
+The final tiebreak is the **node key** (`<doc-ulid>:<ordinal>`), never `chunks.id` — the rowid G1
+measured moving between an incremental sync and a `--rebuild`, which is exactly how a channel could
+change one golden-set answer without any edge changing.
 
 ## Why not `graph.traverse`
 
@@ -141,9 +150,10 @@ class Ranking:
     """
 
     link_distance: bool = True
-    """Distance as the **primary** term, so a two-hop chunk never outranks a one-hop one on
-    similarity alone. §4A scores expanded chunks by *"edge weight and link distance"*; the arm
-    that drops it is what says whether the term earns its place."""
+    """Whether hop distance ranks two equally-similar chunks, nearer first. §4A scores expanded
+    chunks by *"edge weight and link distance"*; the arm that drops the term is what says whether
+    it earns its place. It is a **tiebreak**, never the primary key — see the module docstring for
+    why the other order silently makes depth 2 unreachable."""
 
     in_degree_salience: bool = False
     """A static citation-count prior: a document's inbound `links` count, inherited by its chunks
@@ -243,13 +253,13 @@ class _Walk:
         ordered = sorted(self._emitted.values(), key=self._order)
         return ordered[:limit]
 
-    def _order(self, reached: Reached) -> tuple[int, float, float, str]:
-        """`(distance, -cosine, -weight, node_key)`, with distance held constant when the
+    def _order(self, reached: Reached) -> tuple[float, int, float, str]:
+        """`(-cosine, distance, -weight, node_key)`, with distance held constant when the
         link-distance arm is off — so the term drops out of the comparison rather than the sort
         having two shapes."""
         return (
-            reached.distance if self._ranking.link_distance else 0,
             -self._scored(reached.node_key),
+            reached.distance if self._ranking.link_distance else 0,
             -reached.weight,
             reached.node_key,
         )

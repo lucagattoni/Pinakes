@@ -264,6 +264,7 @@ def walk(
     adjacent_k: int = 8,
     similarity: dict[int, float] | None = None,
     limit: int = 50,
+    ranking: channel.Ranking = channel.GATED_RANKING,
 ) -> list[channel.Reached]:
     connection = corpus.open()
     try:
@@ -275,6 +276,7 @@ def walk(
             local_kb=str(corpus.kb_id),
             adjacent_k=adjacent_k,
             limit=limit,
+            ranking=ranking,
         )
     finally:
         connection.close()
@@ -506,20 +508,22 @@ def tag_chain(root: Path, **options: Any) -> Corpus:
     allowed to compete at all.
     """
     corpus = Corpus(root, **options)
-    corpus.write("docs/a.md", sectioned("A", [("Quokka", "quokka " * 40)]), tags=["t1"])
-    corpus.write("docs/b.md", sectioned("B", [("Zebu", "zebu " * 40)]), tags=["t1", "t2"])
-    corpus.write("docs/c.md", sectioned("C", [("Numbat", "numbat " * 40)]), tags=["t2"])
+    # One directory each: sharing one would put all three in a `co-located` hub and make C a
+    # *one*-hop neighbour of A, which is the shape the depth assertions below must not have.
+    corpus.write("docs/d1/a.md", sectioned("A", [("Quokka", "quokka " * 40)]), tags=["t1"])
+    corpus.write("docs/d2/b.md", sectioned("B", [("Zebu", "zebu " * 40)]), tags=["t1", "t2"])
+    corpus.write("docs/d3/c.md", sectioned("C", [("Numbat", "numbat " * 40)]), tags=["t2"])
     corpus.sync()
     return corpus
 
 
 def test_a_document_never_passes_through_to_itself(tmp_path: Path) -> None:
     corpus = tag_chain(tmp_path / "kb")
-    root = chunk_id_of(corpus, "docs/a.md", 0)
+    root = chunk_id_of(corpus, "docs/d1/a.md", 0)
     reached = paths_of(corpus, [c.chunk_id for c in walk(corpus, [root], adjacent_k=1)])
 
-    assert "docs/b.md" in reached, "hop 1, through the tag the root's document shares"
-    assert "docs/c.md" in reached, (
+    assert "docs/d2/b.md" in reached, "hop 1, through the tag the root's document shares"
+    assert "docs/d3/c.md" in reached, (
         "hop 2 must reach C. If B were allowed to pass through to itself it would take the one "
         "fan-out slot and contribute nothing, because its chunks are already contributed"
     )
@@ -569,6 +573,52 @@ def test_a_root_document_never_contributes_its_chunks_at_any_depth(tmp_path: Pat
         for candidate in reached
         if candidate.doc_id == a and "membership" in candidate.via
     ], "and nothing of A arrived through A's own membership edge, at either depth"
+
+
+def test_a_two_hop_chunk_outranks_a_one_hop_one_when_the_query_says_so(tmp_path: Path) -> None:
+    """The property that keeps depth 2 reachable **in the output**, not only in the walk.
+
+    The channel's list is cut at `candidates_per_source`. Rank by distance first and every one-hop
+    chunk precedes every two-hop one, so on any corpus where one hop already fills the cut, depth 2
+    contributes nothing at all — a depth-1 channel wearing the two-hop budget the reachability
+    ceiling was measured at. This is the assertion that fails if that order ever comes back.
+    """
+    corpus = tag_chain(tmp_path / "kb")
+    root = chunk_id_of(corpus, "docs/d1/a.md", 0)
+    near = chunk_id_of(corpus, "docs/d2/b.md", 0)
+    far = chunk_id_of(corpus, "docs/d3/c.md", 0)
+
+    reached = walk(corpus, [root], similarity={near: 0.10, far: 0.90})
+    order = [candidate.chunk_id for candidate in reached]
+    assert near in order and far in order, "both hops must be walked at all"
+    assert order.index(far) < order.index(near)
+    assert next(c for c in reached if c.chunk_id == far).distance == 2
+
+
+def test_distance_breaks_a_tie_the_query_cannot(tmp_path: Path) -> None:
+    """The other half: link distance is still a term. Two chunks the query scores identically are
+    ordered nearer-first, which is the only place the graph's own proximity decides anything."""
+    corpus = tag_chain(tmp_path / "kb")
+    root = chunk_id_of(corpus, "docs/d1/a.md", 0)
+    near = chunk_id_of(corpus, "docs/d2/b.md", 0)
+    far = chunk_id_of(corpus, "docs/d3/c.md", 0)
+
+    reached = walk(corpus, [root], similarity={near: 0.5, far: 0.5})
+    order = [candidate.chunk_id for candidate in reached]
+    assert order.index(near) < order.index(far)
+
+    dropped = walk(
+        corpus,
+        [root],
+        similarity={near: 0.5, far: 0.5},
+        ranking=channel.Ranking(link_distance=False),
+    )
+    # With the term dropped, the node key alone decides between two equally-similar chunks — and
+    # a minted ULID orders either way, so the *rule* is asserted rather than one run's answer.
+    tied = [c for c in dropped if c.chunk_id in {near, far}]
+    assert [c.chunk_id for c in tied] == [
+        c.chunk_id for c in sorted(tied, key=lambda c: c.node_key)
+    ], "the arm removes distance from the comparison, leaving the node key"
 
 
 # --------------------------------------------------------------------------------------------

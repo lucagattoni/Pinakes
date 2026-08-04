@@ -668,6 +668,8 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | a same-document chunk reachable **only** by membership never appears | G5 | `tests/test_graph_channel.py::test_a_chunk_reachable_only_by_membership_never_appears` |
 | ...and one also reachable by `sibling` is not excluded — the "only" is load-bearing | G5 | `tests/test_graph_channel.py::test_a_same_document_chunk_reachable_by_sibling_is_not_excluded` |
 | membership neighbours are dropped before the cut, so they never spend fan-out budget | G5 | `tests/test_graph_channel.py::test_membership_neighbours_do_not_consume_the_fanout_budget` |
+| a two-hop chunk outranks a one-hop one when the query says so, so depth 2 reaches the *output* | G5 | `tests/test_graph_channel.py::test_a_two_hop_chunk_outranks_a_one_hop_one_when_the_query_says_so` |
+| ...and link distance still breaks a tie the query cannot | G5 | `tests/test_graph_channel.py::test_distance_breaks_a_tie_the_query_cannot` |
 | a document never passes through to itself, even when it is not a root | G5 | `tests/test_graph_channel.py::test_a_document_never_passes_through_to_itself` |
 | a root's own document never contributes its chunks, at any depth — a clause 18 mutants left standing | G5 | `tests/test_graph_channel.py::test_a_root_document_never_contributes_its_chunks_at_any_depth` |
 | `pnk links --json` is byte-identical with the channel on (decision 16) | G5 | `tests/test_graph_channel.py::test_pnk_links_output_is_unchanged_with_the_channel_on` |
