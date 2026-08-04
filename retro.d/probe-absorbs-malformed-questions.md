@@ -122,7 +122,11 @@ Demonstrated on one corpus, one index, one manifest, rewriting only the hop quer
 word: 9 failing / 3 liftable became 18 / 9, and every recorded field except `reports` compared
 equal. The payload now carries the golden set's resolved path, a sha256 of its bytes and its
 counts, plus `revision` on both model blocks — a revision selects weights as surely as a model name
-and needs no re-sync, so nothing else recorded would move with it. **The general form: an artifact
+does. One correction the sixth pass earned: that "needs no re-sync, so nothing else would move with
+it" is true of `[rerank] revision`, which nothing compares against the index, and **false** of
+`[embedding] revision`, which `search.check_coherence` guards — change it without a re-sync and the
+run stops rather than drifting. Both are recorded; only one of them could ever have moved a figure
+in silence. **The general form: an artifact
 must identify every input its numbers are a function of, and the way to find them is to enumerate
 the function's arguments, not to wait for a reviewer to name one.**
 

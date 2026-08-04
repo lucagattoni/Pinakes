@@ -948,7 +948,12 @@ def test_the_artifact_records_the_configuration_that_produced_the_numbers(demo: 
     assert payload["golden_set"]["questions"] == len(
         load_questions(DEMO / "eval" / "questions.yaml")
     )
-    assert payload["far_depth"] > payload["depth"]  # `beyond_depth` is a function of it
+    # The literal values, not their relation: both are module constants, so `far_depth >
+    # depth` compares two things a mutant can move together and stays green. `DEPTH` is the
+    # gate's own definition ("not a knob"), and an artifact reporting a depth its numbers
+    # were not computed at is the misidentification this whole test exists against.
+    assert payload["depth"] == 2
+    assert payload["far_depth"] == 6
 
     text = _run_probe("--fake").stdout
     assert f"final_k {manifest.retrieval.final_k}" in text

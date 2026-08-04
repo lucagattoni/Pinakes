@@ -64,8 +64,9 @@ shape below is refused by name, before a backend is even loaded:
   under the fake backend (9 failing / 3 liftable): one unmatched tag took `failing` to 10 and left
   `liftable` at 3; the same tag on every multi-hop question took the run to 18 failing / 0
   liftable, in silence;
-* two identical hops in one question — one retrieval written twice, clearing the `MIN_HOPS`
-  floor while asking a single question;
+* two hops in one question that are the same retrieval — the same `expect`, and a `query`
+  differing at most in case or spacing, which the index folds away — one retrieval written twice,
+  clearing the `MIN_HOPS` floor while asking a single question;
 * a golden set with no `multi-hop` question at all, whose every figure would be a zero
   indistinguishable from a measured one.
 
@@ -86,7 +87,10 @@ One exception, and it is `--fake`'s alone: that path syncs its copy at a fixed c
 and a `--fake` artifact moves its figures while every identifying field but the temp path stays
 equal. `--fake` exists to prove the mechanism offline, and its numbers are labelled `fake_backend`
 for that reason; a measurement that decides anything is a `--kb` run, where `pnk sync` writes a
-fresh `built_at` for every corpus edit that could move a figure.
+fresh `built_at` for every corpus edit that could move a figure — to the **minute**, which is the
+honest bound: edit, re-sync and re-probe inside one clock minute and two artifacts differ only in
+their figures. No corpus digest is recorded, so that gap is real; it is stated rather than papered
+over, and a run whose result is quoted anywhere should be a run whose corpus stood still.
 
 Usage:
     python3 tools/reachable_ceiling_probe.py                    # real models, the measurement
@@ -1018,14 +1022,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             "provider": manifest.embedding.provider,
             "model": manifest.embedding.model,
             "dim": manifest.embedding.dim,
-            # The revision pins the weights as surely as the model name does, and changing it
-            # needs no re-sync — so nothing else recorded here would move with it.
+            # The revision pins the weights as surely as the model name does. This one is also
+            # guarded: `search.check_coherence` compares it against the index's meta, so changing
+            # it without a re-sync stops the run rather than moving a figure. Recorded anyway —
+            # the artifact says what produced the numbers, and a field only recorded when it can
+            # silently hurt is a field nobody can read the artifact by.
             "revision": manifest.embedding.revision,
         },
         # The reranker's own model, not only the mode. `lands` is `expect in` the top `final_k`
         # *after* reranking, so a different reranker is a different measurement: swapping one fake
         # for another moved demo-kb from 9 failing / 3 liftable to 18 / 12 with every other
         # recorded field identical. `eval.py`'s header carries this block for the same reason.
+        # Its `revision` is the one `check_coherence` does *not* guard — nothing anywhere compares
+        # it against the index — so this is the field that could move the numbers in silence.
         "rerank": (
             {
                 "provider": manifest.rerank.provider,
