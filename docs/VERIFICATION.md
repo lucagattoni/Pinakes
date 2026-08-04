@@ -516,7 +516,7 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | What must be true | Increment | Where it is checked |
 |---|---|---|
 | **every check `diagnose` can produce is named by a test** | I9 | `tests/test_doctor.py::test_every_doctor_check_is_exercised_by_a_test` |
-| every non-OK check carries a remedy | I11 | `tests/test_doctor.py::test_every_problem_carries_a_remedy` |
+| a non-OK check carries a remedy — **spot-checked on five, not enumerated** | I11 | `tests/test_doctor.py::test_every_problem_carries_a_remedy` asserts over whichever checks are non-OK in one unsynced fixture (5 of 18 there; `diagnose` produces ≥29 on a synced KB), so a new remedy-less WARN passes unless it fires in that fixture. The enumerating sibling is `tests/test_doctor.py::test_every_doctor_check_is_exercised_by_a_test` |
 | the template check reports drift without applying anything | I9 | `tests/test_doctor.py::test_a_template_version_drift_is_reported_with_both_versions`, `tests/test_doctor.py::test_a_template_the_install_does_not_have_is_a_warning_not_a_failure` |
 | a disabled reranker is reported as configured, not as missing | I9 | `tests/test_doctor.py::test_the_reranker_check_says_when_reranking_is_off_rather_than_loading_one` |
 | the model cache check names where weights resolve | I9 | `tests/test_doctor.py::test_the_model_cache_check_names_the_directory_weights_resolve_under` |
@@ -609,3 +609,27 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | a drifted header fails naming both versions and the file | fix | `tests/test_status_header_gate.py::test_disagreeing_versions_fail_naming_both` |
 | deleting, moving or reformatting the header cannot silence the gate | fix | `tests/test_status_header_gate.py::test_a_missing_line_fails`, `tests/test_status_header_gate.py::test_a_reformatted_line_fails`, `tests/test_status_header_gate.py::test_the_header_on_the_wrong_line_fails` |
 | the status-header gate is invoked, and can still fail | fix | `tests/test_check_script.py::test_check_sh_declares_the_status_header_gate`, `tests/test_check_script.py::test_ci_runs_the_status_header_gate_and_proves_it_can_fail` |
+
+## The source walk stays inside the KB (0.7.1)
+
+Three defects live since before 0.5.0 let `[sources] include` mint sidecars **outside** the KB —
+against the `docs/` belongs to the user invariant. A fourth was found by a test written to pin
+*correct* behaviour. The rows below were added on 20260804: 0.7.1 shipped seventeen tests and
+touched this file not at all, which `tests/test_verification.py` cannot detect — it walks from this
+document to the tests, proving no row is fiction, and structurally cannot prove no guarantee is
+un-rowed.
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| an `include` pattern that climbs out of the KB is refused at load | 0.7.1 | `tests/test_sync.py::test_an_include_pattern_that_climbs_out_of_the_kb_is_refused_at_load` |
+| an absolute `include` pattern is a named `ManifestError`, never a traceback | 0.7.1 | `tests/test_sync.py::test_an_absolute_include_pattern_is_a_manifest_error_not_a_traceback` |
+| a symlinked directory cannot carry the walk out of the KB | 0.7.1 | `tests/test_sync.py::test_a_symlinked_directory_cannot_carry_the_walk_out_of_the_kb` |
+| a symlinked document *inside* the KB is still ingested — containment is not a ban on symlinks | 0.7.1 | `tests/test_sync.py::test_a_symlinked_document_inside_the_kb_is_still_ingested` |
+| a `..` pattern that stays inside the KB is legal, and one file reached two legal ways is one document | 0.7.1 | `tests/test_sync.py::test_a_dot_dot_pattern_that_stays_inside_the_kb_is_accepted`, `tests/test_sync.py::test_one_file_reached_by_two_legal_spellings_is_one_document`, `tests/test_sync.py::test_the_same_document_is_ingested_by_a_fixed_and_a_globbed_pattern_alike` |
+| a leading glob, or a `**` before the `..`, does not defeat the static refusal | 0.7.1 | `tests/test_sync.py::test_a_leading_glob_does_not_defeat_the_static_refusal`, `tests/test_sync.py::test_a_double_star_before_a_dot_dot_does_not_defeat_the_refusal` |
+| an escaping pattern is refused **without enumerating the tree**, and a symlinked escape stops the walk rather than walking it | 0.7.1 | `tests/test_sync.py::test_an_escaping_pattern_is_refused_without_enumerating_the_tree`, `tests/test_sync.py::test_a_symlinked_escape_stops_the_walk_rather_than_enumerating_the_tree` |
+| an escaping pattern matching only a directory is still caught | 0.7.1 | `tests/test_sync.py::test_an_escaping_pattern_that_matches_only_a_directory_is_still_caught` |
+| the escape is reported once per pattern, never once per file | 0.7.1 | `tests/test_sync.py::test_the_escape_is_reported_once_per_pattern_not_once_per_file` |
+| an escape under one root does not drop documents under another | 0.7.1 | `tests/test_sync.py::test_an_escape_under_one_root_does_not_drop_documents_under_another` |
+| an `exclude` pattern may contain `..`, and a root that does not exist yet still loads | 0.7.1 | `tests/test_sync.py::test_an_excluded_pattern_may_contain_dot_dot`, `tests/test_sync.py::test_a_root_that_does_not_exist_yet_still_loads` |
+| the density gate survives a root reached through a symlinked parent | 0.7.1 | `tests/test_partner_kb.py::test_the_gate_survives_a_root_reached_through_a_symlinked_parent` |

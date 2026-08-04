@@ -75,7 +75,11 @@ The docs are built so an increment touches few files. In rough order:
    `<category>-<slug>.md`, in the same commit as the code. **Never an edit to `CHANGELOG.md`**:
    it is the one file every increment would otherwise touch, and two agents cannot conflict in
    separate files.
-7. **A [`retro.d/`](../retro.d/README.md) fragment** if the increment's review found something
+7. **VERIFICATION.md** — if the increment shipped a test that holds a promise, it gets a row. The
+   gate walks from this table to the tests, so it catches a row naming a test that does not exist
+   and **cannot** catch a shipped guarantee with no row: 0.7.1 shipped seventeen containment tests
+   and added none (found 20260804, rows added then).
+8. **A [`retro.d/`](../retro.d/README.md) fragment** if the increment's review found something
    worth keeping — a real defect, or a fact expensive to rediscover. Same reason, same rule:
    never edit `RETROSPECTIVES.md` directly. Trivia stays in the commit message.
 
