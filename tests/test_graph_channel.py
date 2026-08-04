@@ -412,20 +412,56 @@ def test_off_issues_no_traversal_query(tmp_path: Path) -> None:
 def one_long_document(root: Path, **options: Any) -> Corpus:
     """One document, six top-level sections, one chunk each.
 
-    **No `# Title`, deliberately.** With one, every section's `heading_path` is
-    `Title > Section n` and the title's own chunk is the transitive parent of all of them, so
+    **Six `#` headings, not one `#` and six `##`.** Under a title, every section's `heading_path`
+    is `Title > Section n` and the title's own chunk is the transitive parent of all of them, so
     `parent-child` puts every chunk within two hops of every other and the membership path can
-    never be the *only* way to reach anything. Without it the heading paths are pairwise
-    non-prefix, each section is its own single-member hub (never minted), and ordinal 0 reaches
-    only ordinals 1 and 2 — by `sibling`, twice.
+    never be the *only* way to reach anything. Dropping the title is not enough either — the
+    chunker then reads the **first** `##` as the root and derives `Section 0 > Section n`, which is
+    the same defect wearing a different heading level. Six top-level headings give pairwise
+    non-prefix paths, each its own single-member hub (never minted), and ordinal 0 reaching only
+    ordinals 1 and 2 — by `sibling`, twice. `_assert_flat_sections` is what keeps that true.
     """
     corpus = Corpus(root, **options)
     corpus.write(
         "docs/long.md",
-        "".join(f"## Section {index}\n\nword{index} " * 30 + "\n\n" for index in range(6)),
+        "".join(f"# Section {index}\n\n" + f"word{index} " * 30 + "\n\n" for index in range(6)),
     )
     corpus.sync()
+    _assert_flat_sections(corpus, "docs/long.md", sections=6)
     return corpus
+
+
+def _assert_flat_sections(corpus: Corpus, path: str, *, sections: int) -> None:
+    """The fixture is what its docstring says: one chunk per section, every heading path depth 1,
+    no hierarchy edge at all.
+
+    Written after the first version of this fixture was not. `f"## Section {i}\n\nword{i} " * 30`
+    repeats the *heading* thirty times too, which produced 180 chunks under
+    `Section 0 > Section 5` — a nested hierarchy inside a fixture whose whole purpose was to have
+    none, and the exclusion tests below passed against it for reasons that had nothing to do with
+    membership. A fixture that is silently not the shape it claims is the same failure class as an
+    assertion satisfied by something other than the property it names.
+    """
+    connection = corpus.open()
+    try:
+        rows = [
+            (int(r[0]), None if r[1] is None else str(r[1]))
+            for r in connection.execute(
+                "SELECT c.ordinal, c.heading_path FROM chunks c JOIN documents d ON d.id = c.doc_id "
+                "WHERE d.path = ? ORDER BY c.ordinal",
+                (path,),
+            )
+        ]
+        hierarchy = int(
+            connection.execute("SELECT count(*) FROM edges WHERE kind = 'parent-child'").fetchone()[
+                0
+            ]
+        )
+    finally:
+        connection.close()
+    assert len(rows) == sections, f"expected {sections} chunks, got {len(rows)}: {rows}"
+    assert all(heading and " > " not in heading for _, heading in rows), rows
+    assert hierarchy == 0, f"{hierarchy} parent-child edge(s) in a fixture that must have none"
 
 
 def test_a_chunk_reachable_only_by_membership_never_appears(tmp_path: Path) -> None:

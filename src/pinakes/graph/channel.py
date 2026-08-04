@@ -78,9 +78,13 @@ reachability ceiling that licensed this increment was measured at two logical ho
 distance still decides where cosine cannot, which is where the graph's own proximity is the only
 evidence available.
 
-The final tiebreak is the **node key** (`<doc-ulid>:<ordinal>`), never `chunks.id` — the rowid G1
-measured moving between an incremental sync and a `--rebuild`, which is exactly how a channel could
-change one golden-set answer without any edge changing.
+**Every tiebreak in this module resolves to `(documents.path, chunks.ordinal)`** — the same total
+order G1 made the rest of the pipeline use, and for the same reason. Two identities are available
+here and both are wrong: `chunks.id` is the rowid G1 measured moving between an incremental sync
+and a `--rebuild`, and `nodes.id` is a surrogate minted per derivation, deterministic today only
+because `derive` happens to enumerate documents in path order — an implicit dependency on another
+module's `ORDER BY`, which is exactly the shape of the undocumented behaviour G1 removed. A tie
+broken by either is a golden-set answer that can change with no edge having changed.
 
 ## Why not `graph.traverse`
 
@@ -123,7 +127,8 @@ class Reached:
     """`chunks.id` — the identity `search` fuses on."""
 
     node_key: str
-    """`<doc-ulid>:<ordinal>`, the identity that survives a rebuild."""
+    """`<doc-ulid>:<ordinal>`, the identity that survives a rebuild. Carried for provenance; the
+    ordering reads `(documents.path, chunks.ordinal)` instead (see the module docstring)."""
 
     doc_id: str
     distance: int
@@ -236,6 +241,7 @@ class _Walk:
         self._emitted: dict[int, Reached] = {}
         self._nodes: dict[int, tuple[str, str]] = {}
         self._chunk_ids: dict[str, dict[int, int]] = {}
+        self._paths: dict[str, str] = {}
 
     # -- the loop ----------------------------------------------------------------------------
 
@@ -253,15 +259,17 @@ class _Walk:
         ordered = sorted(self._emitted.values(), key=self._order)
         return ordered[:limit]
 
-    def _order(self, reached: Reached) -> tuple[float, int, float, str]:
-        """`(-cosine, distance, -weight, node_key)`, with distance held constant when the
+    def _order(self, reached: Reached) -> tuple[float, int, float, str, int]:
+        """`(-cosine, distance, -weight, path, ordinal)`, with distance held constant when the
         link-distance arm is off — so the term drops out of the comparison rather than the sort
         having two shapes."""
+        path, ordinal = self._position(reached.node_key)
         return (
             -self._scored(reached.node_key),
             reached.distance if self._ranking.link_distance else 0,
             -reached.weight,
-            reached.node_key,
+            path,
+            ordinal,
         )
 
     def _root_nodes(self, roots: Sequence[int]) -> list[int]:
@@ -288,9 +296,17 @@ class _Walk:
         return nodes
 
     def _accept(self, found: Mapping[int, _Candidate], distance: int) -> list[int]:
-        """Emit what this hop found, and return the chunk nodes the next hop expands from."""
+        """Emit what this hop found, and return the chunk nodes the next hop expands from.
+
+        **Ordered by node key, never by node id.** A surrogate `nodes.id` is minted per derivation,
+        so iterating a hop's finds in id order would make the *next* hop's expansion order — and
+        therefore which document claims a shared hub, and therefore which candidates that
+        document's `adjacent_k` cut keeps — depend on how the index happened to be built. That is
+        G1's defect in a new place: one golden-set question changing answer between an incremental
+        sync and a `--rebuild`, with no edge having changed.
+        """
         following: list[int] = []
-        for node, candidate in found.items():
+        for node, candidate in sorted(found.items(), key=lambda item: self._position(item[1].key)):
             chunk_id = self._chunk_id(candidate.key)
             if chunk_id is None:  # pragma: no cover — every chunk node names a live chunk
                 continue
@@ -356,32 +372,37 @@ class _Walk:
 
         # Non-chunk candidates rank by edge weight — they carry no embedding to compare against.
         onward: list[_Candidate] = []
-        for spoke in edge_set.peers(
-            self._connection,
-            document,
-            kinds=self._kinds & frozenset({edge_set.AUTHORED}),
-            local_kb=self._local_kb,
+        for spoke, (_, key) in self._described(
+            edge_set.peers(
+                self._connection,
+                document,
+                kinds=self._kinds & frozenset({edge_set.AUTHORED}),
+                local_kb=self._local_kb,
+            )
         ):
             if not self._passable(spoke.node, document):
                 continue
-            onward.append(_Candidate(spoke.node, "", spoke.weight, (spoke.kind,)))
+            onward.append(_Candidate(spoke.node, key, spoke.weight, (spoke.kind,)))
         for hub in edge_set.hubs(self._connection, document, kinds=self._kinds):
             if hub.kind not in _DOC_HUB_KINDS or hub.node in self._expanded:
                 continue
             self._expanded.add(hub.node)
-            for spoke in edge_set.members(self._connection, hub.node, kinds=self._kinds):
+            for spoke, (_, key) in self._described(
+                edge_set.members(self._connection, hub.node, kinds=self._kinds)
+            ):
                 if not self._passable(spoke.node, document):
                     continue
                 onward.append(
                     _Candidate(
                         spoke.node,
-                        "",
+                        key,
                         edge_set.compose(hub.weight, spoke.weight),
                         (hub.kind, spoke.kind),
                     )
                 )
 
-        onward.sort(key=lambda c: (-c.weight, c.node))
+        # The tiebreak is the document's **path**, never the surrogate node id (module docstring).
+        onward.sort(key=lambda c: (-c.weight, self._path(c.key)))
         for candidate in onward[: self._adjacent_k]:
             self._contribute(candidate, found)
 
@@ -413,11 +434,31 @@ class _Walk:
         there, and a later path overwriting them would make the provenance `tools/graph_matrix.py`
         reports disagree with the walk that produced the ranking it is explaining.
         """
-        ranked = sorted(candidates, key=lambda c: (-self._scored(c.key), -c.weight, c.key))
+        ranked = sorted(
+            candidates,
+            key=lambda c: (-self._scored(c.key), -c.weight, *self._position(c.key)),
+        )
         for candidate in ranked[: self._adjacent_k]:
             found.setdefault(candidate.node, candidate)
 
     # -- lookups -----------------------------------------------------------------------------
+
+    def _position(self, chunk_node_key: str) -> tuple[str, int]:
+        """`(documents.path, chunks.ordinal)` — the total order every tiebreak here resolves to."""
+        doc_id, ordinal = edge_set.parse_chunk_key(chunk_node_key)
+        return self._path(doc_id), ordinal
+
+    def _path(self, doc_id: str) -> str:
+        known = self._paths.get(doc_id)
+        if known is None:
+            row = self._connection.execute(
+                "SELECT path FROM documents WHERE id = ?", (doc_id,)
+            ).fetchone()
+            # A document with no row cannot be ordered against one that has a path; the ULID is a
+            # stable fallback and, being permanent, is still rebuild-safe.
+            known = doc_id if row is None else str(row[0])
+            self._paths[doc_id] = known
+        return known
 
     def _scored(self, node_key: str) -> float:
         """A chunk's ranking score: its query cosine, times the in-degree prior when that arm is
