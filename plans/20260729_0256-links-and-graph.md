@@ -550,7 +550,8 @@ No stored `degree` — that would be derived state inside derived state.
 > prevent, in **the one edge class that has none**. This is not a `tools/link_density_gate.py`
 > question: it bears on this weight table and on G5's with-authored run, and it must be re-decided
 > before G3 is built rather than discovered by a gate that passes. **It does not license changing
-> the weight now** — G3 is blocked, nothing has been measured against a real corpus end to end, and
+> the weight now** — G3 was blocked when this was written, nothing had been measured against a real
+> corpus end to end, and
 > a weight changed on an argument rather than a measurement is the thing decision 13 froze the table
 > to prevent.
 >
