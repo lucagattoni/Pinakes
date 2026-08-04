@@ -428,13 +428,13 @@ and needs **one manifest edit before it can sync**: `pnk init` stamps
 `provider = "sentence-transformers"` whatever extras you have, so a `[light]` install fails with
 *"the `sentence-transformers` backend is not installed"* until `provider` is changed to
 `"fastembed"` — the edit [README.md](../README.md) and the [Guide](GUIDE.md#choosing-a-backend)
-both call out. Verified 20260801 13:46 against **0.7.1** from the index (`uvx --refresh --from "pinakes[light]==0.7.1" pnk --version` → `pinakes 0.7.1`): `init` → edit → `sync` →
+both call out. Verified 20260804 08:47 against **0.8.0** from the index (`uvx --refresh --from "pinakes[light]==0.8.0" pnk --version` → `pinakes 0.8.0`): `init` → edit → `sync` →
 `search` returns the document. The earlier claim that it worked unedited was wrong.
 
 | | |
 |---|---|
-| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0 and 0.7.1.** 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
-| First upload | 20260728 17:16 UTC · latest 20260801 11:46 UTC (0.7.1) |
+| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.1 and 0.8.0.** **0.8.0 renames the paid extractor's API key** to `PINAKES_ANTHROPIC_API_KEY`, so a KB driving the paid path from an older `.env` refuses until the variable is renamed. 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
+| First upload | 20260728 17:16 UTC · latest 20260804 06:43 UTC (0.8.0) |
 | Extras available | `st`, `light`, `pdf`, `claude` — all four |
 | `requires-python` | `>=3.13` |
 
