@@ -14,41 +14,22 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**Eleven live items as of 20260804 08:30** — ten of them from building the RFC realism corpus, which is what that corpus was for. **Earlier note: one live item, raised 20260804 05:00** — the first defect the RFC realism corpus surfaced, and it
-destroys user work.
+**Nine live items as of 20260804 13:10.** All but one came from *building* the RFC realism
+corpus rather than from reading the code — which is what that corpus was for. Three of the nine
+(1, 5, 8) are the interrupted-sync trio: **built on `20260804_1218-interrupted-sync`, not yet
+merged**, so they stay live until that branch lands. The rest are unclaimed.
 
-**Earlier state, for the record: no live items as of 20260804 04:20.** The one item raised on 20260803 was built and merged the
-same evening. Beyond it there is no Pinakes code work: the links release is complete, the graph
-release is **blocked** at G2's measurement ([`20260729_0256-links-and-graph.md`](20260729_0256-links-and-graph.md)), and what
-unblocks it is a corpus ([`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md)).
+The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
+finished. Note what is **not** here: the links release is complete and the graph release is
+**blocked** at G2's measurement ([`20260729_0256-links-and-graph.md`](20260729_0256-links-and-graph.md)),
+so none of these unblocks it — the corpus does
+([`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md)).
 
 ---
 
 ## Live
 
-### 1 · `corpus-probe-run.md` requires a per-kind edge census and no tool emits one
-
-**Raised by the planner against its own requirement, 20260804 09:25.**
-[`20260803_2239-corpus-probe-run.md`](20260803_2239-corpus-probe-run.md) requires the run report to
-carry *"a per-kind edge census — how many edges each kind derived"*, because on the RFC corpus
-`in-section`, `parent` and `child` derive zero and a single reachability number would hide that.
-
-`tools/reachable_ceiling_probe.py` emits six counts and **no edge totals at all**. The graph it
-derives in memory knows them; nothing prints them. A requirement with no instrument gets improvised
-at the moment it is needed, by whoever is standing there, which is how a measurement stops being
-comparable between runs.
-
-**Required:** the probe prints, and puts in `--json`, the edge count per derived kind for the run —
-including the kinds that derived **zero**, which are the whole reason the requirement exists. A kind
-absent from the output is indistinguishable from a kind at zero, so absent is not acceptable.
-
-**Test:** on a fixture with no `heading_path`, the census reports `in-section: 0` **present in the
-output** rather than omitted; and the census total reconciles with the edges the traversal actually
-walked, so it cannot be a separately-computed number that drifts from the graph it describes.
-
----
-
-### 2 · The sync lock's timestamp is UTC; every other timestamp is local
+### 1 · The sync lock's timestamp is UTC; every other timestamp is local
 
 **Verified at source 20260804 08:30.** `lock.py:138` writes `datetime.now(UTC).strftime("%Y%m%d %H:%M")`; `sync.py:709` writes `datetime.now().strftime(...)`. **Identical format, no marker, different clocks.** In Europe/Rome in August a lock taken 30 seconds ago reads as **two hours old**.
 
@@ -58,7 +39,7 @@ walked, so it cannot be a separately-computed number that drifts from the graph 
 
 ---
 
-### 3 · `strategy = "structural"` degrades to size-based chunking in silence
+### 2 · `strategy = "structural"` degrades to size-based chunking in silence
 
 **Measured on the RFC corpus:** **106 806 chunks, every one with `heading_path` empty** — over 300 RFCs, the most rigidly sectioned plain text in existence. The heading grammar is Markdown-shaped; RFC section numbering is not, so nothing matches and the strategy quietly becomes size-based. Nothing warns: `grep heading src/pinakes/doctor.py` returns nothing.
 
@@ -68,7 +49,7 @@ walked, so it cannot be a separately-computed number that drifts from the graph 
 
 ---
 
-### 4 · The `[light]` first-sync error prescribes the 2 GB install to a user who chose `[light]`
+### 3 · The `[light]` first-sync error prescribes the 2 GB install to a user who chose `[light]`
 
 A first sync on a `[light]` install fails naming `sentence-transformers` — the torch dependency the extra exists to avoid — while `fastembed` is installed and visible. The manifest edit (two `provider` lines) is the actual fix and the message does not mention it, though `README.md` and `docs/GUIDE.md` both do.
 
@@ -76,7 +57,7 @@ A first sync on a `[light]` install fails naming `sentence-transformers` — the
 
 ---
 
-### 5 · `pnk init` cannot adopt a directory that already has content
+### 4 · `pnk init` cannot adopt a directory that already has content
 
 `_check_target` refuses a non-empty directory, so a KB cannot be initialised inside an existing repository — which is what [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) prescribes and what everyone does: create the repo, clone it, then init. A `.git`, a README and a `pyproject.toml` are already "not empty", and the message *"clear this one first"* is alarming when the directory holds the documents.
 
@@ -84,7 +65,7 @@ A first sync on a `[light]` install fails naming `sentence-transformers` — the
 
 ---
 
-### 6 · The first sync is multi-hour and completely silent
+### 5 · The first sync is multi-hour and completely silent
 
 ~2.4 documents/minute on CPU; 300 documents ran over two hours with no output. **"Working" is indistinguishable from "hung"**, which is what makes findings 1 and 2 expensive: a user who cannot tell reaches for the remedy, and the remedies destroy work.
 
@@ -92,7 +73,7 @@ A first sync on a `[light]` install fails naming `sentence-transformers` — the
 
 ---
 
-### 7 · Every document is titled by its filename
+### 6 · Every document is titled by its filename
 
 All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so search results are unreadable. `sync` mints the title from the filename when the document has no Markdown H1 — correct for Markdown, useless for anything else.
 
@@ -100,25 +81,13 @@ All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so searc
 
 ---
 
-### 8 · `uv add "pinakes[light]"` fails where a KB user runs it
-
-The documented install line needs a `pyproject.toml`; a fresh KB directory has none, so it exits `No pyproject.toml found`. **Required:** `docs/GUIDE.md` shows the form that works in a bare directory (`uv init` first, or `uvx`), since that is where a new user is standing.
-
----
-
-### 9 · `pnk doctor` prints the operator's home directory
+### 7 · `pnk doctor` prints the operator's home directory
 
 Absolute paths in output that is the natural thing to paste into an issue. **Required:** print paths relative to the KB root where they are inside it. Minor, but it is the one command whose output gets shared.
 
 ---
 
-### 10 · Same-host lock reclaim is documented in `doctor` and not in the GUIDE
-
-The resumed corpus sync reclaimed its own stale lock and continued incrementally — `105 unchanged`, nothing re-embedded. That is the *good* behaviour, and `docs/GUIDE.md` offers only `--force-unlock`, which is the destructive one. **Required:** GUIDE says a lock left by a dead process on this host is reclaimed automatically, and `--force-unlock` is for another host.
-
----
-
-### 11 · `pnk doctor`'s model-coherence remedy destroys an interrupted sync's work
+### 8 · `pnk doctor`'s model-coherence remedy destroys an interrupted sync's work
 
 **Found by using Pinakes, not by reading it** — the RFC realism corpus, 20260804, on a first sync
 of 300 documents killed at ~106 by an unrelated process death.
@@ -165,10 +134,52 @@ diagnosis, not the write order.
 
 ---
 
+### 9 · The first sync may be using one core of ten, and nobody has measured which
+
+**Raised 20260804 13:10, from the RFC corpus run.** 300 documents took over two hours at ~2.4
+documents/minute. `sync.py:1863` embeds one document at a time — `backend.embed([chunk.text for
+chunk in chunks])` inside a serial loop over documents — so *the loop* is single-threaded whatever
+the backend does underneath.
+
+**Measure before changing anything.** Both backends thread internally: `fastembed` runs ONNX
+Runtime and `sentence-transformers` runs torch, and both default to multiple intra-op threads. So
+there are two very different worlds and the fix is opposite in each:
+
+* **The backend already saturates the machine** → the loop is fine, and the win is a bigger batch
+  (embedding several documents' chunks in one `embed()` call), not processes.
+* **The backend is effectively single-core** → the loop is the bottleneck and a process pool over
+  documents is worth it.
+
+**Required first:** a measurement, recorded in the item — cores actually busy during a sync of ≥50
+documents, per backend. `ps -o %cpu` on macOS reports **per core**, so `98%` on a 10-core box is one
+core; `750%` is seven. Nothing else in this item may be built before that number exists.
+
+**Then, only if the measurement says single-core:** parallelise the document loop, sized
+`os.cpu_count()` less one or two. **Do not stack a process pool on top of a threaded backend** — N
+processes each opening an N-thread ONNX session oversubscribe the CPU and typically run *slower*
+than serial; if processes are used, pin the per-process thread count to 1.
+
+**Bounds.** Ordering is not free: document ULIDs, the ledger and `.pinakes/` writes must stay
+deterministic and single-writer, so only the embedding is a candidate — never the store writes.
+
+**Test:** a sync of a fixture corpus produces a byte-identical index under the parallel and serial
+paths, and the parallel path is opt-out (a flag or a manifest key) so a machine that regresses can
+go back without a downgrade.
+
+**Explicitly out of scope: `tools/reachable_ceiling_probe.py`.** It is genuinely single-core (~33
+minutes per variant, pure-Python graph construction and BFS) and it was considered and rejected —
+it runs a handful of times in the project's life, so the complexity would cost more than the
+minutes it returns. Recorded so the analysis is not redone.
+
+---
+
 ## Closed — recorded so nobody reopens them
 
 | Was | Closed by |
 |---|---|
+| `uv add "pinakes[light]"` failed in the one place a KB user runs it — a knowledge-base directory has no `pyproject.toml`, so the documented install line exits `No pyproject.toml found` | 20260804 13:10. `docs/GUIDE.md` leads with the two forms that work in a bare directory — `uv init` first, or `uvx` with no install at all. The plain `uv add` lines stay, since a KB inside an existing project is the other real case |
+| Same-host lock reclaim was documented in `pnk doctor` and not in the GUIDE, which offered only `--force-unlock` — the destructive remedy — for a symptom the safe path already handles | 20260804 13:10. The GUIDE's troubleshooting row now says a lock left by a dead process **on this host is reclaimed automatically** by re-running `pnk sync`, and bounds `--force-unlock` to another host. It also says to check the process rather than the age, because the lock's clock is UTC and an older KB's manifest is local |
+| `corpus-probe-run.md` required a per-kind edge census and no tool emitted one | Shipped 20260804. `edge_census()` reads the count off the same in-memory `Graph` the traversal walks — no re-query, no parallel computation — and always returns every kind, **including the zeroes**, since a kind absent from the output is indistinguishable from a kind at zero. Its own review caught the first version counting hub buckets of one, which would have made `co-located` and `shared-tag` unable to report 0 on any populated corpus — the exact case it exists to surface |
 | `docs/STATUS.md`'s header was not gated and drifted four releases — it read `0.4.1` while the roadmap, the PyPI table and `__version__` all said `0.7.1` | `tools/status_header_gate.py`, 20260803 22:43. Parses line 3 for the exact `**Latest release: x.y.z**` shape and compares it against `pinakes.__version__`; a missing, moved or reformatted line fails as loudly as a wrong version. Wired into `check.sh` with its own CI job carrying a negative check |
 | `tools/link_density_gate.py` died with a `ValueError` on a non-canonical root — every `/tmp` path on macOS, and running it against a copy is exactly what an executor is told to do | 0.7.1. `census` resolves the root once, so the denominator and the `relative_to` share one base |
 | `tools/fragments.py` spliced **two `### Added` headings** into one section, and filed a `Fixed:` entry under `Added` — silent, and it lands in an artifact that cannot be re-uploaded | Fixed with a test (`tests/test_fragments.py`). `_merge_into_section` reuses an existing `### Category` heading, bounded to the anchor's own section so an older release's heading is never written into |

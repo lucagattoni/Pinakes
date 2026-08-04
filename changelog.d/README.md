@@ -12,8 +12,10 @@ separate files, so the conflict class stops existing rather than being managed
 
     changelog.d/YYYYMMDD_HHMM-<category>-<slug>.md
 
-`YYYYMMDD_HHMM` is when the fragment was written, local 24h — **read the clock, never compose it**
-(`date "+%Y%m%d_%H%M"`). It orders `ls` chronologically and dates a fragment without opening it, and
+`YYYYMMDD_HHMM` is when the fragment was written, **UTC** — **read the clock, never compose it**
+(`date -u "+%Y%m%d_%H%M"`). Fragments written before 20260804 11:32 carry a local time and keep it;
+converting a recorded timestamp invents precision nobody measured. It orders `ls` chronologically
+and dates a fragment without opening it, and
 it is the same prefix plans and branches carry. `tools/fragments.py` strips it before reading the
 category, so it never becomes part of the slug.
 

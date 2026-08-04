@@ -1,6 +1,6 @@
 # Status — what ships today
 
-**Latest release: 0.8.0** · last reviewed 20260804 08:40
+**Latest release: 0.9.0** · last reviewed 20260804 12:28
 
 > **This file is the only place in the repo that says what is built.** Every other doc describes
 > *how* something works or *why* it was designed that way, and links here for whether you can use it
@@ -254,6 +254,7 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.5.0** ✅ *(the links release, interim)* | `pnk links`, `pinakes_links`, reverse-scan and the sidecar round-trip fix — no `schema_version` bump, so no rebuild. **The release cuts twice** (decision 27): this is the interim MINOR at L5b; the final cut is at L8, and the name stays in the unbuilt-work table until then. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **L5b landed:** `ruamel.yaml` replaces `pyyaml` in the sidecar, so a rewrite preserves comments, quoting and blank lines — and `country: NO` stops becoming `false` ([decision](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_0602-decision-ruamel-yaml.md)). |
 | **0.6.0** ✅ *(the links release, final)* | `pnk link` authors a link from the command line, and `pnk doctor` reports link coverage as **linked docs / total docs** and resolves each cross-KB target through its `[[links.kb]]` entry (L6–L8). Also `[kb] requires_pinakes` (G4) and the evaluation's tie-ordering fix (G1) — no `schema_version` bump, so no rebuild. **This completes the two-cut release** decision 27 describes: 0.5.0 was the interim MINOR at L5b, this is the final cut, and the name leaves the unbuilt-work table here |
 | **0.7.0** ✅ | The evaluation grows a per-question artifact (`eval/outcomes.json`), stable question ids, a validated `kind`, and an empty golden set that skips with a reason instead of failing — plus the demo KB's golden set grown 41 → 74 with a `simple-lookup` control class (G2). **Its deliverable is a measurement:** the graph release's gate cannot be reached on this corpus, so G3 and G5 do not start ([above](#can-the-graph-releases-gate-be-reached--measured-20260801-1214)). No `schema_version` bump, so no rebuild |
+| **0.9.0** ⚠️ *(tagged; PyPI upload blocked — [see below](#published-on-pypi))* | **Documentation only — no code path changed.** `docs/` is now published as a site at [lucagattoni.github.io/pinakes](https://lucagattoni.github.io/pinakes/), built with `mkdocs build --strict` on every PR and deployed on every push to `main`; the strict build found and fixed 31 dead links and anchors in the existing docs. The repository moved to `github.com/lucagattoni/pinakes` (GitHub redirects the old URL) and prose across the repo now writes the project name **Pinakes**, while every identifier — the PyPI package, `pinakes.toml`, `.pinakes/`, `pinakes[st]`, `pinakes_search`, `requires_pinakes` — stays lowercase and unchanged. Also a per-kind edge census in `tools/reachable_ceiling_probe.py`. No `schema_version` bump, so no rebuild |
 | **0.8.0** ✅ | **Breaking, paid path only:** the Claude-vision extractor's key is `PINAKES_ANTHROPIC_API_KEY` and is passed to the SDK explicitly — no fallback to `ANTHROPIC_API_KEY`, which the SDK used to read out of whatever environment it was handed. Rename the variable in your `.env`. Also `[budget]` defaults raised (`per_operation_eur` 0.05 → 0.30, `monthly_eur` 5.00 → 30.00), a `check.sh` gate pinning `docs/STATUS.md`'s own header to `__version__`, the reachability probe refusing a golden set it cannot measure rather than absorbing it, and sixteen documentation claims corrected against the code. No `schema_version` bump, so no rebuild |
 | **0.7.1** ✅ | `[sources] include` can no longer walk out of the KB or write sidecars outside it — three defects live since before 0.5.0: a `..` pattern indexed files outside and minted sidecars beside them, an absolute pattern was a bare traceback, and a symlinked directory carried the walk out with no `..` anywhere. Plus a document reached by two legal spellings is now one document, and `tools/link_density_gate.py` survives a non-canonical root |
 | *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. **⚠️ Blocked: its gate was measured on 20260801 and cannot be reached on this corpus** ([above](#can-the-graph-releases-gate-be-reached--measured-20260801-1214)) — 1 of 18 multi-hop questions fails where 7 were needed. Its three finished increments have all shipped: **G1** (reproducibility, and the tie-ordering defect it found) and **G4** (`requires_pinakes`) in 0.6.0, **G2** in 0.7.0. **What is left — G3, G5 and G6 — does not start**, and cannot until a corpus exists that can discriminate: `tests/demo-kb` has no tags and one directory, so exactly one derived edge kind crosses a document boundary, and the funnel already returns every document before any channel could reach further. **The unblocking work is a corpus, not code** ([`plans/20260801_0749-realism-corpus.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260801_0749-realism-corpus.md)) |
@@ -423,6 +424,18 @@ change and that its count moves when an edge kind is removed — a reachability 
 
 ## Published on PyPI
 
+> ⚠️ **0.9.0 is tagged and merged, but its upload was refused — 20260804 12:33.** Renaming the
+> repository `Pinakes` → `pinakes` broke PyPI **trusted publishing**, which matches on the exact
+> repository name: the OIDC token now claims `repository: lucagattoni/pinakes` and the publisher
+> registered for this project still says `Pinakes`, so PyPI answers
+> `invalid-publisher — valid token, but no corresponding publisher`.
+>
+> **Nothing was uploaded** (verified against `/simple/pinakes/`, which lists no 0.9.0 file), so the
+> version is **not** burned and the same tag can publish once the publisher is corrected. The fix is
+> one edit a **project owner** must make on pypi.org — Manage → `pinakes` → Publishing → set the
+> GitHub publisher's repository to `pinakes` — after which re-running the failed `Release` workflow
+> job publishes 0.9.0. Until that happens, `uv add pinakes` still resolves to **0.8.0**.
+
 **[`pinakes` is on PyPI](https://pypi.org/project/pinakes/).** `uv add "pinakes[light]"` installs,
 and needs **one manifest edit before it can sync**: `pnk init` stamps
 `provider = "sentence-transformers"` whatever extras you have, so a `[light]` install fails with
@@ -433,7 +446,7 @@ both call out. Verified 20260804 08:47 against **0.8.0** from the index (`uvx --
 
 | | |
 |---|---|
-| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.1 and 0.8.0.** **0.8.0 renames the paid extractor's API key** to `PINAKES_ANTHROPIC_API_KEY`, so a KB driving the paid path from an older `.env` refuses until the variable is renamed. 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
+| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.1 and 0.8.0.** ⚠️ **0.9.0 is tagged but NOT on PyPI** — see the row below. **0.8.0 renames the paid extractor's API key** to `PINAKES_ANTHROPIC_API_KEY`, so a KB driving the paid path from an older `.env` refuses until the variable is renamed. 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
 | First upload | 20260728 17:16 UTC · latest 20260804 06:43 UTC (0.8.0) |
 | Extras available | `st`, `light`, `pdf`, `claude` — all four |
 | `requires-python` | `>=3.13` |
