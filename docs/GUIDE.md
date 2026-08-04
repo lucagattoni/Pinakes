@@ -27,6 +27,15 @@ uv add "pinakes[light]"       # ONNX, no torch
 uv add "pinakes[light,pdf]"   # + PDF ingest
 ```
 
+⚠️ **`uv add` needs a `pyproject.toml`**, and a knowledge base directory does not have one — it
+exits `No pyproject.toml found`. That is where a new user is standing, so start with one of these
+instead:
+
+```bash
+uv init && uv add "pinakes[light]"    # make the directory a uv project first
+uvx --from "pinakes[light]" pnk …     # no project, no install, run it directly
+```
+
 Python 3.13+. To try it without installing anything:
 
 ```bash
@@ -406,7 +415,7 @@ them and `pnk links` traverses them: see [Following links between two KBs](#foll
 | `unknown key(s)` in a KB you did not edit | The same cause, on a KB that declares **no** floor, so the refusal can only report the symptom | Upgrade Pinakes. Unknown keys stay a hard error by design ([MANIFEST](MANIFEST.md#requires_pinakes--the-compatibility-floor)) |
 | `confidence: unknown` on every search | No fitted `[retrieval.confidence]` | Expected. Calibrate against your own golden set ([above](#about-that-confidence-unknown)) |
 | Sync exits non-zero listing documents | Per-document failures, isolated by design | `pnk doctor` lists them with the error; the rest of the corpus indexed fine |
-| A sync seems stuck behind a lock | A killed sync, or another machine | `pnk doctor` reports the holder and age; `pnk sync --force-unlock` if it is not this host |
+| A sync seems stuck behind a lock | A killed sync, or another machine | **A lock left by a dead process on this host is reclaimed automatically** — re-run `pnk sync` and it continues incrementally, re-embedding nothing. `--force-unlock` is for a lock held by *another* host, and is the destructive one: `pnk doctor` reports the holder, but **check the process, not the age** — the lock's timestamp is UTC while older KBs' manifests are local, so a fresh lock can read as hours old |
 | Searches slow past ~50k chunks | NumPy tier is exact, not sublinear | Expected; `pnk doctor` warns. The `sqlite-vec` tier is the template release — splitting the KB is the honest answer |
 
 Everything in this section is free. The one path that can spend is the opt-in `claude-vision`
