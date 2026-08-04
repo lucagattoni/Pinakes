@@ -1,13 +1,17 @@
 """The scoreboard, against the real demo KB — the thing that makes retrieval changes decidable."""
 
 import hashlib
+import importlib.util
+import itertools
 import json
+import posixpath
 import subprocess
 import sys
 import zlib
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import replace
 from pathlib import Path
+from types import ModuleType
 
 import numpy as np
 import pytest
@@ -563,6 +567,285 @@ def test_the_reachable_ceiling_probe_answers_to_the_edge_set() -> None:
     # without-authored figure binds: a gate cleared on the larger number is cleared on links a
     # human wrote, not on structure derived for free.
     assert intact["with-authored"]["liftable"] > intact["without-authored"]["liftable"]
+
+
+def _load_probe_module() -> ModuleType:
+    """Import `tools/reachable_ceiling_probe.py` in-process, for tests that call `derive` and
+    `edge_census` directly rather than running the whole tool as a subprocess.
+
+    Every other test in this file drives the probe as a subprocess because it needs a real CLI
+    run — a backend, a golden set, `main`'s argument handling. `derive` and `edge_census` need
+    none of that: they read a synced index and a `Graph` already in memory, so a subprocess would
+    only add a golden set and an embedding backend neither test is about.
+    """
+    spec = importlib.util.spec_from_file_location("reachable_ceiling_probe", PROBE)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_a_kind_that_derives_zero_edges_is_reported_not_omitted(
+    make_fake_kb: Callable[..., Path],
+) -> None:
+    """The RFC realism corpus's own finding, reproduced small
+    (`plans/20260731_1202-open-corrections.md` item 1, `plans/20260803_2239-corpus-probe-run.md`
+    § *Before the numbers mean anything*): `strategy = "structural"` finds no Markdown headings in
+    flat prose, so every chunk's `heading_path` is `None` and `in-section` derives zero edges.
+
+    The census must say `in-section: 0`, not leave the key out — a kind missing from the dict is
+    indistinguishable from a kind that derived something and simply was not printed, which is the
+    whole reason this requirement exists. Mutation-verified: making `edge_census` filter its own
+    result to non-zero kinds before returning (`{k: v for k, v in counts.items() if v != 0}`) —
+    the shape this test exists to rule out — leaves `census["in-section"] == 0` true by omission
+    (`census.get(..., 0)` would still read `0`, so a lookup-only assertion cannot tell the two
+    apart) and is caught only by `set(census) == set(probe.ALL_KINDS)` below, which fails naming
+    `in-section`, `parent-child`, `shared-tag` and `authored` as the extra keys `ALL_KINDS` has
+    that the mutated `census` does not.
+    """
+    probe = _load_probe_module()
+    root = make_fake_kb()
+    (root / "docs" / "flat.md").write_text(
+        (
+            "Just prose, on purpose. No line in this document starts with a Markdown heading "
+            "marker, so the structural chunker's heading grammar has nothing to match — every "
+            "chunk it produces carries no heading_path at all, the RFC corpus's own finding.\n"
+        )
+        * 10,
+        encoding="utf-8",
+    )
+    manifest = load(root)
+    sync(manifest, options=SyncOptions(), now="20260804 11:00")
+
+    connection = store.connect_ro(manifest.index_path)
+    try:
+        heading_paths = {
+            row["heading_path"] for row in connection.execute("SELECT heading_path FROM chunks")
+        }
+        assert heading_paths == {None}, "fixture must carry no heading_path, or this proves nothing"
+
+        graph = probe.derive(connection, manifest.kb.id, kinds=probe.ALL_KINDS)
+        census = probe.edge_census(graph)
+    finally:
+        connection.close()
+
+    assert set(census) == set(probe.ALL_KINDS), "a kind is missing from the census, not just zero"
+    assert census["in-section"] == 0
+
+
+def test_a_dropped_kind_shows_zero_in_both_output_formats(demo: Path, tmp_path: Path) -> None:
+    """`--drop` is the other route to a kind at zero, and the census has to show it there too — a
+    dropped kind never enters `kinds`, so `derive` never populates the structure `edge_census`
+    reads for it, distinct from the corpus-has-no-headings path the fixture above pins.
+
+    Checked against the probe's actual stdout, both formats, rather than an internal dict: the
+    requirement is that the *output* names a zero kind, and only running the CLI proves that. Run
+    through `RUNNER` (below), not `PROBE` directly: `demo`'s manifest names the `fake` provider the
+    test process registered, which a bare subprocess never sees.
+    """
+    all_kinds = set(_load_probe_module().ALL_KINDS)
+    runner = tmp_path / "run_probe.py"
+    runner.write_text(RUNNER.format(tools=str(REPO / "tools")), encoding="utf-8")
+
+    text = subprocess.run(
+        [sys.executable, str(runner), "--kb", str(demo), "--drop", "in-section"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=REPO,
+    ).stdout
+    assert "in-section 0" in text
+
+    payload = json.loads(
+        subprocess.run(
+            [sys.executable, str(runner), "--kb", str(demo), "--drop", "in-section", "--json"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=REPO,
+        ).stdout
+    )
+    for report in payload["reports"]:
+        assert report["edges"]["in-section"] == 0
+        # Every other kind is still a key too — `--drop` zeroes the one kind named, it does not
+        # thin the census down to only the kinds that survived.
+        assert set(report["edges"]) == all_kinds
+
+
+def test_edge_census_reconciles_with_the_graph_it_describes(
+    make_fake_kb: Callable[..., Path],
+) -> None:
+    """The census cannot be a second, separately-computed number that drifts from the edges the
+    traversal actually walked (`plans/20260731_1202-open-corrections.md` item 1) — it has to be a
+    reading of the same `Graph`. Pinned here by comparing `edge_census`'s output against brute
+    force counts taken straight off the raw index tables, computed independently: not by calling
+    `edge_census` twice, and not by re-using its own grouping loops or `_is_prefix`, so a bug
+    shared between the two computations could not cancel itself out of this test.
+
+    The fixture is built, not borrowed from `demo-kb`, because `demo-kb` has no nested headings
+    and no tags: `parent-child` and `shared-tag` are `0` there either way, which a broken grouping
+    loop could still pass by accident. Every kind here is exercised at a nonzero count, and three
+    shapes are deliberately adversarial rather than merely nonzero — each one found, by mutating
+    `edge_census` and confirming this test actually breaks, in the increment that added it:
+
+    * `nested.md`'s three heading groups are **sized 2, 3 and 5, not equal** — at any equal size
+      `n`, `groups[a] * groups[b]` and `groups[a] + groups[b]` agree (`n*n == n+n` only when
+      `n == 2`, and worse, at `n == 1` every plausible formula agrees), so a fixture with equal
+      groups cannot tell the real product from a plausible wrong sum. 2, 3 and 5 pairwise: `2*3 ≠
+      2+3`, `2*5 ≠ 2+5`.
+    * `docs/alone/solo.md` sits alone in its own directory (as does `nested.md`, in `docs/`
+      itself, once `a.md`/`b.md` are the only other files and both live under `docs/grouped/`)
+      and carries its own tag, so `co-located` and `shared-tag` are both computed from a mix of
+      one bucket with two members and buckets with a single member the code must *not* count —
+      otherwise the fixture cannot distinguish "sums every bucket" from "sums buckets of two or
+      more" (`edge_census`'s own docstring).
+    * one document pair carries **two** `links[]` entries (two `rel` values, one target) — the
+      `links` table holds two rows for the same undirected pair, and `authored` must still count
+      it once: `graph.authored` is a `set` per document, so a naive "count matching rows"
+      expectation would over-count by exactly the duplicate.
+    """
+    probe = _load_probe_module()
+    root = make_fake_kb()
+    docs = root / "docs"
+    (docs / "grouped").mkdir(parents=True, exist_ok=True)
+    (docs / "alone").mkdir(parents=True, exist_ok=True)
+
+    # Three different word counts, chosen (and printed via a throwaway script, not guessed) so
+    # `max_tokens = 510` splits "Top", "Child one" and "Child two" into 2, 3 and 5 chunks
+    # respectively — see the docstring above for why the sizes must differ from one another.
+    top = " ".join(f"word{i}" for i in range(800))
+    child_one = " ".join(f"word{i}" for i in range(1300))
+    child_two = " ".join(f"word{i}" for i in range(2000))
+    (docs / "nested.md").write_text(
+        f"# Top\n\n{top}\n\n## Child one\n\n{child_one}\n\n## Child two\n\n{child_two}\n",
+        encoding="utf-8",
+    )
+    filler = " ".join(f"word{i}" for i in range(900))
+    (docs / "grouped" / "a.md").write_text(f"# A\n\n{filler}\n", encoding="utf-8")
+    (docs / "grouped" / "b.md").write_text(f"# B\n\n{filler}\n", encoding="utf-8")
+    (docs / "alone" / "solo.md").write_text(f"# Solo\n\n{filler}\n", encoding="utf-8")
+
+    manifest = load(root)
+    sync(manifest, options=SyncOptions(), now="20260804 11:00")
+
+    # Tags: "policy" shared by two documents (`shared-tag`'s only source of a real bucket), "lone"
+    # on `solo.md` alone (the bucket-of-one `edge_census` must contribute nothing for). Added
+    # after the first sync, into the sidecars it minted, the same order a real user follows.
+    for relative, tag in (
+        ("nested.md", "policy"),
+        ("grouped/a.md", "policy"),
+        ("alone/solo.md", "lone"),
+    ):
+        sidecar_path = docs / f"{relative}.pnk.yaml"
+        text = sidecar_path.read_text(encoding="utf-8")
+        assert "tags:" not in text
+        sidecar_path.write_text(text + f"tags:\n  - {tag}\n", encoding="utf-8")
+
+    # Authored links: two `rel`s between the same pair (`authored`'s dedup case) and a second,
+    # distinct pair, written by the real authoring command per the sidecar-ownership invariant
+    # (`CLAUDE.md`).
+    from pinakes.cli import main as pnk_main
+
+    for source, target, rel in (
+        ("docs/grouped/a.md", "docs/grouped/b.md", "related"),
+        ("docs/grouped/a.md", "docs/grouped/b.md", "cites"),
+        ("docs/alone/solo.md", "docs/nested.md", "related"),
+    ):
+        assert pnk_main(["link", source, target, "--kb", str(root), "--rel", rel]) == 0
+
+    sync(manifest, options=SyncOptions(), now="20260804 11:05")
+
+    connection = store.connect_ro(manifest.index_path)
+    try:
+        graph = probe.derive(connection, manifest.kb.id, kinds=probe.ALL_KINDS)
+        census = probe.edge_census(graph)
+
+        chunk_rows = connection.execute(
+            "SELECT c.doc_id, c.ordinal, c.heading_path FROM chunks c "
+            "JOIN documents d ON d.id = c.doc_id WHERE d.state = 'active'"
+        ).fetchall()
+        by_doc: dict[str, list[tuple[int, str | None]]] = {}
+        for row in chunk_rows:
+            by_doc.setdefault(str(row["doc_id"]), []).append(
+                (int(row["ordinal"]), row["heading_path"])
+            )
+
+        expected_sibling = 0
+        expected_parent_child = 0
+        expected_in_section = 0
+        for entries in by_doc.values():
+            for (ordinal_a, _), (ordinal_b, _) in itertools.combinations(entries, 2):
+                if abs(ordinal_a - ordinal_b) == 1:
+                    expected_sibling += 1
+            for (_, head_a), (_, head_b) in itertools.combinations(entries, 2):
+                if (
+                    head_a is not None
+                    and head_b is not None
+                    and head_a != head_b
+                    and (head_b.startswith(head_a + " > ") or head_a.startswith(head_b + " > "))
+                ):
+                    expected_parent_child += 1
+            groups: dict[str, int] = {}
+            for _, head in entries:
+                if head is not None:
+                    groups[head] = groups.get(head, 0) + 1
+            # A group of one chunk is not an edge — nothing else in it to be adjacent to — the
+            # same bucket-of-one exclusion `edge_census` applies to `co-located`/`shared-tag`.
+            expected_in_section += sum(size for size in groups.values() if size >= 2)
+
+        active_documents = connection.execute(
+            "SELECT id, path FROM documents WHERE state = 'active'"
+        ).fetchall()
+
+        # Grouped by directory in Python, from the raw paths — independent of `derive`'s own
+        # `posixpath.dirname` call and of `_spoke_count`'s bucket-of-one exclusion, which is
+        # re-applied here rather than assumed.
+        by_directory: dict[str, list[str]] = {}
+        for row in active_documents:
+            by_directory.setdefault(posixpath.dirname(str(row["path"])), []).append(str(row["id"]))
+        expected_co_located = sum(
+            len(members) for members in by_directory.values() if len(members) >= 2
+        )
+
+        by_tag: dict[str, list[str]] = {}
+        for row in connection.execute(
+            "SELECT d.id AS doc, j.value AS tag FROM documents d, "
+            "json_each(d.metadata, '$.tags') j WHERE d.state = 'active'"
+        ):
+            by_tag.setdefault(str(row["tag"]), []).append(str(row["doc"]))
+        expected_shared_tag = sum(len(members) for members in by_tag.values() if len(members) >= 2)
+
+        local_kb = manifest.kb.id
+        active_ids = {str(row["id"]) for row in active_documents}
+        # Unique undirected pairs, not rows: two `rel`s between the same two documents are one
+        # edge in `graph.authored` (a `set` per document), and the expectation has to agree with
+        # that dedup rather than with the row count `links` actually stores.
+        authored_pairs = {
+            frozenset((str(row["src_doc_id"]), str(row["dst_doc_id"])))
+            for row in connection.execute("SELECT * FROM links")
+            if str(row["src_kb_id"]) == local_kb
+            and str(row["dst_kb_id"]) == local_kb
+            and str(row["src_doc_id"]) in active_ids
+            and str(row["dst_doc_id"]) in active_ids
+        }
+        expected_authored = len(authored_pairs)
+    finally:
+        connection.close()
+
+    # Exercised at a nonzero count, every one — otherwise a broken grouping loop could still pass.
+    assert expected_sibling > 0
+    assert expected_parent_child > 0
+    assert expected_in_section > 0
+    assert expected_co_located > 0
+    assert expected_shared_tag > 0
+    assert expected_authored == 2, "two distinct pairs are the point — one deduped from two rels"
+
+    assert census["sibling"] == expected_sibling
+    assert census["parent-child"] == expected_parent_child
+    assert census["in-section"] == expected_in_section
+    assert census["co-located"] == expected_co_located
+    assert census["shared-tag"] == expected_shared_tag
+    assert census["authored"] == expected_authored
 
 
 REFUSAL = "unmeasurable golden set"
