@@ -26,6 +26,28 @@ unblocks it is a corpus ([`20260801_0749-realism-corpus.md`](20260801_0749-reali
 
 ## Live
 
+### 1 · `corpus-probe-run.md` requires a per-kind edge census and no tool emits one
+
+**Raised by the planner against its own requirement, 20260804 09:25.**
+[`20260803_2239-corpus-probe-run.md`](20260803_2239-corpus-probe-run.md) requires the run report to
+carry *"a per-kind edge census — how many edges each kind derived"*, because on the RFC corpus
+`in-section`, `parent` and `child` derive zero and a single reachability number would hide that.
+
+`tools/reachable_ceiling_probe.py` emits six counts and **no edge totals at all**. The graph it
+derives in memory knows them; nothing prints them. A requirement with no instrument gets improvised
+at the moment it is needed, by whoever is standing there, which is how a measurement stops being
+comparable between runs.
+
+**Required:** the probe prints, and puts in `--json`, the edge count per derived kind for the run —
+including the kinds that derived **zero**, which are the whole reason the requirement exists. A kind
+absent from the output is indistinguishable from a kind at zero, so absent is not acceptable.
+
+**Test:** on a fixture with no `heading_path`, the census reports `in-section: 0` **present in the
+output** rather than omitted; and the census total reconciles with the edges the traversal actually
+walked, so it cannot be a separately-computed number that drifts from the graph it describes.
+
+---
+
 ### 2 · The sync lock's timestamp is UTC; every other timestamp is local
 
 **Verified at source 20260804 08:30.** `lock.py:138` writes `datetime.now(UTC).strftime("%Y%m%d %H:%M")`; `sync.py:709` writes `datetime.now().strftime(...)`. **Identical format, no marker, different clocks.** In Europe/Rome in August a lock taken 30 seconds ago reads as **two hours old**.
@@ -96,7 +118,7 @@ The resumed corpus sync reclaimed its own stale lock and continued incrementally
 
 ---
 
-### 1 · `pnk doctor`'s model-coherence remedy destroys an interrupted sync's work
+### 11 · `pnk doctor`'s model-coherence remedy destroys an interrupted sync's work
 
 **Found by using pinakes, not by reading it** — the RFC realism corpus, 20260804, on a first sync
 of 300 documents killed at ~106 by an unrelated process death.

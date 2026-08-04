@@ -526,7 +526,7 @@ No stored `degree` — that would be derived state inside derived state.
 > incorporated 20260804 04:45).** APPROACH §3's *"authored links are sparse, precious signal — plan
 > for scarcity"*, inherited from ClaudeKB, is what justifies `authored` at **2.0 undamped** while
 > every structural hub is divided by its degree. Measured on the IETF corpus, counting only the
-> forward relations [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) authorises: **54% of documents carry a
+> forward relations [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) authorises: **53.3% of documents carry a
 > link** against a 35% cap, and the **worst out-degree is 86** against a cap of 4 — RFC 8996
 > *(Deprecating TLS 1.0 and TLS 1.1)* updates 86 documents in one header. Real, human-authored, in
 > the canonical index.
