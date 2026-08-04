@@ -218,13 +218,16 @@ only when the *reasoning* changes, never for a new flag or field alone.
 - **Rewrite to the current state; never layer corrections**, and **compact monthly** — cut recaps,
   superseded reasoning, and anything re-arguing what another file owns; keep decisions, measured
   numbers and instructions. A section far larger than its siblings is the signal.
-- **Every date carries a time** — `YYYYMMDD HH:MM`, local 24h — in the CHANGELOG, `docs/STATUS.md`,
+- **Every date carries a time, in UTC** — `YYYYMMDD HH:MM`, `date -u` — in the CHANGELOG, `docs/STATUS.md`,
   `docs/RETROSPECTIVES.md`, and any "verified on" claim.
 - **Every new file in `plans/`, `changelog.d/` and `retro.d/` is named `YYYYMMDD_HHMM-<rest>.md`**
-  (local 24h, underscore not colon — the branch-name format). `ls` then reads chronologically and a
+  (UTC, underscore not colon — the branch-name format). `ls` then reads chronologically and a
   file is dated without opening it. `tools/fragments.py` strips the prefix before reading a
   fragment's category, so it never becomes part of the slug; a file without one is accepted, since
   the convention began 20260804 07:00 and refusing older files buys nothing.
-- **Read the clock; never compose a timestamp.** Run `date "+%Y%m%d %H:%M"` and paste it — session
+- **UTC everywhere, from 20260804 11:32.** `date -u`. **Timestamps written before that are local and
+  stay local** — converting a recorded time invents precision nobody measured. Where the two could
+  be confused, say which.
+- **Read the clock; never compose a timestamp.** Run `date -u "+%Y%m%d %H:%M"` and paste it — session
   context carries a date, never a time, and an invented `HH:MM` lands in the future about half the
   time. Derive a past timestamp from `git log`, never from memory.
