@@ -114,13 +114,13 @@ records keep the numbers they were written with** and carry a header note: `CHAN
 
 ## Building a release — one increment at a time
 
-The build order is [`plans/links-and-graph.md`](plans/links-and-graph.md) — **not** "the newest
+The build order is [`plans/20260729_0256-links-and-graph.md`](plans/20260729_0256-links-and-graph.md) — **not** "the newest
 file in `plans/`", which also holds shipped plans, an iteration log, standalone increments and
 decision records ([`docs/README.md`](docs/README.md) tells them apart). **That plan is currently
 closed** — the links release is complete and the graph release is blocked on a corpus — so the live
-work is [`plans/realism-corpus.md`](plans/realism-corpus.md),
-[`plans/corpus-probe-run.md`](plans/corpus-probe-run.md) and whatever
-[`plans/open-corrections.md`](plans/open-corrections.md) lists as live. Never batch increments; each
+work is [`plans/20260801_0749-realism-corpus.md`](plans/20260801_0749-realism-corpus.md),
+[`plans/20260803_2239-corpus-probe-run.md`](plans/20260803_2239-corpus-probe-run.md) and whatever
+[`plans/20260731_1202-open-corrections.md`](plans/20260731_1202-open-corrections.md) lists as live. Never batch increments; each
 is a separate, bisectable landing:
 
 1. Own worktree, branch `YYYYMMDD_HHMM-i<N>-<slug>`.
@@ -215,6 +215,11 @@ only when the *reasoning* changes, never for a new flag or field alone.
   numbers and instructions. A section far larger than its siblings is the signal.
 - **Every date carries a time** — `YYYYMMDD HH:MM`, local 24h — in the CHANGELOG, `docs/STATUS.md`,
   `docs/RETROSPECTIVES.md`, and any "verified on" claim.
+- **Every new file in `plans/`, `changelog.d/` and `retro.d/` is named `YYYYMMDD_HHMM-<rest>.md`**
+  (local 24h, underscore not colon — the branch-name format). `ls` then reads chronologically and a
+  file is dated without opening it. `tools/fragments.py` strips the prefix before reading a
+  fragment's category, so it never becomes part of the slug; a file without one is accepted, since
+  the convention began 20260804 07:00 and refusing older files buys nothing.
 - **Read the clock; never compose a timestamp.** Run `date "+%Y%m%d %H:%M"` and paste it — session
   context carries a date, never a time, and an invented `HH:MM` lands in the future about half the
   time. Derive a past timestamp from `git log`, never from memory.

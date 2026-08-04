@@ -265,7 +265,7 @@ jobs:
     # docs/STATUS.md's header — line 3, `**Latest release: x.y.z**` — must name
     # `pinakes.__version__`. It drifted for four consecutive releases (0.5.0 → 0.7.1) while the
     # same release sweeps updated every table below it, in a public repo, in the file whose own
-    # preamble says it is the only place that says what is built (plans/open-corrections.md,
+    # preamble says it is the only place that says what is built (plans/20260731_1202-open-corrections.md,
     # 20260803). Its own job for the same reason every sibling gate has one: `ci.yml` never
     # invokes `check.sh`. Core-only — the gate needs `pinakes.__version__` and nothing else.
     runs-on: ubuntu-latest
@@ -421,7 +421,7 @@ jobs:
           echo "$health" | grep -q 'pinakes\[pdf\]' || { echo "::error::doctor must name the PDF extra"; exit 1; }
           if echo "$health" | grep -qi 'traceback'; then echo "::error::doctor must not trace back"; exit 1; fi
 
-      # plans/v0.1.md promised this gate under "Verification of the whole" and it never shipped:
+      # plans/20260725_1317-v0.1.md promised this gate under "Verification of the whole" and it never shipped:
       # the item carried no increment number, so no increment owned it (see that plan's close-out,
       # rule 8). I7a replaces the unconditional grep that stood here with the allowlist gate: an
       # unconditional grep admits no exceptions, so it would have turned main red on every commit

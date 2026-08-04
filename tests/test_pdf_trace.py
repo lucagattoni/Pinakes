@@ -131,7 +131,8 @@ def test_a_table_cell_word_survives_every_hop(
             # **Not `page_start == p`.** A chunk that straddles a page break starts on the earlier
             # page, so a word on the later one legitimately sits inside a chunk whose `page_start`
             # is smaller — I5 allows exactly that, and the citation renders `p1-2` for it. Asserting
-            # equality would fail on a correct chunker (plans/v0.2.md's I8 draft said `==`).
+            # equality would fail on a correct chunker (plans/20260727_1543-v0.2.md's I8 draft said
+            # `==`).
             assert int(row["page_start"]) <= page <= int(row["page_end"])
 
         # hop 4 — FTS: the lexical index returns those same rowids for the word.

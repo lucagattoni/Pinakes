@@ -148,7 +148,8 @@ def test_ci_runs_the_eval_reproducibility_gate_and_proves_it_can_fail() -> None:
 
 def test_check_sh_declares_the_status_header_gate() -> None:
     """docs/STATUS.md's header drifted from `__version__` for four consecutive releases because
-    only a checklist watched it (plans/open-corrections.md, 20260803). Same pinning as its
+    only a checklist watched it (plans/20260731_1202-open-corrections.md, 20260803). Same pinning
+    as its
     siblings: match the real invocation, never a substring that an explanatory comment would also
     satisfy."""
     text = CHECK_SH.read_text(encoding="utf-8")

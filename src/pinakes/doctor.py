@@ -504,7 +504,7 @@ def _index(manifest: Manifest) -> Iterator[Check]:
 
 
 def _text_yield(manifest: Manifest, connection: sqlite3.Connection) -> Check:
-    """How much text the free extractor got out of each PDF page (plans/v0.2.md, I8).
+    """How much text the free extractor got out of each PDF page (plans/20260727_1543-v0.2.md, I8).
 
     **Per page, never per document.** A document-level median against a per-page floor is a
     different statistic from the one the paid path spends against, and it hides the case that
@@ -1032,7 +1032,7 @@ def _completeness(manifest: Manifest) -> Check:
 
 def _prices(manifest: Manifest) -> Check:
     """Staleness is a WARN here and a refusal at estimate time — deliberately never a CI gate, or a
-    quiet weekend with no code change would fail the build (plans/v0.2.md, I6a)."""
+    quiet weekend with no code change would fail the build (plans/20260727_1543-v0.2.md, I6a)."""
     try:
         prices = load_prices()
     except PricesMissingError as exc:

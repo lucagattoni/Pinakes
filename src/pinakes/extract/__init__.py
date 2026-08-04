@@ -85,7 +85,8 @@ type ExtractorFactory = Callable[[], Extractor]
 type FingerprintInputs = Callable[[str | None], Mapping[str, str]]
 """Takes `[extraction] model`, because for a paid backend the model **is** part of what produced
 the text: without it, changing `model` would silently reuse a cache entry a different model wrote
-(plans/v0.2.md, I7b). Free backends ignore it — `pypdfium2` has no model — and it stays a plain
+(plans/20260727_1543-v0.2.md, I7b). Free backends ignore it — `pypdfium2` has no model — and it
+stays a plain
 string so this is still client-free."""
 
 

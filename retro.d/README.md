@@ -8,10 +8,15 @@ so it is one of the two files most likely to be edited twice in an hour.
 
 ## Naming
 
-    retro.d/<slug>.md
+    retro.d/YYYYMMDD_HHMM-<slug>.md
 
-Lowercase-with-hyphens; no category prefix, because a retrospective is free-form prose rather than
-one of a fixed vocabulary. Name it for the increment: `retro.d/i7d-recorded-fixtures.md`.
+`YYYYMMDD_HHMM` is when the fragment was written, local 24h — **read the clock, never compose it**
+(`date "+%Y%m%d_%H%M"`). Same prefix as `changelog.d/`, plans and branches; `tools/fragments.py`
+strips it before reading the slug.
+
+The slug is lowercase-with-hyphens, with no category prefix — a retrospective is free-form prose
+rather than one of a fixed vocabulary. Name it for the increment:
+`retro.d/20260729_0336-i7d-recorded-fixtures.md`.
 
 ## Contents
 

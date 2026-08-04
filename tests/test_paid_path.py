@@ -1,4 +1,4 @@
-"""The paid-path allowlist gate (plans/v0.2.md, I7a) — proved in both directions.
+"""The paid-path allowlist gate (plans/20260727_1543-v0.2.md, I7a) — proved in both directions.
 
 `CLAUDE.md` calls "the free path stays free" non-negotiable. v0.1 promised a CI grep enforcing it
 under a heading with no increment number, nobody owned it, and it never shipped

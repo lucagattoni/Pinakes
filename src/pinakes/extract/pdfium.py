@@ -6,7 +6,8 @@ effort here is budgeted for I/O, not structure — v0.1's pure half drew one fin
 its I/O half four, all environmental (docs/RETROSPECTIVES.md).
 
 Also exposes `slice_pages(path, first, last) -> bytes`: a K-page sub-document, I7b's request unit
-(decision 8, `plans/v0.2.md`). It lives here, not in I7b, because this module already owns pdfium,
+(decision 8, `plans/20260727_1543-v0.2.md`). It lives here, not in I7b, because this module already
+owns pdfium,
 and I7b must never become a second PDF I/O boundary.
 
 **Verified against pypdfium2 5.12.1, not assumed** (`stubs/pypdfium2.pyi` carries the same rule):
@@ -21,7 +22,8 @@ for the two cases this project can act on differently; everything else — inclu
 `FPDF_ERR_SUCCESS`, which pdfium raises on at least one genuinely-empty document's load *failure*
 — folds into one generic refusal.
 
-**The fingerprint omits `pypdfium2`'s bundled PDFium *build* number, despite `plans/v0.2.md` I3b
+**The fingerprint omits `pypdfium2`'s bundled PDFium *build* number, despite
+`plans/20260727_1543-v0.2.md` I3b
 naming it as an input.** `fingerprint_inputs` must never import the backend it describes (I1's own
 `test_fingerprint_inputs_never_import_the_backend` blocks the import and asserts the function still
 answers, since §4.4 calls this on every query, never only at sync) — but the build number
@@ -54,7 +56,7 @@ def _open(path: Path) -> pdfium.PdfDocument:
 
     The size guard reads `path.stat()` before pdfium ever sees the file — large enough that no
     legitimate corpus document trips it, small enough that a runaway file fails fast instead of
-    exhausting memory (`plans/v0.2.md` I3b).
+    exhausting memory (`plans/20260727_1543-v0.2.md` I3b).
     """
     size = path.stat().st_size
     if size > _MAX_PDF_BYTES:

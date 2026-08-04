@@ -1,6 +1,7 @@
 """`docs/VERIFICATION.md` names a test for every promise. This is what stops it becoming fiction.
 
-`plans/v0.2.md`'s verification table wrote its test paths *before* the tests existed, and
+`plans/20260727_1543-v0.2.md`'s verification table wrote its test paths *before* the tests existed,
+and
 implementation renamed most of them: at I9, **61 of its 98 references did not resolve**. Nobody
 noticed, because nothing read the table — a table of test paths is prose until something executes
 it. That is the failure this file exists to make impossible for its successor: every

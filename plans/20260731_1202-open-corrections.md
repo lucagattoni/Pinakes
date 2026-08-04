@@ -19,8 +19,8 @@ destroys user work.
 
 **Earlier state, for the record: no live items as of 20260804 04:20.** The one item raised on 20260803 was built and merged the
 same evening. Beyond it there is no pinakes code work: the links release is complete, the graph
-release is **blocked** at G2's measurement ([`links-and-graph.md`](links-and-graph.md)), and what
-unblocks it is a corpus ([`realism-corpus.md`](realism-corpus.md)).
+release is **blocked** at G2's measurement ([`20260729_0256-links-and-graph.md`](20260729_0256-links-and-graph.md)), and what
+unblocks it is a corpus ([`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md)).
 
 ---
 
@@ -89,7 +89,7 @@ diagnosis, not the write order.
 | The plan's baseline said 0.4.0 and a stale `main` | Re-baselined at `6421cb1`, 20260801 |
 | The verification table named two tests that do not exist | Repointed; `tests/test_verification.py` green |
 | L6 named two tests L5b already owned | L6 shipped with distinct names |
-| The iteration log was out of chronological order | Sorted, and now in `links-and-graph-log.md` — 25 rows, verified sorted |
+| The iteration log was out of chronological order | Sorted, and now in `20260801_0102-links-and-graph-log.md` — 25 rows, verified sorted |
 | L6 review 7's freshness test never entered the freshness branch | Review 8b closed it the other way; the prescribed fix would now pin behaviour review 8 replaced |
 | L7 shipped without two of its four Docs items | Both fixed before the 0.6.0 tag. **The rule it earned:** the last step before declaring an increment done is to re-read its own Docs list and grep for each sentence the plan quotes |
 

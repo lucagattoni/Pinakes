@@ -44,7 +44,8 @@ class NotImplementedYetError(PinakesError):
         super().__init__(
             f"`pnk {command}` is not implemented yet.",
             remedy=(
-                f"It lands in increment {increment} — see plans/v0.1.md for the build order "
+                f"It lands in increment {increment} — see plans/20260725_1317-v0.1.md for the "
+                f"build order "
                 f"and docs/DESIGN.md for the specification."
             ),
         )

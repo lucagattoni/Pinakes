@@ -524,7 +524,7 @@ a paid one would spend money inside a read-only tool call. A swept entry is an e
 ## 5. Cost control
 
 **The budget system ships in the same release as the first thing that can spend**, which is the
-honest ordering — and the first spender is no longer `pnk ask --deep`. `plans/v0.2.md` decision 2 moved that role to the **opt-in Claude-vision PDF
+honest ordering — and the first spender is no longer `pnk ask --deep`. `plans/20260727_1543-v0.2.md` decision 2 moved that role to the **opt-in Claude-vision PDF
 extractor**, dragging the whole budget machinery earlier with it. Field definitions and defaults are
 in [MANIFEST](MANIFEST.md#budget); whether any of it is wired up yet is in
 [STATUS](STATUS.md#the-surface-you-can-use-today).
@@ -1006,7 +1006,7 @@ absent — never silently, and never failing a `[light]`-only checkout.
   reaches. It separates *empty* from *non-empty* and nothing finer — a stated blind spot, not a
   discovered one: the pathological stratum's invisible-render-mode fixture yields real characters
   while being useless text, and still needs the paid path. There is no `word_coverage` floor yet
-  (decision 12, `plans/v0.2.md`): the correct pair to fit it against is (native layer → Claude's
+  (decision 12, `plans/20260727_1543-v0.2.md`): the correct pair to fit it against is (native layer → Claude's
   output), and that pair now exists for one corpus — the human-gated run of 20260729 03:17
   (`docs/MEASUREMENT-RUN.md`). One synthetic corpus at one point in time is not yet enough to fit a
   floor a real document would be judged against.
@@ -1073,7 +1073,7 @@ cut, and [STATUS](STATUS.md#release-roadmap) is where the mapping lives.
 | Release | Why here |
 |---|---|
 | PDF extraction, completed by the paid-extraction release | Parsing is the single biggest quality risk (§9), so it is isolated from core-design feedback rather than mixed into it. Scope covers **both** paths: the free `pypdfium2` default, and the opt-in paid Claude-vision extractor that is the only answer to a scanned page (§9) — which is what drags the budget machinery into this release, per the governing rule below |
-| the links release — cross-KB links | Needs two populated KBs to be worth anything. Build order: [`plans/links-and-graph.md`](../plans/links-and-graph.md) |
+| the links release — cross-KB links | Needs two populated KBs to be worth anything. Build order: [`plans/20260729_0256-links-and-graph.md`](../plans/20260729_0256-links-and-graph.md) |
 | the graph release — structural edges and the expansion channel | Edges are only worth deriving once there is a link graph to derive them beside, and the channel is gated on the golden set. **Measured 20260801: a golden set is not sufficient — the gate is only as strong as the corpus underneath it.** A corpus small enough that retrieval already returns every document, or flat enough that its derived edges connect everything to everything at one weight, cannot distinguish a channel that helps from one that does nothing. That is a precondition on the *corpus*, and it was discovered by running the measurement before the schema change rather than after ([STATUS](STATUS.md#release-roadmap)) |
 | the graph release (staged) — graph channels | Each is **eval-gated rather than scheduled** — it ships only if the golden set justifies it (`graph/PINAKES_APPROACH.md` §9) |
 | the deep release — `pnk ask --deep` | A paid loop and its guardrails ship together, never apart — and the guardrails are already here: the §5 accountant, the ledger and all three enforced windows ship with the paid extractor, so the deep release adds the loop, not the machinery |
@@ -1101,7 +1101,7 @@ returned, identified, and marked unreachable, because omitting it would hide a l
 
 | Risk | Assessment |
 |---|---|
-| **PDF extraction quality** | The most likely source of silent quality loss (tables, multi-column, scans). Mitigated by a scored corpus of known-hard documents with its own committed baseline and gate (§7.1), and two floors fitted from that corpus rather than guessed. **Two limits stand today:** the free path's column detection is geometric, so tables read column-by-column; and scanned/image-only PDFs yield nothing at all, since the free path has no OCR. `plans/v0.2.md` decision 3 puts scanned PDFs in scope **via the paid path only**, and that path is now measured: on the synthetic scanned stratum (3 fixtures, 10 pages) the paid extractor scores **1.000 char recall, 1.000 order fidelity, 0.000 junk, 1.000 word coverage** where the free path scores **0.000 on all four** — measured 20260729 03:17, claude-opus-5, €0.11 spent (docs/MEASUREMENT-RUN.md). **Measured on synthetic rasters**, which is the caveat that matters: they are generated at modest resolution and are not a substitute for a real 300-DPI scan of a degraded page |
+| **PDF extraction quality** | The most likely source of silent quality loss (tables, multi-column, scans). Mitigated by a scored corpus of known-hard documents with its own committed baseline and gate (§7.1), and two floors fitted from that corpus rather than guessed. **Two limits stand today:** the free path's column detection is geometric, so tables read column-by-column; and scanned/image-only PDFs yield nothing at all, since the free path has no OCR. `plans/20260727_1543-v0.2.md` decision 3 puts scanned PDFs in scope **via the paid path only**, and that path is now measured: on the synthetic scanned stratum (3 fixtures, 10 pages) the paid extractor scores **1.000 char recall, 1.000 order fidelity, 0.000 junk, 1.000 word coverage** where the free path scores **0.000 on all four** — measured 20260729 03:17, claude-opus-5, €0.11 spent (docs/MEASUREMENT-RUN.md). **Measured on synthetic rasters**, which is the caveat that matters: they are generated at modest resolution and are not a substitute for a real 300-DPI scan of a degraded page |
 | **Linear search at scale** | No tier is sublinear (§3.1). Mitigation: measured limits published, `pnk doctor` warns as the ceiling nears, splitting is the documented answer |
 | **Link coverage ceiling** | See §6.2. Measured and reported rather than hidden |
 | **Sidecar/document separation** | A user moving a file without its sidecar is the most likely real-world corruption. Mitigated by hash-based rename detection (§6.4) and `pnk doctor`; not eliminated |

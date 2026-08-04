@@ -31,7 +31,8 @@ G5 actually needs, over the real corpus and the committed questions — but they
 tie the corpus happens to contain, which is why the defect survived three releases until a
 low-dimensional fake went looking. The site tests below them are the mutation targets: each drives
 one ordering decision directly, with a corpus built so rowid order and corpus order disagree.
-`docs/STATUS.md` carries the measurement; `plans/links-and-graph.md` G1 is the increment.
+`docs/STATUS.md` carries the measurement; `plans/20260729_0256-links-and-graph.md` G1 is the
+increment.
 """
 
 import shutil

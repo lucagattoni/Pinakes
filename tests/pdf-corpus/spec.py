@@ -1,4 +1,5 @@
-"""The corpus's own table — one entry per fixture, matching `plans/v0.2.md`'s I2 stratum table.
+"""The corpus's own table — one entry per fixture, matching `plans/20260727_1543-v0.2.md`'s I2 "
+"stratum table.
 
 Both `generate.py` (what to build) and `tests/test_pdf_corpus.py` (what must exist) import this
 same list, so the two cannot silently drift apart from each other. They can still both drift from

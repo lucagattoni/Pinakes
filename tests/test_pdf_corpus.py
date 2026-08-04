@@ -18,7 +18,8 @@ from conftest import pdf_runnable
 CORPUS_DIR = Path(__file__).parent / "pdf-corpus"
 GENERATOR = CORPUS_DIR / "generate.py"
 
-# The plan's own stratum table (plans/v0.2.md, I2) — hardcoded independently of `spec.py`, so a
+# The plan's own stratum table (plans/20260727_1543-v0.2.md, I2) — hardcoded independently of
+# `spec.py`, so a
 # drift between the two is caught rather than both silently agreeing on a wrong number.
 PLAN_STRATA: dict[str, tuple[int, int]] = {  # stratum -> (fixture_count, total_pages)
     "two-column": (3, 6),

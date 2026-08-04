@@ -7,7 +7,7 @@
 0.5.0, L6–L8 in 0.6.0 (20260801), L5c closed unbuilt because its one refusal shipped with L5b. The
 graph release is **blocked**: G1 and G4 shipped in 0.6.0, G2 in 0.7.0, and G2's headroom measurement
 came back negative, so **G3, G5 and G6 do not start**. Nothing in this plan is buildable today.
-What unblocks it is [`realism-corpus.md`](realism-corpus.md) — a corpus, not code.
+What unblocks it is [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) — a corpus, not code.
 
 > ## ⚠ 20260731 — L5b is split into **L5b** and **L5c** (decision 28)
 >
@@ -51,7 +51,7 @@ reading only the document systematically misses them.
 **Everything in this plan has either shipped or is blocked.** L1–L8 shipped (0.5.0, 0.6.0); G1 and
 G4 shipped in 0.6.0; G2 shipped in 0.7.0 and returned the measurement that stops the rest. 0.7.1
 then closed the last of the standalone work, so **the corpus is not merely the critical path — it
-is the only path.** Read [`open-corrections.md`](open-corrections.md) before concluding there is no
+is the only path.** Read [`20260731_1202-open-corrections.md`](20260731_1202-open-corrections.md) before concluding there is no
 code work: it is where any is listed, and it has been non-empty twice since.
 
 | | |
@@ -66,8 +66,8 @@ precondition is re-tested by re-running the probe on a corpus that can discrimin
 answer is reported whichever way it comes back.
 
 **The corpus is the critical path**, and it is not a pinakes increment: see
-[`realism-corpus.md`](realism-corpus.md) § *Why this is not the gate moving to fit the answer*, and
-[`corpus-probe-run.md`](corpus-probe-run.md) for how the second measurement is run once it exists.
+[`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) § *Why this is not the gate moving to fit the answer*, and
+[`20260803_2239-corpus-probe-run.md`](20260803_2239-corpus-probe-run.md) for how the second measurement is run once it exists.
 Re-verify this baseline before starting anything: `git log --oneline -1`,
 `gh run list --branch main --limit 1`, `python3 tools/shared_file_overlap.py --fetch --strict`.
 
@@ -103,9 +103,9 @@ is what the links release ships with. All eval work moves to the graph release, 
 
 **The L-track is finished** (0.6.0) and the G-track is **blocked at G2's measurement** (0.7.0), so
 there is no increment in this plan an agent can pick up. The standalone work that existed beside it
-shipped in 0.7.1; [`open-corrections.md`](open-corrections.md) is where any new code work is listed,
+shipped in 0.7.1; [`20260731_1202-open-corrections.md`](20260731_1202-open-corrections.md) is where any new code work is listed,
 so read it rather than assuming it is still empty. What remains is
-the corpus in [`realism-corpus.md`](realism-corpus.md), which is what decides whether this plan ever
+the corpus in [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md), which is what decides whether this plan ever
 resumes — and it is built in a repository of its own, by an agent that may not read `src/`.
 
 Three things the parallel run established that outlive it, and that apply to any future split:
@@ -159,9 +159,9 @@ earlier.
 | 5 | `pnk link` writes forward only, into the source document's sidecar | 02:30–03:10 | L6 |
 | 6 | PPR and the `[ner]` extra are out | 02:30–03:10 | — |
 | 7 | Adversarial subagent passes until one comes back clean | 02:30–03:10 | Passes 1–7 done. **No pass has come back clean**, so the rule is honoured per-phase instead: L1–L8 build now, G5's clauses are re-reviewed before G5 |
-| 19–27 | Recorded in [`decision-ruamel-yaml.md`](decision-ruamel-yaml.md), not here. 24 and 25 were taken and superseded the same day, by 26 and 27 | 20260731 | L5b, L5c |
+| 19–27 | Recorded in [`20260731_0602-decision-ruamel-yaml.md`](20260731_0602-decision-ruamel-yaml.md), not here. 24 and 25 were taken and superseded the same day, by 26 and 27 | 20260731 | L5b, L5c |
 | 28 | **L5b splits into L5b and L5c.** After passes returning 8, 8 and 7 HIGH on one section, the seam is *what keeps behaviour equivalent* (L5b, which keeps the interim cut) versus *what pinakes chooses to reject on top* (L5c, decision 19 alone). Decision 26 belongs to L5b: without it, L5b alone turns a clean `SidecarError` on an unknown tag into a traceback | 20260731 07:52 | L5b, L5c |
-| 18 | ~~**`pnk link` ships without a comment-preserving YAML writer**~~ — **superseded 20260731 06:00 by [`decision-ruamel-yaml.md`](decision-ruamel-yaml.md)**, which measured the two premises below and found both wrong. This row is left as written; the plan's own updates are not made here | 20260729 05:58 (the user) | L6. `ruamel.yaml` as a second YAML library — core or extra — is a poor trade for one authoring command against *"core dependencies stay light"*; a later paid-extraction sync rewrites the same sidecar through `pyyaml` and destroys the comments anyway, so the guarantee would be partial either way. `test_comments_survive_a_rewrite_through_pnk_link` lands **xfail**, DESIGN §2.2 records the deferral, and `pnk link` **warns when the sidecar it is about to rewrite contains comments** — losing them silently at the moment of loss is the part that is not acceptable |
+| 18 | ~~**`pnk link` ships without a comment-preserving YAML writer**~~ — **superseded 20260731 06:00 by [`20260731_0602-decision-ruamel-yaml.md`](20260731_0602-decision-ruamel-yaml.md)**, which measured the two premises below and found both wrong. This row is left as written; the plan's own updates are not made here | 20260729 05:58 (the user) | L6. `ruamel.yaml` as a second YAML library — core or extra — is a poor trade for one authoring command against *"core dependencies stay light"*; a later paid-extraction sync rewrites the same sidecar through `pyyaml` and destroys the comments anyway, so the guarantee would be partial either way. `test_comments_survive_a_rewrite_through_pnk_link` lands **xfail**, DESIGN §2.2 records the deferral, and `pnk link` **warns when the sidecar it is about to rewrite contains comments** — losing them silently at the moment of loss is the part that is not acceptable |
 | 8 | `pinakes_search`'s `entities`/`concepts` are cut | 03:20–03:35 | RRF here is unweighted by construction |
 | 9 | The eval harness is repaired before it is grown | 03:20–03:35 | Landed `b637be4`, released in 0.3.0 |
 | 10 | Retrieval reproducibility is established before a finer gate depends on it | 03:20–03:35 | G1 — **reframed by 15**: measured first, fixed only if measurement says so |
@@ -179,12 +179,12 @@ earlier.
 
 | Question | Default | Revisit when |
 |---|---|---|
-| ~~Does `pnk link` gain a comment-preserving YAML dependency?~~ | **Decided 20260729 05:58 — no**, then **superseded 20260731 06:00 — yes**, on measurement. See [`decision-ruamel-yaml.md`](decision-ruamel-yaml.md) | Settled |
+| ~~Does `pnk link` gain a comment-preserving YAML dependency?~~ | **Decided 20260729 05:58 — no**, then **superseded 20260731 06:00 — yes**, on measurement. See [`20260731_0602-decision-ruamel-yaml.md`](20260731_0602-decision-ruamel-yaml.md) | Settled |
 | ~~Does that writer become *the* sidecar writer?~~ | **Yes** — `ruamel.yaml` replaces `pyyaml` outright in L5b, so there is one writer and no fallback. The premise of the old default (that a later paid-extraction sync destroys the comments anyway) was measured and found false: nothing on the free path rewrites an existing sidecar | Settled |
 | PPR, the `[ner]` extra, `pnk adopt`, `--deep`, federated query, a graph query language, migrations | Out | — |
 | `pnk unlink` | Out; fix a mistyped link by editing the sidecar | A user hits it |
 | Held-out eval splits | Out at this corpus size | The set is large enough that a holdout can still gate |
-| The **local** source walk escaping the KB (`sync.walk_sources`, `[sources] include`) | Out — L6 review 10 fixed the *partner* side (`linkscan.sidecars_under`) and left this deliberately. It is `sync.py` and `manifest.py`, which this plan does not touch | Its own increment and PATCH release: [`source-walk-containment.md`](source-walk-containment.md) |
+| The **local** source walk escaping the KB (`sync.walk_sources`, `[sources] include`) | Out — L6 review 10 fixed the *partner* side (`linkscan.sidecars_under`) and left this deliberately. It is `sync.py` and `manifest.py`, which this plan does not touch | Its own increment and PATCH release: [`20260731_2128-source-walk-containment.md`](20260731_2128-source-walk-containment.md) |
 
 ---
 
@@ -276,7 +276,7 @@ earlier.
 on 20260801 00:58, once they were history rather than instructions — together they were
 9,198 words, **a third of this file**, in a document two build tracks read to find out what to do
 next. Nothing is lost: what they *decided* is in *Decisions taken* and
-[`decision-ruamel-yaml.md`](decision-ruamel-yaml.md); what they *promise* is in *Verification*,
+[`20260731_0602-decision-ruamel-yaml.md`](20260731_0602-decision-ruamel-yaml.md); what they *promise* is in *Verification*,
 which still names every test by increment; what they *taught* is in
 [`docs/RETROSPECTIVES.md`](../docs/RETROSPECTIVES.md); what they *did* is in
 [`CHANGELOG.md`](../CHANGELOG.md) `[0.5.0]`; and the full text is in this file's git history.
@@ -305,7 +305,7 @@ every test by increment; what they *taught* is in
 |---|---|
 | **L6** | `pnk link <source> <target> --rel REL` — one `links[]` entry into the source document's own sidecar and nothing else. Three target grammars tried in order (`pnk://` URI, `<alias>:<path>`, a path in this KB), aliases and `self` resolved to ULIDs **before** writing. Rename-atomic, and no lock: atomicity prevents a torn file, not a lost update. **16 review rounds**, the last several spent on one containment rule that took four spellings to state correctly |
 | **L7** | `pnk doctor` reports link coverage as the **ratio** DESIGN §6.2 promises — linked docs / total docs — not an edge count; resolves each cross-KB target through its `[[links.kb]]` entry; and checks the declared linked KBs themselves (unresolvable, absent, absolute). Every new finding is a WARN with a remedy |
-| **L8** | Verification of the whole, and the final cut. Seven of eight steps ran green. **Step 8, the ClaudeKB realism check, was declined in writing** — it needs a real knowledge base and this repo forbids committing one. [`realism-corpus.md`](realism-corpus.md) is what gives it something to be run against |
+| **L8** | Verification of the whole, and the final cut. Seven of eight steps ran green. **Step 8, the ClaudeKB realism check, was declined in writing** — it needs a real knowledge base and this repo forbids committing one. [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) is what gives it something to be run against |
 
 **The one L-finding worth carrying into the G stages**, because it cost four merges: *`main` was red
 while local `check.sh` was green.* Six tests asked the operating system to produce an error and then
@@ -376,7 +376,7 @@ release instead. Build it expecting the answer to be *no*, and it will be honest
   sentence it quotes. L7 shipped without two of its four, both asserting the opposite of what it
   built, through two review rounds.
 - **`tools/fragments.py` splices duplicate `###` headings** and mis-files an entry whose text starts
-  with a category name (`open-corrections.md` item 2). Check the spliced CHANGELOG section, or fix
+  with a category name (`20260731_1202-open-corrections.md` item 2). Check the spliced CHANGELOG section, or fix
   the tool first — G2 adds fragments like any increment.
 - **A new gate touches `check.sh`, `.github/workflows/ci.yml` and `tests/test_check_script.py`** —
   the three files both tracks append to at the same place. `check.sh` also gained a `nul-scan` gate
@@ -526,7 +526,7 @@ No stored `degree` — that would be derived state inside derived state.
 > incorporated 20260804 04:45).** APPROACH §3's *"authored links are sparse, precious signal — plan
 > for scarcity"*, inherited from ClaudeKB, is what justifies `authored` at **2.0 undamped** while
 > every structural hub is divided by its degree. Measured on the IETF corpus, counting only the
-> forward relations [`realism-corpus.md`](realism-corpus.md) authorises: **54% of documents carry a
+> forward relations [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) authorises: **54% of documents carry a
 > link** against a 35% cap, and the **worst out-degree is 86** against a cap of 4 — RFC 8996
 > *(Deprecating TLS 1.0 and TLS 1.1)* updates 86 documents in one header. Real, human-authored, in
 > the canonical index.
@@ -919,4 +919,4 @@ cut in this project, and `docs/RELEASING.md` is where a cut that is actually hap
 
 ## Iteration log
 
-**Moved to [`links-and-graph-log.md`](links-and-graph-log.md)** on 20260801 00:58 — 5,274 words of process history, a fifth of this file, none of it an instruction. Every decision it narrates is in *Decisions taken*; every promise, in *Verification*.
+**Moved to [`20260801_0102-links-and-graph-log.md`](20260801_0102-links-and-graph-log.md)** on 20260801 00:58 — 5,274 words of process history, a fifth of this file, none of it an instruction. Every decision it narrates is in *Decisions taken*; every promise, in *Verification*.

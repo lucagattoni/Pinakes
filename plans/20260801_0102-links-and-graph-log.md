@@ -1,7 +1,7 @@
 # Links and graph — iteration log
 
 **Audience: a human, or an agent auditing how this plan was built. Goal: reference.**
-Split out of [`links-and-graph.md`](links-and-graph.md) on 20260801 00:58, when it had reached
+Split out of [`20260729_0256-links-and-graph.md`](20260729_0256-links-and-graph.md) on 20260801 00:58, when it had reached
 5,274 words — a fifth of a document two build tracks read to find out what to do next.
 It is a record of *how the plan was reached*, never an instruction: every decision it narrates
 lives in the plan's own **Decisions taken** table, and every promise in its **Verification**

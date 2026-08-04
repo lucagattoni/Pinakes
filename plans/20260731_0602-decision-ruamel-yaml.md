@@ -1,7 +1,7 @@
 # Decision: adopt `ruamel.yaml`, replacing `pyyaml` in the sidecar
 
 **Decided 20260731 06:00 (the user), after measurement. Supersedes
-[`links-and-graph.md`](links-and-graph.md) decision 18.** Revised 06:25, 07:10 and 07:45 as
+[`20260729_0256-links-and-graph.md`](20260729_0256-links-and-graph.md) decision 18.** Revised 06:25, 07:10 and 07:45 as
 measurement and two adversarial passes corrected it; this file states the current position only.
 **Built by L5b and L5c** — split 20260731 07:52 (decision 28) after three passes returned 8, 8 and 7
 HIGH on one section. **L5b** is the swap and everything needed to keep behaviour

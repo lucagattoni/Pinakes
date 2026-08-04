@@ -91,7 +91,7 @@ installed. On a `pinakes[light]` install, set `provider = "fastembed"` in **both
 
 ## v0.2 increment ledger
 
-The build order is [`plans/v0.2.md`](../plans/v0.2.md). Each increment is a separate, bisectable
+The build order is [`plans/20260727_1543-v0.2.md`](../plans/20260727_1543-v0.2.md). Each increment is a separate, bisectable
 landing with its own tests.
 
 | # | Increment | State |
@@ -110,7 +110,7 @@ landing with its own tests.
 | I8 | `pnk doctor` text yield, `path:page` citations on both surfaces, the three end-to-end traces | shipped 0.4.0 |
 | I9 | The verification audit (`docs/VERIFICATION.md` + its gate), the untested-check sweep, README extras, wheel-smoke assertions | shipped 0.4.0 |
 
-**Decided 20260728 17:52 — I6–I9 accumulate, and cut as one MINOR release.** `plans/v0.2.md`
+**Decided 20260728 17:52 — I6–I9 accumulate, and cut as one MINOR release.** `plans/20260727_1543-v0.2.md`
 assumed a single release at I9; 0.2.0 was instead released after I5, correctly, since I1–I5 was
 complete, self-contained, user-visible work the project's rule forbids leaving in `[Unreleased]`.
 The remaining increments are **not** the same shape: I6a, I6b and I7a are each explicitly partial —
@@ -251,11 +251,11 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.3.0** ✅ | Budget machinery, the opt-in paid Claude-vision extractor (I6–I7c) |
 | **0.4.0** ✅ | `path:page` citations on both surfaces, `pnk doctor` text yield (I8); the verification table and its gate (I9) |
 | **0.4.1** ✅ | A sidecar that will not parse is no longer overwritten by a freshly minted one, and no longer aborts the whole sync — data loss present since v0.1 |
-| **0.5.0** ✅ *(the links release, interim)* | `pnk links`, `pinakes_links`, reverse-scan and the sidecar round-trip fix — no `schema_version` bump, so no rebuild. **The release cuts twice** (decision 27): this is the interim MINOR at L5b; the final cut is at L8, and the name stays in the unbuilt-work table until then. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **L5b landed:** `ruamel.yaml` replaces `pyyaml` in the sidecar, so a rewrite preserves comments, quoting and blank lines — and `country: NO` stops becoming `false` ([decision](../plans/decision-ruamel-yaml.md)). |
+| **0.5.0** ✅ *(the links release, interim)* | `pnk links`, `pinakes_links`, reverse-scan and the sidecar round-trip fix — no `schema_version` bump, so no rebuild. **The release cuts twice** (decision 27): this is the interim MINOR at L5b; the final cut is at L8, and the name stays in the unbuilt-work table until then. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **L5b landed:** `ruamel.yaml` replaces `pyyaml` in the sidecar, so a rewrite preserves comments, quoting and blank lines — and `country: NO` stops becoming `false` ([decision](../plans/20260731_0602-decision-ruamel-yaml.md)). |
 | **0.6.0** ✅ *(the links release, final)* | `pnk link` authors a link from the command line, and `pnk doctor` reports link coverage as **linked docs / total docs** and resolves each cross-KB target through its `[[links.kb]]` entry (L6–L8). Also `[kb] requires_pinakes` (G4) and the evaluation's tie-ordering fix (G1) — no `schema_version` bump, so no rebuild. **This completes the two-cut release** decision 27 describes: 0.5.0 was the interim MINOR at L5b, this is the final cut, and the name leaves the unbuilt-work table here |
 | **0.7.0** ✅ | The evaluation grows a per-question artifact (`eval/outcomes.json`), stable question ids, a validated `kind`, and an empty golden set that skips with a reason instead of failing — plus the demo KB's golden set grown 41 → 74 with a `simple-lookup` control class (G2). **Its deliverable is a measurement:** the graph release's gate cannot be reached on this corpus, so G3 and G5 do not start ([above](#can-the-graph-releases-gate-be-reached--measured-20260801-1214)). No `schema_version` bump, so no rebuild |
 | **0.7.1** ✅ | `[sources] include` can no longer walk out of the KB or write sidecars outside it — three defects live since before 0.5.0: a `..` pattern indexed files outside and minted sidecars beside them, an absolute pattern was a bare traceback, and a symlinked directory carried the walk out with no `..` anywhere. Plus a document reached by two legal spellings is now one document, and `tools/link_density_gate.py` survives a non-canonical root |
-| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. **⚠️ Blocked: its gate was measured on 20260801 and cannot be reached on this corpus** ([above](#can-the-graph-releases-gate-be-reached--measured-20260801-1214)) — 1 of 18 multi-hop questions fails where 7 were needed. Its three finished increments have all shipped: **G1** (reproducibility, and the tie-ordering defect it found) and **G4** (`requires_pinakes`) in 0.6.0, **G2** in 0.7.0. **What is left — G3, G5 and G6 — does not start**, and cannot until a corpus exists that can discriminate: `tests/demo-kb` has no tags and one directory, so exactly one derived edge kind crosses a document boundary, and the funnel already returns every document before any channel could reach further. **The unblocking work is a corpus, not code** ([`plans/realism-corpus.md`](../plans/realism-corpus.md)) |
+| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. **⚠️ Blocked: its gate was measured on 20260801 and cannot be reached on this corpus** ([above](#can-the-graph-releases-gate-be-reached--measured-20260801-1214)) — 1 of 18 multi-hop questions fails where 7 were needed. Its three finished increments have all shipped: **G1** (reproducibility, and the tie-ordering defect it found) and **G4** (`requires_pinakes`) in 0.6.0, **G2** in 0.7.0. **What is left — G3, G5 and G6 — does not start**, and cannot until a corpus exists that can discriminate: `tests/demo-kb` has no tags and one directory, so exactly one derived edge kind crosses a document boundary, and the funnel already returns every document before any channel could reach further. **The unblocking work is a corpus, not code** ([`plans/20260801_0749-realism-corpus.md`](../plans/20260801_0749-realism-corpus.md)) |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
 | *the deep release* | `pnk ask --deep` |
 | *the template release* | Template ecosystem, `pnk upgrade` migrations, the `sqlite-vec` tier |
@@ -300,7 +300,7 @@ to ceiling even after tripling in size — 17 of 18. That is a fact about the co
 questions: thirty short, topically disjoint documents make "retrieve 5 of 30" undemanding. Nothing
 should be tuned against this corpus until it is larger and its documents are less separable —
 which is now the binding constraint on the whole graph release, not a caveat
-([`plans/realism-corpus.md`](../plans/realism-corpus.md)).
+([`plans/20260801_0749-realism-corpus.md`](../plans/20260801_0749-realism-corpus.md)).
 
 The false-confidence figure is fitted and scored on the same 74-question set (8 of them no-answer,
 unchanged by G2's growth — so the calibrated thresholds were re-fitted after it and came back

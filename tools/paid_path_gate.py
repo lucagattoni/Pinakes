@@ -1,4 +1,5 @@
-"""The paid-path allowlist gate — gates 1 and 2 of plans/v0.2.md I7a, in one implementation.
+"""The paid-path allowlist gate — gates 1 and 2 of plans/20260727_1543-v0.2.md I7a, in one "
+"implementation.
 
 `CLAUDE.md` calls "the free path stays free" non-negotiable, and v0.1 promised a CI grep enforcing
 it under a heading with no increment number, so nobody owned it and it never shipped
@@ -37,7 +38,8 @@ ALLOWLIST_NAME = ".paid-path-allowlist"
 SRC_DIRNAME = "src"
 
 # The clients that cost money. Kept identical to the grep this replaced, plus the alternation the
-# plan names (plans/v0.2.md, I7a gate 2) — adding a provider here is a one-line change.
+# plan names (plans/20260727_1543-v0.2.md, I7a gate 2) — adding a provider here is a one-line
+# change.
 PAID_CLIENTS = ("anthropic", "openai", "cohere", "mistralai", r"google\.generativeai")
 
 # `import anthropic`, `import anthropic.types`, `from anthropic import ...`, at any indentation.

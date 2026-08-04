@@ -25,7 +25,8 @@ Eviction (`evict_orphans`) and reporting (`survey`) share one classification: a 
 (`operation_id` is not `None`) is never deleted automatically — only reported — because a
 soft-deleted or un-sidecarred document is not an "active document", and sweeping away an extraction
 that was paid for, with no prompt and no printed cost, is the one mistake this module must not
-make (plans/v0.2.md, I4). An entry that cannot be parsed is left alone and reported as corrupt for
+make (plans/20260727_1543-v0.2.md, I4). An entry that cannot be parsed is left alone and reported
+as corrupt for
 the same reason: a paid entry can't be ruled out for a file that can't be read.
 """
 

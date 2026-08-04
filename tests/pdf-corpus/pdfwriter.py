@@ -1,6 +1,7 @@
 """A minimal PDF writer with exactly one third-party asset: an embedded subsetted font.
 
-Rule 11/decision from `plans/v0.2.md` I2: the sixteen text-layer fixtures are raw content streams,
+Rule 11/decision from `plans/20260727_1543-v0.2.md` I2: the sixteen text-layer fixtures are raw
+content streams,
 no layout engine, so nothing here hides the coordinates under a library's own line-breaking or
 kerning decisions. This module is the whole PDF object model the generator needs and nothing more:
 objects, an xref table, a trailer, page trees, an embedded TrueType font resource (optionally with
