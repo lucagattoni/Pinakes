@@ -669,6 +669,8 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | ...and one also reachable by `sibling` is not excluded — the "only" is load-bearing | G5 | `tests/test_graph_channel.py::test_a_same_document_chunk_reachable_by_sibling_is_not_excluded` |
 | membership neighbours are dropped before the cut, so they never spend fan-out budget | G5 | `tests/test_graph_channel.py::test_membership_neighbours_do_not_consume_the_fanout_budget` |
 | a root is expanded but never emitted — its slot belongs to a chunk fusion has not seen | G5 | `tests/test_graph_channel.py::test_a_root_is_expanded_but_never_emitted` |
+| ...and it is dropped **before** the fan-out cut, so it never spends a slot it is then discarded from | G5 | `tests/test_graph_channel.py::test_a_root_does_not_consume_a_fanout_slot` |
+| the channel ranks on the cosines `search` computed, not on a map it never received | G5 | `tests/test_graph_channel.py::test_the_channel_ranks_by_the_cosine_search_computed` |
 | a two-hop chunk outranks a one-hop one when the query says so, so depth 2 reaches the *output* | G5 | `tests/test_graph_channel.py::test_a_two_hop_chunk_outranks_a_one_hop_one_when_the_query_says_so` |
 | ...and link distance still breaks a tie the query cannot | G5 | `tests/test_graph_channel.py::test_distance_breaks_a_tie_the_query_cannot` |
 | a document never passes through to itself, even when it is not a root | G5 | `tests/test_graph_channel.py::test_a_document_never_passes_through_to_itself` |

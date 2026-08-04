@@ -18,6 +18,12 @@
   sibling, a child or a section-mate is returned: the "only" is load-bearing, and both halves are
   pinned by tests.
 
+  **A root is dropped before the fan-out cut for the same reason.** It is already in the list the
+  channel is a third input to, so it is expanded and never emitted — and the neighbours of a fused
+  top-*k* chunk are very often other fused top-*k* chunks, so leaving it in the cut spends slots on
+  rows guaranteed to be discarded. `adjacent_k` therefore counts only candidates that can actually
+  reach the output.
+
   **Nothing on a released surface changes.** `pnk links` and `pinakes_links` return exactly what
   they returned in the links release — their `--json` output on both committed corpora is compared
   byte-for-byte, **with the channel on**, against the fixture captured before the schema bump.

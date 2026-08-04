@@ -690,6 +690,42 @@ def test_a_root_is_expanded_but_never_emitted(tmp_path: Path) -> None:
     assert chunk_id_of(corpus, "docs/long.md", 2) in both
 
 
+def test_a_root_does_not_consume_a_fanout_slot(tmp_path: Path) -> None:
+    """The other half of "never emitted", and the half that was missing.
+
+    A root reaching `found` is discarded twice over — `_accept` skips it before emitting, and `run`
+    seeds `self._expanded` with the roots so it never joins the frontier either. Yet until the
+    filter in `_offer_chunks` it had already taken one of the `adjacent_k` slots on the way, and
+    the neighbours of a fused top-*k* chunk are very often *other* fused top-*k* chunks. That is
+    the same waste `_passable` refuses one level up: excluded from the output **and** from the
+    fan-out budget.
+
+    Asserted by **counting**, because a set-level assertion cannot tell a slot spent from a slot
+    saved. `adjacent_k = 1`, and the one slot must go to the non-root neighbour rather than to the
+    root that outranks it on cosine — with the filter gone the single slot is spent on the root
+    and the walk returns nothing at all.
+    """
+    corpus = one_long_document(tmp_path / "kb")
+    ordinals = ordinals_of(corpus, "docs/long.md")
+    assert len(ordinals) >= 3, f"the fixture needs a chunk either side of a root: {ordinals}"
+    first, second, third = (chunk_id_of(corpus, "docs/long.md", n) for n in ordinals[:3])
+
+    # `second` is the only root, so `first` and `third` are its two sibling candidates. The cosine
+    # is flat here, so without the filter the cut would keep whichever sorts first by path and
+    # ordinal — `first` — and it is a root in the second walk below.
+    one_root = walk(corpus, [second], adjacent_k=1, depth=1)
+    assert [c.chunk_id for c in one_root] == [first], (
+        f"one slot, and with one root it goes to the earlier sibling: {one_root}"
+    )
+
+    both_roots = walk(corpus, [first, second], adjacent_k=1, depth=1)
+    assert [c.chunk_id for c in both_roots] == [third], (
+        "`first` is a root now, so the slot it would have taken must fall through to `third` — "
+        f"an empty result here is the slot being spent on a candidate that is then discarded: "
+        f"{both_roots}"
+    )
+
+
 def sectioned_corpus(root: Path, **options: Any) -> Corpus:
     """A document whose one section is long enough to chunk **twice**, so a heading hub exists.
 

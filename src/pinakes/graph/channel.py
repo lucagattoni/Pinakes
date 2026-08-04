@@ -315,6 +315,13 @@ class _Walk:
         against a fifty-row list that is up to 40% of the channel spent re-ranking what it was
         given. `graph.traverse` skips its start node for the same reason, one root at a time.
 
+        **The skip below is a backstop, not the enforcement.** `_offer_chunks` drops roots before
+        the `adjacent_k` cut, so nothing that reaches here is one — the same reason the membership
+        exclusion lives in `_passable` rather than in `_contribute`. It stays because "a root is
+        never emitted" is an invariant of the emit point, and a later caller adding a second way
+        into `found` should not be able to break it from a distance. Mutating it therefore does
+        **not** fail a test on its own; mutating the `_offer_chunks` filter does.
+
         **Ordered by `(documents.path, chunks.ordinal)`, never by node id.** A surrogate `nodes.id`
         is minted per derivation, so iterating a hop's finds in id order would make the *next*
         hop's expansion order — and therefore which document claims a shared hub, and therefore
@@ -462,10 +469,22 @@ class _Walk:
         reports disagree with the walk that produced the ranking it is explaining.
         """
         ranked = sorted(
-            # Already found this hop, or already emitted by an earlier one: a slot spent on it
-            # adds nothing, and dropping it *before* the cut is the same rule the membership
-            # exclusion applies one level up. `found` still keeps the **first** path to a node.
-            [c for c in candidates if c.node not in found and self._eligible(c.key)],
+            # Already found this hop, already emitted by an earlier one, or a **root**: a slot
+            # spent on any of the three adds nothing, and dropping it *before* the cut is the same
+            # rule `_passable` applies one level up. `found` still keeps the **first** path.
+            #
+            # The root case is the one that bit. A root reaching `found` is discarded twice over —
+            # `_accept` skips it before emitting, and `run` seeds `self._expanded` with the roots
+            # so it never joins the frontier either — yet it had already taken one of the
+            # `adjacent_k` slots on the way. Neighbours of a fused top-*k* chunk are very often
+            # *other* fused top-*k* chunks, so the waste is not a corner: measured on
+            # `graded_neighbour` at the shipped default `adjacent_k = 8`, filtering here takes the
+            # channel from 4 returned candidates to 10, all of them chunks fusion had not found.
+            [
+                c
+                for c in candidates
+                if c.node not in found and c.node not in self._roots and self._eligible(c.key)
+            ],
             key=lambda c: (-self._scored(c.key), -c.weight, *self._position(c.key)),
         )
         for candidate in ranked[: self._adjacent_k]:
