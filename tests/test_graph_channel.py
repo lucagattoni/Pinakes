@@ -675,12 +675,30 @@ def legs(
     )
 
 
+def _gate_module() -> Any:
+    """`tools/` is not a package, so the gate is loaded by path rather than imported.
+
+    Every other gate test drives it as a subprocess, which is what exercises the artifact CI would
+    run. This one needs the *function*: the sign test is pure arithmetic, and asserting a table of
+    p-values through a JSON round trip would test the reporting rather than the statistic.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("graph_gate", GATE)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    # Registered before executing: `@dataclass(slots=True)` rebuilds the class and resolves its
+    # own module out of `sys.modules` to do it, so a module executed outside it raises there.
+    sys.modules["graph_gate"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_the_sign_test_reproduces_the_plans_table_and_the_rows_below_it(tmp_path: Path) -> None:
     """The criterion is p < 0.05 on the discordant pairs; the plan's table is its first four rows,
     not a closed list. Both directions are asserted: the row above each threshold must *fail*, or
     the check is satisfied by a function that returns 0 for everything."""
-    sys.path.insert(0, str(GATE.parent))
-    from graph_gate import sign_test  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
+    sign_test = _gate_module().sign_test
 
     passes = {0: 5, 1: 7, 2: 9, 3: 10, 4: 12, 5: 13}
     for regressed, improved in passes.items():

@@ -44,6 +44,7 @@ from ruamel.yaml.constructor import DuplicateKeyError
 from pinakes import store
 from pinakes.embed import EmbeddingBackend, Reranker, load_backend, load_reranker
 from pinakes.errors import EvalError
+from pinakes.graph.channel import GATED_RANKING, Ranking
 from pinakes.graph.edges import ALL_KINDS, select_kinds
 from pinakes.manifest import Manifest
 from pinakes.search import HIGH, LOW, UNKNOWN, Filters, search
@@ -352,6 +353,7 @@ def evaluate(
     reranker: Reranker | None,
     k: int = DEFAULT_K,
     edge_kinds: Collection[str] | None = None,
+    ranking: Ranking = GATED_RANKING,
 ) -> tuple[Metrics, list[Outcome]]:
     outcomes = [
         _run_question(
@@ -362,6 +364,7 @@ def evaluate(
             reranker=reranker,
             k=k,
             edge_kinds=edge_kinds,
+            ranking=ranking,
         )
         for question in questions
     ]
@@ -377,6 +380,7 @@ def _run_question(
     reranker: Reranker | None,
     k: int,
     edge_kinds: Collection[str] | None = None,
+    ranking: Ranking = GATED_RANKING,
 ) -> Outcome:
     followed = 0
     for hop in question.hops[:-1]:
@@ -388,6 +392,7 @@ def _run_question(
             reranker=reranker,
             limit=k,
             edge_kinds=edge_kinds,
+            ranking=ranking,
         )
         if hop.expect in {passage.path for passage in result.passages}:
             followed += 1
@@ -402,6 +407,7 @@ def _run_question(
         filters=question.filters,
         limit=k,
         edge_kinds=edge_kinds,
+        ranking=ranking,
     )
 
     retrieved: list[str] = []
@@ -483,6 +489,7 @@ def run(
     questions_path: Path | None = None,
     k: int = DEFAULT_K,
     drop: Collection[str] = (),
+    ranking: Ranking = GATED_RANKING,
 ) -> tuple[Metrics, list[OutcomeRow], dict[str, Any]] | None:
     """Evaluate a KB against its golden set, loading whatever backend its manifest names.
 
@@ -515,18 +522,23 @@ def run(
             reranker=reranker,
             k=k,
             edge_kinds=edge_kinds,
+            ranking=ranking,
         )
     finally:
         connection.close()
     return (
         metrics,
         [outcome.row() for outcome in outcomes],
-        _header(manifest, k=k, edge_kinds=edge_kinds),
+        _header(manifest, k=k, edge_kinds=edge_kinds, ranking=ranking),
     )
 
 
 def _header(
-    manifest: Manifest, *, k: int, edge_kinds: Collection[str] = ALL_KINDS
+    manifest: Manifest,
+    *,
+    k: int,
+    edge_kinds: Collection[str] = ALL_KINDS,
+    ranking: Ranking = GATED_RANKING,
 ) -> dict[str, Any]:
     """What an artifact was produced under — every setting that can move a row.
 
@@ -548,6 +560,10 @@ def _header(
         "graph_channel": settings.graph_channel,
         "edge_kinds": sorted(edge_kinds),
         "dropped": sorted(set(ALL_KINDS) - set(edge_kinds)),
+        "ranking": {
+            "link_distance": ranking.link_distance,
+            "in_degree_salience": ranking.in_degree_salience,
+        },
         "schema": OUTCOMES_SCHEMA,
         "k": k,
         "embedding": {

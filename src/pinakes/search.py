@@ -29,7 +29,7 @@ from pinakes.errors import CoherenceError, ExtractionCoherenceError, IncompleteI
 from pinakes.extract import fingerprint as extraction_fingerprint
 from pinakes.extract import is_paid_backend, registered_extractors
 from pinakes.graph import channel as graph_channel
-from pinakes.graph.channel import Reached
+from pinakes.graph.channel import GATED_RANKING, Ranking, Reached
 from pinakes.graph.edges import select_kinds
 from pinakes.ids import DocId
 from pinakes.manifest import Manifest
@@ -356,6 +356,7 @@ def fused_candidates(
     backend: EmbeddingBackend,
     filters: Filters | None = None,
     edge_kinds: Collection[str] | None = None,
+    ranking: Ranking = GATED_RANKING,
 ) -> Fused:
     """Filter, BM25, vectors, RRF — every stage up to the `fusion_top_k` cut.
 
@@ -409,6 +410,7 @@ def fused_candidates(
                 local_kb=str(manifest.kb.id),
                 adjacent_k=settings.adjacent_k,
                 limit=settings.candidates_per_source,
+                ranking=ranking,
             )
             # The filters are the caller's, and the channel walks a graph that does not know about
             # them: a neighbour outside them is a document this search was told not to return.
@@ -456,13 +458,20 @@ def search(
     filters: Filters | None = None,
     limit: int | None = None,
     edge_kinds: Collection[str] | None = None,
+    ranking: Ranking = GATED_RANKING,
 ) -> SearchResult:
     stale_paid = check_coherence(connection, manifest)
     filters = filters or Filters()
     final_k = limit or manifest.retrieval.final_k
 
     candidates = fused_candidates(
-        connection, manifest, query, backend=backend, filters=filters, edge_kinds=edge_kinds
+        connection,
+        manifest,
+        query,
+        backend=backend,
+        filters=filters,
+        edge_kinds=edge_kinds,
+        ranking=ranking,
     )
     if not candidates.order:
         reason = candidates.reason or "no candidates"

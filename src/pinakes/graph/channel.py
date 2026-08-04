@@ -84,6 +84,7 @@ two share their bounding *rules*, not their loop.
 
 from __future__ import annotations
 
+import math
 import sqlite3
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
@@ -128,6 +129,33 @@ class Reached:
     the output can tell the two apart."""
 
 
+@dataclass(frozen=True, slots=True)
+class Ranking:
+    """How the channel orders what it found — **one gated configuration, two reported knobs**.
+
+    APPROACH §4A puts in-degree salience and a `center_node_uuid`-style link-distance rerank *"in
+    the first eval matrix"*, and G5 gates exactly one configuration: three variables against one
+    threshold is not a decision procedure. So neither of these is a manifest key. They exist for
+    `tools/graph_matrix.py`, which reports them beside the headline, and a setting a user could
+    turn on would be a setting nobody had measured.
+    """
+
+    link_distance: bool = True
+    """Distance as the **primary** term, so a two-hop chunk never outranks a one-hop one on
+    similarity alone. §4A scores expanded chunks by *"edge weight and link distance"*; the arm
+    that drops it is what says whether the term earns its place."""
+
+    in_degree_salience: bool = False
+    """A static citation-count prior: a document's inbound `links` count, inherited by its chunks
+    through the membership edge, folded into the similarity as a factor of `(1 + log1p(in-degree))`.
+    Multiplicative rather than additive so a chunk at cosine 0 stays at 0 — popularity is not
+    evidence on its own, and §4.1 already treats a non-positive cosine as no evidence at all."""
+
+
+GATED_RANKING: Final = Ranking()
+"""The one configuration G5 gates. Every other point in the matrix is reported, never shipped."""
+
+
 def expand(
     connection: sqlite3.Connection,
     roots: Sequence[int],
@@ -138,6 +166,7 @@ def expand(
     adjacent_k: int,
     depth: int = DEPTH,
     limit: int,
+    ranking: Ranking = GATED_RANKING,
 ) -> list[Reached]:
     """The channel's ranking, best first, at most `limit` long.
 
@@ -153,6 +182,7 @@ def expand(
         kinds=frozenset(kinds),
         local_kb=local_kb,
         adjacent_k=max(0, adjacent_k),
+        ranking=ranking,
     ).run(roots, depth=depth, limit=limit)
 
 
@@ -175,12 +205,15 @@ class _Walk:
         kinds: frozenset[str],
         local_kb: str,
         adjacent_k: int,
+        ranking: Ranking = GATED_RANKING,
     ) -> None:
         self._connection = connection
         self._similarity = similarity
         self._kinds = kinds
         self._local_kb = local_kb
         self._adjacent_k = adjacent_k
+        self._ranking = ranking
+        self._in_degree: dict[str, int] = {}
 
         self._expanded: set[int] = set()
         """Every node already walked. A hub reached from three documents expands **once
@@ -207,16 +240,19 @@ class _Walk:
                 self._expand_chunk(node, found)
             frontier = self._accept(found, distance)
 
-        ordered = sorted(
-            self._emitted.values(),
-            key=lambda r: (
-                r.distance,
-                -self._similarity.get(r.chunk_id, 0.0),
-                -r.weight,
-                r.node_key,
-            ),
-        )
+        ordered = sorted(self._emitted.values(), key=self._order)
         return ordered[:limit]
+
+    def _order(self, reached: Reached) -> tuple[int, float, float, str]:
+        """`(distance, -cosine, -weight, node_key)`, with distance held constant when the
+        link-distance arm is off — so the term drops out of the comparison rather than the sort
+        having two shapes."""
+        return (
+            reached.distance if self._ranking.link_distance else 0,
+            -self._scored(reached.node_key),
+            -reached.weight,
+            reached.node_key,
+        )
 
     def _root_nodes(self, roots: Sequence[int]) -> list[int]:
         """The `chunk` nodes for the fused top-*k*, and the documents they must not re-surface."""
@@ -367,18 +403,41 @@ class _Walk:
         there, and a later path overwriting them would make the provenance `tools/graph_matrix.py`
         reports disagree with the walk that produced the ranking it is explaining.
         """
-        ranked = sorted(
-            candidates,
-            key=lambda c: (-self._similarity_of(c.key), -c.weight, c.key),
-        )
+        ranked = sorted(candidates, key=lambda c: (-self._scored(c.key), -c.weight, c.key))
         for candidate in ranked[: self._adjacent_k]:
             found.setdefault(candidate.node, candidate)
 
     # -- lookups -----------------------------------------------------------------------------
 
-    def _similarity_of(self, node_key: str) -> float:
+    def _scored(self, node_key: str) -> float:
+        """A chunk's ranking score: its query cosine, times the in-degree prior when that arm is
+        on. The same function ranks the fan-out and the final list, so an arm cannot select one
+        set of neighbours and then order them by a different rule."""
         chunk_id = self._chunk_id(node_key)
-        return 0.0 if chunk_id is None else self._similarity.get(chunk_id, 0.0)
+        cosine = 0.0 if chunk_id is None else self._similarity.get(chunk_id, 0.0)
+        if not self._ranking.in_degree_salience:
+            return cosine
+        return cosine * (1.0 + math.log1p(self._inbound(edge_set.parse_chunk_key(node_key)[0])))
+
+    def _inbound(self, doc_id: str) -> int:
+        """Every `links` row pointing at this document — the citation count §4A calls a zero-cost
+        salience signal.
+
+        The source may be **foreign**: a reverse-scanned row from a partner KB counts, even though
+        such a row is inert in the walk itself (only a local document has a `doc` node). The two
+        are different questions. Inertness is about *where a hop can go*; salience is about how
+        often a document is cited, and a partner citing it is evidence either way.
+        """
+        known = self._in_degree.get(doc_id)
+        if known is None:
+            known = int(
+                self._connection.execute(
+                    "SELECT count(*) FROM links WHERE dst_kb_id = ? AND dst_doc_id = ?",
+                    (self._local_kb, doc_id),
+                ).fetchone()[0]
+            )
+            self._in_degree[doc_id] = known
+        return known
 
     def _described(
         self, spokes: Sequence[edge_set.Spoke]
