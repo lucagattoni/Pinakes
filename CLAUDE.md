@@ -3,6 +3,26 @@
 Architecture and rationale live in [`docs/DESIGN.md`](docs/DESIGN.md); [`docs/README.md`](docs/README.md)
 indexes the rest (which file owns which fact). This file only carries rules that change how you work.
 
+## 🛑 Land with `tools/land.py` — never `git merge` by hand
+
+    python3 tools/land.py <branch>              # merge, verify, push
+    python3 tools/land.py <branch> --cleanup    # also remove the worktree and both branch copies
+
+**Running `git merge <branch>` from inside that branch's own worktree merges it into itself.** Git
+reports *"Already up to date"*, the push reports *"Everything up-to-date"*, and a tag created there
+points off-`main` — **three successful commands and nothing landed.** It has happened repeatedly
+here, always the same way: one `&&` chain beginning `cd <worktree>` and later containing
+`git merge`.
+
+**Git cannot catch it.** A branch merged into itself creates no commit, so `pre-merge-commit` never
+fires — the no-op is silent by design. So `tools/land.py` is the guard: it finds the primary
+checkout itself whatever directory you ran it from, **refuses if `main`'s sha did not move**, and
+re-reads `origin/main` after pushing, because a push reporting success is only a claim. `--cleanup`
+removes the worktree *and* both copies of the branch, since deleting one leaves the other behind.
+
+**This is the only rule here with an executable guard, because it is the only one that fails
+silently.** Everything else fails loudly or is caught by `./check.sh`.
+
 ## This repository is PUBLIC
 
 - **Never commit real knowledge-base content.** The repo is the engine. The only KBs here are the
@@ -179,9 +199,7 @@ left local is invisible to every other agent, machine and scheduled run.
   have cut one since this branch started (20260728).
 - **Cut the release** as soon as the work passes the SemVer table in the global rules (feature =
   MINOR, fix/docs/deps = PATCH, breaking = MAJOR). Complete work never lingers in `[Unreleased]`.
-- **Never run `git merge` from inside the feature worktree.** Merging a branch into itself reports
-  "Already up to date", the push reports "Everything up-to-date", and a tag created there points
-  off-`main` — three successful commands, nothing landed.
+- **Land with `python3 tools/land.py <branch>`, never `git merge` by hand** ([above](#-land-with-toolslandpy--never-git-merge-by-hand)).
 - **A tag publishes to PyPI** (`PUBLISH_TO_PYPI` true since 20260728 17:15) and PyPI does not allow
   re-uploading a version. Run `make release-check` **before** pushing the tag, never after.
 - **Verify, never assume, that a release happened**, and sweep the three documents it stales — both

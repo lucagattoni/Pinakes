@@ -26,8 +26,12 @@ was dropped in the move.
 3. Move `[Unreleased]` into a dated `[x.y.z] — YYYYMMDD HH:MM` section. **Add its link definition at
    the foot and repoint `[Unreleased]`'s compare** — `fragments.py --apply` splices entries and does
    not touch the footer.
-4. Commit. **Merge to `main` from the primary checkout**, never from the feature worktree.
-5. Push.
+4. Commit, then **land with `python3 tools/land.py <branch>`** — never `git merge` by hand. It
+   merges in the primary checkout whatever directory you ran it from, refuses if `main`'s sha did
+   not move, and pushes. Merging from inside the feature worktree merges the branch into itself and
+   reports success three times over
+   ([`CLAUDE.md`](https://github.com/lucagattoni/pinakes/blob/main/CLAUDE.md)).
+5. (`land.py` pushed for you. If you landed by hand anyway, push now.)
 6. `make release-check` — prints `__version__` and the tag to push. **Run it before the tag, never
    after**: a tag publishes to PyPI, and PyPI does not allow re-uploading a version.
 7. `git tag -a vx.y.z`, push the tag. The workflow refuses a tag disagreeing with `__version__`.
