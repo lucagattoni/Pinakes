@@ -129,9 +129,11 @@ is what stops the next plan from assuming a number that a parallel session has a
 > Historical records (`CHANGELOG.md`, `RETROSPECTIVES.md`, `plans/`, the dated research in `graph/`)
 > keep the numbers they were written with and carry a header note pointing at STATUS.md.
 
-- **Every date carries a time**: `YYYYMMDD HH:MM`, local 24h. Several entries land per day, and a
-  bare date loses their order and hides how fresh a "verified" claim is.
-- **Read the clock; never compose a timestamp.** Run `date "+%Y%m%d %H:%M"` and paste the result.
+- **Every date carries a time**: `YYYYMMDD HH:MM`, **UTC**. Several entries land per day, and a
+  bare date loses their order and hides how fresh a "verified" claim is. UTC since 20260804 11:32;
+  timestamps written before that are local and stay local, because converting one invents precision
+  nobody measured.
+- **Read the clock; never compose a timestamp.** Run `date -u "+%Y%m%d %H:%M"` and paste the result.
 - **Docs describe what ships.** Anything unbuilt is labelled with the increment or release that will
   bring it. Check by *running the commands a doc shows*, install line included — an audit at 0.1.2
   found four README claims contradicting the code while the CLI and CHANGELOG were correct.
