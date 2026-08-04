@@ -780,7 +780,7 @@ def _unresolved_cross_kb(
     ~0.38ms per sidecar, dominated by `read_sidecar`: 100 documents 0.04s, 1 000 0.38s, 5 000 1.9s.
     `linkscan.scan` amortises the identical walk behind `TTL_MINUTES`; this has no equivalent
     because a diagnostic is expected to be current, and caching a health check is how a health
-    check comes to report yesterday's health. Acceptable at the sizes pinakes targets — the
+    check comes to report yesterday's health. Acceptable at the sizes Pinakes targets — the
     corpus-size warning fires at 50k *chunks* — and stated here rather than discovered later.
     """
     wanted = {kb_id for kb_id, _ in external}

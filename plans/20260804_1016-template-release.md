@@ -94,10 +94,10 @@ line, a named key's value — never on how many lines a diff has.
 | **`_root()` does no name validation at all**, so a template name may contain path separators and `..`. Measured at `d001175`: `template.describe("notes/../notes")` and `template.describe("../templates/notes")` both **succeed**, and `template.describe("notes/eval")` raises a bare `FileNotFoundError` rather than a `PinakesError`. This is live today and T1's archive makes it reachable — see T1's containment rule | `src/pinakes/template.py:36-46` |
 | The KB records only the *reference* `notes@1.0`, never the content | `src/pinakes/template.py:30-33`, `src/pinakes/init.py:57-70` |
 | `pnk doctor` compares the recorded version string against the installed one and warns on mismatch | `src/pinakes/doctor.py:163-184` |
-| The manifest is read-only to pinakes after `init`, stated as a property | `src/pinakes/manifest.py:3-5` |
+| The manifest is read-only to Pinakes after `init`, stated as a property | `src/pinakes/manifest.py:3-5` |
 | Unknown manifest keys are a hard error; an empty string is an error too | `src/pinakes/_toml.py`, `docs/DESIGN.md:124-127` |
 | `[kb] requires_pinakes` is read in a pre-pass before strict validation. It shipped in **0.6.0**, so a manifest carrying the key is unreadable by any earlier build | `src/pinakes/manifest.py:207-210,237-331`, `docs/STATUS.md:258` |
-| `[retrieval] adjacent_k` is settable but deliberately **not stamped** into the template, because an older pinakes cannot read it | `src/pinakes/manifest.py:644-651` |
+| `[retrieval] adjacent_k` is settable but deliberately **not stamped** into the template, because an older Pinakes cannot read it | `src/pinakes/manifest.py:644-651` |
 | `vector_tier` accepts `auto` / `numpy` / `sqlite-vec`, and `docs/MANIFEST.md:135` documents all three as settable | `src/pinakes/manifest.py:48,643`, `docs/MANIFEST.md:135` |
 | Index `SCHEMA_VERSION` is `2`; a mismatch refuses to open and names `pnk sync --rebuild`; **there are no migrations, by design** | `src/pinakes/store.py:4,28,197-206` |
 | **Two** tests hardcode `notes@1.0`: `tests/test_init.py:20` asserts `manifest.kb.template`, `tests/test_init.py:99` asserts `TemplateInfo.reference`. Both move together or the branch lands red | `tests/test_init.py:20,99` |
@@ -117,7 +117,7 @@ installed one. `notes`' version has been `"1.0"` since `873d2e2` while its conte
 later commits — five to `pinakes.toml.j2` and one to `eval/questions.yaml` (M1, M2, M4). Every KB
 ever created records `notes@1.0`, every installed template *is*
 `notes@1.0`, and the check has returned `Status.OK` on every KB in existence for every version of
-pinakes. `docs/KB-UPDATES.md` §3 case 3 predicted this before it shipped ("a rule with no gate; it
+Pinakes. `docs/KB-UPDATES.md` §3 case 3 predicted this before it shipped ("a rule with no gate; it
 already lapsed before shipping") and nothing has closed it since.
 
 ### F2 — No template drift has ever added or removed a key; the drift that matters is a comment
@@ -261,7 +261,7 @@ recommendations the planner may still overrule. ✅ marks a taken decision, ⭐ 
 
 | Option | Pros | Cons |
 |---|---|---|
-| **A. Print only, forever** (`docs/CLI.md`'s reading) | The manifest stays a file pinakes only reads (`manifest.py:3-5`) — an invariant with no exceptions is cheaper to hold than one with three. No backup semantics, no partial-write recovery, no "it edited my config" class of bug. Smallest increment. **The user decides every `[budget]` change themselves, which F2 shows is half the actual drift.** | Does not close the live gap: adopting a change stays a manual edit against a printed diff. `docs/KB-UPDATES.md` §9's own cost/benefit puts "existing KBs actually adopt new defaults" only behind `--apply`. (An earlier draft asserted here that "nobody will do it"; that had no evidence behind it and is withdrawn.) |
+| **A. Print only, forever** (`docs/CLI.md`'s reading) | The manifest stays a file Pinakes only reads (`manifest.py:3-5`) — an invariant with no exceptions is cheaper to hold than one with three. No backup semantics, no partial-write recovery, no "it edited my config" class of bug. Smallest increment. **The user decides every `[budget]` change themselves, which F2 shows is half the actual drift.** | Does not close the live gap: adopting a change stays a manual edit against a printed diff. `docs/KB-UPDATES.md` §9's own cost/benefit puts "existing KBs actually adopt new defaults" only behind `--apply`. (An earlier draft asserted here that "nobody will do it"; that had no evidence behind it and is withdrawn.) |
 | **B. `--apply` writes non-conflicting hunks, opt-in, after printing** ⭐ **— settled as the operative answer by implication of D-10 and D-11 (20260804)** | Closes the gap. Matches `docs/DESIGN.md` §6.1 and `docs/KB-UPDATES.md` §5. The precedent exists and is named in §5: `pnk doctor --prune` prints every path then acts only on request. Conflicts are refused rather than merged, so the tool never guesses. | **The whole drift history it would apply is four comment lines and two raised spending caps** (M3). For that, B buys: a new exception to `manifest.py:3-5`'s stated property, backup semantics (D-5), a re-parse-or-restore path, tests for every partial-failure mode, an amendment to `docs/DESIGN.md` §2.1, and a proposed `CLAUDE.md` amendment. **D-10 removed one item from this list and added a larger one**: there is no `[budget]` rule to write, but there *is* a consent path to build and prove — a labelled money heading in both outputs, its absence when no money moves, and print-before-write ordering asserted by position. That is the honest trade, and it is on this side of the table. |
 | **C. `--apply` writes everything, resolving conflicts** | Fully automatic. | Rejected on sight: it overwrites a user's deliberate edit with a template default and cannot tell the two apart. Named only so it is visibly excluded. |
 
@@ -283,7 +283,7 @@ another (the consent path T4 must build and prove).
 |---|---|---|
 | **A. Ship a version archive in the wheel** — `templates/notes/_versions/<version>/…`, one frozen copy per released template version ⭐ **— settled as the operative answer by implication of D-2b (20260804)** | The only option under which the diff means what its name says: base = the recorded version, ours = the installed version, **theirs = the KB's manifest**, so a three-way comparison separates *template changed* from *user changed* exactly. Makes the drift gate (T1) trivial and git-free. Cheap: a template is ~4 files / ~4 KB. Works for every KB whose recorded version this build archives. | Wheel grows by one template-sized directory per released version, forever. An archive is a promise: an archived version may never be edited, and that is enforced by review plus a hash ledger, not by the filesystem. **Helps no KB whose recorded version predates the archive** — which today is every KB in existence (D-2b). `_versions` needs a containment rule of its own: it is *not* excluded by `available()`'s underscore rule, which only screens top-level entries of `pinakes.templates` (T1, and `template.py:36-46` accepts a name containing `/` and `..`). |
 | **B. Diff the KB's manifest against a freshly rendered current template** | No new files, no archive discipline. Works for every KB, including pre-archive ones. | Cannot distinguish a template change from a user's deliberate edit. Reports `candidates_per_source = 30` (a user's tuning) identically to a template default that moved. This is the project's recurring defect shape: a report that names one property and is satisfied by another. |
-| **C. Record the rendered manifest's *hash* at `init`** into `[kb]` | Detects *that* it drifted, cheaply. | Cannot show *what* drifted, so `pnk upgrade` still has nothing to print. Adds a manifest key no pinakes before it can read. Cannot help any KB in existence. `.pinakes/` is not an option — it is disposable by invariant. |
+| **C. Record the rendered manifest's *hash* at `init`** into `[kb]` | Detects *that* it drifted, cheaply. | Cannot show *what* drifted, so `pnk upgrade` still has nothing to print. Adds a manifest key no Pinakes before it can read. Cannot help any KB in existence. `.pinakes/` is not an option — it is disposable by invariant. |
 | **D. Record the rendered manifest *itself* at `init`** — a committed `pinakes.toml.birth` beside the manifest | A true **per-KB** three-way base: base = this KB's own birth manifest, and it is exact rather than reconstructed. Needs no archive discipline, no ledger and no gate. Works for **third-party templates** and for versions this build does not ship — both of which A cannot serve. Nothing to keep in sync: the file is written once and never again. | Helps no KB in existence either — it starts at the first `init` after it ships, exactly like A and C. Puts a second file in the user's KB that they must not delete, in a tool whose whole posture is that a KB is `docs/` plus one manifest. A user who edits `pinakes.toml.birth` (or drops it from git) silently changes what `pnk upgrade` believes, with no gate able to notice — A's archive at least has a ledger. Does not make `pnk doctor`'s **template-to-template** report (T2) possible: that needs the *template's* history, not this KB's. |
 
 **Recommendation: A**, because T2's report is template-against-template and only A can produce it,
@@ -389,7 +389,7 @@ ships** or it is F1's shape again. Nothing else in this plan depends on which is
 
 | Option | Pros | Cons |
 |---|---|---|
-| **A. Write `pinakes.toml.orig` beside it and print the path** ⭐ | Recoverable without git. One file, named, printed, never deleted by pinakes. | Creates a file in the user's KB that they did not ask for — mitigated by printing it, and by refusing to overwrite an existing `.orig`. |
+| **A. Write `pinakes.toml.orig` beside it and print the path** ⭐ | Recoverable without git. One file, named, printed, never deleted by Pinakes. | Creates a file in the user's KB that they did not ask for — mitigated by printing it, and by refusing to overwrite an existing `.orig`. |
 | **B. Require a clean git tree** | No new files; the user's own VCS is the backup. | Not every KB is a git repository, and the KB is a directory by design. Refusing to run outside git makes a portable tool non-portable. |
 | **C. No backup — rename-atomic write and re-parse-or-restore in memory** | Nothing left behind. | Recovers from a *parse* failure only. A semantically-unwanted-but-valid change is unrecoverable. |
 
@@ -403,14 +403,14 @@ exists — a backup written after the change would satisfy the weaker check and 
 
 | Option | Pros | Cons |
 |---|---|---|
-| **A. No — leave it absent** (today's behaviour) ⭐ | A new KB stays readable by any pinakes that can read its keys. `requires_pinakes` is precisely the key an older build cannot read, so stamping it makes the *diagnosis field itself* the thing that breaks the diagnosis on builds before 0.6.0 (`manifest.py:237-331`). | The floor stays a lower bound that nothing ever raises — **and D-11 (taken 20260804) confirms it: `pnk upgrade --apply` recommends the key and never writes it**, so nothing in this plan raises a floor (`docs/KB-UPDATES.md` §8, which assumes otherwise, is one of the corrections T4 proposes). |
-| **B. Stamp `">=<current>"`** | Every new KB carries an honest floor from birth. | On any pinakes < 0.6.0 the KB fails with "unknown key `requires_pinakes`" — a *worse* error than the one the field exists to prevent, and one that fires for KBs whose floor that build would actually meet. |
+| **A. No — leave it absent** (today's behaviour) ⭐ | A new KB stays readable by any Pinakes that can read its keys. `requires_pinakes` is precisely the key an older build cannot read, so stamping it makes the *diagnosis field itself* the thing that breaks the diagnosis on builds before 0.6.0 (`manifest.py:237-331`). | The floor stays a lower bound that nothing ever raises — **and D-11 (taken 20260804) confirms it: `pnk upgrade --apply` recommends the key and never writes it**, so nothing in this plan raises a floor (`docs/KB-UPDATES.md` §8, which assumes otherwise, is one of the corrections T4 proposes). |
+| **B. Stamp `">=<current>"`** | Every new KB carries an honest floor from birth. | On any Pinakes < 0.6.0 the KB fails with "unknown key `requires_pinakes`" — a *worse* error than the one the field exists to prevent, and one that fires for KBs whose floor that build would actually meet. |
 
 **Recommendation: A.** Note that this reasoning does not stop at `init`: **whatever writes
 `requires_pinakes` inherits B's cost**, which is why T4 writing it was its own decision — **D-11,
 taken 20260804 as option A: it writes nothing.** The two answers now agree, and the consequence is
 worth stating once: **no code path in this plan ever writes `[kb] requires_pinakes`.** A later agent
-who finds the key written by pinakes has found a defect, not a feature.
+who finds the key written by Pinakes has found a defect, not a feature.
 
 ### D-7 — Does a second template ship in this release?
 
@@ -669,7 +669,7 @@ version's content to exist at runtime (F4), and all three are meaningless while 
 
    **The bump is not cosmetic and the increment must not be shipped as if it were.** It is what
    closes F1: `pnk doctor` has returned `Status.OK` on every KB in existence for every version of
-   pinakes, and after T1 it warns on all of them. That is the increment's one user-visible effect,
+   Pinakes, and after T1 it warns on all of them. That is the increment's one user-visible effect,
    it is intended, and it should be the CHANGELOG fragment's headline rather than the archive.
 2b. **Two functions, because everything after T1 needs them and inventing them later scatters the
    archive's path layout across three modules.** `template.archived_versions(name) -> list[str]`,
@@ -982,7 +982,7 @@ own test:
 
 | Case | Status | Message |
 |---|---|---|
-| recorded version absent from the archive. **Under D-2b (taken) this is `notes@1.0` — every KB in existence — plus the exotic cases (a newer pinakes wrote the KB; a third-party template)** | `WARN` | `cannot compare: notes@1.0 is not in this build's archive` — never a diff, never a silent OK. **This is the ordinary path, not an edge case, so its remedy is written for a user who did nothing wrong**: it says the recorded version's content cannot be reconstructed, names the manual comparison as the action available now, and says `pnk upgrade` becomes useful from the next template bump onward. A one-word shrug here is the single most-read string this increment ships |
+| recorded version absent from the archive. **Under D-2b (taken) this is `notes@1.0` — every KB in existence — plus the exotic cases (a newer Pinakes wrote the KB; a third-party template)** | `WARN` | `cannot compare: notes@1.0 is not in this build's archive` — never a diff, never a silent OK. **This is the ordinary path, not an edge case, so its remedy is written for a user who did nothing wrong**: it says the recorded version's content cannot be reconstructed, names the manual comparison as the action available now, and says `pnk upgrade` becomes useful from the next template bump onward. A one-word shrug here is the single most-read string this increment ships |
 | template name not installed at all | `WARN` | unchanged from today (`doctor.py:170-176`), with the remedy's "(the template release)" parenthesis removed |
 | versions equal | `OK` | unchanged |
 
@@ -1414,14 +1414,14 @@ prints. Rules, all testable:
 
 **Amendments this increment forces, and they are not optional.**
 
-* `src/pinakes/manifest.py:3-5` states *"Nothing in pinakes rewrites it after `pnk init`, so this
+* `src/pinakes/manifest.py:3-5` states *"Nothing in Pinakes rewrites it after `pnk init`, so this
   module only ever reads."* The second half stays true — the writer lives in the new module, not in
   `manifest.py` — but the first half becomes false and must be rewritten in the same commit.
 * `docs/DESIGN.md` §2.1 gains the exception, stated as narrowly as the two existing sidecar
   exceptions in `CLAUDE.md`: *a user-invoked upgrade command writes the KB's own `pinakes.toml`,
   after printing the change, and only hunks that apply cleanly.*
 * **Propose to the planner** a `CLAUDE.md` amendment under *Invariants*: the manifest is user-owned
-  and pinakes writes it in exactly one place. Without it the rule lives only in DESIGN and the next
+  and Pinakes writes it in exactly one place. Without it the rule lives only in DESIGN and the next
   agent has no reason to look there. **Propose the D-10 half of it in the same breath** — that this
   one write may change `[budget]` values, and that what makes it acceptable is the printed diff and
   the separate `--apply`. `CLAUDE.md`'s budget section is otherwise entirely about the ledger and
@@ -1729,7 +1729,7 @@ should be re-run through block (1) by hand at that time.
 **Docs:** `docs/CLI.md` § `pnk upgrade` — **`--apply` writes every cleanly-applying hunk, `[budget]`
 included (D-10), and a money change is called out in the printed diff**; the exit code for a refused
 conflict and for *cannot compare* (O-2); the `--kb` row in § Common flags. `docs/MANIFEST.md`
-(`requires_pinakes` — **that nothing in pinakes ever writes it**, and that `--apply` only recommends
+(`requires_pinakes` — **that nothing in Pinakes ever writes it**, and that `--apply` only recommends
 it, per D-11); `docs/DESIGN.md` §2.1 and §6.1; `docs/GUIDE.md` — the "adopting a template change"
 task **must show the report step before the `--apply` step**, because the consent path is a
 documented workflow and not only an implementation property; `docs/STATUS.md`;

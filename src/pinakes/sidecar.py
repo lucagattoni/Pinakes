@@ -4,7 +4,7 @@ A sidecar is **committed, user-editable, and owned by the user** (docs/DESIGN.md
 consequences shape this module:
 
 * **Unknown keys are preserved.** A sidecar is a file a person may add their own fields to. Reading
-  one and writing it back must never silently drop what pinakes does not understand — that is data
+  one and writing it back must never silently drop what Pinakes does not understand — that is data
   loss dressed up as normalisation.
 * **`id` is permanent.** It is minted once, at first ingest, and never regenerated. Writing a
   sidecar that already has an id keeps that id.
@@ -85,15 +85,15 @@ _STRING_TAG = "tag:yaml.org,2002:str"
 
 
 def needs_quoting(value: str) -> bool:
-    """Whether a scalar **pinakes is writing** would be read back as something other than a string.
+    """Whether a scalar **Pinakes is writing** would be read back as something other than a string.
 
     Keyed on the value being assigned, never on whether the document is new: `skeleton()` derives a
     title from the filename stem, so `NO.md` would mint a bare `title: NO` that any 1.1 reader takes
     as `False` — and `pnk link --rel no` is the same hazard on a file that already exists.
 
-    Both YAML versions, because the file may be read by something that is not pinakes. 1.2 alone
+    Both YAML versions, because the file may be read by something that is not Pinakes. 1.2 alone
     would leave `NO` bare, which is correct for 1.2 and wrong for every 1.1 reader in the world.
-    Scalars pinakes did *not* author are left exactly as the user wrote them.
+    Scalars Pinakes did *not* author are left exactly as the user wrote them.
     """
     return any(
         resolver.resolve(ScalarNode, value, (True, False)) != _STRING_TAG for resolver in _RESOLVERS
@@ -206,7 +206,7 @@ class Sidecar:
     links: tuple[Link, ...] = ()
     provenance: dict[str, Any] = field(default_factory=dict[str, Any])
     extra: dict[str, Any] = field(default_factory=dict[str, Any])
-    """Keys pinakes does not know. Round-tripped untouched — the file belongs to the user."""
+    """Keys Pinakes does not know. Round-tripped untouched — the file belongs to the user."""
 
     present: frozenset[str] = frozenset()
     """Known keys the file actually carried.
@@ -283,7 +283,7 @@ def read(path: Path, *, owner: KbId) -> Sidecar:
     except DuplicateKeyError as exc:
         # Caught ahead of `YAMLError`, which it subclasses. PyYAML took the last of a repeated key
         # silently; ruamel refuses, and its own message ends with a URL for suppressing the check —
-        # advice pinakes does not want followed, since which value was meant is exactly what nobody
+        # advice Pinakes does not want followed, since which value was meant is exactly what nobody
         # can know.
         raise SidecarError(
             path,
@@ -444,7 +444,7 @@ def _unchanged(existing: object, incoming: object) -> bool:
     """Whether a key's reconciled value is already exactly what the document holds.
 
     **Assign a known key only when its value actually changed.** This is what makes byte-identity
-    structural rather than incidental: nothing in pinakes edits `tags`, so under this rule its node
+    structural rather than incidental: nothing in Pinakes edits `tags`, so under this rule its node
     is never touched at all, and the same holds for every key a given write does not modify.
 
     Compared through `str` for scalars, because the document's entries may be `ScalarString`
@@ -579,7 +579,7 @@ def write(path: Path, sidecar: Sidecar) -> None:
             elif document.get(key) is None and not value:
                 # **An empty known key stays as the user wrote it.** `tags:` and `provenance:` with
                 # nothing under them read back as `()` and `{}` — identical to `tags: []` and
-                # `provenance: {}` in every way pinakes can observe — so rewriting them changes
+                # `provenance: {}` in every way Pinakes can observe — so rewriting them changes
                 # bytes for no meaning, against a promise stated as byte-identity. Reached on the
                 # common path only from L6: before `pnk link`, `write()` over an existing file ran
                 # on the paid-PDF path alone. Guarded on `not value` so a *first* link into a null

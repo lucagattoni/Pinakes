@@ -40,7 +40,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the monthly ceiling is reached only in a 31-day month at full daily spend. That is deliberate —
   the burst limiter is the one doing the work, and the monthly cap is the backstop behind it.
 
-- **The paid extractor's API key is `PINAKES_ANTHROPIC_API_KEY`, and pinakes now passes it to the
+- **The paid extractor's API key is `PINAKES_ANTHROPIC_API_KEY`, and Pinakes now passes it to the
   SDK explicitly.** `anthropic.Anthropic()` was constructed without `api_key`, so the SDK read
   `ANTHROPIC_API_KEY` out of whatever environment it happened to be in. On any machine where that
   variable is exported for some other tool — an editor, an agent, an inherited shell — the paid
@@ -250,15 +250,15 @@ Numbers, and the two findings behind them, in
   a symlinked *directory* cannot carry a link out of the KB, and an absolute path whose ancestor is
   a symlink (macOS `/tmp`, or any checkout behind one) is no longer refused as "outside this KB".
 
-- **`[kb] requires_pinakes` — a manifest can declare the oldest pinakes that can read it.** Unknown
-  keys are a hard error by design, so a KB written by a newer pinakes previously failed on the first
+- **`[kb] requires_pinakes` — a manifest can declare the oldest Pinakes that can read it.** Unknown
+  keys are a hard error by design, so a KB written by a newer Pinakes previously failed on the first
   key this build had never heard of and reported it as a typo, when the real problem was an
-  out-of-date pinakes. The floor is read in a pre-pass **before** strict validation — after it, the
+  out-of-date Pinakes. The floor is read in a pre-pass **before** strict validation — after it, the
   parse has already died on the unknown key and the field would be unreachable in exactly the case
   it exists for. A floor only (`">=0.5.0"`): a KB is readable by the version that wrote it or any
   newer one, so there is no ceiling to express and no specifier grammar to parse. Absence means no
   floor declared, never a refusal, and `pnk init` does not stamp the field — a fresh KB carries no
-  key an older pinakes would choke on, so a stamped floor would lock out readers for no gain.
+  key an older Pinakes would choke on, so a stamped floor would lock out readers for no gain.
 
 ### Changed
 
@@ -418,7 +418,7 @@ property it meant. No shipped behaviour changes.
   that true. Neighbours found but not expanded come back on a `frontier` carrying one of five
   reasons in a stated precedence, and links whose target does not resolve are returned rather than
   dropped. `adjacent_k` is settable but deliberately **not** stamped into the template: a manifest
-  carrying an unknown key cannot be read by an earlier pinakes at all.
+  carrying an unknown key cannot be read by an earlier Pinakes at all.
 
 ### Changed
 
@@ -434,7 +434,7 @@ property it meant. No shipped behaviour changes.
 
   **Four breaking changes**, all consequences of the library. A **duplicate key** is now a hard
   error rather than silent last-wins — which of the two values was meant is not recoverable, and
-  ruamel's own message ends with a URL for switching the check off that pinakes deliberately does
+  ruamel's own message ends with a URL for switching the check off that Pinakes deliberately does
   not pass on. A **string field that YAML 1.2 resolves as a number** (`1e3`, `1E3`, `0o17` in
   `title`, `created`, `tags[]`, `links[].to`, `links[].rel`) is refused. And an **`!!str`-tagged
   value** is refused — the only *working* tag that changes behaviour; `!!int`, `!!float`, `!!bool`,
@@ -631,7 +631,7 @@ property it meant. No shipped behaviour changes.
   - **The headroom threshold was asserted, not derived, and its test could not fail.** It checked a
     number the author had committed. It now runs the questions and counts, and the number follows
     from the gate table: 7 currently-failing questions to tolerate one regression.
-  - **`requires_pinakes` cannot explain a key retroactively** — a pinakes built before it has no
+  - **`requires_pinakes` cannot explain a key retroactively** — a Pinakes built before it has no
     pre-pass and fails on `requires_pinakes` itself. Deferring `adjacent_k`'s template stamp to that
     increment bought nothing; new keys simply stay out of the template in both releases.
   - **A neighbour's `kb` field was unspecified across three namespaces** — `[kb] name` (documented
@@ -741,7 +741,7 @@ property it meant. No shipped behaviour changes.
   can quietly miss the newest findings.
 
 - **`pnk doctor` crashed on a KB whose PDFs name an extraction backend this install does not know**
-  — a KB written by a newer pinakes, or one whose extra has since been uninstalled.
+  — a KB written by a newer Pinakes, or one whose extra has since been uninstalled.
   `is_paid_backend` raises on an unrecognised name, and a health check may not be the thing that
   fails on an unhealthy KB. It now reports them, exactly as the §4.4 coherence check already did.
 - **A KB whose PDFs are all paid-extracted no longer gets a permanent `text yield` warning** whose
@@ -1040,7 +1040,7 @@ property it meant. No shipped behaviour changes.
   document's priors rather than fitted against the golden set that then gates them — `calibrate.py`
   already records that circularity for the confidence thresholds and calls the result optimistic.
 
-- **pinakes is on PyPI, and every install line in the docs now says so.** `PUBLISH_TO_PYPI` was set
+- **Pinakes is on PyPI, and every install line in the docs now says so.** `PUBLISH_TO_PYPI` was set
   `true` at 20260728 17:15 UTC and **0.2.2 uploaded 108 seconds later** — the first and, so far,
   only published version: 0.2.0 and 0.2.1 predate publishing and cannot be installed by pin.
 
@@ -1298,7 +1298,7 @@ property it meant. No shipped behaviour changes.
   1 file(s) matched no `include` pattern: .pdf (1) — add "**/*.pdf" to `[sources] include` to index them, or `exclude` them to silence this.
   ```
 
-  **Only files pinakes could actually index are reported**, and the test is the one indexing itself
+  **Only files Pinakes could actually index are reported**, and the test is the one indexing itself
   applies: whether the first 8 KB decode as UTF-8 (`_index_document` reads every non-PDF source with
   `read_text(encoding="utf-8")`), plus `.pdf`, binary on purpose and indexable through
   `pinakes[pdf]`. An image or an archive beside your notes never appears — suggesting a glob for one
@@ -1493,7 +1493,7 @@ property it meant. No shipped behaviour changes.
 ### Documentation
 
 - **[`docs/KB-UPDATES.md`](docs/KB-UPDATES.md) — what happens to a KB somebody already has when
-  pinakes changes.** A design note, decided but **not built and not assigned to an increment**. The
+  Pinakes changes.** A design note, decided but **not built and not assigned to an increment**. The
   build plans had specified three drift axes and never asked about the fourth: an index schema, an
   embedding model and a PDF extractor each drift *detectably* and are remedied by rebuilding derived
   state, which is free — while a manifest and a template drift **silently**, and the remedy touches
@@ -2127,20 +2127,20 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/Pinakes/compare/v0.8.0...HEAD
-[0.8.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.8.0
-[0.7.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.7.1
-[0.7.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.7.0
-[0.6.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.6.0
-[0.5.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.5.0
-[0.4.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.4.1
-[0.4.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.4.0
-[0.3.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.3.0
-[0.2.2]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.2.2
-[0.2.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.2.1
-[0.2.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.2.0
-[0.1.4]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.4
-[0.1.3]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.3
-[0.1.2]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.2
-[0.1.1]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.1
-[0.1.0]: https://github.com/lucagattoni/Pinakes/releases/tag/v0.1.0
+[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.8.0
+[0.7.1]: https://github.com/lucagattoni/pinakes/releases/tag/v0.7.1
+[0.7.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.7.0
+[0.6.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.6.0
+[0.5.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.5.0
+[0.4.1]: https://github.com/lucagattoni/pinakes/releases/tag/v0.4.1
+[0.4.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.4.0
+[0.3.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.3.0
+[0.2.2]: https://github.com/lucagattoni/pinakes/releases/tag/v0.2.2
+[0.2.1]: https://github.com/lucagattoni/pinakes/releases/tag/v0.2.1
+[0.2.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.2.0
+[0.1.4]: https://github.com/lucagattoni/pinakes/releases/tag/v0.1.4
+[0.1.3]: https://github.com/lucagattoni/pinakes/releases/tag/v0.1.3
+[0.1.2]: https://github.com/lucagattoni/pinakes/releases/tag/v0.1.2
+[0.1.1]: https://github.com/lucagattoni/pinakes/releases/tag/v0.1.1
+[0.1.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.1.0

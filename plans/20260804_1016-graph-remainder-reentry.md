@@ -83,7 +83,7 @@ is a set of decisions you must take and record, and table F is a set of readings
 | A2 | CI on `main` is green | `gh run list --branch main --limit 1` | A broken build that never deployed looks identical to a good one in the log |
 | A3 | No shared document is about to be silently merged | `python3 tools/shared_file_overlap.py --fetch --strict`, then **read** the merged state of what it names | `docs/STATUS.md` is touched by every increment and has none of `changelog.d/`'s protection |
 | A4 | Unspliced findings exist that `docs/RETROSPECTIVES.md` does not carry | `ls retro.d/` | The newest findings live there until a release splices them |
-| A5 | **Read the standalone-work queue; it is not empty, and it is now long.** At `68084d3` it carries **eleven live items** (`plans/20260731_1202-open-corrections.md`, header dated 20260804 08:30), ten of them raised by *using* pinakes on the RFC corpus. Decide, item by item, which must land before G3 | `cat plans/20260731_1202-open-corrections.md` | Item 3 (`strategy = "structural"` recognises no RFC heading) **changes what the probe can measure** — see E8. Item 2 (the sync lock's UTC timestamp) and item 5 (`pnk init` refuses a non-empty directory) bite anyone re-syncing that corpus. This row said "still empty" in the 20260803 draft and was wrong by eleven |
+| A5 | **Read the standalone-work queue; it is not empty, and it is now long.** At `68084d3` it carries **eleven live items** (`plans/20260731_1202-open-corrections.md`, header dated 20260804 08:30), ten of them raised by *using* Pinakes on the RFC corpus. Decide, item by item, which must land before G3 | `cat plans/20260731_1202-open-corrections.md` | Item 3 (`strategy = "structural"` recognises no RFC heading) **changes what the probe can measure** — see E8. Item 2 (the sync lock's UTC timestamp) and item 5 (`pnk init` refuses a non-empty directory) bite anyone re-syncing that corpus. This row said "still empty" in the 20260803 draft and was wrong by eleven |
 
 ### B. `schema_version` — the number G3 hardcodes
 
@@ -156,7 +156,7 @@ older HEAD compares the channel against changes that are not the channel.
 
 **E3 — `graph_channel` is the second manifest key that cannot be stamped into the template.**
 `manifest.py:644-651` records why `adjacent_k` is not stamped: `_toml.py` hard-errors on an unknown
-key, so any pinakes built before the key existed cannot read a manifest carrying it, and
+key, so any Pinakes built before the key existed cannot read a manifest carrying it, and
 `requires_pinakes` cannot help retroactively. G5's `graph_channel` inherits this exactly.
 **If the template release's `pnk upgrade --apply` ships first** ([`20260804_1016-template-release.md`](20260804_1016-template-release.md)
 § T4 — a sibling scratchpad proposal, not a repository plan), there is finally a mechanism that
@@ -181,7 +181,7 @@ survives the corpus change.**
 The with/without-authored split neutralises hand-authored links. It does not neutralise the fact
 that the same author chose the directory layout and tag vocabulary. On the RFC corpus that guard
 changes character in the direction the plan wants: the directories are IETF working-group acronyms
-and the tags are **the RFC Editor's own `keywords`**, not a pinakes agent's inventions
+and the tags are **the RFC Editor's own `keywords`**, not a Pinakes agent's inventions
 (`plans/20260801_0749-realism-corpus.md`; `docs/STATUS.md:342`). **Re-read that reasoning and state,
 in `docs/STATUS.md`, whether a result carried by `shared-tag`/`co-located` on this corpus is the
 weaker claim the plan says it is on the demo KB.** The honest reading is that `shared-tag` is
@@ -201,7 +201,7 @@ if anything in a G3 branch reads an environment variable, re-read that release n
 list.
 
 **E8 — Three of G3's seven edge kinds derive zero edges on the corpus the gate will run on, and
-that is a pinakes defect, not a corpus property.** ⚠️ **This is the newest and largest item here.**
+that is a Pinakes defect, not a corpus property.** ⚠️ **This is the newest and largest item here.**
 Measured 20260804: the RFC corpus has **106 806 chunks and every one has an empty `heading_path`**
 (`docs/STATUS.md:342`; `plans/20260731_1202-open-corrections.md` item 3). `strategy = "structural"`
 uses a Markdown-shaped heading grammar; RFC section numbering does not match it, so the strategy

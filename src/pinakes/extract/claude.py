@@ -193,7 +193,7 @@ API_KEY_ENV = "PINAKES_ANTHROPIC_API_KEY"
 `anthropic.Anthropic()` reads `ANTHROPIC_API_KEY` from the process environment on its own. On any
 machine where that is exported for some other tool — an editor, an agent, a shell someone forgot —
 the paid path would find a live key it was never handed, and the "deliberate act of supplying the
-key" that `CLAUDE.md` counts as a defence would not be one. Reading a name only pinakes uses, and
+key" that `CLAUDE.md` counts as a defence would not be one. Reading a name only Pinakes uses, and
 passing it explicitly, makes the defence real rather than a property of a tidy machine.
 """
 

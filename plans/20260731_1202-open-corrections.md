@@ -18,7 +18,7 @@ implementer. What remains below is code and tooling.
 destroys user work.
 
 **Earlier state, for the record: no live items as of 20260804 04:20.** The one item raised on 20260803 was built and merged the
-same evening. Beyond it there is no pinakes code work: the links release is complete, the graph
+same evening. Beyond it there is no Pinakes code work: the links release is complete, the graph
 release is **blocked** at G2's measurement ([`20260729_0256-links-and-graph.md`](20260729_0256-links-and-graph.md)), and what
 unblocks it is a corpus ([`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md)).
 
@@ -120,7 +120,7 @@ The resumed corpus sync reclaimed its own stale lock and continued incrementally
 
 ### 11 · `pnk doctor`'s model-coherence remedy destroys an interrupted sync's work
 
-**Found by using pinakes, not by reading it** — the RFC realism corpus, 20260804, on a first sync
+**Found by using Pinakes, not by reading it** — the RFC realism corpus, 20260804, on a first sync
 of 300 documents killed at ~106 by an unrelated process death.
 
 **Current.** `sync.py:964` writes the embedding identity keys with `set_meta` **after** the document

@@ -1,4 +1,4 @@
-# pinakes documentation
+# Pinakes documentation
 
 **A portable, agent-first knowledge base. One directory = one KB.**
 
@@ -113,7 +113,7 @@ pnk doctor                            # environment, coherence, orphans, link co
 ## What is true, and where it is written
 
 **One fact, one home.** Every claim below lives in exactly one file; everywhere else links to it.
-This page is deliberately **version-free** — it says what pinakes *is*, never which release you are
+This page is deliberately **version-free** — it says what Pinakes *is*, never which release you are
 on, so it does not go stale.
 
 | Question | Answer lives in |
@@ -128,11 +128,11 @@ on, so it does not go stale.
 
 ## Elsewhere in the repo
 
-- [Changelog](https://github.com/lucagattoni/Pinakes/blob/main/CHANGELOG.md) —
+- [Changelog](https://github.com/lucagattoni/pinakes/blob/main/CHANGELOG.md) —
   versioned release history
-- [Build plans](https://github.com/lucagattoni/Pinakes/tree/main/plans) —
+- [Build plans](https://github.com/lucagattoni/pinakes/tree/main/plans) —
   the current build order, decision records and iteration logs
-- [Docs routing table](https://github.com/lucagattoni/Pinakes/blob/main/docs/README.md) —
+- [Docs routing table](https://github.com/lucagattoni/pinakes/blob/main/docs/README.md) —
   which file to edit when an increment lands
-- [`CLAUDE.md`](https://github.com/lucagattoni/Pinakes/blob/main/CLAUDE.md) —
+- [`CLAUDE.md`](https://github.com/lucagattoni/pinakes/blob/main/CLAUDE.md) —
   the conventions and invariants an agent working here must follow

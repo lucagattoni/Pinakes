@@ -15,7 +15,7 @@
 // repo files with no page on this site (plans/, CLAUDE.md, changelog.d/), and a
 // reader deserves to know before clicking that the link leaves for GitHub.
 document$.subscribe(function () {
-  var SITE_BASE = "https://lucagattoni.github.io/Pinakes/";
+  var SITE_BASE = "https://lucagattoni.github.io/pinakes/";
   var isProdOrigin = window.location.origin === "https://lucagattoni.github.io";
 
   document.querySelectorAll(".md-content a[href]").forEach(function (a) {

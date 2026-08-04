@@ -1,4 +1,4 @@
-# pinakes — project instructions
+# Pinakes — project instructions
 
 Architecture and rationale live in [`docs/DESIGN.md`](docs/DESIGN.md); [`docs/README.md`](docs/README.md)
 indexes the rest (which file owns which fact). This file only carries rules that change how you work.
@@ -14,7 +14,7 @@ indexes the rest (which file owns which fact). This file only carries rules that
   other tool exports one the paid path would find a live key nobody aimed at it — measured true
   here on 20260804. Supplying the key must be an act aimed at *this* tool. It lives in `.env`,
   gitignored by pattern (`.env`, `.env.*`), passed per command: `uv run --env-file .env pnk …`.
-  **Never teach pinakes to load `.env` itself**, and never add an `ANTHROPIC_API_KEY` fallback —
+  **Never teach Pinakes to load `.env` itself**, and never add an `ANTHROPIC_API_KEY` fallback —
   both are the same defect, one layer apart. Note what actually bounds spend once a key is
   present: the §5 caps and the enumerated allowlist, not the invocation form
   ([docs/MEASUREMENT-RUN.md](docs/MEASUREMENT-RUN.md)).
@@ -70,11 +70,19 @@ records keep the numbers they were written with** and carry a header note: `CHAN
 
 | Thing | Value |
 |---|---|
+| **Project name, in prose** | **`Pinakes`** — capital P. "Pinakes is a portable KB", "a newer Pinakes" |
 | Package / command | `pinakes` / `pnk` |
+| Repository / docs site | `github.com/lucagattoni/pinakes` · `lucagattoni.github.io/pinakes` |
 | Manifest / sidecar | `pinakes.toml` / `<file>.pnk.yaml` |
 | Generated state | `.pinakes/` |
 | MCP tools | `pinakes_*` — never bare `kb_*`, which collides across servers |
 | Cross-KB URI | `pnk://<kb-ulid>/<doc-ulid>` — ULIDs only, never aliases |
+
+**Capital `P` names the project; lowercase `p` names something you can type.** `pinakes.toml`,
+`.pinakes/`, `pinakes[st]`, `pinakes_search`, `import pinakes`, `requires_pinakes`, `src/pinakes/`
+and every URL stay lowercase inside a sentence that otherwise says Pinakes. Runtime output names
+the *command*, so it stays lowercase too — a git hook's `echo "pinakes: …"` is not prose. Applied
+across the repo 20260804 11:55, history included.
 
 ## Invariants that must not be broken
 
@@ -87,7 +95,7 @@ records keep the numbers they were written with** and carry a header note: `CHAN
   an AST scan over `src/` plus a runtime check on the free path. `write()` reconciles known keys
   *into* the loaded document; it never renders a fresh one. Values must be JSON-encodable and every
   key a string, because the index stores metadata as JSON. The invariant is **bounded** — by what
-  pinakes normalises, what ruamel normalises, and what YAML does not carry — and **each exclusion is
+  Pinakes normalises, what ruamel normalises, and what YAML does not carry — and **each exclusion is
   pinned by a test**, which is the authoritative list because a bound stated only in prose cannot
   notice the library's behaviour moving under it: `docs/VERIFICATION.md` § *The sidecar round-trip*,
   and `docs/MANIFEST.md`'s bounds table.
@@ -201,14 +209,14 @@ and after numbers in the commit message.
 which fact) and the per-increment landing checklist. `docs/DESIGN.md` is rationale only; it changes
 only when the *reasoning* changes, never for a new flag or field alone.
 
-**`docs/` is published** to [lucagattoni.github.io/Pinakes](https://lucagattoni.github.io/Pinakes/)
+**`docs/` is published** to [lucagattoni.github.io/pinakes](https://lucagattoni.github.io/pinakes/)
 on every push to `main`, so a docs edit now has a second renderer that a PR gates with
 `mkdocs build --strict`. Two rules follow, both in `docs/README.md` § Conventions: a link *out* of
 `docs/` is absolute (`plans/`, `CLAUDE.md`, `changelog.d/` have no page there), and a heading is
 never renamed to fix a site anchor — `mkdocs_hooks.py` makes the site match GitHub, not the
 reverse. Run `make docs` before landing a docs change.
 
-- **README and DESIGN.md are deliberately version-free** — they describe what pinakes *is*, never
+- **README and DESIGN.md are deliberately version-free** — they describe what Pinakes *is*, never
   which release it's on. Never reintroduce a version number or "as of vX" claim into their prose
   (CHANGELOG.md `[0.2.1]` — a 20260728 restructure existed specifically to stop that drift).
 - **Verify docs by running the commands they show**, install line included — prose drifts toward

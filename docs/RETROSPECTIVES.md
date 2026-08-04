@@ -4,7 +4,7 @@
 > work is now **named, not numbered** ([STATUS.md](STATUS.md)). This record is left as it was.
 
 One section per increment of the project's build plans (`plans/`), written during that increment's
-retrospective review (the workflow is in [`CLAUDE.md`](https://github.com/lucagattoni/Pinakes/blob/main/CLAUDE.md)). Only findings worth keeping
+retrospective review (the workflow is in [`CLAUDE.md`](https://github.com/lucagattoni/pinakes/blob/main/CLAUDE.md)). Only findings worth keeping
 land here: a real defect the review caught, or a fact that would be expensive to rediscover. Fixes
 themselves live in the commits; this file records *what was learned*.
 
@@ -22,7 +22,7 @@ The seven **pre-implementation** design review passes are at the foot of this fi
 Added 20260801 01:11. Forty-odd sections in date order is an archive, not something anyone reads
 before starting work — so this table is the way in. It is keyed on **what you are about to do**, not
 on when the lesson was learned, and it is deliberately short: only the classes that have recurred.
-A rule that hardened into a standing instruction lives in [`CLAUDE.md`](https://github.com/lucagattoni/Pinakes/blob/main/CLAUDE.md); this file is
+A rule that hardened into a standing instruction lives in [`CLAUDE.md`](https://github.com/lucagattoni/pinakes/blob/main/CLAUDE.md); this file is
 where the evidence for it is.
 
 | About to… | Read | Because |
@@ -1582,7 +1582,7 @@ by any test:
 
 **HIGH — the health check crashed on an unhealthy KB.** `is_paid_backend` raises
 `BackendUnknownError` on a name it does not recognise, and the check passed it every PDF's recorded
-backend. A KB indexed by a newer pinakes, or with an extra since uninstalled, would make `pnk
+backend. A KB indexed by a newer Pinakes, or with an extra since uninstalled, would make `pnk
 doctor` itself raise — the one command someone runs *because* their KB is in a state they do not
 understand. §4.4's coherence check has carried the identical guard, with the identical comment,
 since I5; the new code was written beside it and did not copy it.
@@ -1595,7 +1595,7 @@ for a swept cache. Skipped-on-purpose and lost look identical to a counter.
 **LOW — a single out-of-range page bound was reported as a backwards range.** `page_start=5` on a
 two-page document read "pages 5-2 is not a range within it", because the bounds were validated
 after the omitted one was defaulted. It describes a range the caller never asked for, and reads as
-pinakes' mistake rather than a bad argument. Found by running the tool, not by reading it.
+Pinakes' mistake rather than a bad argument. Found by running the tool, not by reading it.
 
 **What the tests could not have caught.** All three needed either a KB state no fixture builds
 (an unknown backend name, wholly paid extraction) or a human reading an error message. The
@@ -1696,7 +1696,7 @@ happens to have. A fix aimed at a repro covers the repro's path.
 
 **Two smaller things the same pass caught, both about honesty rather than correctness.** The refusal
 said only "already exists, so a freshly minted sidecar cannot be written over it" — which reads like
-a pinakes bug (*of course* it exists) and says nothing about the character the user mistyped, while
+a Pinakes bug (*of course* it exists) and says nothing about the character the user mistyped, while
 DESIGN, the changelog and the commit message all claimed it named the parse error. The walk has to
 swallow that error to keep walking, so the mint path now re-reads the one file to recover it. And
 the remedy said "repair the file rather than deleting it — it holds the permanent ULID", which is
@@ -1772,7 +1772,7 @@ I9 working on the first increment after it shipped.
 ## L2 — Reverse-scan (20260730 16:51)
 
 **One root cause behind all three HIGH findings: I bypassed `manifest.load` and kept none of what
-it was doing.** The bypass is right — a partner may run a newer pinakes whose manifest mentions keys
+it was doing.** The bypass is right — a partner may run a newer Pinakes whose manifest mentions keys
 this one has never heard of, and refusing to read a neighbour's inbound links over that would make
 every connected KB a version dependency of every other. But `load` is not only a parser; it is also
 the place that rejects an absolute `[sources] roots`, rejects `..` in one, and validates the include
@@ -2138,10 +2138,10 @@ and does not fire on any of the four legal `ruamel` forms, every one of which co
 stub signature test proves it can fail: writing `transform` into the expected set failed it,
 because `transform` belongs to `dump` rather than `__init__`.
 
-**"PyYAML left the runtime" is true of what pinakes declares and false of what a user's machine
+**"PyYAML left the runtime" is true of what Pinakes declares and false of what a user's machine
 has.** Measured on a built wheel: bare, `yaml` is absent; `pinakes[light]` has it, transitively from
 `huggingface_hub`. `starlette` and `uvicorn` list it too, but only under an extra they do not pull.
-So the CI assertion is correctly scoped to the bare wheel — pinakes never asks for PyYAML — and the
+So the CI assertion is correctly scoped to the bare wheel — Pinakes never asks for PyYAML — and the
 consequence is the part worth remembering: **`import yaml` will succeed in a real install**, so a
 stray import in `src/` would quietly work instead of failing loudly. That is what makes the AST scan
 load-bearing rather than a second belt.

@@ -1,4 +1,4 @@
-- **A published documentation site — [lucagattoni.github.io/Pinakes](https://lucagattoni.github.io/Pinakes/).**
+- **A published documentation site — [lucagattoni.github.io/pinakes](https://lucagattoni.github.io/pinakes/).**
   MkDocs Material over the existing `docs/`, deployed to GitHub Pages on every push to `main` and
   built with `--strict` on every PR, so a broken internal link or anchor fails the check. Nothing in
   `docs/` moved: the filenames are load-bearing in `tools/fragments.py`, `tools/status_header_gate.py`

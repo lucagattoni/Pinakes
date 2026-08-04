@@ -14,7 +14,7 @@ That expansion is enforced by the type system rather than by discipline: parsing
 it into a writable `PnkUri`.
 
 The scheme itself is matched case-sensitively. RFC 3986 would allow `PNK://`, but every URI in a
-sidecar is written by pinakes, so a differently-cased scheme means hand-editing — better surfaced
+sidecar is written by Pinakes, so a differently-cased scheme means hand-editing — better surfaced
 than quietly accepted. The `self` sentinel *is* case-insensitive: users do type that one.
 """
 

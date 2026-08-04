@@ -1,4 +1,4 @@
-# pinakes
+# Pinakes
 
 **A portable, agent-first knowledge base. One directory = one KB.**
 
@@ -8,9 +8,9 @@
 [![PyPI](https://img.shields.io/pypi/v/pinakes.svg)](https://pypi.org/project/pinakes/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/)
-[![Docs](https://img.shields.io/badge/docs-lucagattoni.github.io%2FPinakes-blue.svg)](https://lucagattoni.github.io/Pinakes/)
+[![Docs](https://img.shields.io/badge/docs-lucagattoni.github.io%2Fpinakes-blue.svg)](https://lucagattoni.github.io/pinakes/)
 
-📖 **[Documentation site](https://lucagattoni.github.io/Pinakes/)** — searchable, and the same
+📖 **[Documentation site](https://lucagattoni.github.io/pinakes/)** — searchable, and the same
 files rendered below: **[Guide](docs/GUIDE.md)** · **[CLI](docs/CLI.md)** ·
 **[Manifest](docs/MANIFEST.md)** · **[Design](docs/DESIGN.md)** ·
 **[What ships today](docs/STATUS.md)**

@@ -16,7 +16,7 @@ What unblocks it is [`20260801_0749-realism-corpus.md`](20260801_0749-realism-co
 > that collided with the dependency removal, which collided with the import gate; a merge rule that
 > collided with two different nested-deletion semantics.
 >
-> The seam is **what is needed to keep behaviour equivalent** versus **what pinakes chooses to
+> The seam is **what is needed to keep behaviour equivalent** versus **what Pinakes chooses to
 > reject on top**. Decision 26 sits in L5b, not L5c: PyYAML refuses an unknown tag cleanly today and
 > ruamel accepts it, so without that check L5b alone would turn a clean `SidecarError` into a
 > traceback — measured. A first attempt put it in L5c and introduced exactly that regression window.
@@ -65,7 +65,7 @@ fitting the question set to the edge set, the circularity decision 14 removed on
 precondition is re-tested by re-running the probe on a corpus that can discriminate, and the probe's
 answer is reported whichever way it comes back.
 
-**The corpus is the critical path**, and it is not a pinakes increment: see
+**The corpus is the critical path**, and it is not a Pinakes increment: see
 [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) § *Why this is not the gate moving to fit the answer*, and
 [`20260803_2239-corpus-probe-run.md`](20260803_2239-corpus-probe-run.md) for how the second measurement is run once it exists.
 Re-verify this baseline before starting anything: `git log --oneline -1`,
@@ -127,7 +127,7 @@ Three things the parallel run established that outlive it, and that apply to any
 ## Goal
 
 A question answered in one KB can reach evidence in another **one hop out**, because a human said the
-two documents were related and pinakes remembered — and the structure that makes retrieval better
+two documents were related and Pinakes remembered — and the structure that makes retrieval better
 when nobody has authored anything is derived for free afterwards, if and only if the golden set says
 it helps.
 
@@ -160,7 +160,7 @@ earlier.
 | 6 | PPR and the `[ner]` extra are out | 02:30–03:10 | — |
 | 7 | Adversarial subagent passes until one comes back clean | 02:30–03:10 | Passes 1–7 done. **No pass has come back clean**, so the rule is honoured per-phase instead: L1–L8 build now, G5's clauses are re-reviewed before G5 |
 | 19–27 | Recorded in [`20260731_0602-decision-ruamel-yaml.md`](20260731_0602-decision-ruamel-yaml.md), not here. 24 and 25 were taken and superseded the same day, by 26 and 27 | 20260731 | L5b, L5c |
-| 28 | **L5b splits into L5b and L5c.** After passes returning 8, 8 and 7 HIGH on one section, the seam is *what keeps behaviour equivalent* (L5b, which keeps the interim cut) versus *what pinakes chooses to reject on top* (L5c, decision 19 alone). Decision 26 belongs to L5b: without it, L5b alone turns a clean `SidecarError` on an unknown tag into a traceback | 20260731 07:52 | L5b, L5c |
+| 28 | **L5b splits into L5b and L5c.** After passes returning 8, 8 and 7 HIGH on one section, the seam is *what keeps behaviour equivalent* (L5b, which keeps the interim cut) versus *what Pinakes chooses to reject on top* (L5c, decision 19 alone). Decision 26 belongs to L5b: without it, L5b alone turns a clean `SidecarError` on an unknown tag into a traceback | 20260731 07:52 | L5b, L5c |
 | 18 | ~~**`pnk link` ships without a comment-preserving YAML writer**~~ — **superseded 20260731 06:00 by [`20260731_0602-decision-ruamel-yaml.md`](20260731_0602-decision-ruamel-yaml.md)**, which measured the two premises below and found both wrong. This row is left as written; the plan's own updates are not made here | 20260729 05:58 (the user) | L6. `ruamel.yaml` as a second YAML library — core or extra — is a poor trade for one authoring command against *"core dependencies stay light"*; a later paid-extraction sync rewrites the same sidecar through `pyyaml` and destroys the comments anyway, so the guarantee would be partial either way. `test_comments_survive_a_rewrite_through_pnk_link` lands **xfail**, DESIGN §2.2 records the deferral, and `pnk link` **warns when the sidecar it is about to rewrite contains comments** — losing them silently at the moment of loss is the part that is not acceptable |
 | 8 | `pinakes_search`'s `entities`/`concepts` are cut | 03:20–03:35 | RRF here is unweighted by construction |
 | 9 | The eval harness is repaired before it is grown | 03:20–03:35 | Landed `b637be4`, released in 0.3.0 |
@@ -264,7 +264,7 @@ earlier.
 | *"`docs/` belongs to the user … never any other key"* | A second, narrower exception: **a user-invoked authoring command** writing `links[]` to the source document's own sidecar | L6 |
 | The "🚫 Unbuilt work is named" table (**not** the "Naming (fixed…)" table) in `CLAUDE.md` **and** `docs/STATUS.md` | **Only `docs/STATUS.md`'s *roadmap* row lacks `pnk links`** — both 🚫 tables already carry it, and only `CLAUDE.md`'s 🚫 table still needs the paid-extraction row dropped. Check each before editing. **Reconcile the two tables** — `CLAUDE.md` still carries the paid-extraction row that 0.4.0 retired and `docs/STATUS.md` has already dropped. Assigned to L4, which landed without doing it; **reassigned to L5b**, the cutting increment | L4 → **L5b** |
 | *Landing work: always push, always release* | A release that **cuts more than once** keeps its name in the 🚫 unbuilt-work table until the **final** cut; the roadmap row carries both tags. CLAUDE.md today says to drop the name when the roadmap row is ticked, which at an interim cut deletes a name L8 needs back — the churn decision 27 was chosen to avoid | L5b |
-| *Invariants that must not be broken* | A new one: **an unknown key in a sidecar round-trips byte-identically** — stronger and more testable than "untouched", and false until L5b. It excludes what pinakes normalises by design (`pnk://self/…` expansion; canonical ordering **on a minted sidecar only** — an existing file keeps the user's order), what **ruamel** normalises (block-sequence and nested-mapping **indentation**, which follows the dumper settings rather than the source; **every explicit YAML tag on a value ruamel resolves natively** — `!!int`, `!!bool`, `!!seq`, `!!map`, `!!null` and the non-specific `!` — all dropped on write; and an anchor whose value is **null or recursive**, whose anchor and alias are destroyed and whose value is nulled), and what YAML itself does not carry (CRLF, a BOM, `---`/`...` markers, and **a missing trailing newline**, which is added) | L5b |
+| *Invariants that must not be broken* | A new one: **an unknown key in a sidecar round-trips byte-identically** — stronger and more testable than "untouched", and false until L5b. It excludes what Pinakes normalises by design (`pnk://self/…` expansion; canonical ordering **on a minted sidecar only** — an existing file keeps the user's order), what **ruamel** normalises (block-sequence and nested-mapping **indentation**, which follows the dumper settings rather than the source; **every explicit YAML tag on a value ruamel resolves natively** — `!!int`, `!!bool`, `!!seq`, `!!map`, `!!null` and the non-specific `!` — all dropped on write; and an anchor whose value is **null or recursive**, whose anchor and alias are destroyed and whose value is nulled), and what YAML itself does not carry (CRLF, a BOM, `---`/`...` markers, and **a missing trailing newline**, which is added) | L5b |
 
 ---
 
@@ -607,7 +607,7 @@ soft-delete removal; the `schema_version` refusal.
 ### G4 — `requires_pinakes` ✅ shipped in 0.6.0
 
 `[kb] requires_pinakes` — a compatibility floor read in a **pre-pass before strict validation**, so a
-manifest written by a newer pinakes names the version it needs instead of failing as a typo. The
+manifest written by a newer Pinakes names the version it needs instead of failing as a typo. The
 ordering is the feature: read after strict validation, the field is unreachable in the only case it
 exists for. A floor only — no ceiling, no bare version — and an absent one is not an error.
 
@@ -855,7 +855,7 @@ cut in this project, and `docs/RELEASING.md` is where a cut that is actually hap
 | A duplicate key is a hard error, not a silent last-wins | decision-ruamel-yaml | L5b | `test_a_duplicate_key_is_refused_without_ruamels_suppression_url` |
 | A non-string top-level key is refused | decision 19 | **L5b** (shipped) | `tests/test_sidecar.py::test_a_non_string_key_at_the_top_level_is_refused`, `::test_a_key_that_is_not_a_string_is_refused_as_a_key` |
 | `extra`/`provenance` values are JSON-encodable | decision 26 | **L5b** (shipped) | `tests/test_sidecar.py::test_a_json_unencodable_extra_value_is_refused_with_a_remedy` (this row named a second, sync-level test that was never written; the behaviour is what the surviving one asserts) |
-| Every scalar pinakes writes survives a 1.1 **and** a 1.2 reader | decision 23 | L5b, L6 | `test_a_minted_title_that_looks_like_a_boolean_is_quoted`, `test_a_rel_that_looks_like_a_boolean_is_quoted` |
+| Every scalar Pinakes writes survives a 1.1 **and** a 1.2 reader | decision 23 | L5b, L6 | `test_a_minted_title_that_looks_like_a_boolean_is_quoted`, `test_a_rel_that_looks_like_a_boolean_is_quoted` |
 | A comment inside a nested known-key block survives | decision-ruamel-yaml | L5b | `test_a_comment_inside_provenance_extraction_survives_a_re_extraction` |
 | `src/` never imports `pyyaml` again | decision 21 | L5b | `test_no_module_under_src_imports_pyyaml` (AST), `test_the_free_path_run_never_loads_yaml` (runtime) — neither alone suffices |
 | A custom-tagged mapping is accepted, being serialisable | decision 26 | L5b | `test_a_tagged_mapping_is_accepted_because_it_serialises` |

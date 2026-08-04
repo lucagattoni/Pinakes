@@ -76,7 +76,7 @@ number about two different things.
 OUTCOMES_SCHEMA = 1
 """Version of the per-question artifact's *shape*, bumped when a row gains or loses a field.
 
-Not the index's `schema_version` and not a release: an artifact written by an older pinakes must be
+Not the index's `schema_version` and not a release: an artifact written by an older Pinakes must be
 recognisable as such by a reader that has since changed the row.
 """
 

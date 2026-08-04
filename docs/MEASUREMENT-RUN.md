@@ -6,9 +6,9 @@ This run is what replaces intuition about extraction *quality* with numbers.
 
 > **Fixture provenance is a different job, and it is done separately.** Four branches now carry
 > bodies captured from the live API by
-> [`tools/record_claude_fixtures.py`](https://github.com/lucagattoni/Pinakes/blob/main/tools/record_claude_fixtures.py), and every fixture
+> [`tools/record_claude_fixtures.py`](https://github.com/lucagattoni/pinakes/blob/main/tools/record_claude_fixtures.py), and every fixture
 > declares its own provenance
-> ([`tests/fixtures/claude/README.md`](https://github.com/lucagattoni/Pinakes/blob/main/tests/fixtures/claude/README.md)). To re-record a branch,
+> ([`tests/fixtures/claude/README.md`](https://github.com/lucagattoni/pinakes/blob/main/tests/fixtures/claude/README.md)). To re-record a branch,
 > use that tool rather than this runbook — the two spend on different things and answer different
 > questions.
 
@@ -55,7 +55,7 @@ an obstacle to work around.
 `git add -A` from being published; ignoring it by pattern is what makes that impossible rather than
 merely unlikely.
 
-**Nothing loads `.env` automatically, and that is deliberate.** pinakes has no `.env` support and
+**Nothing loads `.env` automatically, and that is deliberate.** Pinakes has no `.env` support and
 should not get any: a tool that can spend money must not pick up credentials from a file nobody
 pointed it at, or the same `pnk sync` means different things depending on which directory you ran
 it from. Pass it explicitly at the call site, exactly as every other spend control in this project

@@ -77,7 +77,7 @@ every PDF into a failed document rather than a skipped one.
 appears in no KB created before it, and nothing today detects or reports that divergence — so existing KBs stay PDF-blind
 permanently unless their owner edits the manifest by hand. That gap, and what to do about it, is
 worked through in [KB-UPDATES.md](KB-UPDATES.md). Its `requires_pinakes` half **shipped in 0.6.0
-(G4)** — a manifest can declare the oldest pinakes that can read it, so an out-of-date build says so
+(G4)** — a manifest can declare the oldest Pinakes that can read it, so an out-of-date build says so
 instead of reporting a typo. That closes the *diagnosis*, not this gap:
 nothing yet detects template drift or adopts a new default into an existing manifest.
 
@@ -91,7 +91,7 @@ installed. On a `pinakes[light]` install, set `provider = "fastembed"` in **both
 
 ## v0.2 increment ledger
 
-The build order is [`plans/20260727_1543-v0.2.md`](https://github.com/lucagattoni/Pinakes/blob/main/plans/20260727_1543-v0.2.md). Each increment is a separate, bisectable
+The build order is [`plans/20260727_1543-v0.2.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260727_1543-v0.2.md). Each increment is a separate, bisectable
 landing with its own tests.
 
 | # | Increment | State |
@@ -185,9 +185,9 @@ how conservative the reservation is.
 
 The gap the measurement run left open is closed as far as it can be. Four branches — `happy`,
 `short-slice`, `refusal`, `truncated` — carry bodies captured from the live API by
-[`tools/record_claude_fixtures.py`](https://github.com/lucagattoni/Pinakes/blob/main/tools/record_claude_fixtures.py). Every fixture now declares
+[`tools/record_claude_fixtures.py`](https://github.com/lucagattoni/pinakes/blob/main/tools/record_claude_fixtures.py). Every fixture now declares
 its own `provenance`, so the set no longer makes one claim about a mixed collection
-([the fixture README](https://github.com/lucagattoni/Pinakes/blob/main/tests/fixtures/claude/README.md)).
+([the fixture README](https://github.com/lucagattoni/pinakes/blob/main/tests/fixtures/claude/README.md)).
 
 The authored bodies were right about every branch's control flow and wrong about the response shape
 in five ways no passing test could have revealed: the API returns the model **alias**
@@ -251,12 +251,12 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.3.0** ✅ | Budget machinery, the opt-in paid Claude-vision extractor (I6–I7c) |
 | **0.4.0** ✅ | `path:page` citations on both surfaces, `pnk doctor` text yield (I8); the verification table and its gate (I9) |
 | **0.4.1** ✅ | A sidecar that will not parse is no longer overwritten by a freshly minted one, and no longer aborts the whole sync — data loss present since v0.1 |
-| **0.5.0** ✅ *(the links release, interim)* | `pnk links`, `pinakes_links`, reverse-scan and the sidecar round-trip fix — no `schema_version` bump, so no rebuild. **The release cuts twice** (decision 27): this is the interim MINOR at L5b; the final cut is at L8, and the name stays in the unbuilt-work table until then. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **L5b landed:** `ruamel.yaml` replaces `pyyaml` in the sidecar, so a rewrite preserves comments, quoting and blank lines — and `country: NO` stops becoming `false` ([decision](https://github.com/lucagattoni/Pinakes/blob/main/plans/20260731_0602-decision-ruamel-yaml.md)). |
+| **0.5.0** ✅ *(the links release, interim)* | `pnk links`, `pinakes_links`, reverse-scan and the sidecar round-trip fix — no `schema_version` bump, so no rebuild. **The release cuts twice** (decision 27): this is the interim MINOR at L5b; the final cut is at L8, and the name stays in the unbuilt-work table until then. **L1 landed:** the partner corpus, sparse authored links in both, and the density gate. **L2 landed:** reverse-scan writes inbound rows and `kb_refs`, with a freshness window and `--scan-links`. **L3–L5 landed:** the bounded traversal core, `pnk links`, and `pinakes_links` on the MCP surface. **L5b landed:** `ruamel.yaml` replaces `pyyaml` in the sidecar, so a rewrite preserves comments, quoting and blank lines — and `country: NO` stops becoming `false` ([decision](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_0602-decision-ruamel-yaml.md)). |
 | **0.6.0** ✅ *(the links release, final)* | `pnk link` authors a link from the command line, and `pnk doctor` reports link coverage as **linked docs / total docs** and resolves each cross-KB target through its `[[links.kb]]` entry (L6–L8). Also `[kb] requires_pinakes` (G4) and the evaluation's tie-ordering fix (G1) — no `schema_version` bump, so no rebuild. **This completes the two-cut release** decision 27 describes: 0.5.0 was the interim MINOR at L5b, this is the final cut, and the name leaves the unbuilt-work table here |
 | **0.7.0** ✅ | The evaluation grows a per-question artifact (`eval/outcomes.json`), stable question ids, a validated `kind`, and an empty golden set that skips with a reason instead of failing — plus the demo KB's golden set grown 41 → 74 with a `simple-lookup` control class (G2). **Its deliverable is a measurement:** the graph release's gate cannot be reached on this corpus, so G3 and G5 do not start ([above](#can-the-graph-releases-gate-be-reached--measured-20260801-1214)). No `schema_version` bump, so no rebuild |
 | **0.8.0** ✅ | **Breaking, paid path only:** the Claude-vision extractor's key is `PINAKES_ANTHROPIC_API_KEY` and is passed to the SDK explicitly — no fallback to `ANTHROPIC_API_KEY`, which the SDK used to read out of whatever environment it was handed. Rename the variable in your `.env`. Also `[budget]` defaults raised (`per_operation_eur` 0.05 → 0.30, `monthly_eur` 5.00 → 30.00), a `check.sh` gate pinning `docs/STATUS.md`'s own header to `__version__`, the reachability probe refusing a golden set it cannot measure rather than absorbing it, and sixteen documentation claims corrected against the code. No `schema_version` bump, so no rebuild |
 | **0.7.1** ✅ | `[sources] include` can no longer walk out of the KB or write sidecars outside it — three defects live since before 0.5.0: a `..` pattern indexed files outside and minted sidecars beside them, an absolute pattern was a bare traceback, and a symlinked directory carried the walk out with no `..` anywhere. Plus a document reached by two legal spellings is now one document, and `tools/link_density_gate.py` survives a non-canonical root |
-| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. **⚠️ Blocked: its gate was measured on 20260801 and cannot be reached on this corpus** ([above](#can-the-graph-releases-gate-be-reached--measured-20260801-1214)) — 1 of 18 multi-hop questions fails where 7 were needed. Its three finished increments have all shipped: **G1** (reproducibility, and the tie-ordering defect it found) and **G4** (`requires_pinakes`) in 0.6.0, **G2** in 0.7.0. **What is left — G3, G5 and G6 — does not start**, and cannot until a corpus exists that can discriminate: `tests/demo-kb` has no tags and one directory, so exactly one derived edge kind crosses a document boundary, and the funnel already returns every document before any channel could reach further. **The unblocking work is a corpus, not code** ([`plans/20260801_0749-realism-corpus.md`](https://github.com/lucagattoni/Pinakes/blob/main/plans/20260801_0749-realism-corpus.md)) |
+| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. **⚠️ Blocked: its gate was measured on 20260801 and cannot be reached on this corpus** ([above](#can-the-graph-releases-gate-be-reached--measured-20260801-1214)) — 1 of 18 multi-hop questions fails where 7 were needed. Its three finished increments have all shipped: **G1** (reproducibility, and the tie-ordering defect it found) and **G4** (`requires_pinakes`) in 0.6.0, **G2** in 0.7.0. **What is left — G3, G5 and G6 — does not start**, and cannot until a corpus exists that can discriminate: `tests/demo-kb` has no tags and one directory, so exactly one derived edge kind crosses a document boundary, and the funnel already returns every document before any channel could reach further. **The unblocking work is a corpus, not code** ([`plans/20260801_0749-realism-corpus.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260801_0749-realism-corpus.md)) |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
 | *the deep release* | `pnk ask --deep` |
 | *the template release* | Template ecosystem, `pnk upgrade` migrations, the `sqlite-vec` tier |
@@ -301,7 +301,7 @@ to ceiling even after tripling in size — 17 of 18. That is a fact about the co
 questions: thirty short, topically disjoint documents make "retrieve 5 of 30" undemanding. Nothing
 should be tuned against this corpus until it is larger and its documents are less separable —
 which is now the binding constraint on the whole graph release, not a caveat
-([`plans/20260801_0749-realism-corpus.md`](https://github.com/lucagattoni/Pinakes/blob/main/plans/20260801_0749-realism-corpus.md)).
+([`plans/20260801_0749-realism-corpus.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260801_0749-realism-corpus.md)).
 
 The false-confidence figure is fitted and scored on the same 74-question set (8 of them no-answer,
 unchanged by G2's growth — so the calibrated thresholds were re-fitted after it and came back
@@ -344,7 +344,7 @@ is why this increment rewrites no baseline. Held by `tools/eval_reproducibility_
 **[`pinakes-corpus-rfc`](https://github.com/lucagattoni/pinakes-corpus-rfc)** — 300 RFCs, a
 connected cluster closed by BFS over `obsoletes`/`updates` in both directions, structured by
 `wg_acronym` and tagged from the RFC Editor's own `keywords`. It lives outside this repo by design
-([`plans/20260801_0749-realism-corpus.md`](https://github.com/lucagattoni/Pinakes/blob/main/plans/20260801_0749-realism-corpus.md)).
+([`plans/20260801_0749-realism-corpus.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260801_0749-realism-corpus.md)).
 
 | Measure | demo-kb | partner-kb | RFC corpus |
 |---|---|---|---|
@@ -364,9 +364,9 @@ documents in one header. Nothing was tuned: every rule was written down before a
 corpus is sparse with one real human-authored hub — not uniformly dense. So APPROACH §3's
 *"authored links are sparse, precious signal"* is half right: sparse in the median, and carrying a
 hub that decision 13's **2.0 undamped** weight was never designed for
-([the ⚠️ on G3's weight table](https://github.com/lucagattoni/Pinakes/blob/main/plans/20260729_0256-links-and-graph.md)).
+([the ⚠️ on G3's weight table](https://github.com/lucagattoni/pinakes/blob/main/plans/20260729_0256-links-and-graph.md)).
 
-**Two findings about pinakes, not about the corpus:**
+**Two findings about Pinakes, not about the corpus:**
 
 - **`strategy = "structural"` recognised no headings at all** — 0 of 106 806 chunks — because its
   grammar is Markdown-shaped and RFC section numbering is not. Silent. It costs citations their
@@ -377,7 +377,7 @@ hub that decision 13's **2.0 undamped** weight was never designed for
   the ceiling's framing implies.
 
 Ten friction findings from building it are in
-[`plans/20260731_1202-open-corrections.md`](https://github.com/lucagattoni/Pinakes/blob/main/plans/20260731_1202-open-corrections.md). `pnk doctor`
+[`plans/20260731_1202-open-corrections.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md). `pnk doctor`
 reports no FAIL and five WARNs.
 
 ### Can the graph release's gate be reached? — measured 20260801 12:14
@@ -427,7 +427,7 @@ change and that its count moves when an edge kind is removed — a reachability 
 and needs **one manifest edit before it can sync**: `pnk init` stamps
 `provider = "sentence-transformers"` whatever extras you have, so a `[light]` install fails with
 *"the `sentence-transformers` backend is not installed"* until `provider` is changed to
-`"fastembed"` — the edit [README.md](https://github.com/lucagattoni/Pinakes/blob/main/README.md) and the [Guide](GUIDE.md#choosing-a-backend)
+`"fastembed"` — the edit [README.md](https://github.com/lucagattoni/pinakes/blob/main/README.md) and the [Guide](GUIDE.md#choosing-a-backend)
 both call out. Verified 20260804 08:47 against **0.8.0** from the index (`uvx --refresh --from "pinakes[light]==0.8.0" pnk --version` → `pinakes 0.8.0`): `init` → edit → `sync` →
 `search` returns the document. The earlier claim that it worked unedited was wrong.
 

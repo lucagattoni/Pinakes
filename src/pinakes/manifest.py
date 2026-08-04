@@ -1,6 +1,6 @@
 """`pinakes.toml` — the manifest, and how a KB root is found.
 
-The manifest is **user-owned**, like `docs/`. Nothing in pinakes rewrites it after `pnk init`, so
+The manifest is **user-owned**, like `docs/`. Nothing in Pinakes rewrites it after `pnk init`, so
 this module only ever reads. Validation is strict in both directions: a missing required key fails,
 and so does an unknown one (docs/DESIGN.md §2.1).
 
@@ -16,9 +16,9 @@ cannot produce sane behaviour should fail when it is read, not three commands la
   not thresholds, and §4.2 would rather report `unknown` than a number it cannot justify.
 
 **One check runs before all of that**: `[kb] requires_pinakes`, in a pre-pass over the raw TOML
-(G4). Strictness means an unknown key is a hard error, so a manifest written by a newer pinakes
+(G4). Strictness means an unknown key is a hard error, so a manifest written by a newer Pinakes
 fails on the first key this build has never heard of — and tells the user they made a typo when
-their actual problem is an out-of-date pinakes. Reading the compatibility floor *before* the strict
+their actual problem is an out-of-date Pinakes. Reading the compatibility floor *before* the strict
 validator is the only ordering in which that field can do its job; after it, the parse has already
 died and the good error is unreachable (docs/KB-UPDATES.md §7).
 """
@@ -205,7 +205,7 @@ def load(root: Path) -> Manifest:
         raise ManifestError(path, table=None, message=f"is not valid TOML: {exc}") from exc
 
     # The pre-pass, and its position in this function is the whole feature (G4). Every line below
-    # this one can fail on a key a newer pinakes introduced; this one runs first so the failure can
+    # this one can fail on a key a newer Pinakes introduced; this one runs first so the failure can
     # say *why* instead of blaming a typo.
     _check_required_version(data, path)
 
@@ -246,7 +246,7 @@ def _check_required_version(data: dict[str, Any], path: Path) -> None:
     check would break every KB on the planet at once.
 
     A **floor only**, which is what the compatibility posture actually is: a KB may be opened by the
-    pinakes that wrote it or a newer one, never an older one (docs/KB-UPDATES.md §4). There is no
+    Pinakes that wrote it or a newer one, never an older one (docs/KB-UPDATES.md §4). There is no
     ceiling to express, so there is no specifier grammar to support and no dependency to take on for
     parsing one.
 
@@ -354,7 +354,7 @@ def _numeric_prefix(version: str) -> str:
 
     Only ever applied to `pinakes.__version__`, never to a manifest's floor: a user writing
     `">=0.6.0rc1"` is told their version is unreadable, which is honest, while a *release candidate
-    of pinakes itself* should still be able to compare against a floor rather than skip the check.
+    of Pinakes itself* should still be able to compare against a floor rather than skip the check.
     """
     head: list[str] = []
     for part in version.split("."):
@@ -643,7 +643,7 @@ def _retrieval(root_table: Table, path: Path) -> RetrievalSection:
         vector_tier=table.choice("vector_tier", VECTOR_TIERS, default="auto"),
         # Deliberately **not** stamped into the `notes` template, in this release or the next:
         # `_toml.py` hard-errors on an unknown key, so a manifest carrying `adjacent_k` cannot be
-        # read by any pinakes built before it existed. `[kb] requires_pinakes` cannot help
+        # read by any Pinakes built before it existed. `[kb] requires_pinakes` cannot help
         # retroactively either — an older build has no pre-pass and fails on that key itself — so
         # the key stays settable-but-unstamped until a release deliberately accepts the break.
         adjacent_k=table.integer(

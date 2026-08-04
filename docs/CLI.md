@@ -88,7 +88,7 @@ protected. The single override is `--force` *plus* a free `--extract`. Full deci
 [DESIGN §6.4](DESIGN.md#64-sync-semantics-the-part-that-silently-corrupts-a-kb-if-left-vague).
 
 **A file no `include` pattern matches is named, not silently skipped** (0.2.2), grouped by extension
-with the glob that would pick it up. Only files pinakes could actually index are listed — the test
+with the glob that would pick it up. Only files Pinakes could actually index are listed — the test
 is whether the bytes are UTF-8, the same one indexing itself applies, plus `.pdf` — so images and
 archives beside your notes never appear, and the suggested glob never leads to a failed document.
 `exclude` them to silence the line for good.
@@ -321,7 +321,7 @@ Running the same `pnk link` twice writes nothing the second time and says so. Tw
 relations to one target are two entries: a pair of documents can relate more than one way.
 
 The sidecar is rewritten through the round-trip parser, so comments, quoting, blank lines, your own
-key order and any key pinakes does not know all survive — including a key of your own inside a
+key order and any key Pinakes does not know all survive — including a key of your own inside a
 `links[]` entry. Two documented exceptions, both from the YAML writer rather than from this
 command: appending to an **indented** `links:` block re-indents that block, and appending `links:`
 for the first time to a file whose last line is a comment leaves that comment reading as the

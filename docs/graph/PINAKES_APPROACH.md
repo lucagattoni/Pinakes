@@ -3,7 +3,7 @@
 > ℹ️ **Dated research, left as written.** §10 maps this work onto a single "the graph release"; it
 > has since been **split in two** — the **links release** (`pnk link`, `pinakes_links`,
 > reverse-scan, link coverage; no `schema_version` bump) and the **graph release** (structural
-> edges, the expansion channel). [`plans/20260729_0256-links-and-graph.md`](https://github.com/lucagattoni/Pinakes/blob/main/plans/20260729_0256-links-and-graph.md)
+> edges, the expansion channel). [`plans/20260729_0256-links-and-graph.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260729_0256-links-and-graph.md)
 > sequences both and wins wherever it and §10 disagree about what is built when. The reasoning here
 > is untouched and still governs *what* to build.
 

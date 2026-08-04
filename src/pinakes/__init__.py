@@ -1,4 +1,4 @@
-"""pinakes — a portable, agent-first knowledge base.
+"""Pinakes — a portable, agent-first knowledge base.
 
 One directory is one knowledge base: human-readable sources, human-readable metadata, and a
 disposable machine index. The architecture is specified in docs/DESIGN.md.

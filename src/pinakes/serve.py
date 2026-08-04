@@ -68,7 +68,7 @@ def _paged(
 
     # Each supplied bound is checked *before* the other is defaulted, so the message names what the
     # caller actually asked for. Validating the resolved pair instead reported `page_start=5` on a
-    # two-page document as "pages 5-2", which reads as a bug in pinakes rather than a bad argument.
+    # two-page document as "pages 5-2", which reads as a bug in Pinakes rather than a bad argument.
     for label, bound in (("page_start", page_start), ("page_end", page_end)):
         if bound is not None and not 1 <= bound <= total:
             raise ServeError(

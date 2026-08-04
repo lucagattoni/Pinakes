@@ -560,7 +560,7 @@ def walk_sources(
     )
 
 
-#: Bytes sampled to decide whether a file is text pinakes could index. A prefix is enough: a binary
+#: Bytes sampled to decide whether a file is text Pinakes could index. A prefix is enough: a binary
 #: format's magic number is at the front, and no realistic document is valid UTF-8 for 8 KB and
 #: then not.
 _TEXT_PROBE_BYTES = 8192
@@ -573,7 +573,7 @@ MAX_PROBED_PER_ROOT = 500
 
 
 def _indexable(candidate: Path) -> bool:
-    """Whether pinakes could read this file at all, tested the way indexing itself tests it.
+    """Whether Pinakes could read this file at all, tested the way indexing itself tests it.
 
     `_index_document` reads every non-PDF source with `read_text(encoding="utf-8")`, so a file whose
     bytes are not UTF-8 cannot be indexed however the manifest is configured — suggesting a glob for
@@ -607,7 +607,7 @@ def _unmatched_under(
     root: Path, manifest: Manifest, *, matched: Mapping[str, WalkedFile]
 ) -> tuple[set[str], bool]:
     """Files under `root` that no `include` pattern picked up, that the user did not ask to ignore,
-    and that pinakes could actually index if a pattern did match. The flag is `True` when probing
+    and that Pinakes could actually index if a pattern did match. The flag is `True` when probing
     stopped at `MAX_PROBED_PER_ROOT` and the set is therefore incomplete.
 
     Deliberately silent about four classes, none of them a surprise worth reporting: anything
@@ -1222,7 +1222,7 @@ def _refuse_naming_the_reason(target: Path, *, owner: KbId) -> None:
 
     `sidecar.create` refuses on existence alone — correct as the invariant, and the wrong message
     for a person. "already exists, so a freshly minted sidecar cannot be written over it" reads
-    like a pinakes bug (*of course* it exists — why is it minting?) and says nothing about the
+    like a Pinakes bug (*of course* it exists — why is it minting?) and says nothing about the
     character they mistyped. The walk had the real reason and had to swallow it to keep walking
     (`walk_sources`), so it is recovered here by re-reading the one file.
 

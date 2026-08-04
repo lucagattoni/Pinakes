@@ -1,10 +1,10 @@
-site_name: pinakes
+site_name: Pinakes
 site_description: A portable, agent-first knowledge base. One directory = one KB — your documents are the truth, the index is derived state, and the retrieval path costs nothing to run.
-site_url: https://lucagattoni.github.io/Pinakes/
+site_url: https://lucagattoni.github.io/pinakes/
 site_author: Luca Gattoni
 
-repo_url: https://github.com/lucagattoni/Pinakes
-repo_name: lucagattoni/Pinakes
+repo_url: https://github.com/lucagattoni/pinakes
+repo_name: lucagattoni/pinakes
 edit_uri: edit/main/docs/
 
 # docs/ is the source, unmoved: these filenames are load-bearing in code — `tools/fragments.py`
@@ -142,6 +142,6 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/lucagattoni/Pinakes
+      link: https://github.com/lucagattoni/pinakes
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/pinakes/
