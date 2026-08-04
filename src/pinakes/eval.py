@@ -529,11 +529,11 @@ def run(
     return (
         metrics,
         [outcome.row() for outcome in outcomes],
-        _header(manifest, k=k, edge_kinds=edge_kinds, ranking=ranking),
+        header(manifest, k=k, edge_kinds=edge_kinds, ranking=ranking),
     )
 
 
-def _header(
+def header(
     manifest: Manifest,
     *,
     k: int,
@@ -548,6 +548,10 @@ def _header(
 
     Explicit rather than a dump of `manifest.retrieval`, so that adding a retrieval field is a
     decision about this header rather than a silent change to every artifact's bytes.
+
+    **Public since G5**, so `tools/graph_matrix.py` writes the header this function defines rather
+    than a second one beside it: the gate identifies a leg by its header, and two functions that
+    can drift are two ways to label a leg wrongly.
 
     **`graph_channel` and `edge_kinds` are the two G5 added, and they are not one field.** The
     gate's three legs are `off`, `expand` without authored edges and `expand` with them: the first
@@ -583,6 +587,7 @@ def _header(
             "final_k": settings.final_k,
             "rerank": settings.rerank,
             "vector_tier": settings.vector_tier,
+            "adjacent_k": settings.adjacent_k,
         },
     }
 

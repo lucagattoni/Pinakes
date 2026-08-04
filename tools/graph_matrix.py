@@ -58,6 +58,9 @@ from pinakes.eval import (
     load_questions,
     write_outcomes,
 )
+from pinakes.eval import (
+    header as eval_header,
+)
 from pinakes.graph.channel import GATED_RANKING, Ranking
 from pinakes.graph.edges import AUTHORED, select_kinds
 from pinakes.manifest import Manifest
@@ -134,40 +137,19 @@ def run_leg(root: Path, questions: Sequence[Question], spec: LegSpec, *, k: int)
     )
 
 
-def header(manifest: Manifest, spec: LegSpec, *, k: int) -> dict[str, Any]:
-    """The artifact header, matching `eval._header` — the gate reads it to identify the leg."""
-    kinds = select_kinds(drop=spec.drop)
-    settings = manifest.retrieval
-    return {
-        "schema": 1,
-        "k": k,
-        "graph_channel": spec.channel,
-        "edge_kinds": sorted(kinds),
-        "dropped": sorted(spec.drop),
-        "ranking": {
-            "link_distance": spec.ranking.link_distance,
-            "in_degree_salience": spec.ranking.in_degree_salience,
-        },
-        "embedding": {
-            "provider": manifest.embedding.provider,
-            "model": manifest.embedding.model,
-            "dim": manifest.embedding.dim,
-        },
-        "rerank": (
-            {"provider": manifest.rerank.provider, "model": manifest.rerank.model}
-            if settings.rerank == "local"
-            else None
-        ),
-        "retrieval": {
-            "candidates_per_source": settings.candidates_per_source,
-            "fusion": settings.fusion,
-            "fusion_top_k": settings.fusion_top_k,
-            "final_k": settings.final_k,
-            "rerank": settings.rerank,
-            "vector_tier": settings.vector_tier,
-            "adjacent_k": settings.adjacent_k,
-        },
-    }
+def leg_header(manifest: Manifest, spec: LegSpec, *, k: int) -> dict[str, Any]:
+    """The artifact header, written by `eval.header` itself rather than reproduced here.
+
+    The gate identifies a leg by its header — `graph_channel` and the edge-set variant — so a
+    second header function beside `eval`'s is a second way to label a leg wrongly, and the two
+    would drift the first time a retrieval field is added.
+    """
+    return eval_header(
+        replace(manifest, retrieval=replace(manifest.retrieval, graph_channel=spec.channel)),
+        k=k,
+        edge_kinds=select_kinds(drop=spec.drop),
+        ranking=spec.ranking,
+    )
 
 
 def lifting_kinds(root: Path, question: Question, spec: LegSpec) -> dict[str, list[list[str]]]:
@@ -278,7 +260,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_outcomes(
             args.out / f"{spec.name}.json",
             [outcome.row() for outcome in result.outcomes],
-            header(manifest, spec, k=args.k),
+            leg_header(manifest, spec, k=args.k),
         )
         results.append(result)
 
