@@ -310,6 +310,10 @@ def _free_path_modules(tmp_path: Path, prelude: str = "") -> set[str]:
         # The projection both surfaces return through — the module the fixture's authored links
         # exist to reach, and the one whose loop body a paid import could have hidden in.
         "pinakes.graph.present",
+        # The edge deriver (G3). It runs inside every `pnk sync`, which is the free path by
+        # definition — and this gate's *coverage* is extended per increment rather than assumed
+        # to follow from the increment being free.
+        "pinakes.graph.edges",
     ):
         assert surface in modules, f"the free-path run never reached {surface}"
     return modules

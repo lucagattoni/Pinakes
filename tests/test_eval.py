@@ -511,6 +511,12 @@ def test_the_reachable_ceiling_probe_needs_no_index_schema_change() -> None:
     Bumping the schema forces every KB in existence to rebuild. Doing that to find out whether the
     channel could ever be licensed is the wrong order, so the probe derives the edge set in memory
     from the tables that already exist and writes nothing.
+
+    **The ordering itself is now history** — the probe passed on the RFC corpus on 20260804, G3
+    bumped to 3, and `nodes`/`edges` exist. What stays executable is the half that was always the
+    mechanism: the probe **writes nothing** to the index it reads, and derives its own graph rather
+    than reading G3's. An earlier revision asserted `"edges" not in tables_after`, which said the
+    same thing only while G3 was unbuilt; the assertion below says it whatever has shipped.
     """
     completed = subprocess.run(
         [sys.executable, str(PROBE), "--fake", "--json"],
@@ -523,7 +529,6 @@ def test_the_reachable_ceiling_probe_needs_no_index_schema_change() -> None:
 
     assert payload["schema_version"] == str(store.SCHEMA_VERSION)
     assert payload["tables_before"] == payload["tables_after"]
-    assert "edges" not in payload["tables_after"] and "nodes" not in payload["tables_after"]
     assert {report["variant"] for report in payload["reports"]} == {
         "with-authored",
         "without-authored",

@@ -1,5 +1,6 @@
 """Storage: the schema applies, FTS tracks its content table, and mismatches refuse to open."""
 
+import re
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -90,11 +91,21 @@ def test_create_builds_the_schema_and_stamps_the_version(index_path: Path) -> No
     assert str(connection.execute("PRAGMA journal_mode").fetchone()[0]).lower() == "wal"
 
 
-def test_schema_version_is_2_for_i5s_page_and_backend_columns() -> None:
-    """I5 bumps the schema (chunks.page_start/page_end, documents.extraction_backend/
-    extraction_fingerprint) — pinned explicitly so a future bump doesn't silently drift past it
-    unnoticed, the same way I2's own version constant is pinned."""
-    assert SCHEMA_VERSION == 2
+def test_schema_version_is_3_for_g3s_node_and_edge_tables(index_path: Path) -> None:
+    """Pinned explicitly, so a bump cannot drift past unnoticed — the version is the only thing
+    standing between a user and a schema their index does not match, and there are no migrations.
+
+    2 was I5's (chunks.page_start/page_end, documents.extraction_backend/extraction_fingerprint);
+    3 is G3's `nodes` and `edges`. The tables are asserted beside the number, so bumping one
+    without the other fails here rather than at the first query.
+    """
+    assert SCHEMA_VERSION == 3
+    connection = tracked(create(index_path))
+    tables = {
+        str(row["name"])
+        for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    assert {"nodes", "edges"} <= tables
 
 
 def test_new_columns_exist_and_default_to_null(index_path: Path) -> None:
@@ -237,7 +248,7 @@ def test_a_v1_index_refuses_to_open_and_says_rebuild(index_path: Path) -> None:
     with pytest.raises(IndexSchemaError) as exc_info:
         connect_rw(index_path)
     assert exc_info.value.found == "1"
-    assert exc_info.value.expected == 2
+    assert exc_info.value.expected == SCHEMA_VERSION
     assert "pnk sync --rebuild" in exc_info.value.remedy
 
 
@@ -298,13 +309,40 @@ def test_replacing_chunks_leaves_no_orphans_behind(index_path: Path) -> None:
 
 
 def test_constants_match_the_check_constraints(index_path: Path) -> None:
-    """The DDL enforces these; the constants are what the code reads. They must not drift."""
-    from pinakes.store import DOCUMENT_STATES, LINK_ORIGINS, SCHEMA
+    """The DDL enforces these; the constants are what the code reads. They must not drift.
+
+    `NODE_KINDS` and `STRUCTURAL_EDGE_KINDS` are checked the same way, and the consequence of a
+    drift is worse: `graph.edges.ALL_KINDS` is built from the second, so a kind the constant
+    admits and the CHECK rejects surfaces as an `IntegrityError` in the middle of a `pnk sync`.
+    The reverse drift is checked too — a kind in the DDL that no constant names would be derived
+    by nothing and selectable by nobody.
+    """
+    from pinakes.store import (
+        DOCUMENT_STATES,
+        LINK_ORIGINS,
+        NODE_KINDS,
+        SCHEMA,
+        STRUCTURAL_EDGE_KINDS,
+    )
 
     for state in DOCUMENT_STATES:
         assert f"'{state}'" in SCHEMA
     for origin in LINK_ORIGINS:
         assert f"'{origin}'" in SCHEMA
+    for kind in NODE_KINDS:
+        assert f"'{kind}'" in SCHEMA
+    for kind in STRUCTURAL_EDGE_KINDS:
+        assert f"'{kind}'" in SCHEMA
+
+    connection = tracked(create(index_path))
+    for table, constants in (("nodes", NODE_KINDS), ("edges", STRUCTURAL_EDGE_KINDS)):
+        ddl = str(
+            connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
+            ).fetchone()[0]
+        )
+        listed = set(re.findall(r"'([a-z-]+)'", ddl.split("CHECK", 1)[1]))
+        assert listed == set(constants), f"{table}: DDL says {sorted(listed)}"
 
 
 def test_loading_vectors_does_not_double_the_peak(index_path: Path) -> None:

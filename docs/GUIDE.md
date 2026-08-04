@@ -411,7 +411,7 @@ them and `pnk links` traverses them: see [Following links between two KBs](#foll
 | `no extractor for .pdf` | `[pdf]` extra missing | `uv add "pinakes[pdf]"` |
 | Queries refuse to run, naming a model mismatch | Embedding model changed since the index was built | `pnk sync --rebuild` — free |
 | `pnk doctor` reports `WARN sync completeness` | A first sync was interrupted before it finished, so `meta` carries no embedding identity yet | `pnk sync`. It resumes incrementally and keeps every embedding already written; **do not** run `--rebuild`, which would discard them |
-| Index refuses to open, naming `schema_version` | Index predates 0.2.0 | `pnk sync --rebuild`. There are no migrations, by design |
+| Index refuses to open, naming `schema_version` | The index was built by a Pinakes with a different schema. `3` is current; every index built before the graph release is a `2` or lower | `pnk sync --rebuild`. There are no migrations, by design |
 | `this KB requires pinakes >=X (this build is Y)` | The KB was written by a newer Pinakes and declares a floor | Upgrade: `uv add --upgrade pinakes`. Downgrading a KB is not supported — nothing rewrites a manifest you own |
 | `unknown key(s)` in a KB you did not edit | The same cause, on a KB that declares **no** floor, so the refusal can only report the symptom | Upgrade Pinakes. Unknown keys stay a hard error by design ([MANIFEST](MANIFEST.md#requires_pinakes--the-compatibility-floor)) |
 | `confidence: unknown` on every search | No fitted `[retrieval.confidence]` | Expected. Calibrate against your own golden set ([above](#about-that-confidence-unknown)) |

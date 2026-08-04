@@ -615,6 +615,49 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | the output names the KB measured — pinned against a KB that is **not** the demo one, so the test can detect "always names the default" | G2 | `tests/test_eval.py::test_the_probe_names_the_kb_it_measured` |
 | a `--fake` run names its own copy and records that a fake backend produced the numbers | G2 | `tests/test_eval.py::test_the_fake_run_names_its_own_copy_and_says_it_is_fake` |
 
+## The node model and the edge set (G3)
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| a chunk node is keyed on `<doc-ulid>:<ordinal>`, not on `chunks.id` | G3 | `tests/test_edges.py::test_a_chunk_node_is_keyed_on_the_document_ulid_and_ordinal` |
+| ...and that key survives a rebuild, which the rowid does not | G3 | `tests/test_edges.py::test_a_chunk_node_key_survives_a_rebuild` |
+| heading nodes are scoped per document | G3 | `tests/test_edges.py::test_a_heading_node_is_scoped_to_its_document`, `tests/test_edges.py::test_a_heading_hub_never_connects_two_documents` |
+| a document at the KB root still has a directory hub | G3 | `tests/test_edges.py::test_a_document_at_the_kb_root_still_has_a_directory_hub` |
+| hub edges stay linear, not quadratic | G3 | `tests/test_edges.py::test_a_shared_tag_produces_linear_not_quadratic_edges` |
+| one row per spoke, hub always as `src` | G3 | `tests/test_edges.py::test_a_hub_spoke_is_stored_once_not_twice` |
+| a tag repeated in one sidecar is one spoke | G3 | `tests/test_edges.py::test_a_duplicate_tag_in_one_sidecar_is_one_spoke` |
+| a hub with a single member is not minted — it connects nothing | G3 | `tests/test_edges.py::test_a_hub_with_a_single_member_is_not_minted` |
+| hub damping follows the corpus with no stored degree | G3 | `tests/test_edges.py::test_a_dropped_tag_lowers_the_divisor` |
+| weight across a hub is the product of both spokes | G3 | `tests/test_edges.py::test_weight_across_a_hub_is_the_product_of_both_spokes` |
+| a hub is entered from a member and expanded from the hub — the two halves are different queries | G3 | `tests/test_edges.py::test_a_hub_is_entered_from_a_member_and_expanded_from_the_hub` |
+| `sibling` joins adjacent ordinals, stored lower→higher | G3 | `tests/test_edges.py::test_sibling_edges_join_adjacent_ordinals` |
+| ...and never crosses a document | G3 | `tests/test_edges.py::test_a_sibling_edge_never_crosses_a_document` |
+| hierarchy is derived by `heading_path` prefix, stored parent→child | G3 | `tests/test_edges.py::test_parent_and_child_follow_heading_path_prefixes` |
+| ...on path segments, so a heading that is a string prefix is not a parent | G3 | `tests/test_edges.py::test_a_sibling_heading_that_is_a_string_prefix_is_not_a_parent` |
+| `membership` runs document → chunk | G3 | `tests/test_edges.py::test_membership_runs_document_to_chunk` |
+| a symmetric edge is reachable from both ends | G3 | `tests/test_edges.py::test_a_symmetric_edge_is_reachable_from_both_ends` |
+| a soft-deleted document leaves no edges, and empties its hubs | G3 | `tests/test_edges.py::test_a_soft_deleted_document_leaves_no_edges` |
+| an authored edge is read from `links` and never copied into `edges` | G3 | `tests/test_edges.py::test_an_authored_edge_is_read_from_links_and_never_stored_in_edges` |
+| ...keeping the direction the sidecar wrote it | G3 | `tests/test_edges.py::test_an_authored_row_keeps_the_direction_the_sidecar_wrote_it` |
+| ...and a cross-KB row never enters the channel, in either direction | G3 | `tests/test_edges.py::test_a_cross_kb_authored_row_never_enters_the_channel` |
+| the derived kind set is selectable at read time, so G5's arms need no rebuild | G3 | `tests/test_edges.py::test_dropping_a_kind_removes_it_from_every_read`, `tests/test_edges.py::test_dropping_authored_removes_it_without_a_rederivation` |
+| an unknown kind name is refused rather than dropping nothing | G3 | `tests/test_edges.py::test_an_unknown_kind_name_is_refused_rather_than_dropping_nothing` |
+| every kind is a census key, even at zero | G3 | `tests/test_edges.py::test_every_kind_is_a_census_key_even_at_zero` |
+| the sync report prints every kind and what deriving them cost | G3 | `tests/test_edges.py::test_the_sync_report_prints_every_kind_with_its_wall_clock` |
+| the traversal surface returns documents only, with a structural graph present to leak | G3 | `tests/test_edges.py::test_the_traversal_surface_returns_no_structural_nodes` |
+| `pnk links --json` on both corpora is unchanged across the schema bump | G3 | `tests/test_links_surface.py::test_the_authored_links_surface_is_unchanged_by_the_schema_bump`, `tests/test_links_surface.py::test_the_fixture_covers_both_corpora_and_holds_real_neighbours` |
+| a `schema_version` 2 index is refused with a remedy | G3 | `tests/test_edges.py::test_a_schema_version_2_index_is_refused_with_its_remedy`, `tests/test_store.py::test_schema_version_is_3_for_g3s_node_and_edge_tables` |
+| the stored edge set agrees with the probe the go decision was taken on | G3 | `tests/test_edges.py::test_the_stored_edge_set_agrees_with_the_probe_the_decision_was_taken_on` |
+| a forked KB sharing a document ULID does not forge a local authored edge — found by mutation, caught by nothing | G3 | `tests/test_edges.py::test_a_forked_kb_sharing_a_document_ulid_does_not_forge_a_local_authored_edge` |
+| the hierarchy lookup derives exactly the naive prefix relation it replaced | G3 | `tests/test_edges.py::test_hierarchy_matches_the_naive_prefix_predicate` |
+| asking for `authored` without the local KB is refused, never silently dropped | G3 | `tests/test_edges.py::test_asking_for_authored_without_the_local_kb_is_refused` |
+| an empty tag is not a shared value, and a repeated one does not inflate a hub's size | G3 | `tests/test_edges.py::test_an_empty_tag_is_not_a_shared_value`, `tests/test_edges.py::test_one_document_repeating_a_tag_mints_no_hub` |
+| `co-located` is the immediate directory, never an ancestor | G3 | `tests/test_edges.py::test_a_nested_directory_is_its_own_hub` |
+| a heading containing the path separator is a measured bound, not a belief | G3 | `tests/test_edges.py::test_a_heading_containing_the_separator_is_a_known_bound` |
+| `parent-child`'s arity — the product of two sections' chunk counts — is pinned rather than discovered | G3 | `tests/test_edges.py::test_the_hierarchy_row_count_is_pinned_because_it_is_the_product_of_two_sections` |
+| the node- and edge-kind constants match the DDL's CHECK constraints, in both directions | G3 | `tests/test_store.py::test_constants_match_the_check_constraints` |
+| the deriver is on the free path, and gate 4 reaches it | G3 | `tests/test_paid_path.py::test_the_free_path_never_imports_the_paid_client` |
+
 ## Release machinery
 
 | What must be true | Increment | Where it is checked |
