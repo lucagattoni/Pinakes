@@ -650,6 +650,12 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | the stored edge set agrees with the probe the go decision was taken on | G3 | `tests/test_edges.py::test_the_stored_edge_set_agrees_with_the_probe_the_decision_was_taken_on` |
 | a forked KB sharing a document ULID does not forge a local authored edge — found by mutation, caught by nothing | G3 | `tests/test_edges.py::test_a_forked_kb_sharing_a_document_ulid_does_not_forge_a_local_authored_edge` |
 | the hierarchy lookup derives exactly the naive prefix relation it replaced | G3 | `tests/test_edges.py::test_hierarchy_matches_the_naive_prefix_predicate` |
+| asking for `authored` without the local KB is refused, never silently dropped | G3 | `tests/test_edges.py::test_asking_for_authored_without_the_local_kb_is_refused` |
+| an empty tag is not a shared value, and a repeated one does not inflate a hub's size | G3 | `tests/test_edges.py::test_an_empty_tag_is_not_a_shared_value`, `tests/test_edges.py::test_one_document_repeating_a_tag_mints_no_hub` |
+| `co-located` is the immediate directory, never an ancestor | G3 | `tests/test_edges.py::test_a_nested_directory_is_its_own_hub` |
+| a heading containing the path separator is a measured bound, not a belief | G3 | `tests/test_edges.py::test_a_heading_containing_the_separator_is_a_known_bound` |
+| `parent-child`'s arity — the product of two sections' chunk counts — is pinned rather than discovered | G3 | `tests/test_edges.py::test_the_hierarchy_row_count_is_pinned_because_it_is_the_product_of_two_sections` |
+| the node- and edge-kind constants match the DDL's CHECK constraints, in both directions | G3 | `tests/test_store.py::test_constants_match_the_check_constraints` |
 | the deriver is on the free path, and gate 4 reaches it | G3 | `tests/test_paid_path.py::test_the_free_path_never_imports_the_paid_client` |
 
 ## Release machinery

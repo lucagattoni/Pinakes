@@ -1,5 +1,6 @@
 """Storage: the schema applies, FTS tracks its content table, and mismatches refuse to open."""
 
+import re
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -308,13 +309,40 @@ def test_replacing_chunks_leaves_no_orphans_behind(index_path: Path) -> None:
 
 
 def test_constants_match_the_check_constraints(index_path: Path) -> None:
-    """The DDL enforces these; the constants are what the code reads. They must not drift."""
-    from pinakes.store import DOCUMENT_STATES, LINK_ORIGINS, SCHEMA
+    """The DDL enforces these; the constants are what the code reads. They must not drift.
+
+    `NODE_KINDS` and `STRUCTURAL_EDGE_KINDS` are checked the same way, and the consequence of a
+    drift is worse: `graph.edges.ALL_KINDS` is built from the second, so a kind the constant
+    admits and the CHECK rejects surfaces as an `IntegrityError` in the middle of a `pnk sync`.
+    The reverse drift is checked too — a kind in the DDL that no constant names would be derived
+    by nothing and selectable by nobody.
+    """
+    from pinakes.store import (
+        DOCUMENT_STATES,
+        LINK_ORIGINS,
+        NODE_KINDS,
+        SCHEMA,
+        STRUCTURAL_EDGE_KINDS,
+    )
 
     for state in DOCUMENT_STATES:
         assert f"'{state}'" in SCHEMA
     for origin in LINK_ORIGINS:
         assert f"'{origin}'" in SCHEMA
+    for kind in NODE_KINDS:
+        assert f"'{kind}'" in SCHEMA
+    for kind in STRUCTURAL_EDGE_KINDS:
+        assert f"'{kind}'" in SCHEMA
+
+    connection = tracked(create(index_path))
+    for table, constants in (("nodes", NODE_KINDS), ("edges", STRUCTURAL_EDGE_KINDS)):
+        ddl = str(
+            connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
+            ).fetchone()[0]
+        )
+        listed = set(re.findall(r"'([a-z-]+)'", ddl.split("CHECK", 1)[1]))
+        assert listed == set(constants), f"{table}: DDL says {sorted(listed)}"
 
 
 def test_loading_vectors_does_not_double_the_peak(index_path: Path) -> None:

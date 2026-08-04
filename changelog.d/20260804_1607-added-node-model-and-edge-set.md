@@ -17,9 +17,20 @@
   output on both committed corpora is compared byte-for-byte against a fixture captured before the
   bump.
 
-  Measured, since derivation runs on every sync and `pnk sync` runs on three git hooks:
-  `tests/demo-kb` 192 edges and `tests/partner-kb` 171, each derived in under 2 ms; the 300-document
-  / 106 806-chunk RFC realism corpus derives 214 608 edges in **1.3 s** and adds 31 MB to a 265 MB
-  index; one document of 32 000 chunks with a full heading hierarchy derives in 0.6 s. That corpus's
-  per-kind counts — `sibling` 106 506, `shared-tag` 643, `co-located` 262 — reproduce the numbers the
-  go decision was taken on exactly.
+  Measured 20260804, since derivation runs on every sync and two of the three git hooks derive.
+  `tests/demo-kb` 192 edges and `tests/partner-kb` 171, each in under 2 ms; a single document of
+  32 000 chunks with a full heading hierarchy in 0.6 s; the 300-document / 106 806-chunk RFC
+  realism corpus in **1.3 s**, adding 31 MB to a 265 MB index. Its census, in full — a kind at
+  zero is a fact about the corpus, and reporting only the non-zero ones is the omission the
+  census exists to prevent:
+
+  | corpus | membership | sibling | parent-child | in-section | co-located | shared-tag | authored |
+  |---|---|---|---|---|---|---|---|
+  | `tests/demo-kb` | 60 | 30 | 0 | 60 | 30 | 0 | 12 |
+  | `tests/partner-kb` | 55 | 34 | 0 | 55 | 21 | 0 | 6 |
+  | RFC realism | 106 806 | 106 506 | 0 | 0 | 262 | 643 | 391 |
+
+  The RFC corpus's `sibling` 106 506, `shared-tag` 643 and `co-located` 262 reproduce the numbers
+  the go decision was taken on exactly. Its `in-section` and `parent-child` zeros are the known
+  structural-chunking degradation — every chunk in it has an empty `heading_path` — and neither
+  committed corpus carries a `tags:` key, so `shared-tag` is exercised by fixtures alone.

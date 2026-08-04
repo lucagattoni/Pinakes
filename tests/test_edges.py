@@ -731,8 +731,9 @@ def test_dropping_a_kind_removes_it_from_every_read(tmp_path: Path) -> None:
         without = edges.select_kinds(drop=["sibling"])
         assert "sibling" in everything and "sibling" not in without
 
-        with_sibling = edges.neighbours(connection, chunk, kinds=everything)
-        without_sibling = edges.neighbours(connection, chunk, kinds=without)
+        local = str(corpus.kb_id)
+        with_sibling = edges.neighbours(connection, chunk, kinds=everything, local_kb=local)
+        without_sibling = edges.neighbours(connection, chunk, kinds=without, local_kb=local)
         assert any(s.kind == "sibling" for s in with_sibling)
         assert not any(s.kind == "sibling" for s in without_sibling)
         assert len(without_sibling) < len(with_sibling)
@@ -800,7 +801,8 @@ def test_the_sync_report_prints_every_kind_with_its_wall_clock(tmp_path: Path) -
     line = report.edge_line()
     for kind in edges.ALL_KINDS:
         assert f"{kind}=" in line
-    assert "edge(s) in" in line
+    assert "edge(s) derived in" in line
+    assert "authored read from links" in line
     assert line in report.lines()
 
 
@@ -836,6 +838,12 @@ def test_the_traversal_surface_returns_no_structural_nodes(tmp_path: Path) -> No
         documents = {
             str(r[0]) for r in connection.execute("SELECT id FROM documents WHERE state = 'active'")
         }
+        authored = {
+            str(r[0])
+            for r in connection.execute(
+                "SELECT dst_doc_id FROM links UNION SELECT src_doc_id FROM links"
+            )
+        }
     finally:
         connection.close()
     assert edge_count > 0, "no structural edges exist, so this test cannot detect one leaking"
@@ -848,9 +856,14 @@ def test_the_traversal_surface_returns_no_structural_nodes(tmp_path: Path) -> No
 
     neighbours = payload["neighbours"]
     assert neighbours, "the fixture returned no neighbours, so nothing was checked"
+    # `doc_id in documents` is the load-bearing half. Asserting "not a structural node key" would
+    # be true by key *format* alone — a tag is a word, a directory is a path, a chunk key carries
+    # a `:` — and so could never fail. What can fail is a neighbour no `links` row put there.
     for row in neighbours:
         assert row["doc_id"] in documents
-        assert row["doc_id"] not in structural
+    assert {str(row["doc_id"]) for row in neighbours} <= authored, (
+        "a neighbour arrived that no authored link accounts for"
+    )
 
 
 def test_a_schema_version_2_index_is_refused_with_its_remedy(tmp_path: Path) -> None:
@@ -1011,5 +1024,156 @@ def test_hierarchy_matches_the_naive_prefix_predicate(tmp_path: Path) -> None:
             if kind == "parent-child"
         }
         assert stored == naive
+    finally:
+        connection.close()
+
+
+def test_asking_for_authored_without_the_local_kb_is_refused(tmp_path: Path) -> None:
+    """Silently skipping the kind is the same defect as a `src`-only read, from the other side.
+
+    G5's gate runs with and without authored edges. A caller who forgets `local_kb=` would get the
+    "without" arm while believing it ran the "with" one — and lose the highest-trust edge class
+    with nothing said. `select_kinds(drop=["authored"])` is how you mean it.
+    """
+    corpus = build(tmp_path / "kb", [Doc("docs/a.md", sectioned("A", [("One", "x " * 60)]))])
+    connection = corpus.open()
+    try:
+        node = identifier(connection, "doc", str(corpus.ids["docs/a.md"]))
+        with pytest.raises(TraversalError) as info:
+            edges.peers(connection, node, kinds=edges.ALL_KINDS)
+        assert "local_kb" in info.value.remedy
+        with pytest.raises(TraversalError):
+            edges.neighbours(connection, node, kinds=edges.ALL_KINDS)
+        # Dropping it explicitly is fine, and is the documented way to mean it.
+        assert edges.neighbours(connection, node, kinds=edges.select_kinds(drop=["authored"]))
+    finally:
+        connection.close()
+
+
+def test_an_empty_tag_is_not_a_shared_value(tmp_path: Path) -> None:
+    """`tags: [""]` on two documents would otherwise hub them together at a divisor of two — the
+    noise clique damping exists to prevent, built out of nothing at all."""
+    corpus = build(
+        tmp_path / "kb",
+        [
+            Doc("docs/a.md", sectioned("A", [("One", "x " * 60)]), tags=("", "  ")),
+            Doc("docs/b.md", sectioned("B", [("One", "y " * 60)]), tags=("",)),
+        ],
+    )
+    connection = corpus.open()
+    try:
+        assert nodes_of(connection, "tag") == []
+    finally:
+        connection.close()
+
+
+def test_one_document_repeating_a_tag_mints_no_hub(tmp_path: Path) -> None:
+    """The `< 2` rule counts the bucket, and the edge `set` downstream hides a duplicated entry:
+    a lone document listing `t` twice looked like a two-member hub, and got a node with one spoke
+    and a divisor of 2."""
+    corpus = build(
+        tmp_path / "kb",
+        [Doc("docs/a.md", sectioned("A", [("One", "x " * 60)]), tags=("t", "t"))],
+    )
+    connection = corpus.open()
+    try:
+        assert nodes_of(connection, "tag") == []
+        assert not [row for row in rows(connection) if row[2] == "shared-tag"]
+    finally:
+        connection.close()
+
+
+def test_a_nested_directory_is_its_own_hub(tmp_path: Path) -> None:
+    """`co-located` is the immediate directory, never an ancestor: `docs/a.md` and
+    `docs/deep/c.md` are not co-located. Pinned because it is a design choice with a plausible
+    opposite, and because it is what `posixpath.dirname` happens to give."""
+    corpus = build(
+        tmp_path / "kb",
+        [
+            Doc("docs/a.md", sectioned("A", [("One", "x " * 60)])),
+            Doc("docs/b.md", sectioned("B", [("One", "y " * 60)])),
+            Doc("docs/deep/c.md", sectioned("C", [("One", "z " * 60)])),
+            Doc("docs/deep/d.md", sectioned("D", [("One", "w " * 60)])),
+        ],
+    )
+    connection = corpus.open()
+    try:
+        assert nodes_of(connection, "dir") == ["docs", "docs/deep"]
+        docs_hub = identifier(connection, "dir", "docs")
+        members = {
+            spoke.node for spoke in edges.members(connection, docs_hub, kinds=("co-located",))
+        }
+        assert members == {
+            identifier(connection, "doc", str(corpus.ids[f"docs/{n}.md"])) for n in "ab"
+        }
+    finally:
+        connection.close()
+
+
+def test_a_heading_containing_the_separator_is_a_known_bound(tmp_path: Path) -> None:
+    """A heading titled `A > B` is indistinguishable from the path `A` / `B`, and the ambiguity is
+    older than this module: `pinakes.chunk` joins a heading path with `" > "` and stores one string.
+
+    Recorded as a **bound**, not fixed here. A heading containing `>` is ordinary in software
+    documentation ("Settings > Advanced"), and the honest repair is storing segments rather than a
+    joined string — a `chunks.heading_path` change, which is a schema decision this increment does
+    not get to take alone. The test exists so the bound is measured rather than believed, and so it
+    fails loudly if `chunk.py` ever starts escaping the separator.
+    """
+    body = (
+        "# A > B\n\n" + ("p " * 60) + "\n\n"
+        "## C\n\n" + ("q " * 60) + "\n\n"
+        "# A\n\n" + ("r " * 60) + "\n\n"
+        "## B\n\n" + ("s " * 60) + "\n"
+    )
+    corpus = build(tmp_path / "kb", [Doc("docs/a.md", body)])
+    connection = corpus.open()
+    try:
+        doc_id = str(corpus.ids["docs/a.md"])
+        headings = [heading for _, heading in chunks_of(connection, doc_id)]
+        assert headings.count("A > B") == 2, (
+            f"chunk.py no longer collides these two headings ({headings}) — the bound below is "
+            "stale and this test should assert the separation instead"
+        )
+        # One heading node for two unrelated sections, and hierarchy edges between them.
+        assert len(nodes_of(connection, "heading")) < len(set(headings))
+        assert [row for row in rows(connection) if row[2] == "parent-child"]
+    finally:
+        connection.close()
+
+
+def test_the_hierarchy_row_count_is_pinned_because_it_is_the_product_of_two_sections(
+    tmp_path: Path,
+) -> None:
+    """`parent-child` is chunk ↔ chunk by APPROACH §3 — the one relation deliberately *not* hubbed
+    — so a multi-chunk ancestor multiplies: ancestor chunks times descendant chunks, per pair of
+    related headings. Six chunks under `Top` and four under `Top > Section` is 24 rows from ten
+    chunks.
+
+    Pinned rather than fixed: hubbing it would contradict APPROACH §3, and restricting it to the
+    immediate parent would narrow the relation the go decision's probe measured. The number is
+    here so a reader sees the shape rather than discovering it on a long document, and so an
+    accidental change to the relation's arity fails a test.
+    """
+    lead = "\n\n".join("x " * 200 for _ in range(3))
+    section = "\n\n".join("y " * 200 for _ in range(2))
+    corpus = build(
+        tmp_path / "kb", [Doc("docs/a.md", f"# Top\n\n{lead}\n\n## Section\n\n{section}\n")]
+    )
+    connection = corpus.open()
+    try:
+        doc_id = str(corpus.ids["docs/a.md"])
+        by_heading: dict[str | None, int] = {}
+        for _, heading in chunks_of(connection, doc_id):
+            by_heading[heading] = by_heading.get(heading, 0) + 1
+        ancestors = by_heading["Top"]
+        descendants = by_heading["Top > Section"]
+        assert ancestors >= 2 and descendants >= 2, by_heading
+
+        found = len([row for row in rows(connection) if row[2] == "parent-child"])
+        assert found == ancestors * descendants, (
+            f"{found} parent-child rows for {ancestors} ancestor and {descendants} descendant "
+            "chunks — the relation's arity moved"
+        )
     finally:
         connection.close()

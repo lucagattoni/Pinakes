@@ -42,10 +42,49 @@ relation. Built as three explicit functions — `peers()`, `members()`, `hubs()`
 of a hub kind cannot be confused for one query, and pinned by
 `test_a_hub_is_entered_from_a_member_and_expanded_from_the_hub`.
 
+**HIGH — a kind selection that could be silently dropped, in the function that preaches against
+it.** `peers()`/`neighbours()` took `local_kb: str | None = None` and skipped `authored` when it was
+absent — the same "confident, wrong, smaller answer" its own docstring warns about for a `src`-only
+read, from the other side. G5's gate runs *with* and *without* authored edges; a caller who forgot
+the keyword would have got the "without" arm believing it ran the "with" one, and lost the
+highest-trust edge class with nothing printed. Now a `TraversalError` naming
+`select_kinds(drop=["authored"])` as the way to mean it. **`select_kinds()` refusing an unknown name
+was designed against exactly this and did not cover it** — the refusal guarded the *name* and left
+the *ingredient*.
+
+**MEDIUM — every corpus that certifies this increment has two of the six kinds at zero.**
+`parent-child` has derived zero edges in every measurement ever taken here — one-level headings in
+both committed corpora, an empty `heading_path` throughout the RFC corpus — and no committed sidecar
+carries a `tags:` key, so `shared-tag` is exercised only by synthetic fixtures. The cross-check
+against the probe therefore *passed with `_hierarchy_edges` deleted*, because its non-vacuity guard
+was a total over all kinds. Fixed by asserting each compared kind is non-zero and naming the two
+this corpus cannot exercise, so a kind that silently stops deriving fails rather than reads as
+agreement. **A "total > 0" guard on a per-item comparison is not a non-vacuity guard** — it is one
+item's evidence spread over all of them.
+
+**MEDIUM — `parent-child` is materialised pairwise, and its row count is the product of two
+sections.** APPROACH §3 keeps hierarchy direct — *"the one relation that stays direct"* — so an
+ancestor heading of *a* chunks and a descendant of *d* chunks is a·d rows. Measured at
+`max_tokens=400` on plausible document shapes: 5.8×, 16.3× and 53.5× the chunk count. Extrapolated
+to 300 documents of the worst shape that is ~10 M rows. Not changed here — hubbing it contradicts
+APPROACH §3 and restricting it to the immediate parent narrows the relation the go decision's probe
+measured — but pinned by a test that asserts the arity, and reported to the planner as a spec
+question rather than absorbed as an implementation choice.
+
+**LOW — a duplicated tag inflated a hub's member count where nothing could see it.** `derive`
+collects edges into a `set`, so `tags: [t, t]` produced one spoke — but `_tag_buckets` appended the
+document twice, and the `< 2` minting rule counts the *bucket*. A single document repeating one tag
+therefore minted a hub with one spoke and a divisor of 2. The test named
+`test_a_duplicate_tag_in_one_sidecar_is_one_spoke` passed with the deduplication removed, because
+the set downstream hid the mechanism it named. Deduplicated where the length is decided, and pinned
+by the single-document case that has no set to hide behind.
+
 **LOW — a hub with one member is derived state that connects nothing.** A directory holding one
 document, a tag on one document, a heading with one chunk: expanding it returns only the node that
 reached it. The spec only says degree-zero hubs are reaped, which full re-derivation gives for free.
 Degree-one hubs are minted at zero benefit — a node, a spoke, and an entry in G6's hub report — so
 they are skipped, which also makes the census directly comparable to the probe's (`_spoke_count`
-counts buckets of two or more). Reachability is unchanged; the alternative reading is recorded here
-because it was a choice, not a deduction.
+counts buckets of two or more). Reachability is unchanged **for the channel as APPROACH §4A defines
+it today**; §4B's all-chunk seeding is itself flagged for re-evaluation on the `sqlite-vec` tier, so
+the claim is scoped rather than unconditional. The alternative reading is recorded here because it
+was a choice, not a deduction.

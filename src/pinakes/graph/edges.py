@@ -92,7 +92,7 @@ from dataclasses import dataclass
 from typing import Final, cast
 
 from pinakes.errors import TraversalError
-from pinakes.store import STRUCTURAL_EDGE_KINDS
+from pinakes.store import NODE_KINDS, STRUCTURAL_EDGE_KINDS
 
 AUTHORED: Final = "authored"
 """Read from `links`, never stored in `edges`. Named here because it is selectable like any other
@@ -340,7 +340,10 @@ def _tags(metadata: str) -> tuple[str, ...]:
         return ()
     seen: dict[str, None] = {}
     for entry in cast(list[object], raw):
-        if isinstance(entry, str):
+        # An empty or whitespace-only tag is not a shared *value*: it would hub together every
+        # document that happens to carry one, which is the noise clique damping exists to prevent
+        # — at a divisor of two rather than of the hub's real size.
+        if isinstance(entry, str) and entry.strip():
             seen.setdefault(entry, None)
     return tuple(seen)
 
@@ -426,16 +429,21 @@ def _directory_buckets(
 def _tag_buckets(
     documents: dict[str, _DocumentRow], doc_node: dict[str, int]
 ) -> dict[str, list[int]]:
-    buckets: dict[str, list[int]] = {}
+    """One entry per document per tag, and never two.
+
+    The `< 2` hub-minting rule counts this list, so a document listing the same tag twice would
+    make a *one-document* bucket look like a hub of two — minting a node whose single spoke reaches
+    nobody, with a divisor of 2. The edge `set` downstream hides it: the duplicate spoke collapses
+    and only the bucket length is wrong. Deduplicated here, where the length is decided.
+    """
+    buckets: dict[str, dict[int, None]] = {}
     for row in documents.values():
         for tag in row.tags:
-            buckets.setdefault(tag, []).append(doc_node[row.id])
-    return buckets
+            buckets.setdefault(tag, {})[doc_node[row.id]] = None
+    return {tag: list(members) for tag, members in buckets.items()}
 
 
 def _node_census(connection: sqlite3.Connection) -> dict[str, int]:
-    from pinakes.store import NODE_KINDS
-
     counts: dict[str, int] = dict.fromkeys(NODE_KINDS, 0)
     for row in connection.execute("SELECT kind, count(*) FROM nodes GROUP BY kind"):
         counts[str(row[0])] = int(row[1])
@@ -511,9 +519,22 @@ def peers(
     so half of every relation lives on the far side of the row. A `src`-only read returns a
     confident, wrong, smaller answer.
 
-    `authored` is included when it is in `kinds` **and** `local_kb` is given — it lives in `links`,
-    not in `edges`, and resolving it needs to know which KB is local.
+    `authored` lives in `links` rather than in `edges`, so resolving it needs to know which KB is
+    local. **Asking for it without `local_kb` is refused, never quietly skipped.** Dropping it in
+    silence is the same defect one paragraph up, from the other side: G5's gate is computed with and
+    without authored edges, and a caller who forgets the keyword would get the "without" arm while
+    believing it ran the "with" one — and lose the highest-trust edge class, the one APPROACH §4A's
+    logical-hop counting exists to keep in reach. `select_kinds()` refuses an unknown name for the
+    same reason.
     """
+    if AUTHORED in kinds and local_kb is None:
+        raise TraversalError(
+            "reading `authored` edges needs the local KB's ULID.",
+            remedy=(
+                "Pass `local_kb=`, or drop the kind explicitly with "
+                "`select_kinds(drop=['authored'])`."
+            ),
+        )
     wanted = [kind for kind in kinds if kind in SYMMETRIC_KINDS and kind != AUTHORED]
     found: list[Spoke] = []
     if wanted:
@@ -622,14 +643,33 @@ def authored_pairs(connection: sqlite3.Connection, *, local_kb: str) -> list[tup
 def _authored_peers(
     connection: sqlite3.Connection, identifier: int, *, local_kb: str
 ) -> list[Spoke]:
-    seen: dict[int, None] = {}
-    for src, dst in authored_pairs(connection, local_kb=local_kb):
-        if src == identifier:
-            seen.setdefault(dst, None)
-        elif dst == identifier:
-            seen.setdefault(src, None)
+    """One node's authored neighbours, queried for **that document** rather than for the KB.
+
+    Scanning `authored_pairs()` per node measured 5.2 ms against 0.004 ms for every other kind — a
+    channel expanding 200 nodes would have spent a second per query recomputing one global set. Both
+    legs are index lookups: `links`' primary key starts at `src_kb_id, src_doc_id`, and `links_dst`
+    covers `(dst_kb_id, dst_doc_id)`.
+    """
+    row = connection.execute(
+        "SELECT key FROM nodes WHERE id = ? AND kind = 'doc'", (identifier,)
+    ).fetchone()
+    if row is None:
+        # Only a document can have an authored edge. A chunk, tag, heading or directory node
+        # asking for one gets nothing, which is the truth rather than an error.
+        return []
+    doc_id = str(row[0])
+    rows = connection.execute(
+        "SELECT n.id FROM links l JOIN nodes n ON n.kind = 'doc' AND n.key = l.dst_doc_id "
+        "WHERE l.src_kb_id = ? AND l.dst_kb_id = ? AND l.src_doc_id = ? "
+        "UNION "
+        "SELECT n.id FROM links l JOIN nodes n ON n.kind = 'doc' AND n.key = l.src_doc_id "
+        "WHERE l.src_kb_id = ? AND l.dst_kb_id = ? AND l.dst_doc_id = ? "
+        "ORDER BY 1",
+        (local_kb, local_kb, doc_id, local_kb, local_kb, doc_id),
+    )
     return [
-        Spoke(node=other, kind=AUTHORED, weight=WEIGHT[AUTHORED], role="peer") for other in seen
+        Spoke(node=int(other[0]), kind=AUTHORED, weight=WEIGHT[AUTHORED], role="peer")
+        for other in rows
     ]
 
 

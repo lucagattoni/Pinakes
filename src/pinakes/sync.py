@@ -242,10 +242,17 @@ class SyncReport:
     **Every kind is a key, even at zero.** A kind absent from a dict is indistinguishable from a
     kind that derived nothing — and this project has already taken a decision on a corpus where
     three of six kinds were silently at zero because structural chunking had degraded. Empty only
-    on a run that derived nothing at all (`--sidecars-only`, `--estimate-only`, `--clear-cache`)."""
+    on a run that derived nothing at all: `--sidecars-only` (which returns before an index is
+    opened), `--estimate-only` and `--clear-cache` (both of which return before `_run`), and a run
+    that could not take the sync lock (`busy`)."""
     edge_seconds: float = 0.0
-    """Wall-clock spent deriving. Reported because derivation runs on every sync, and `pnk sync`
-    runs on three git hooks — G3's own risk register entry."""
+    """Wall-clock spent deriving.
+
+    **Not printed under `--quiet`,** which is how the `post-commit` and `post-merge` hooks run —
+    and those are the two hooks that do derive (`pre-commit` is `--sidecars-only` and never opens
+    the index). `-q` prints problems only, and a cost is not a problem; the number is here for
+    `pnk sync` run by hand, for the report's own tests, and for whatever G6 chooses to surface.
+    Say so rather than implying the hooks report it."""
 
     on_exceed: str = "abort"
     """Copied from the manifest so `ok` can read it without the manifest in hand."""
@@ -336,11 +343,16 @@ class SyncReport:
         — usually that structural chunking produced no `heading_path` — and a reader who sees no
         line at all cannot tell that from a reader who sees no kind.
         """
-        from pinakes.graph.edges import ALL_KINDS
-
-        census = " ".join(f"{kind}={self.edges.get(kind, 0)}" for kind in ALL_KINDS)
-        total = sum(self.edges.values())
-        return f"{total} edge(s) in {self.edge_seconds:.2f}s: {census}"
+        stored = sum(count for kind, count in self.edges.items() if kind != graph_edges.AUTHORED)
+        authored = self.edges.get(graph_edges.AUTHORED, 0)
+        census = " ".join(f"{kind}={self.edges.get(kind, 0)}" for kind in graph_edges.ALL_KINDS)
+        # Two numbers, because they are two things: `authored` is never stored in `edges` — it is
+        # resolved from `links` at read time — so folding it into one total would report a row
+        # count that no `SELECT count(*) FROM edges` can reproduce.
+        return (
+            f"{stored} edge(s) derived in {self.edge_seconds:.2f}s, "
+            f"{authored} authored read from links: {census}"
+        )
 
     def escape_lines(self) -> list[str]:
         """One line per pattern that walked out of the KB, never one per file it matched."""
@@ -1056,7 +1068,11 @@ def _derive_edges(manifest: Manifest, connection: sqlite3.Connection, report: Sy
     them.
 
     Not reached on the `--sidecars-only` path at all: that returns from `_run` before an index is
-    even opened, which is what keeps the pre-commit hook off this work.
+    even opened, which keeps the **pre-commit** hook off this work. The other two hooks —
+    `post-commit` and `post-merge`, both `sync --index-only --quiet` — do derive, and pay for it on
+    every commit whether or not the corpus moved: 1.3 s measured over 106 806 chunks. Derivation is
+    full by choice (see `graph.edges.derive`); skipping it when nothing changed is a separate
+    decision, and a wrong skip leaves a stale graph, which is worse than the second it saves.
     """
     started = time.monotonic()
     report.edges = graph_edges.derive(connection, local_kb=str(manifest.kb.id)).edges
