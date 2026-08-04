@@ -102,6 +102,7 @@ Usage:
 
 import argparse
 import hashlib
+import itertools
 import json
 import posixpath
 import shutil
@@ -356,6 +357,64 @@ def _rank_hub_members(
     ]
     candidates.sort(key=lambda c: (-similarity.get(c, 0.0), graph.doc_path[graph.chunks[c].doc], c))
     return candidates[:adjacent_k]
+
+
+def edge_census(graph: Graph) -> dict[str, int]:
+    """How many edges each kind derived, read off the exact `Graph` the traversal walks.
+
+    Every entry in `ALL_KINDS` is a key, whether or not `derive` was asked for that kind: a kind
+    dropped via `--drop`, or one that simply found nothing on this corpus (no `heading_path`, an
+    empty directory bucket), derives zero edges here and says so rather than being absent — that
+    is the entire reason this function exists (`plans/20260731_1202-open-corrections.md` item 1,
+    `plans/20260803_2239-corpus-probe-run.md` § *Before the numbers mean anything*). A kind
+    missing from a `dict` is indistinguishable from a kind at zero; this one is never missing.
+
+    Every count reads a structure `derive` already populated for the traversal itself —
+    `graph.chunk_kinds`, `by_doc`, `heading_hub`, `dir_hub`, `tag_hub`, `authored` — no table is
+    re-queried and no relation is recomputed from anything but the graph already in hand, so this
+    cannot drift from the edges `reachable_docs` actually walks: it is a reading of the same
+    object, not a second computation of it.
+
+    Chunk ↔ chunk kinds (`sibling`, `parent-child`) count unordered pairs directly, under the
+    exact predicates `reachable_docs` tests (`abs(ordinal diff) == 1`, `_is_prefix`) — `sibling`
+    over adjacent entries of `by_doc`'s ordinal-sorted lists (ordinals are the unique, contiguous
+    `0..n-1` `store.py` assigns per document, so no non-adjacent pair can differ by exactly one),
+    `parent-child` over per-document heading groups so a document is never scanned chunk-by-chunk.
+    Hub kinds (`in-section`, `co-located`, `shared-tag`) count spokes — hub-to-member
+    associations — which is the graph's own vocabulary for them (`Graph`'s docstring: "a tag on
+    30 documents is 30 spokes, not 435 edges"), not the combinatorial pairwise count the hub
+    model exists specifically to avoid materialising. `authored` counts unordered document pairs
+    from the symmetric adjacency `derive` builds (each link recorded on both ends, halved back to
+    one edge per pair).
+    """
+    counts: dict[str, int] = dict.fromkeys(ALL_KINDS, 0)
+
+    if "sibling" in graph.chunk_kinds:
+        for chunk_ids in graph.by_doc.values():
+            ordered = [graph.chunks[c] for c in chunk_ids]
+            for a, b in itertools.pairwise(ordered):
+                if abs(b.ordinal - a.ordinal) == 1:
+                    counts["sibling"] += 1
+
+    if "parent-child" in graph.chunk_kinds:
+        for chunk_ids in graph.by_doc.values():
+            groups: dict[str, int] = {}
+            for chunk_id in chunk_ids:
+                heading = graph.chunks[chunk_id].heading_path
+                if heading is not None:
+                    groups[heading] = groups.get(heading, 0) + 1
+            headings = list(groups)
+            for i, a in enumerate(headings):
+                for b in headings[i + 1 :]:
+                    if _is_prefix(a, b):
+                        counts["parent-child"] += groups[a] * groups[b]
+
+    counts["in-section"] = sum(len(members) for members in graph.heading_hub.values())
+    counts["co-located"] = sum(len(members) for members in graph.dir_hub.values())
+    counts["shared-tag"] = sum(len(members) for members in graph.tag_hub.values())
+    counts["authored"] = sum(len(neighbours) for neighbours in graph.authored.values()) // 2
+
+    return counts
 
 
 # --------------------------------------------------------------------------------------------
@@ -652,6 +711,9 @@ class Report:
     at_seed_only: int
     beyond_depth: int
     membership_only: int
+    edges: dict[str, int]
+    """The per-kind edge census (`edge_census`) of the exact graph this report's verdicts were
+    computed against — one entry per `ALL_KINDS`, including any kind that derived zero."""
     verdicts: tuple[HopVerdict, ...]
 
     def as_dict(self) -> dict[str, Any]:
@@ -664,6 +726,7 @@ class Report:
             "at_seed_only": self.at_seed_only,
             "beyond_depth": self.beyond_depth,
             "membership_only": self.membership_only,
+            "edges": dict(self.edges),
         }
 
 
@@ -685,6 +748,7 @@ def probe(
     unknown path is what made a typo indistinguishable from a genuinely unreachable document.
     """
     graph = derive(connection, manifest.kb.id, kinds=kinds)
+    edges = edge_census(graph)
 
     chunk_ids, matrix = store.load_vectors(connection, dim=manifest.embedding.dim)
     unit = unit_vectors(matrix)
@@ -746,7 +810,7 @@ def probe(
                 )
             )
 
-    return _summarise(variant, tuple(kinds), multi_hop, verdicts)
+    return _summarise(variant, tuple(kinds), multi_hop, verdicts, edges)
 
 
 def _summarise(
@@ -754,6 +818,7 @@ def _summarise(
     kinds: tuple[str, ...],
     multi_hop: Sequence[Question],
     verdicts: Sequence[HopVerdict],
+    edges: dict[str, int],
 ) -> Report:
     by_question: dict[str, list[HopVerdict]] = {}
     for verdict in verdicts:
@@ -793,6 +858,7 @@ def _summarise(
         at_seed_only=at_seed_only,
         beyond_depth=beyond,
         membership_only=membership_only,
+        edges=edges,
         verdicts=tuple(verdicts),
     )
 
@@ -895,6 +961,15 @@ def _render(reports: Iterable[Report]) -> str:
             f"beyond-{DEPTH}-hops {report.beyond_depth:>3}  "
             f"membership-only {report.membership_only:>3}"
         )
+        # Every kind in `ALL_KINDS`, in that fixed order, so a kind at zero — dropped, or simply
+        # absent on this corpus (no `heading_path`, no tags) — is printed beside the ones that
+        # derived something, rather than missing from a line a reader would have to notice is
+        # short. This is the per-kind edge census `corpus-probe-run.md` requires. Direct indexing,
+        # never `.get(kind, 0)`: `edge_census` promises every `ALL_KINDS` entry, and a `.get`
+        # default would turn a kind quietly dropped from the dict into a silently correct-looking
+        # zero here — the exact failure class this census exists to make impossible.
+        census = ", ".join(f"{kind} {report.edges[kind]}" for kind in ALL_KINDS)
+        lines.append(f"{'':<18} edges derived: {census}")
     return "\n".join(lines)
 
 

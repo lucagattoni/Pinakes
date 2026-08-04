@@ -594,6 +594,9 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | a row missing a field is refused by name, never a bare `KeyError` | G2 | `tests/test_eval.py::test_a_row_missing_a_field_is_refused_by_name` |
 | the channel-reachable ceiling is measured before the schema bumps | G2 | `tests/test_eval.py::test_the_reachable_ceiling_probe_needs_no_index_schema_change` |
 | the probe answers to the edge set, rather than reporting the same number whatever the graph holds | G2 | `tests/test_eval.py::test_the_reachable_ceiling_probe_answers_to_the_edge_set` |
+| a kind that derives zero edges is a key in the census at `0`, never omitted | G2 | `tests/test_eval.py::test_a_kind_that_derives_zero_edges_is_reported_not_omitted` |
+| a kind dropped via `--drop` shows `0` in both the printed table and `--json`, alongside every other kind | G2 | `tests/test_eval.py::test_a_dropped_kind_shows_zero_in_both_output_formats` |
+| the per-kind edge census reconciles with the `Graph` it describes, for every derived kind | G2 | `tests/test_eval.py::test_edge_census_reconciles_with_the_graph_it_describes` |
 | a hop expecting a path the index does not hold refuses the run by name, instead of being counted failing-and-unreachable | G2 | `tests/test_eval.py::test_the_probe_refuses_a_hop_expecting_a_document_the_index_does_not_hold` |
 | a `multi-hop` question with no `hops` refuses the run by name, instead of padding the denominator it can never fail | G2 | `tests/test_eval.py::test_the_probe_refuses_a_multi_hop_question_with_no_hops` |
 | a `multi-hop` question with one hop refuses too — the shape that moves `liftable` **upward**, against a precondition that is a floor | G2 | `tests/test_eval.py::test_the_probe_refuses_a_multi_hop_question_carrying_a_single_hop` |
