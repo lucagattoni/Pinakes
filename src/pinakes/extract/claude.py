@@ -52,6 +52,7 @@ the first ligature onward while the spans still tiled perfectly.
 
 import base64
 import json
+import os
 import re
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -65,7 +66,7 @@ from typing import Any, Final, Protocol, cast
 from pinakes.budget.accountant import Accountant
 from pinakes.budget.estimate import MAX_TOKENS, TIMESTAMP_FORMAT, K, estimate_document
 from pinakes.budget.prices import ModelPrice
-from pinakes.errors import ExtractionError, ExtractorMissingError
+from pinakes.errors import ApiKeyMissingError, ExtractionError, ExtractorMissingError
 from pinakes.extract import CLAUDE_VISION, ExtractedText, ExtractionContext
 from pinakes.extract import cache as extract_cache
 from pinakes.extract.audit import AUDIT_KEY, as_provenance, audit_completeness
@@ -184,6 +185,31 @@ class Transport(Protocol):
     def create(self, request: Mapping[str, Any]) -> Mapping[str, Any]: ...
 
     def count_tokens(self, request: Mapping[str, Any]) -> int: ...
+
+
+API_KEY_ENV = "PINAKES_ANTHROPIC_API_KEY"
+"""**Not** `ANTHROPIC_API_KEY`, and the difference is the whole point.
+
+`anthropic.Anthropic()` reads `ANTHROPIC_API_KEY` from the process environment on its own. On any
+machine where that is exported for some other tool — an editor, an agent, a shell someone forgot —
+the paid path would find a live key it was never handed, and the "deliberate act of supplying the
+key" that `CLAUDE.md` counts as a defence would not be one. Reading a name only pinakes uses, and
+passing it explicitly, makes the defence real rather than a property of a tidy machine.
+"""
+
+
+def resolve_api_key(environ: Mapping[str, str] | None = None) -> str:
+    """The key, or a named refusal. Never a fallback to the SDK's own variable.
+
+    `environ` is injectable so the tests can prove the fallback is absent without mutating the
+    process environment — the assertion that matters is that a set `ANTHROPIC_API_KEY` and an
+    unset `PINAKES_ANTHROPIC_API_KEY` refuses.
+    """
+    source = os.environ if environ is None else environ
+    key = (source.get(API_KEY_ENV) or "").strip()
+    if not key:
+        raise ApiKeyMissingError
+    return key
 
 
 def build_client_kwargs() -> dict[str, Any]:
@@ -802,7 +828,9 @@ class AnthropicTransport:
         self._anthropic = anthropic
         kwargs = build_client_kwargs()
         self._max_retries = kwargs["max_retries"]
-        self._client = anthropic.Anthropic(timeout=timeout, **kwargs)
+        # `api_key` is passed, never omitted: omitting it lets the SDK read `ANTHROPIC_API_KEY`
+        # from the ambient environment, which is exactly what `resolve_api_key` exists to prevent.
+        self._client = anthropic.Anthropic(api_key=resolve_api_key(), timeout=timeout, **kwargs)
 
     @property
     def max_retries(self) -> int:

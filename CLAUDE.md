@@ -8,11 +8,16 @@ indexes the rest (which file owns which fact). This file only carries rules that
 - **Never commit real knowledge-base content.** The repo is the engine. The only KBs here are the
   synthetic corpora under `tests/` (`demo-kb`, `partner-kb`) — written for the purpose, never
   harvested.
-- **An API key lives in `.env`, which is gitignored by pattern (`.env`, `.env.*`).** The paid
-  extractor needs a real key, so one on this machine is normal; one that is merely *untracked* is
-  a `git add -A` away from a public repo. Pass it explicitly — `uv run --env-file .env pnk …` —
-  and never teach pinakes to load `.env` itself: a tool that can spend must not pick up
-  credentials from a file nobody pointed it at ([docs/MEASUREMENT-RUN.md](docs/MEASUREMENT-RUN.md)).
+- **The paid extractor's key is `PINAKES_ANTHROPIC_API_KEY`, never `ANTHROPIC_API_KEY`** — and
+  that is enforced in code (`extract/claude.py: resolve_api_key`), not by machine hygiene. The SDK
+  reads its own variable out of whatever environment it is handed, so on a machine where some
+  other tool exports one the paid path would find a live key nobody aimed at it — measured true
+  here on 20260804. Supplying the key must be an act aimed at *this* tool. It lives in `.env`,
+  gitignored by pattern (`.env`, `.env.*`), passed per command: `uv run --env-file .env pnk …`.
+  **Never teach pinakes to load `.env` itself**, and never add an `ANTHROPIC_API_KEY` fallback —
+  both are the same defect, one layer apart. Note what actually bounds spend once a key is
+  present: the §5 caps and the enumerated allowlist, not the invocation form
+  ([docs/MEASUREMENT-RUN.md](docs/MEASUREMENT-RUN.md)).
 - Vet every file for PII, credentials, private URLs, and anything copied from memory before staging.
 - Never commit model weights or `.pinakes/` state (both are gitignored — keep it that way).
 

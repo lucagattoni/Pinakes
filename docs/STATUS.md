@@ -46,7 +46,7 @@
 Every earlier version had no paid code path at all. The only one now is the `claude-vision`
 extractor, and reaching it takes a deliberate act: `EXTRACTION_BACKEND_DEFAULT` is `pypdfium2`, so
 a KB spends only when its manifest says `[extraction] backend = "claude-vision"` or a command
-carries `--extract=claude-vision`, **and** a real `ANTHROPIC_API_KEY` is in the environment. Absent
+carries `--extract=claude-vision`, **and** a real `PINAKES_ANTHROPIC_API_KEY` is in the environment. Absent
 any one of those, 0.3.0 behaves exactly like 0.2.2.
 
 What stands behind that rather than merely asserting it: an enumerated allowlist

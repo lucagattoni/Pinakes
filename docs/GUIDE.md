@@ -411,7 +411,7 @@ them and `pnk links` traverses them: see [Following links between two KBs](#foll
 
 Everything in this section is free. The one path that can spend is the opt-in `claude-vision`
 extractor above, which needs `pinakes[claude]`, an explicit `--extract=claude-vision` or manifest
-key, **and** a real `ANTHROPIC_API_KEY`; it is bounded by the three `[budget]` caps and recorded in
+key, **and** a real `PINAKES_ANTHROPIC_API_KEY`; it is bounded by the three `[budget]` caps and recorded in
 `pnk budget` ([STATUS](STATUS.md#the-surface-you-can-use-today)).
 
 ## Following links between two KBs

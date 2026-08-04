@@ -72,7 +72,7 @@ Verify it actually arrives before spending anything on the assumption that it di
 
 ```bash
 uv run --frozen --env-file .env python -c "
-import os; key = os.environ.get('ANTHROPIC_API_KEY', '')
+import os; key = os.environ.get('PINAKES_ANTHROPIC_API_KEY', '')
 print('key reaches the process:', bool(key), '| length:', len(key))
 "
 ```

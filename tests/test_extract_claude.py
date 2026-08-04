@@ -10,6 +10,7 @@ need no extras at all and run on every CI leg. The document-level cases genuinel
 carry the `pdf` marker for it.
 """
 
+import ast
 import json
 import re
 from collections.abc import Callable, Mapping
@@ -24,7 +25,7 @@ from conftest import paid_runnable, pdf_extraction_runnable
 from pinakes.budget.accountant import Accountant
 from pinakes.budget.ledger import CallState, ledger_path, quantise, read, resolve
 from pinakes.budget.prices import Prices, load_prices
-from pinakes.errors import ExtractionError
+from pinakes.errors import ApiKeyMissingError, ExtractionError
 from pinakes.extract import CLAUDE_VISION, fingerprint_inputs
 from pinakes.extract import fingerprint as extraction_fingerprint
 from pinakes.extract.cache import stage_page, staged_pages
@@ -1528,3 +1529,78 @@ def test_a_corpus_stops_at_the_first_cap_breach_rather_than_failing_every_docume
     assert len(report.failures) == 1, "one fact, reported once — not once per remaining document"
     assert report.budget_exhausted is not None
     assert "budget cap" in (report.budget_line() or "")
+
+
+# --- the key is supplied to pinakes, never found by the SDK -------------------------------------
+
+
+def test_the_key_is_read_from_the_pinakes_variable() -> None:
+    from pinakes.extract import claude as claude_mod
+
+    """`PINAKES_ANTHROPIC_API_KEY` is what supplies it."""
+    assert claude_mod.resolve_api_key({"PINAKES_ANTHROPIC_API_KEY": "sk-test"}) == "sk-test"
+
+
+def test_an_ambient_anthropic_api_key_is_not_enough() -> None:
+    from pinakes.extract import claude as claude_mod
+
+    """The assertion the whole change exists for.
+
+    `anthropic.Anthropic()` reads `ANTHROPIC_API_KEY` from the process environment by itself, so
+    on a machine where some other tool exports it the paid path would find a live key nobody
+    handed it. A fallback here would restore exactly that, silently.
+    """
+    with pytest.raises(ApiKeyMissingError):
+        claude_mod.resolve_api_key({"ANTHROPIC_API_KEY": "sk-ambient-from-some-other-tool"})
+
+
+def test_a_missing_key_refuses_by_name_with_a_remedy() -> None:
+    from pinakes.extract import claude as claude_mod
+
+    with pytest.raises(ApiKeyMissingError) as exc_info:
+        claude_mod.resolve_api_key({})
+    message = str(exc_info.value)
+    assert "PINAKES_ANTHROPIC_API_KEY" in exc_info.value.remedy
+    assert "claude-vision" in message
+
+
+def test_a_blank_or_whitespace_key_refuses_rather_than_being_sent() -> None:
+    from pinakes.extract import claude as claude_mod
+
+    """An empty string is a configuration mistake, not a key: sending it buys a 401 per document."""
+    for value in ("", "   ", "\n"):
+        with pytest.raises(ApiKeyMissingError):
+            claude_mod.resolve_api_key({"PINAKES_ANTHROPIC_API_KEY": value})
+
+
+def test_the_key_is_stripped_before_use() -> None:
+    from pinakes.extract import claude as claude_mod
+
+    """A trailing newline is what `.env` files and shell heredocs produce."""
+    assert claude_mod.resolve_api_key({"PINAKES_ANTHROPIC_API_KEY": "  sk-test\n"}) == "sk-test"
+
+
+def test_the_transport_passes_api_key_explicitly_never_omitting_it() -> None:
+    from pinakes.extract import claude as claude_mod
+
+    """Omitting `api_key=` is the defect: the SDK then reads the ambient variable itself.
+
+    Asserted over the **parsed** source, not a substring: a first draft of this test split the file
+    on `anthropic.Anthropic(` and matched the sentence in `API_KEY_ENV`'s own docstring, so it
+    failed for a reason unrelated to the property. AST cannot be fooled by prose. Source rather
+    than a constructed client because constructing one needs `anthropic`, and the `[light]` CI leg
+    runs without it.
+    """
+    tree = ast.parse(Path(claude_mod.__file__).read_text(encoding="utf-8"))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "Anthropic"
+    ]
+    assert calls, "no `anthropic.Anthropic(...)` call found — has the transport moved?"
+    for call in calls:
+        # `kw.arg` is None for `**kwargs`, which is not the named argument we are asserting on.
+        keywords = {kw.arg for kw in call.keywords if kw.arg is not None}
+        assert "api_key" in keywords, f"line {call.lineno} omits api_key: {sorted(keywords)}"

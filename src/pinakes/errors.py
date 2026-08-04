@@ -269,6 +269,27 @@ class ExtractorMissingError(PinakesError):
         self.extra = extra
 
 
+class ApiKeyMissingError(PinakesError):
+    """The paid extractor has no key, and pinakes will not go looking for one.
+
+    Named for `PINAKES_ANTHROPIC_API_KEY` rather than the SDK's `ANTHROPIC_API_KEY` deliberately:
+    the SDK reads its own variable out of whatever environment it happens to be in, so a key
+    exported for an unrelated tool would let a paid call proceed that nobody asked for. Supplying
+    the key has to be an act aimed at *this* tool (DESIGN §5, `CLAUDE.md`).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            "the `claude-vision` extractor has no API key.",
+            remedy=(
+                "Set `PINAKES_ANTHROPIC_API_KEY` for this command only — "
+                "`uv run --env-file .env pnk ...` with the key in `.env`. pinakes deliberately "
+                "ignores `ANTHROPIC_API_KEY`: a tool that can spend must not pick up a credential "
+                "from an environment nobody pointed at it."
+            ),
+        )
+
+
 class ExtractionError(PinakesError):
     """A registered extractor could not produce text from this document."""
 
