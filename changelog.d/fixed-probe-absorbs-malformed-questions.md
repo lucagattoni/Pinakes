@@ -12,13 +12,15 @@
   indistinguishable from a measured one. All now stop the run with a named error listing every
   offending question and path, before a backend is loaded, with a `did you mean` hint naming the
   spelling the index holds when a path differs only in case, `./` or Unicode normalisation. A
-  seventh shape joined them after review: a question whose `filters` admit no document, or do
+  seventh joined them after review: a question whose `filters` admit no document, or do
   not admit its own last hop's `expect` — applied to the last hop, they decide whether it can
-  land at all, and so does a question whose two hops are identical — one retrieval written twice,
-  clearing the hop floor while asking a single question. A question's own `expect` naming a
-  missing document refuses too, and says plainly that it moves no figure the probe prints (the
-  probe measures hops) while still being a golden set no release precondition should be measured
-  against. Measured under the offline fake backend, where demo-kb reads 18 multi-hop / 9 failing / 3
+  land at all. An eighth refuses a question whose two hops are the same retrieval — the same
+  `expect` and a `query` differing at most in case or spacing, which the index folds away — since
+  that clears the two-hop floor while asking a single question, and a hop repeating one already
+  landed moves `liftable` upward. A question's own `expect` naming a missing document refuses too,
+  and says plainly that it moves no figure the probe prints (the probe measures hops) while still
+  being a golden set no release precondition should be measured against.
+  Measured under the offline fake backend, where demo-kb reads 18 multi-hop / 9 failing / 3
   liftable: one mistyped hop path took `failing` to 10 and left `liftable` at 3; one hops-less
   question took the denominator to 19 and moved nothing else; one unmatched `tags` filter took
   `failing` to 10, and the same filter on every multi-hop question took the run to 18 failing / 0

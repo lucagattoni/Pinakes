@@ -917,14 +917,17 @@ def test_the_artifact_records_the_configuration_that_produced_the_numbers(demo: 
     assert payload["retrieval"]["fusion"] == manifest.retrieval.fusion
     assert payload["retrieval"]["adjacent_k"] == manifest.retrieval.adjacent_k
     assert payload["retrieval"]["rerank"] == manifest.retrieval.rerank
+    # The revisions are pinned against the values `_fake_kb` writes into its copy's manifest, not
+    # against `manifest.<section>.revision`: demo-kb declares neither, so that comparison was
+    # `None == None` and a payload that ignored the manifest entirely passed it.
     assert payload["rerank"] == {
         "provider": "fake",
         "model": "overlap-reranker",
-        "revision": manifest.rerank.revision,
+        "revision": "probe-fake-rerank-rev",
     }
     assert payload["embedding"]["dim"] == DIM  # the fake's, not the committed model's
     assert payload["embedding"]["model"] == "hashing"
-    assert payload["embedding"]["revision"] == manifest.embedding.revision
+    assert payload["embedding"]["revision"] == "probe-fake-embedding-rev"
     # The value, not merely the key: `_fake_kb` syncs at a fixed clock, so a payload that filled
     # the field with anything at all would pass a presence check and fail this one.
     assert payload["index_built_at"] == "20260725 18:30"
@@ -942,6 +945,10 @@ def test_the_artifact_records_the_configuration_that_produced_the_numbers(demo: 
         payload["golden_set"]["sha256"]
         == hashlib.sha256((DEMO / "eval" / "questions.yaml").read_bytes()).hexdigest()
     )
+    assert payload["golden_set"]["questions"] == len(
+        load_questions(DEMO / "eval" / "questions.yaml")
+    )
+    assert payload["far_depth"] > payload["depth"]  # `beyond_depth` is a function of it
 
     text = _run_probe("--fake").stdout
     assert f"final_k {manifest.retrieval.final_k}" in text
@@ -1038,7 +1045,10 @@ def test_the_probe_refuses_a_question_whose_two_hops_are_identical(demo: Path) -
                 "expect": ["docs/deaccession-policy.md"],
                 "hops": [
                     {"query": "public money", "expect": "docs/deaccession-policy.md"},
-                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    # Upper-cased and padded: FTS5 folds case and every backend here splits on
+                    # whitespace, so this is the same retrieval. A byte-exact comparison missed
+                    # it, and it moved liftable 3 -> 4 on demo-kb with exit 0.
+                    {"query": "  PUBLIC   Money ", "expect": "docs/deaccession-policy.md"},
                 ],
             }
         ],
@@ -1048,7 +1058,7 @@ def test_the_probe_refuses_a_question_whose_two_hops_are_identical(demo: Path) -
     assert completed.returncode != 0
     assert REFUSAL in completed.stderr
     assert "one-hop-written-twice" in completed.stderr
-    assert "identical to an earlier hop" in completed.stderr
+    assert "the same retrieval as an earlier hop" in completed.stderr
 
 
 def test_a_well_formed_golden_set_is_not_refused(demo: Path) -> None:
@@ -1130,6 +1140,34 @@ def test_the_probe_names_the_kb_it_measured(demo: Path, tmp_path: Path) -> None:
     relative = json.loads(run("--json", kb=measured.name, cwd=measured.parent).stdout)
     assert Path(relative["kb_root"]).is_absolute()
     assert relative["kb_root"] == str(measured.resolve())
+
+    # The golden set's identity belongs here too, for the same reason `kb_root` does: under
+    # `--fake` the measured question set *is* demo-kb's, so a probe that hardcoded the demo path
+    # and digest satisfied every assertion in the `--fake` test. Here the file is this corpus's
+    # own, and rewritten, so both fields can be wrong.
+    _write_golden_set(
+        measured,
+        [
+            {
+                "id": "a-corpus-of-its-own",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "core funding", "expect": "docs/funding-sources.md"},
+                ],
+            }
+        ],
+    )
+    rewritten = json.loads(run("--json", kb=str(measured), cwd=REPO).stdout)
+    questions_path = measured / "eval" / "questions.yaml"
+    assert rewritten["golden_set"]["path"] == str(questions_path.resolve())
+    assert (
+        rewritten["golden_set"]["sha256"] == hashlib.sha256(questions_path.read_bytes()).hexdigest()
+    )
+    assert rewritten["golden_set"] != payload["golden_set"]
+    assert rewritten["golden_set"]["questions"] == 1
 
 
 def test_the_fake_run_names_its_own_copy_and_says_it_is_fake() -> None:

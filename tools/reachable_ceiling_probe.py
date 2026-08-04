@@ -72,7 +72,7 @@ shape below is refused by name, before a backend is even loaded:
 All of them are likely on a real corpus rather than hypothetical: a converted question set is
 hand-written, and `hops` is the part of the schema a reader can miss.
 
-**Every output names all three inputs the numbers are a function of** — the corpus (root path,
+**Every output names the three inputs the numbers are a function of** — the corpus (root path,
 absolute and resolved, plus kb-ulid and when its index was built), the golden set (path, sha256,
 how many questions and how many of them multi-hop), and the pipeline (embedding, reranker and
 retrieval settings, each down to the model and revision that select the weights). Two runs
@@ -80,6 +80,13 @@ otherwise produce artifacts that cannot be told apart, and every one of the thre
 measured moving a figure while the other two stayed identical: a different corpus, a rewritten
 golden set, a swapped reranker. `failing` is `expect` in the top `final_k` after fusion and
 reranking — the corpus's name alone does not identify a measurement.
+
+One exception, and it is `--fake`'s alone: that path syncs its copy at a fixed clock, so
+`index_built_at` is a constant there and `kb_root` is a temporary directory. Edit `tests/demo-kb`
+and a `--fake` artifact moves its figures while every identifying field but the temp path stays
+equal. `--fake` exists to prove the mechanism offline, and its numbers are labelled `fake_backend`
+for that reason; a measurement that decides anything is a `--kb` run, where `pnk sync` writes a
+fresh `built_at` for every corpus edit that could move a figure.
 
 Usage:
     python3 tools/reachable_ceiling_probe.py                    # real models, the measurement
@@ -509,15 +516,21 @@ def check_measurable(
         )
         seen_hops: set[tuple[str, str]] = set()
         for index, hop in enumerate(question.hops):
-            if measured and (hop.query, hop.expect) in seen_hops:
+            # Case-folded and whitespace-collapsed, because that is how the query reaches the
+            # index: FTS5 tokenises case-insensitively and every embedding backend here splits on
+            # whitespace, so `"Public Money "` and `"public money"` are one retrieval, not two.
+            # No legitimate question has two hops differing only that way with the same `expect`.
+            fingerprint = (" ".join(hop.query.lower().split()), hop.expect)
+            if measured and fingerprint in seen_hops:
                 problems.append(
-                    f"{question.id!r} hop {index}: identical to an earlier hop, `query` and "
-                    f"`expect` alike. That is one retrieval written twice, so the question clears "
-                    f"the {MIN_HOPS}-hop floor while asking a single question — and a hop that "
-                    f"repeats one already landed can move `liftable` upward, the direction a floor "
-                    f"reads as headroom."
+                    f"{question.id!r} hop {index}: the same retrieval as an earlier hop — the same "
+                    f"`expect`, and a `query` differing at most in case or spacing, which the "
+                    f"index folds away. That is one retrieval written twice, so the question "
+                    f"clears the {MIN_HOPS}-hop floor while asking a single question — and a hop "
+                    f"repeating one already landed can move `liftable` upward, the direction a "
+                    f"floor reads as headroom."
                 )
-            seen_hops.add((hop.query, hop.expect))
+            seen_hops.add(fingerprint)
             if not hop.query.strip():
                 problems.append(
                     f"{question.id!r} hop {index}: an empty `query`. It retrieves nothing on its "
@@ -838,9 +851,17 @@ def _fake_kb(destination: Path) -> Path:
     # real weights, and the "offline" run would quietly download them.
     for old, new, occurrences in (
         ('provider = "fastembed"', 'provider = "fake"', 2),
-        ('model    = "BAAI/bge-small-en-v1.5"', 'model    = "hashing"', 1),
+        (
+            'model    = "BAAI/bge-small-en-v1.5"',
+            'model    = "hashing"\nrevision = "probe-fake-embedding-rev"',
+            1,
+        ),
         ("dim      = 384", f"dim      = {FAKE_DIM}", 1),
-        ('model    = "BAAI/bge-reranker-base"', 'model    = "overlap-reranker"', 1),
+        (
+            'model    = "BAAI/bge-reranker-base"',
+            'model    = "overlap-reranker"\nrevision = "probe-fake-rerank-rev"',
+            1,
+        ),
         ('fitted_for = "BAAI/bge-reranker-base"', 'fitted_for = "overlap-reranker@v1"', 1),
     ):
         if text.count(old) != occurrences:
@@ -1024,6 +1045,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "adjacent_k": settings.adjacent_k,
         },
         "depth": DEPTH,
+        "far_depth": FAR_DEPTH,
         "dropped": sorted(set(args.drop)),
         "reports": [report.as_dict() for report in reports],
     }

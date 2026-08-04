@@ -139,6 +139,26 @@ was validated on its own and never against its siblings, so two byte-identical h
 `MIN_HOPS` satisfied, one retrieval written twice, and `liftable` moved from 3 to 4 on demo-kb —
 upward again. A YAML copy-paste is the realistic route.
 
+**MEDIUM — five passes, and the fixture-satisfied assertion came back twice in one commit.** The
+pass-four commit added the golden set to the artifact and asserted it only under `--fake` — where
+the measured golden set *is* demo-kb's, so hardcoding the demo path and digest passed every
+assertion and the full suite. That is the identical defect pass two found for `kb_root`, recorded
+in this very fragment as "a test whose fixture is the default cannot detect 'always reports the
+default'", reintroduced by the same author two commits later for the input he had just added. The
+same commit pinned `revision` on both model blocks against `manifest.<section>.revision` — and
+demo-kb declares neither, so both assertions were `None == None`. **Writing the lesson down does
+not apply it: the check is mechanical — for every assertion, ask what value the fixture already
+has, and whether a hardcoded constant would pass.** `_fake_kb` now writes distinctive revisions
+into its copy, and the golden-set identity is pinned on the real-`--kb` run.
+
+**LOW — one more absorption, one normalisation short.** The identical-hops check compared
+`(query, expect)` byte-exactly, so upper-casing or padding the duplicated query defeated it while
+the retrieval stayed identical — FTS5 folds case, every backend here splits on whitespace. Measured
+on demo-kb: `liftable` 3 → 4, exit 0, the same upward move the check was written to stop. The
+fingerprint is now case-folded and whitespace-collapsed. **A guard on "the same input" must
+normalise the way the consumer normalises**, which is the `_filter_sql` lesson again in a smaller
+key.
+
 **The fix removes the place the defect could live, not just the symptom.** `_doc_id` is gone;
 `check_measurable` validates the golden set against the active `documents` rows *and* the chunked
 subset up front, and `probe` is handed the resulting map, so an unknown path has exactly one place
