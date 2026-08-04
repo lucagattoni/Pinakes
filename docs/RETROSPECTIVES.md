@@ -3276,6 +3276,113 @@ are read by `tools/fragments.py`, `tools/status_header_gate.py`, `tools/shared_f
 from `mkdocs.yml`'s `nav` labels and `javascripts/section-numbering.js`; the directory layout
 contributes nothing to them.
 
+## Renaming the repository broke PyPI trusted publishing — 20260804 12:40
+
+Renaming `lucagattoni/Pinakes` → `lucagattoni/pinakes` was checked against everything inside the
+repo — 64 URLs, the docs site, CI, the gates — and all of it passed. What it broke was outside the
+repo: **PyPI's trusted publisher matches on the exact repository name**, and it is registered on
+pypi.org, where no gate here can see it.
+
+So `v0.9.0` tagged, built, smoke-tested, and was refused at the upload:
+
+    invalid-publisher — valid token, but no corresponding publisher
+    repository: "lucagattoni/pinakes"      # the token's claim, post-rename
+                                           # the publisher still says "Pinakes"
+
+**Nothing was uploaded**, which is the only reason this was recoverable: PyPI never allows
+re-uploading a version, so had the rename landed *between* two files of the same upload the version
+would have been burned and 0.9.0 would have had to be skipped. Verified against
+`https://pypi.org/simple/pinakes/` rather than the JSON API, which is CDN-cached and has read as
+"missing" for a correct upload before (20260729).
+
+**The durable lesson: a rename's blast radius is every system that identifies this repo by name, and
+most of them are not in the repo.** Before renaming, enumerate the external identifiers —
+trusted-publishing publishers, deploy keys and webhooks, any CI in another repo that clones this
+one, badge and package-index metadata — because a repo-wide grep proves only that the *inside* is
+consistent. GitHub's redirect for the old URL is what makes the inside look fine and hides this.
+
+Ordering that would have avoided the outage entirely: **update the external publisher first, then
+rename, then tag.** The publisher can name a repository that does not exist yet, so there is no
+window where neither name works — and the reverse order guarantees one.
+
+## Interrupted sync — a TZ test that used the fixture helper would have proven nothing (20260804 12:46)
+
+**HIGH — the first draft of the UTC-timestamp regression test called `test_sync.py`'s own `run()`
+helper, which hardcodes `now="20260725 16:00"` for every other test in the file specifically to
+bypass the real clock.** `sync.py:709`'s `stamp = now or datetime.now(UTC)...` only reaches the
+real-clock branch when the caller passes `now=None` — and `run(kb, ...)` never does, because that
+fixed string is what makes 60-odd other tests in `test_sync.py` deterministic. A TZ test built on
+top of `run()` would set `TZ`, call `run(kb)`, read back `meta['built_at']`, and find it exactly
+`"20260725 16:00"` regardless of which clock `sync.py` actually used — passing identically whether
+the site under test read `datetime.now()` or `datetime.now(UTC)`, because neither ever ran. Caught
+before committing by asking the same question the increment's own instructions insist on for the
+mutation pass: does the assertion distinguish the fixed from the broken code, or only look like it
+does? Fixed by calling `sync()` directly with no `now=` override in both TZ tests
+(`test_a_real_sync_stamps_utc_not_local_under_a_non_utc_timezone`,
+`test_estimate_only_stamps_utc_not_local_under_a_non_utc_timezone` — the second reaches its own
+independent clock at `sync.py`'s `_estimate_only`, unaffected by the outer `now=` either way, so it
+needed no such change but is named here for the record) — and mutation-verified afterward by
+reverting each site to `datetime.now()` and confirming the corresponding test failed by roughly the
+test's chosen offset (`Pacific/Kiritimati`, UTC+14), not merely failing.
+
+**The general rule this confirms rather than discovers:** a test helper that fixes an input to make
+most tests deterministic is exactly the place a new test targeting *that specific input* must not
+reuse the helper — the fixture built to remove non-determinism from one property will just as
+readily remove the property a new test exists to observe. `docs/RETROSPECTIVES.md`'s own advice on
+claiming a test is mutation-verified — run the mutant, don't just trust the assertion reads
+correctly — is what caught this one before the mutation pass would have had to.
+
+## The progress printer's closing newline assumed the loop always reaches its own end (20260804 13:07)
+
+**MEDIUM — an independent adversarial review found that `cli._progress_printer`'s "finished" branch
+(`done >= total`) is the only place the printer ever emits its closing newline, and `_run`'s loop
+(`sync.py`) does not always reach `done == total`.** A `[budget]` cap or any early exit stops the
+loop partway through, so the last `progress(done, total)` call for that run has `done < total`, and
+the printer's `\r`-prefixed line is left open — no trailing newline — for whatever prints next
+(`print_sync_report`, or an error message on an unhandled exception) to land on. Confirmed live: a
+progress line followed immediately by report text on the same terminal row. No test in the original
+commit exercised `done < total` as a run's *last* call — `test_progress_printer_throttles_...`
+always ended at `done == total`, and the progress-callback sync test never triggered an early stop.
+
+Fixed by splitting `_progress_printer()` into `(progress, finish)`: `progress` behaves as before,
+but also tracks whether a line is open (`dirty`); `finish` closes it with one newline if so, and is
+a no-op otherwise. `run_sync` calls `finish` unconditionally in a `finally` around the `sync()`
+call, so it closes the line whether the run finished normally, stopped on a budget cap, or `sync()`
+raised. Mutation-verified: made `finish()` unconditionally clear `dirty` without printing;
+`test_progress_printer_finish_closes_a_line_an_early_stop_left_open` caught it (expected `"\n"`,
+got `""`).
+
+**The general shape of the miss:** a "does this print the right thing" test that only drives the
+happy path (the loop's *last* call always being its *final* call) cannot see a defect that only
+exists on an early-exit path, because the assertion and the code under test share the same
+unstated assumption — "the loop reaches `done == total`" was never itself questioned, only how the
+printer behaves once it does.
+
+## A green `./check.sh` only proves the worktree's own venv is green (20260804 13:30)
+
+**MEDIUM — `test_estimate_only_stamps_utc_not_local_under_a_non_utc_timezone` shipped with no
+`pinakes[pdf]` skip marker, and `./check.sh` was green anyway, because this worktree had `[pdf]`
+installed.** The test writes a real `baseline-1p.pdf` and calls `page_count` on it for real (its
+own docstring already said so), which needs `pypdfium2`. The planner's worktree did not have the
+extra installed and hit `AttributeError: module 'pypdfium2' has no attribute 'PdfDocument'` at
+merge time — same commit, same script, different venv. CI's `check` job runs a three-leg matrix
+over `[light]`, `[light,pdf]` and `[light,pdf,claude]` specifically because core stays torch- and
+pypdfium2-free by design (`CLAUDE.md` § Tooling); this would have gone red on the `[light]` leg
+*after* merge, which the merge-time worktree-mismatch is what actually caught here.
+
+**The rule this earns:** a green `./check.sh` run proves the *worktree's own* dependency set is
+green, not the matrix — `pytest` silently skips whatever the installed extras cannot exercise
+rather than failing loudly, so a test that forgot its `@pytest.mark.skipif(not
+pdf_extraction_runnable(), ...)` marker doesn't skip *or* fail locally when the extra happens to be
+present; it just runs, passes, and says nothing about the leg where it can't. **Before landing any
+test that touches a PDF fixture, the `claude` extractor, or a real embedding backend
+(`sentence-transformers`/`fastembed`), check which `pdf_runnable()`/`pdf_extraction_runnable()`/
+`paid_runnable()` predicate (`tests/conftest.py`) it needs and mark it — and separately, run at
+least the affected file with the relevant extra uninstalled** (`uv sync --extra light --frozen`,
+run, then `uv sync --extra light --extra pdf --extra claude --frozen` to restore), because that is
+the only way `./check.sh` passing locally actually predicts the `[light]` CI leg rather than just
+restating the worktree it ran in.
+
 ## Design review passes 1–7 (pre-implementation)
 
 Seven adversarial passes over [`DESIGN.md`](DESIGN.md) **before any code was written** — 58 findings
