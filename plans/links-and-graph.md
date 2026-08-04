@@ -50,8 +50,9 @@ reading only the document systematically misses them.
 
 **Everything in this plan has either shipped or is blocked.** L1–L8 shipped (0.5.0, 0.6.0); G1 and
 G4 shipped in 0.6.0; G2 shipped in 0.7.0 and returned the measurement that stops the rest. 0.7.1
-then closed the last of the standalone work ([`open-corrections.md`](open-corrections.md) is empty),
-so **the corpus is not merely the critical path — it is the only path.**
+then closed the last of the standalone work, so **the corpus is not merely the critical path — it
+is the only path.** Read [`open-corrections.md`](open-corrections.md) before concluding there is no
+code work: it is where any is listed, and it has been non-empty twice since.
 
 | | |
 |---|---|
@@ -102,7 +103,8 @@ is what the links release ships with. All eval work moves to the graph release, 
 
 **The L-track is finished** (0.6.0) and the G-track is **blocked at G2's measurement** (0.7.0), so
 there is no increment in this plan an agent can pick up. The standalone work that existed beside it
-shipped in 0.7.1, so [`open-corrections.md`](open-corrections.md) is empty as well. What remains is
+shipped in 0.7.1; [`open-corrections.md`](open-corrections.md) is where any new code work is listed,
+so read it rather than assuming it is still empty. What remains is
 the corpus in [`realism-corpus.md`](realism-corpus.md), which is what decides whether this plan ever
 resumes — and it is built in a repository of its own, by an agent that may not read `src/`.
 

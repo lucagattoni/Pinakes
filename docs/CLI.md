@@ -14,7 +14,7 @@ A contract, not an accident:
 |---|---|
 | `0` | Success — including a no-op, and including a sync that found a live lock held by this host |
 | `1` | Operational failure — one or more documents failed, a check refused, a lock could not be taken |
-| `2` | Usage error — an unknown flag, an unknown backend name, a missing argument |
+| `2` | Usage error, raised by argument parsing itself — an unknown flag, a missing argument, a value outside a flag's `choices`. An unknown **backend name** is not one of these: it is caught after parsing and exits `1`, like every other `PinakesError` |
 
 Every error carries a **remedy**, not just a message. If one doesn't, that's a bug worth filing.
 
