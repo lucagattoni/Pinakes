@@ -458,9 +458,11 @@ def crowded_tag(root: Path, **options: Any) -> Corpus:
     """One tag on four documents, the root's own first in path order.
 
     Path order is what `derive` mints `doc` nodes in, so the root's document holds the **lowest**
-    node id — and the fan-out sort's tiebreak is that id. If the exclusion ran after the cut, an
-    `adjacent_k` of 1 would spend its only slot on the root's own document and the channel would
-    return nothing at all. That is the shape this fixture exists to produce.
+    node id — and the fan-out sort's tiebreak is that id. A document is a member of its own tag
+    hub, so if the exclusion ran *after* the cut, an `adjacent_k` of 1 would spend its only slot on
+    the source document itself and the channel would return nothing at all. That is the shape this
+    fixture exists to produce, and it is where the **before/after the cut** half of the rule is
+    pinned rather than the root-document half — `authored_back_to_the_root` is that one.
     """
     corpus = Corpus(root, **options)
     corpus.write("docs/a-root.md", sectioned("Root", [("Quokka", "quokka " * 40)]), tags=["hub"])
@@ -492,6 +494,81 @@ def test_membership_neighbours_do_not_consume_the_fanout_budget(tmp_path: Path) 
         for candidate in reached
         if candidate.doc_id == root_document and "membership" in candidate.via
     ], "and nothing of the root's own document arrived through its own membership edge"
+
+
+def tag_chain(root: Path, **options: Any) -> Corpus:
+    """A — T1 — B — T2 — C, each tag on exactly two documents.
+
+    The shape that isolates the *first* membership-exclusion filter. At hop 2 the frontier chunk
+    belongs to **B**, which is not a root document — so rule 2 cannot cover it, and only "a
+    document never passes through to itself" stops B's own T2 spoke from spending the budget that
+    C needs. Path order puts B's `doc` node before C's, so B wins the fan-out tiebreak if it is
+    allowed to compete at all.
+    """
+    corpus = Corpus(root, **options)
+    corpus.write("docs/a.md", sectioned("A", [("Quokka", "quokka " * 40)]), tags=["t1"])
+    corpus.write("docs/b.md", sectioned("B", [("Zebu", "zebu " * 40)]), tags=["t1", "t2"])
+    corpus.write("docs/c.md", sectioned("C", [("Numbat", "numbat " * 40)]), tags=["t2"])
+    corpus.sync()
+    return corpus
+
+
+def test_a_document_never_passes_through_to_itself(tmp_path: Path) -> None:
+    corpus = tag_chain(tmp_path / "kb")
+    root = chunk_id_of(corpus, "docs/a.md", 0)
+    reached = paths_of(corpus, [c.chunk_id for c in walk(corpus, [root], adjacent_k=1)])
+
+    assert "docs/b.md" in reached, "hop 1, through the tag the root's document shares"
+    assert "docs/c.md" in reached, (
+        "hop 2 must reach C. If B were allowed to pass through to itself it would take the one "
+        "fan-out slot and contribute nothing, because its chunks are already contributed"
+    )
+
+
+def authored_back_to_the_root(root: Path, **options: Any) -> Corpus:
+    """A —authored→ B —authored→ {A, C}. The shape that isolates rule **2**.
+
+    At hop 2 the frontier chunk belongs to B, whose authored peers are A and C. Rule 1 does not
+    apply — A is not B — so only "a root's own document never contributes, at any depth" keeps A
+    out. Path order puts A's `doc` node before C's, so with `adjacent_k=1` A takes the slot and C
+    is never reached if the rule is missing. Found by mutation: without this fixture, deleting
+    that clause left the whole suite green.
+    """
+    corpus = Corpus(root, **options)
+    corpus.write(
+        "docs/a.md", sectioned("A", [("Quokka", "quokka " * 40), ("Quokka two", "quokka " * 40)])
+    )
+    corpus.write("docs/b.md", sectioned("B", [("Zebu", "zebu " * 40)]))
+    corpus.write("docs/c.md", sectioned("C", [("Numbat", "numbat " * 40)]))
+    corpus.write(
+        "docs/a.md",
+        sectioned("A", [("Quokka", "quokka " * 40), ("Quokka two", "quokka " * 40)]),
+        links=[("related", "docs/b.md")],
+    )
+    corpus.write(
+        "docs/b.md", sectioned("B", [("Zebu", "zebu " * 40)]), links=[("related", "docs/c.md")]
+    )
+    corpus.sync()
+    return corpus
+
+
+def test_a_root_document_never_contributes_its_chunks_at_any_depth(tmp_path: Path) -> None:
+    corpus = authored_back_to_the_root(tmp_path / "kb")
+    root = chunk_id_of(corpus, "docs/a.md", 0)
+    reached = walk(corpus, [root], adjacent_k=1)
+    paths = paths_of(corpus, [candidate.chunk_id for candidate in reached])
+
+    assert "docs/b.md" in paths, "hop 1, along the authored edge"
+    assert "docs/c.md" in paths, (
+        "hop 2 must reach C. B's authored peers are A and C; A is a root document, so it may not "
+        "take the one fan-out slot to re-contribute chunks the query already had"
+    )
+    a = str(corpus.ids["docs/a.md"])
+    assert not [
+        candidate
+        for candidate in reached
+        if candidate.doc_id == a and "membership" in candidate.via
+    ], "and nothing of A arrived through A's own membership edge, at either depth"
 
 
 # --------------------------------------------------------------------------------------------
@@ -771,6 +848,60 @@ def test_the_gate_requires_both_runs_to_pass(tmp_path: Path) -> None:
     assert verdict["licensing_p"] == pytest.approx(with_run["p"]), (
         "the licensing number is the more conservative of the two"
     )
+
+
+def test_a_newly_found_question_at_low_confidence_does_not_veto_the_win(tmp_path: Path) -> None:
+    """Clause 3's whole point. `false_abstain`'s numerator requires a hit, so a miss that becomes
+    a LOW-confidence hit *raises the rate* — and an unqualified clause would veto exactly the win
+    clause 1 demands. Five such conversions here, and the gate must still pass."""
+    before = [*multihop(12, hits=0), *no_answer(8)]
+    after = [
+        *[
+            row(
+                "m%d" % index,
+                "multi-hop",
+                hit=index < 5,
+                confidence="low" if index < 5 else "medium",
+            )
+            for index in range(12)
+        ],
+        *no_answer(8),
+    ]
+    verdict = run_gate(
+        tmp_path, *legs(tmp_path, before_rows=before, without_rows=after, with_rows=after)
+    )
+
+    assert verdict["passed"], "a rise made entirely of newly-found questions is not a regression"
+    for run in verdict["runs"]:
+        assert run["newly_found_at_low_confidence"] == ["m0", "m1", "m2", "m3", "m4"]
+        assert run["confidence_lost"] == []
+
+
+def test_a_question_that_lost_confidence_stops_the_gate(tmp_path: Path) -> None:
+    """The other half of the decomposition, and the half that is a regression: a question that was
+    already a hit and is now reported at LOW. Without this the carve-out would be a hole."""
+    before = [*multihop(12, hits=3), *no_answer(8)]
+    after = [
+        *[
+            row(
+                "m%d" % index,
+                "multi-hop",
+                hit=index < 8,
+                confidence="low" if index == 0 else "medium",
+            )
+            for index in range(12)
+        ],
+        *no_answer(8),
+    ]
+    verdict = run_gate(
+        tmp_path, *legs(tmp_path, before_rows=before, without_rows=after, with_rows=after)
+    )
+
+    assert not verdict["passed"]
+    for run in verdict["runs"]:
+        assert run["clauses"]["sign_test"], "clause 1 passes; only clause 3 may catch this"
+        assert not run["clauses"]["false_abstain"]
+        assert run["confidence_lost"] == ["m0"]
 
 
 def test_a_class_vanishing_stops_the_gate(tmp_path: Path) -> None:

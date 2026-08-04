@@ -668,11 +668,15 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | a same-document chunk reachable **only** by membership never appears | G5 | `tests/test_graph_channel.py::test_a_chunk_reachable_only_by_membership_never_appears` |
 | ...and one also reachable by `sibling` is not excluded — the "only" is load-bearing | G5 | `tests/test_graph_channel.py::test_a_same_document_chunk_reachable_by_sibling_is_not_excluded` |
 | membership neighbours are dropped before the cut, so they never spend fan-out budget | G5 | `tests/test_graph_channel.py::test_membership_neighbours_do_not_consume_the_fanout_budget` |
+| a document never passes through to itself, even when it is not a root | G5 | `tests/test_graph_channel.py::test_a_document_never_passes_through_to_itself` |
+| a root's own document never contributes its chunks, at any depth — a clause 18 mutants left standing | G5 | `tests/test_graph_channel.py::test_a_root_document_never_contributes_its_chunks_at_any_depth` |
 | `pnk links --json` is byte-identical with the channel on (decision 16) | G5 | `tests/test_graph_channel.py::test_pnk_links_output_is_unchanged_with_the_channel_on` |
 | the gate's two edge-set variants differ in cardinality, so the split discriminates | G5 | `tests/test_graph_channel.py::test_the_gate_is_computed_with_and_without_authored_edges` |
 | "without authored" is the whole kind, whatever a row's `origin` | G5 | `tests/test_graph_channel.py::test_dropping_authored_is_every_links_row_regardless_of_origin` |
 | the sign test reproduces the plan's table **and** refuses the row above each threshold | G5 | `tests/test_graph_channel.py::test_the_sign_test_reproduces_the_plans_table_and_the_rows_below_it` |
 | a rise in `false_confidence` stops the gate — clause 2 cannot see it | G5 | `tests/test_graph_channel.py::test_a_rise_in_false_confidence_stops_the_gate` |
+| a newly-found question reported at LOW does not veto the win clause 1 demands | G5 | `tests/test_graph_channel.py::test_a_newly_found_question_at_low_confidence_does_not_veto_the_win` |
+| ...while a question that *lost* confidence does stop it — the other half of the decomposition | G5 | `tests/test_graph_channel.py::test_a_question_that_lost_confidence_stops_the_gate` |
 | a drop in `confidence_coverage` stops the gate | G5 | `tests/test_graph_channel.py::test_a_drop_in_confidence_coverage_stops_the_gate` |
 | **both** runs must pass; one green run licenses nothing | G5 | `tests/test_graph_channel.py::test_the_gate_requires_both_runs_to_pass` |
 | a class vanishing stops the gate | G5 | `tests/test_graph_channel.py::test_a_class_vanishing_stops_the_gate` |
