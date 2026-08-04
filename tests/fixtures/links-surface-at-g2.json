@@ -1,0 +1,2000 @@
+{
+  "demo-kb": {
+    "docs/access-restrictions.md": {
+      "document": "01KYCPXA945120S3SRFS3PR8EX",
+      "frontier": [],
+      "neighbours": [
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXAG22F3DXSWNQ53D6ZWR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "donor agreements"
+        },
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXAMJ0CFKK619CC1JQSMH",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "reader registration"
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/accession-workflow.md": {
+      "document": "01KYCPXA9S04WEMYK5AJ56KC8X",
+      "frontier": [
+        {
+          "distance": 2,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXM",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "counterpart"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXAB8ETCTN9E3JA4WY4VM",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "appraisal criteria"
+        },
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXADB1BQEV8SDCEEJ9RR6",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "catalogue policy"
+        },
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "loans inward"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXACGTV2X9HW43XFW6TA1",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "catalogue hierarchy"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXAKAH7AFV1Y4P8BZ1ZHJ",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "metadata minimum"
+        },
+        {
+          "direction": "both",
+          "distance": 2,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXM",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/acquisitions-committee.md": {
+      "document": "01KYCPXAABF7RVC51YV3X44YYX",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/annual-report-2025.md": {
+      "document": "01KYCPXAASJ0KHNQ0PC98E82TF",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/appraisal-criteria.md": {
+      "document": "01KYCPXAB8ETCTN9E3JA4WY4VM",
+      "frontier": [
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXACGTV2X9HW43XFW6TA1",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "depth",
+          "rel": "related"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXAKAH7AFV1Y4P8BZ1ZHJ",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "depth",
+          "rel": "related"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXM",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "counterpart"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYCPXA9S04WEMYK5AJ56KC8X",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "accession workflow"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXADB1BQEV8SDCEEJ9RR6",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "catalogue policy"
+        },
+        {
+          "direction": "in",
+          "distance": 2,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "loans inward"
+        },
+        {
+          "direction": "out",
+          "distance": 3,
+          "doc_id": "01KYCPXACGTV2X9HW43XFW6TA1",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "catalogue hierarchy"
+        },
+        {
+          "direction": "out",
+          "distance": 3,
+          "doc_id": "01KYCPXAKAH7AFV1Y4P8BZ1ZHJ",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "metadata minimum"
+        },
+        {
+          "direction": "both",
+          "distance": 3,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXM",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/authority-records.md": {
+      "document": "01KYCPXABN9FTXFVKWF1NAXBM5",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/building-history.md": {
+      "document": "01KYCPXAC3MHMEBP4BCQGQB1AT",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/catalogue-hierarchy.md": {
+      "document": "01KYCPXACGTV2X9HW43XFW6TA1",
+      "frontier": [
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXAB8ETCTN9E3JA4WY4VM",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "depth",
+          "rel": "related"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "depth",
+          "rel": "related"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYCPXADB1BQEV8SDCEEJ9RR6",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "catalogue policy"
+        },
+        {
+          "direction": "in",
+          "distance": 2,
+          "doc_id": "01KYCPXA9S04WEMYK5AJ56KC8X",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "accession workflow"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXAKAH7AFV1Y4P8BZ1ZHJ",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "metadata minimum"
+        },
+        {
+          "direction": "out",
+          "distance": 3,
+          "doc_id": "01KYCPXAB8ETCTN9E3JA4WY4VM",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "appraisal criteria"
+        },
+        {
+          "direction": "in",
+          "distance": 3,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "loans inward"
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/catalogue-numbers-format.md": {
+      "document": "01KYCPXACWQ0BAZ2B6PFBFG75V",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/catalogue-policy.md": {
+      "document": "01KYCPXADB1BQEV8SDCEEJ9RR6",
+      "frontier": [
+        {
+          "distance": 3,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXM",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "counterpart"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYCPXA9S04WEMYK5AJ56KC8X",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "accession workflow"
+        },
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXACGTV2X9HW43XFW6TA1",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "catalogue hierarchy"
+        },
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXAKAH7AFV1Y4P8BZ1ZHJ",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "metadata minimum"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXAB8ETCTN9E3JA4WY4VM",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "appraisal criteria"
+        },
+        {
+          "direction": "in",
+          "distance": 2,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "loans inward"
+        },
+        {
+          "direction": "both",
+          "distance": 3,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXM",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/conservation-assessment.md": {
+      "document": "01KYCPXADT65621ZAV6HJTN8TD",
+      "frontier": [
+        {
+          "distance": 2,
+          "doc_id": "01KYP88789WHHN93TW49AX096C",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "governs"
+        },
+        {
+          "distance": 2,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXE",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "counterpart"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYP88789WHHN93TW49AX096G",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "related"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXH",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "related"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "loans outward"
+        },
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXAM5500GPXM2MDFYEJRT",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "pest management"
+        },
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXAPCR8NHXN56SGCBMWQG",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "storage environment"
+        },
+        {
+          "direction": "in",
+          "distance": 2,
+          "doc_id": "01KYCPXAGFJZ05TJT741WEJTQ9",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "emergency plan"
+        },
+        {
+          "direction": "in",
+          "distance": 2,
+          "doc_id": "01KYP88789WHHN93TW49AX096C",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "governs",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "both",
+          "distance": 2,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXE",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "both",
+          "distance": 3,
+          "doc_id": "01KYP88789WHHN93TW49AX096G",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "in",
+          "distance": 3,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXH",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/copying-service.md": {
+      "document": "01KYCPXAE8F1XB0FMEFDBXBG5A",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/deaccession-policy.md": {
+      "document": "01KYCPXAEN5Q7BN9RX88216VN2",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/digital-preservation.md": {
+      "document": "01KYCPXAF20HQ6970Q4HAMN350",
+      "frontier": [
+        {
+          "distance": 2,
+          "doc_id": "01KYP88789WHHN93TW49AX096D",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "related"
+        },
+        {
+          "distance": 2,
+          "doc_id": "01KYP88789WHHN93TW49AX096D",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "governed-by"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYCPXAFJ165BJKXCXFSJ3JBP",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "digitisation standards"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYP88789WHHN93TW49AX096D",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "in",
+          "distance": 2,
+          "doc_id": "01KYP88789WHHN93TW49AX096D",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "governed-by",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/digitisation-standards.md": {
+      "document": "01KYCPXAFJ165BJKXCXFSJ3JBP",
+      "frontier": [
+        {
+          "distance": 1,
+          "doc_id": "01KYP88789WHHN93TW49AX096D",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "related"
+        },
+        {
+          "distance": 1,
+          "doc_id": "01KYP88789WHHN93TW49AX096D",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "governed-by"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXAF20HQ6970Q4HAMN350",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "digital preservation"
+        },
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYP88789WHHN93TW49AX096D",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYP88789WHHN93TW49AX096D",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "governed-by",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/donor-agreements.md": {
+      "document": "01KYCPXAG22F3DXSWNQ53D6ZWR",
+      "frontier": [],
+      "neighbours": [
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYCPXA945120S3SRFS3PR8EX",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "access restrictions"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXAMJ0CFKK619CC1JQSMH",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "reader registration"
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/emergency-plan.md": {
+      "document": "01KYCPXAGFJZ05TJT741WEJTQ9",
+      "frontier": [
+        {
+          "distance": 1,
+          "doc_id": "01KYP88789WHHN93TW49AX096G",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "related"
+        },
+        {
+          "distance": 1,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXH",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "related"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "depth",
+          "rel": "related"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXAM5500GPXM2MDFYEJRT",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "depth",
+          "rel": "related"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXAPCR8NHXN56SGCBMWQG",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "storage environment"
+        },
+        {
+          "direction": "both",
+          "distance": 1,
+          "doc_id": "01KYP88789WHHN93TW49AX096G",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXH",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "in",
+          "distance": 2,
+          "doc_id": "01KYCPXADT65621ZAV6HJTN8TD",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "conservation assessment"
+        },
+        {
+          "direction": "in",
+          "distance": 3,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "loans outward"
+        },
+        {
+          "direction": "out",
+          "distance": 3,
+          "doc_id": "01KYCPXAM5500GPXM2MDFYEJRT",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "pest management"
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/enquiry-service.md": {
+      "document": "01KYCPXAGYH9GB2RN34VP5G0WF",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/funding-sources.md": {
+      "document": "01KYCPXAHG6XB1JCRF0T3V6DV8",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/loans-inward.md": {
+      "document": "01KYCPXAJDG98XNQRT0E1C183V",
+      "frontier": [
+        {
+          "distance": 1,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXM",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "counterpart"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXACGTV2X9HW43XFW6TA1",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "depth",
+          "rel": "related"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXAKAH7AFV1Y4P8BZ1ZHJ",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "depth",
+          "rel": "related"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXA9S04WEMYK5AJ56KC8X",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "accession workflow"
+        },
+        {
+          "direction": "both",
+          "distance": 1,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXM",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXAB8ETCTN9E3JA4WY4VM",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "appraisal criteria"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXADB1BQEV8SDCEEJ9RR6",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "catalogue policy"
+        },
+        {
+          "direction": "out",
+          "distance": 3,
+          "doc_id": "01KYCPXACGTV2X9HW43XFW6TA1",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "catalogue hierarchy"
+        },
+        {
+          "direction": "out",
+          "distance": 3,
+          "doc_id": "01KYCPXAKAH7AFV1Y4P8BZ1ZHJ",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "metadata minimum"
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/loans-outward.md": {
+      "document": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+      "frontier": [
+        {
+          "distance": 1,
+          "doc_id": "01KYP88789WHHN93TW49AX096C",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "governs"
+        },
+        {
+          "distance": 1,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXE",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "counterpart"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXAGFJZ05TJT741WEJTQ9",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "depth",
+          "rel": "related"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXADT65621ZAV6HJTN8TD",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "conservation assessment"
+        },
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYP88789WHHN93TW49AX096C",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "governs",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "both",
+          "distance": 1,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXE",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXAM5500GPXM2MDFYEJRT",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "pest management"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXAPCR8NHXN56SGCBMWQG",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "storage environment"
+        },
+        {
+          "direction": "in",
+          "distance": 3,
+          "doc_id": "01KYCPXAGFJZ05TJT741WEJTQ9",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "emergency plan"
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/metadata-minimum.md": {
+      "document": "01KYCPXAKAH7AFV1Y4P8BZ1ZHJ",
+      "frontier": [
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXAB8ETCTN9E3JA4WY4VM",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "depth",
+          "rel": "related"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "depth",
+          "rel": "related"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYCPXADB1BQEV8SDCEEJ9RR6",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "catalogue policy"
+        },
+        {
+          "direction": "in",
+          "distance": 2,
+          "doc_id": "01KYCPXA9S04WEMYK5AJ56KC8X",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "accession workflow"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXACGTV2X9HW43XFW6TA1",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "catalogue hierarchy"
+        },
+        {
+          "direction": "out",
+          "distance": 3,
+          "doc_id": "01KYCPXAB8ETCTN9E3JA4WY4VM",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "appraisal criteria"
+        },
+        {
+          "direction": "in",
+          "distance": 3,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "loans inward"
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/opening-hours.md": {
+      "document": "01KYCPXAKSQVYHP1EJ0NW6HRDN",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/pest-management.md": {
+      "document": "01KYCPXAM5500GPXM2MDFYEJRT",
+      "frontier": [
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXAGFJZ05TJT741WEJTQ9",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "depth",
+          "rel": "related"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYP88789WHHN93TW49AX096C",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "governs"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXE",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "counterpart"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYCPXADT65621ZAV6HJTN8TD",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "conservation assessment"
+        },
+        {
+          "direction": "in",
+          "distance": 2,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "loans outward"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXAPCR8NHXN56SGCBMWQG",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "storage environment"
+        },
+        {
+          "direction": "in",
+          "distance": 3,
+          "doc_id": "01KYCPXAGFJZ05TJT741WEJTQ9",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "emergency plan"
+        },
+        {
+          "direction": "in",
+          "distance": 3,
+          "doc_id": "01KYP88789WHHN93TW49AX096C",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "governs",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "both",
+          "distance": 3,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXE",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/reader-registration.md": {
+      "document": "01KYCPXAMJ0CFKK619CC1JQSMH",
+      "frontier": [],
+      "neighbours": [
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYCPXA945120S3SRFS3PR8EX",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "access restrictions"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXAG22F3DXSWNQ53D6ZWR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "donor agreements"
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/reading-room-rules.md": {
+      "document": "01KYCPXAMZH4QRZ3PNWJWHMMJJ",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/staff-conservator.md": {
+      "document": "01KYCPXANJAH1N9GK4S3RS7847",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/staff-keeper.md": {
+      "document": "01KYCPXAP07F0PT6ZKCAMF2TJD",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/storage-environment.md": {
+      "document": "01KYCPXAPCR8NHXN56SGCBMWQG",
+      "frontier": [
+        {
+          "distance": 2,
+          "doc_id": "01KYP88789WHHN93TW49AX096G",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "related"
+        },
+        {
+          "distance": 2,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXH",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "related"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYP88789WHHN93TW49AX096C",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "governs"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXE",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "terminal",
+          "rel": "counterpart"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYCPXADT65621ZAV6HJTN8TD",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "conservation assessment"
+        },
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYCPXAGFJZ05TJT741WEJTQ9",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "emergency plan"
+        },
+        {
+          "direction": "in",
+          "distance": 2,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "loans outward"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXAM5500GPXM2MDFYEJRT",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "pest management"
+        },
+        {
+          "direction": "both",
+          "distance": 2,
+          "doc_id": "01KYP88789WHHN93TW49AX096G",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "in",
+          "distance": 2,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXH",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "in",
+          "distance": 3,
+          "doc_id": "01KYP88789WHHN93TW49AX096C",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "governs",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "both",
+          "distance": 3,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXE",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/volunteer-programme.md": {
+      "document": "01KYCPXAPV8EZQZ061M7ZF6CR1",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    }
+  },
+  "partner-kb": {
+    "docs/accession-register.md": {
+      "document": "01KYP88789WHHN93TW49AX0969",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/collections-review.md": {
+      "document": "01KYP88789WHHN93TW49AX096A",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/condition-reporting.md": {
+      "document": "01KYP88789WHHN93TW49AX096B",
+      "frontier": [
+        {
+          "distance": 2,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "counterpart"
+        },
+        {
+          "distance": 2,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "counterpart"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "governs"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXE",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "incoming loans"
+        },
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXM",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "outgoing loans"
+        },
+        {
+          "direction": "both",
+          "distance": 2,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "both",
+          "distance": 2,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYP88789WHHN93TW49AX096C",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "courier requirements"
+        },
+        {
+          "direction": "out",
+          "distance": 3,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "governs",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/courier-requirements.md": {
+      "document": "01KYP88789WHHN93TW49AX096C",
+      "frontier": [
+        {
+          "distance": 1,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "governs"
+        },
+        {
+          "distance": 2,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "counterpart"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXE",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "depth",
+          "rel": "related"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "governs",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXM",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "outgoing loans"
+        },
+        {
+          "direction": "both",
+          "distance": 2,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYP88789WHHN93TW49AX096B",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "condition reporting"
+        },
+        {
+          "direction": "in",
+          "distance": 3,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXE",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "incoming loans"
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/digitisation-programme.md": {
+      "document": "01KYP88789WHHN93TW49AX096D",
+      "frontier": [
+        {
+          "distance": 1,
+          "doc_id": "01KYCPXAFJ165BJKXCXFSJ3JBP",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "governed-by"
+        },
+        {
+          "distance": 1,
+          "doc_id": "01KYCPXAFJ165BJKXCXFSJ3JBP",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "related"
+        },
+        {
+          "distance": 1,
+          "doc_id": "01KYD00000000000ABSENTTARG",
+          "kb_id": "01KYD0000000000000ABSENTKB",
+          "reason": "terminal",
+          "rel": "related"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXAFJ165BJKXCXFSJ3JBP",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "governed-by",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYCPXAFJ165BJKXCXFSJ3JBP",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYD00000000000ABSENTTARG",
+          "kb_id": "01KYD0000000000000ABSENTKB",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXN",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "photography standards"
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/display-mounts.md": {
+      "document": "01KYP88789WHHN93TW49AX096E",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/documentation-backlog.md": {
+      "document": "01KYP88789WHHN93TW49AX096F",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/emergency-salvage.md": {
+      "document": "01KYP88789WHHN93TW49AX096G",
+      "frontier": [
+        {
+          "distance": 1,
+          "doc_id": "01KYCPXAGFJZ05TJT741WEJTQ9",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "related"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "both",
+          "distance": 1,
+          "doc_id": "01KYCPXAGFJZ05TJT741WEJTQ9",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "both",
+          "distance": 1,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXH",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "mutual aid agreement"
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/exhibition-planning.md": {
+      "document": "01KYP8878AZWS2ZWEBD0KQYTXB",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/gallery-environment.md": {
+      "document": "01KYP8878AZWS2ZWEBD0KQYTXC",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/handling-training.md": {
+      "document": "01KYP8878AZWS2ZWEBD0KQYTXD",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/incoming-loans.md": {
+      "document": "01KYP8878AZWS2ZWEBD0KQYTXE",
+      "frontier": [
+        {
+          "distance": 1,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "counterpart"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "counterpart"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYP88789WHHN93TW49AX096C",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "reason": "depth",
+          "rel": "related"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "both",
+          "distance": 1,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYP88789WHHN93TW49AX096B",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "condition reporting"
+        },
+        {
+          "direction": "in",
+          "distance": 2,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXM",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "outgoing loans"
+        },
+        {
+          "direction": "both",
+          "distance": 3,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "out",
+          "distance": 3,
+          "doc_id": "01KYP88789WHHN93TW49AX096C",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "courier requirements"
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/integrated-pest-management.md": {
+      "document": "01KYP8878AZWS2ZWEBD0KQYTXF",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/loan-agreements.md": {
+      "document": "01KYP8878AZWS2ZWEBD0KQYTXG",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/mutual-aid-agreement.md": {
+      "document": "01KYP8878AZWS2ZWEBD0KQYTXH",
+      "frontier": [
+        {
+          "distance": 1,
+          "doc_id": "01KYCPXAGFJZ05TJT741WEJTQ9",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "related"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYCPXAGFJZ05TJT741WEJTQ9",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "both",
+          "distance": 1,
+          "doc_id": "01KYP88789WHHN93TW49AX096G",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "emergency salvage"
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/object-entry.md": {
+      "document": "01KYP8878AZWS2ZWEBD0KQYTXJ",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/object-numbering.md": {
+      "document": "01KYP8878AZWS2ZWEBD0KQYTXK",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/outgoing-loans.md": {
+      "document": "01KYP8878AZWS2ZWEBD0KQYTXM",
+      "frontier": [
+        {
+          "distance": 1,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "counterpart"
+        },
+        {
+          "distance": 2,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "governs"
+        },
+        {
+          "distance": 3,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "counterpart"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "both",
+          "distance": 1,
+          "doc_id": "01KYCPXAJDG98XNQRT0E1C183V",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYP88789WHHN93TW49AX096B",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "condition reporting"
+        },
+        {
+          "direction": "out",
+          "distance": 1,
+          "doc_id": "01KYP88789WHHN93TW49AX096C",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "courier requirements"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "governs",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "in",
+          "distance": 2,
+          "doc_id": "01KYP8878AZWS2ZWEBD0KQYTXE",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "incoming loans"
+        },
+        {
+          "direction": "both",
+          "distance": 3,
+          "doc_id": "01KYCPXAJWWAK83Z0KBK6Y3NHR",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "counterpart",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/photography-standards.md": {
+      "document": "01KYP8878AZWS2ZWEBD0KQYTXN",
+      "frontier": [
+        {
+          "distance": 2,
+          "doc_id": "01KYCPXAFJ165BJKXCXFSJ3JBP",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "governed-by"
+        },
+        {
+          "distance": 2,
+          "doc_id": "01KYCPXAFJ165BJKXCXFSJ3JBP",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "reason": "terminal",
+          "rel": "related"
+        },
+        {
+          "distance": 2,
+          "doc_id": "01KYD00000000000ABSENTTARG",
+          "kb_id": "01KYD0000000000000ABSENTKB",
+          "reason": "terminal",
+          "rel": "related"
+        }
+      ],
+      "neighbours": [
+        {
+          "direction": "in",
+          "distance": 1,
+          "doc_id": "01KYP88789WHHN93TW49AX096D",
+          "kb_id": "01KYP11WY2ZGX9B2Q5V7PJ8DW1",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": false,
+          "title": "digitisation programme"
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYCPXAFJ165BJKXCXFSJ3JBP",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "governed-by",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "in",
+          "distance": 2,
+          "doc_id": "01KYCPXAFJ165BJKXCXFSJ3JBP",
+          "kb_id": "01KYCPTN72ZXC1DDWS6054MGZV",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        },
+        {
+          "direction": "out",
+          "distance": 2,
+          "doc_id": "01KYD00000000000ABSENTTARG",
+          "kb_id": "01KYD0000000000000ABSENTKB",
+          "rel": "related",
+          "score": 2.0,
+          "scored_by_query": false,
+          "terminal": true
+        }
+      ],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/rights-and-reproduction.md": {
+      "document": "01KYP8878AZWS2ZWEBD0KQYTXP",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    },
+    "docs/store-environment.md": {
+      "document": "01KYP8878AZWS2ZWEBD0KQYTXQ",
+      "frontier": [],
+      "neighbours": [],
+      "truncated": [],
+      "unresolved": []
+    }
+  }
+}
