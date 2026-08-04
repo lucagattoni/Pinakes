@@ -594,6 +594,23 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | a row missing a field is refused by name, never a bare `KeyError` | G2 | `tests/test_eval.py::test_a_row_missing_a_field_is_refused_by_name` |
 | the channel-reachable ceiling is measured before the schema bumps | G2 | `tests/test_eval.py::test_the_reachable_ceiling_probe_needs_no_index_schema_change` |
 | the probe answers to the edge set, rather than reporting the same number whatever the graph holds | G2 | `tests/test_eval.py::test_the_reachable_ceiling_probe_answers_to_the_edge_set` |
+| a hop expecting a path the index does not hold refuses the run by name, instead of being counted failing-and-unreachable | G2 | `tests/test_eval.py::test_the_probe_refuses_a_hop_expecting_a_document_the_index_does_not_hold` |
+| a `multi-hop` question with no `hops` refuses the run by name, instead of padding the denominator it can never fail | G2 | `tests/test_eval.py::test_the_probe_refuses_a_multi_hop_question_with_no_hops` |
+| a `multi-hop` question with one hop refuses too — the shape that moves `liftable` **upward**, against a precondition that is a floor | G2 | `tests/test_eval.py::test_the_probe_refuses_a_multi_hop_question_carrying_a_single_hop` |
+| a hop expecting a document the index holds **no chunks** for refuses: a correctly spelled path that can never land or be reached | G2 | `tests/test_eval.py::test_the_probe_refuses_a_hop_expecting_a_document_the_index_holds_no_chunks_for` |
+| a hop with an empty `query` refuses, rather than failing on its own terms and being counted | G2 | `tests/test_eval.py::test_the_probe_refuses_a_hop_whose_query_is_empty` |
+| a golden set with no `multi-hop` question refuses, rather than printing zeros that read as a measurement | G2 | `tests/test_eval.py::test_the_probe_refuses_a_golden_set_with_no_multi_hop_question_at_all` |
+| `filters` that admit no document, or that exclude the last hop's own `expect`, refuse — they are applied to the hop that decides the verdict | G2 | `tests/test_eval.py::test_the_probe_refuses_filters_that_admit_nothing`, `tests/test_eval.py::test_the_probe_refuses_filters_that_exclude_the_last_hops_own_document` |
+| a question-level `expect` naming nothing refuses, and the message says it moves no figure — the probe measures hops | G2 | `tests/test_eval.py::test_a_question_level_expect_that_names_nothing_is_refused_and_said_to_move_no_figure` |
+| a refusal names the spelling the index holds, and which invisible difference it is — pinned on letter case and a leading `./`; the NFC/NFD branch shares the mechanism and no committed corpus can exercise it | G2 | `tests/test_eval.py::test_a_path_wrong_only_in_case_is_refused_with_the_indexed_spelling` |
+| the artifact identifies all three inputs the numbers are a function of — the corpus, the golden set (path + sha256 + counts) and the pipeline down to model and revision | G2 | `tests/test_eval.py::test_the_artifact_records_the_configuration_that_produced_the_numbers` |
+| a hop problem on a question the probe never measures says no figure moves, in a whole sentence | G2 | `tests/test_eval.py::test_a_hop_problem_on_a_question_the_probe_never_measures_says_so` |
+| a mistyped path is reported once, and never blamed on a healthy `filters:` block | G2 | `tests/test_eval.py::test_a_mistyped_path_is_not_also_blamed_on_the_filters` |
+| two hops that are the same retrieval (same `expect`, `query` differing only in case or spacing) refuse — one retrieval written twice clears the hop floor and can move `liftable` upward | G2 | `tests/test_eval.py::test_the_probe_refuses_a_question_whose_two_hops_are_identical` |
+| a well-formed golden set is not refused — the control that keeps every refusal from being caused by the environment | G2 | `tests/test_eval.py::test_a_well_formed_golden_set_is_not_refused` |
+| `--fake` and `--kb` cannot be combined, so no run can label one corpus's numbers with another's | G2 | `tests/test_eval.py::test_the_probe_refuses_fake_together_with_kb` |
+| the output names the KB measured — pinned against a KB that is **not** the demo one, so the test can detect "always names the default" | G2 | `tests/test_eval.py::test_the_probe_names_the_kb_it_measured` |
+| a `--fake` run names its own copy and records that a fake backend produced the numbers | G2 | `tests/test_eval.py::test_the_fake_run_names_its_own_copy_and_says_it_is_fake` |
 
 ## Release machinery
 

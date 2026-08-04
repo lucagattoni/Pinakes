@@ -1,5 +1,6 @@
 """The scoreboard, against the real demo KB — the thing that makes retrieval changes decidable."""
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -562,6 +563,628 @@ def test_the_reachable_ceiling_probe_answers_to_the_edge_set() -> None:
     # without-authored figure binds: a gate cleared on the larger number is cleared on links a
     # human wrote, not on structure derived for free.
     assert intact["with-authored"]["liftable"] > intact["without-authored"]["liftable"]
+
+
+REFUSAL = "unmeasurable golden set"
+"""The probe's named refusal. Asserted on rather than a bare non-zero exit, because these tests
+run the probe against a KB whose manifest names a backend the subprocess never registered: a run
+that got past the refusal would fail too, and only the message tells the two apart."""
+
+
+def _run_probe(*argv: str) -> subprocess.CompletedProcess[str]:
+    """The probe as a user runs it — deliberately no `check`, since these tests are about how it
+    refuses, and a `CalledProcessError` would hide the stderr they assert on."""
+    return subprocess.run(
+        [sys.executable, str(PROBE), *argv], capture_output=True, text=True, cwd=REPO
+    )
+
+
+def _write_golden_set(root: Path, questions: list[dict[str, object]]) -> None:
+    """Replace a KB's golden set. Written as JSON, which YAML is a superset of: hand-indented YAML
+    inside a test is one more thing that can be wrong for a reason the test is not about."""
+    (root / "eval" / "questions.yaml").write_text(
+        json.dumps({"questions": questions}), encoding="utf-8"
+    )
+
+
+def test_the_probe_refuses_a_hop_expecting_a_document_the_index_does_not_hold(demo: Path) -> None:
+    """A path typo used to be *counted*, which is the worst defect a measurement tool can have.
+
+    The lookup answered `""` for an unknown path, so the hop was recorded `lands=False,
+    reachable=False` — failing and unreachable, indistinguishable from a real one. One typo in a
+    200-document corpus deflates the liftable ratio the graph release's precondition binds on, and
+    nothing in the output says so.
+    """
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "typo-in-the-second-hop",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "core funding", "expect": "docs/funding-sourses.md"},
+                ],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    # Named, both of them: which question, and the path as spelled. A refusal saying only "a path
+    # is wrong" leaves the reader to find it in a file of forty questions.
+    assert "typo-in-the-second-hop" in completed.stderr
+    assert "docs/funding-sourses.md" in completed.stderr
+
+
+def test_the_probe_refuses_a_multi_hop_question_with_no_hops(demo: Path) -> None:
+    """It used to be absorbed: counted in the `multi-hop` denominator, yielding no verdict, so it
+    could never be `failing` and disappeared from every other figure while padding that one.
+
+    Likely on a real corpus rather than hypothetical — the scaffolded template documented `id`,
+    `question`, `expect` and `kind`, and never mentioned `hops` until this commit.
+    """
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "multi-hop-in-name-only",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md"],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    assert "multi-hop-in-name-only" in completed.stderr
+    # The count, not the bare word `hops`: every refusal's closing remedy sentence contains
+    # "`hops:` list", so asserting on that would pass for a path typo too.
+    assert "with 0 hop(s)" in completed.stderr
+
+
+def test_the_probe_refuses_a_multi_hop_question_carrying_a_single_hop(demo: Path) -> None:
+    """The dangerous direction. Fewer hops than the kind claims is absorbed like a missing `hops`,
+    except that one hop is *measured* — as a single search — and can move `liftable` upward. The
+    precondition is a floor (`>= 7`), so under-counting only blocks a release while over-counting
+    licenses a `schema_version` bump that forces every KB in existence to rebuild. A hand
+    conversion that scripts hops for the first evidence document and stops produces exactly this.
+    """
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "one-hop-is-not-two",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md"],
+                "hops": [{"query": "public money", "expect": "docs/deaccession-policy.md"}],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    assert "one-hop-is-not-two" in completed.stderr
+    assert "with 1 hop(s)" in completed.stderr
+
+
+def test_the_probe_refuses_a_hop_expecting_a_document_the_index_holds_no_chunks_for(
+    demo: Path,
+) -> None:
+    """A path can be spelled correctly and still be unmeasurable. Every node the channel walks is
+    built from the `chunks` table, so a document with none — a blank file, a note that is only
+    front matter, a PDF whose free extraction yielded nothing — can neither be retrieved nor
+    reached, and its hop is recorded failing-and-unreachable for a reason that is not about the
+    channel. Validating that the *path* exists does not catch it."""
+    blank = demo / "docs" / "blank-note.md"
+    blank.write_text("", encoding="utf-8")
+    sync(load(demo), options=SyncOptions(), now="20260725 18:30")
+
+    connection = store.connect_ro(demo / ".pinakes" / "index.db")
+    try:
+        rows = list(
+            connection.execute(
+                "SELECT d.path, COUNT(c.id) AS n FROM documents d "
+                "LEFT JOIN chunks c ON c.doc_id = d.id WHERE d.path = ? GROUP BY d.id",
+                ("docs/blank-note.md",),
+            )
+        )
+    finally:
+        connection.close()
+    # The premise of the test, asserted rather than assumed: if a blank file ever stops producing
+    # a chunk-less document, this test would otherwise silently start proving nothing.
+    assert rows and rows[0]["n"] == 0, rows
+
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "hop-onto-an-empty-document",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/blank-note.md"],
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "core funding", "expect": "docs/blank-note.md"},
+                ],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    assert "hop-onto-an-empty-document" in completed.stderr
+    assert "no chunks" in completed.stderr
+
+
+def test_the_probe_refuses_a_hop_whose_query_is_empty(demo: Path) -> None:
+    """An empty query fails on its own terms rather than the corpus's, which is the same silent
+    deflation as a mistyped path: the hop is counted failing, and nothing says why."""
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "a-hop-with-nothing-to-search-for",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "   ", "expect": "docs/funding-sources.md"},
+                ],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    assert "a-hop-with-nothing-to-search-for" in completed.stderr
+    assert "empty `query`" in completed.stderr
+
+
+def test_the_probe_refuses_a_golden_set_with_no_multi_hop_question_at_all(demo: Path) -> None:
+    """The last shape that produced a plausible artifact out of nothing: every figure would be a
+    zero, and a zero from an empty class is indistinguishable from a measured one."""
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "not-a-multi-hop-question",
+                "question": "What may not be done with material acquired using public money?",
+                "kind": "simple-lookup",
+                "expect": ["docs/deaccession-policy.md"],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    assert "no `multi-hop` question at all" in completed.stderr
+
+
+def test_the_probe_refuses_filters_that_admit_nothing(demo: Path) -> None:
+    """`filters` are applied to the last hop, and an unmatched one rewrites the whole measurement.
+
+    Measured on demo-kb under the fake backend: a `tags: [no-such-tag]` on one question took the
+    run from 9 failing / 3 liftable to 18 failing / 0 liftable, exit 0, with nothing in either
+    output saying so. It is the empty-`query` defect wearing a different key, and it moves
+    `failing` *upward* — the direction a floor reads as headroom.
+    """
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "filtered-into-nothing",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
+                "filters": {"tags": ["no-such-tag-in-this-corpus"]},
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "core funding", "expect": "docs/funding-sources.md"},
+                ],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    assert "filtered-into-nothing" in completed.stderr
+    assert "admit no active document" in completed.stderr
+
+
+def test_the_probe_refuses_filters_that_exclude_the_last_hops_own_document(demo: Path) -> None:
+    """The subtler half: filters that match plenty and not the document the hop must find. The
+    filtered search cannot return it, so the question is counted failing on its filters."""
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "filtered-away-from-its-own-answer",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
+                "filters": {"path_prefix": "docs/deaccession"},
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "core funding", "expect": "docs/funding-sources.md"},
+                ],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    assert "filtered-away-from-its-own-answer" in completed.stderr
+    assert "do not admit the last hop's own `expect`" in completed.stderr
+
+
+def test_a_question_level_expect_that_names_nothing_is_refused_and_said_to_move_no_figure(
+    demo: Path,
+) -> None:
+    """The probe measures hops, never a question's own `expect` — so this refusal is honest about
+    costing no figure, while still refusing: a golden set naming documents the index does not hold
+    is not one to measure a release precondition against. Pinning the *wording* matters, because
+    the first version of this message claimed every listed problem moved the count."""
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "a-lookup-whose-expect-moved",
+                "question": "What may not be done with material acquired using public money?",
+                "kind": "simple-lookup",
+                "expect": ["docs/renamed-or-deleted.md"],
+            },
+            {
+                "id": "an-intact-multi-hop",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "core funding", "expect": "docs/funding-sources.md"},
+                ],
+            },
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert "a-lookup-whose-expect-moved" in completed.stderr
+    assert "docs/renamed-or-deleted.md" in completed.stderr
+    assert "moves no figure this probe prints" in completed.stderr
+
+
+def test_a_path_wrong_only_in_case_is_refused_with_the_indexed_spelling(demo: Path) -> None:
+    """The refusal has to be actionable. Case, a leading `./` and NFC/NFD are the three ways a
+    path can be wrong while rendering almost identically to the right one, so the message names
+    the spelling the index holds and which difference it is."""
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "shouting-the-path",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
+                "hops": [
+                    {"query": "public money", "expect": "./docs/deaccession-policy.md"},
+                    {"query": "core funding", "expect": "docs/Funding-Sources.md"},
+                ],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert "the index holds 'docs/funding-sources.md'" in completed.stderr
+    assert "letter case" in completed.stderr
+    # Both spellings the index would not match, each named for what it is. The `./` case is the
+    # one a reader is least likely to spot unaided.
+    assert "the index holds 'docs/deaccession-policy.md'" in completed.stderr
+    assert "a leading `./`" in completed.stderr
+
+
+def test_the_artifact_records_the_configuration_that_produced_the_numbers(demo: Path) -> None:
+    """`failing` is a function of the retrieval settings — `lands` asks whether a document is in
+    the top `final_k` of a pipeline whose fusion, candidate widths **and reranker** are per-KB
+    manifest keys. Naming the corpus and not the configuration leaves two artifacts from two
+    configurations indistinguishable, which is the same defect the KB-naming fix closed.
+
+    The reranker's *model* earns its own assertion: swapping one fake reranker for another moved
+    demo-kb from 9 failing / 3 liftable to 18 / 12 with every other recorded field identical, so
+    the mode (`local`) alone does not identify the measurement.
+    """
+    payload = json.loads(_run_probe("--fake", "--json").stdout)
+
+    manifest = load(demo)
+    # `final_k`, the embedding model and the reranker model are the assertions that can fail: each
+    # differs from the shipped default, so none of them is satisfied by a payload of hardcoded
+    # defaults — the failure mode this whole branch is about.
+    assert payload["retrieval"]["final_k"] == manifest.retrieval.final_k
+    assert payload["retrieval"]["fusion"] == manifest.retrieval.fusion
+    assert payload["retrieval"]["adjacent_k"] == manifest.retrieval.adjacent_k
+    assert payload["retrieval"]["rerank"] == manifest.retrieval.rerank
+    # The revisions are pinned against the values `_fake_kb` writes into its copy's manifest, not
+    # against `manifest.<section>.revision`: demo-kb declares neither, so that comparison was
+    # `None == None` and a payload that ignored the manifest entirely passed it.
+    assert payload["rerank"] == {
+        "provider": "fake",
+        "model": "overlap-reranker",
+        "revision": "probe-fake-rerank-rev",
+    }
+    assert payload["embedding"]["dim"] == DIM  # the fake's, not the committed model's
+    assert payload["embedding"]["model"] == "hashing"
+    assert payload["embedding"]["revision"] == "probe-fake-embedding-rev"
+    # The value, not merely the key: `_fake_kb` syncs at a fixed clock, so a payload that filled
+    # the field with anything at all would pass a presence check and fail this one.
+    assert payload["index_built_at"] == "20260725 18:30"
+
+    # The golden set is the input every figure is computed from, and the one a refuse-edit-re-run
+    # loop changes most often — two runs over one corpus with two question sets were otherwise
+    # identical in every recorded field.
+    assert payload["golden_set"]["path"].endswith("eval/questions.yaml")
+    assert payload["golden_set"]["multi_hop"] == sum(
+        1
+        for question in load_questions(DEMO / "eval" / "questions.yaml")
+        if question.kind == "multi-hop"
+    )
+    assert (
+        payload["golden_set"]["sha256"]
+        == hashlib.sha256((DEMO / "eval" / "questions.yaml").read_bytes()).hexdigest()
+    )
+    assert payload["golden_set"]["questions"] == len(
+        load_questions(DEMO / "eval" / "questions.yaml")
+    )
+    # The literal values, not their relation: both are module constants, so `far_depth >
+    # depth` compares two things a mutant can move together and stays green. `DEPTH` is the
+    # gate's own definition ("not a knob"), and an artifact reporting a depth its numbers
+    # were not computed at is the misidentification this whole test exists against.
+    assert payload["depth"] == 2
+    assert payload["far_depth"] == 6
+
+    text = _run_probe("--fake").stdout
+    assert f"final_k {manifest.retrieval.final_k}" in text
+    assert "hashing" in text
+    assert "overlap-reranker" in text
+    assert payload["golden_set"]["sha256"][:12] in text
+
+
+def test_a_hop_problem_on_a_question_the_probe_never_measures_says_so(demo: Path) -> None:
+    """`load_questions` allows hops on any kind, and the probe measures only `multi-hop`. The
+    refusal must not tell the author of a `lexical` question that a figure moved — the same
+    over-claim as the reverse, and the closing "it says which" has to be true of every line.
+
+    Both hop branches are exercised: an empty `query` and an unknown `expect`. The first attempt
+    at this fix moved the conditional to the end of the sentence, so the message still asserted
+    "the hop is recorded failing-and-unreachable" and then denied its effect one clause later.
+    """
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "a-lookup-carrying-hops",
+                "question": "What may not be done with material acquired using public money?",
+                "kind": "lexical",
+                "expect": ["docs/deaccession-policy.md"],
+                "hops": [
+                    {"query": "", "expect": "docs/deaccession-policy.md"},
+                    {"query": "public money", "expect": "docs/no-such-document.md"},
+                ],
+            },
+            {
+                "id": "an-intact-multi-hop",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "core funding", "expect": "docs/funding-sources.md"},
+                ],
+            },
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert "a-lookup-carrying-hops" in completed.stderr
+    assert "nothing is recorded for it" in completed.stderr
+    # The class, not one superseded string: the only problems in this run belong to the question
+    # the probe does not measure, so no line of it may claim a hop was recorded at all.
+    assert "is recorded failing" not in completed.stderr
+    assert "is counted failing" not in completed.stderr
+
+
+def test_a_mistyped_path_is_not_also_blamed_on_the_filters(demo: Path) -> None:
+    """One defect, one problem. `filters` cannot admit a path the index does not hold, so the
+    filter check would report a healthy `filters:` block for what is a typo — pointing the
+    operator at the wrong line and inflating the problem count."""
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "a-typo-under-filters",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
+                "filters": {"path_prefix": "docs/"},
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "core funding", "expect": "docs/funding-sourses.md"},
+                ],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert "1 problem(s)" in completed.stderr
+    assert "docs/funding-sourses.md" in completed.stderr
+    assert "do not admit the last hop's own `expect`" not in completed.stderr
+
+
+def test_the_probe_refuses_a_question_whose_two_hops_are_identical(demo: Path) -> None:
+    """One retrieval written twice clears the `MIN_HOPS` floor while asking a single question, and
+    a hop repeating one already landed moves `liftable` upward — measured on demo-kb under the
+    fake backend: duplicating one question's last hop took liftable 3 to 4, exit 0. A YAML
+    copy-paste is the realistic route to it."""
+    _write_golden_set(
+        demo,
+        [
+            {
+                "id": "one-hop-written-twice",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md"],
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    # Upper-cased and padded: FTS5 folds case and every backend here splits on
+                    # whitespace, so this is the same retrieval. A byte-exact comparison missed
+                    # it, and it moved liftable 3 -> 4 on demo-kb with exit 0.
+                    {"query": "  PUBLIC   Money ", "expect": "docs/deaccession-policy.md"},
+                ],
+            }
+        ],
+    )
+    completed = _run_probe("--kb", str(demo))
+
+    assert completed.returncode != 0
+    assert REFUSAL in completed.stderr
+    assert "one-hop-written-twice" in completed.stderr
+    assert "the same retrieval as an earlier hop" in completed.stderr
+
+
+def test_a_well_formed_golden_set_is_not_refused(demo: Path) -> None:
+    """The control every refusal test needs: the message must be caused by the question, not by
+    the environment they run in. Same subprocess, same KB, same unregistered backend — only the
+    golden set differs, and this one is the committed set."""
+    assert REFUSAL not in _run_probe("--kb", str(demo)).stderr
+
+
+def test_the_probe_refuses_fake_together_with_kb(tmp_path: Path) -> None:
+    """`--fake` measures a copy of the demo KB it builds itself, and used to silently discard
+    `--kb`: `--kb <corpus> --fake` reported demo-kb's numbers labelled as nothing in particular."""
+    completed = _run_probe("--fake", "--kb", str(tmp_path))
+
+    assert completed.returncode == 2  # argparse's own, before anything is measured
+    # The exclusion itself, not merely "an argparse error": every usage line names both flags, so
+    # `--bogus` would satisfy an assertion that only looked for the two names.
+    assert "not allowed with argument" in completed.stderr
+    assert "--fake" in completed.stderr and "--kb" in completed.stderr
+
+
+RUNNER = """
+import sys
+
+sys.path.insert(0, {tools!r})
+from pinakes.embed import register_embedding_backend, register_reranker
+
+import reachable_ceiling_probe as probe
+
+register_embedding_backend("fake", lambda section, offline: probe.HashingBackend())
+register_reranker("fake", lambda section, offline: probe.OverlapReranker())
+sys.exit(probe.main(sys.argv[1:]))
+"""
+"""Runs the probe over an arbitrary `--kb` with the fake backend registered.
+
+Needed because `--fake` measures a copy of the demo KB and nothing else, so a test written on it
+alone cannot tell "names the KB measured" from "always names the demo KB" — which is the very
+defect the naming fix exists to close.
+"""
+
+
+def test_the_probe_names_the_kb_it_measured(demo: Path, tmp_path: Path) -> None:
+    """Neither output named it, so two runs against two corpora produced artifacts that could not
+    be told apart on inspection — which is what made a silently discarded `--kb` survivable.
+
+    Measured against a KB deliberately **not** called `demo-kb`, and asserted to be an absolute
+    resolved path: a relative `--kb` recorded verbatim would label two corpora identically again
+    when the tool is run from two working directories.
+    """
+    import shutil
+
+    measured = tmp_path / "renamed-corpus"
+    shutil.move(str(demo), str(measured))
+    runner = tmp_path / "run_probe.py"
+    runner.write_text(RUNNER.format(tools=str(REPO / "tools")), encoding="utf-8")
+
+    def run(*extra: str, kb: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+        completed = subprocess.run(
+            [sys.executable, str(runner), "--kb", kb, *extra],
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+        )
+        assert completed.returncode == 0, completed.stderr
+        return completed
+
+    payload = json.loads(run("--json", kb=str(measured), cwd=REPO).stdout)
+    assert payload["kb_root"] == str(measured.resolve())
+    assert "demo-kb" not in payload["kb_root"]
+    assert payload["kb_id"] == load(measured).kb.id
+    assert payload["fake_backend"] is False
+    assert payload["kb_id"] in run(kb=str(measured), cwd=REPO).stdout
+
+    # The same corpus reached by a *relative* `--kb` from its own parent. `tmp_path` is already
+    # absolute and already resolved, so the assertions above pass whether or not the tool resolves
+    # anything — measured: dropping the `.resolve()` left the whole suite green. This is the run
+    # that pins it, and the property it pins is the one that matters, since two corpora both
+    # reached as `./kb` from two directories would otherwise record the same `kb_root` again.
+    relative = json.loads(run("--json", kb=measured.name, cwd=measured.parent).stdout)
+    assert Path(relative["kb_root"]).is_absolute()
+    assert relative["kb_root"] == str(measured.resolve())
+
+    # The golden set's identity belongs here too, for the same reason `kb_root` does: under
+    # `--fake` the measured question set *is* demo-kb's, so a probe that hardcoded the demo path
+    # and digest satisfied every assertion in the `--fake` test. Here the file is this corpus's
+    # own, and rewritten, so both fields can be wrong.
+    _write_golden_set(
+        measured,
+        [
+            {
+                "id": "a-corpus-of-its-own",
+                "question": "Why may material bought with the public grant not be sold?",
+                "kind": "multi-hop",
+                "expect": ["docs/deaccession-policy.md", "docs/funding-sources.md"],
+                "hops": [
+                    {"query": "public money", "expect": "docs/deaccession-policy.md"},
+                    {"query": "core funding", "expect": "docs/funding-sources.md"},
+                ],
+            }
+        ],
+    )
+    rewritten = json.loads(run("--json", kb=str(measured), cwd=REPO).stdout)
+    questions_path = measured / "eval" / "questions.yaml"
+    assert rewritten["golden_set"]["path"] == str(questions_path.resolve())
+    assert (
+        rewritten["golden_set"]["sha256"] == hashlib.sha256(questions_path.read_bytes()).hexdigest()
+    )
+    assert rewritten["golden_set"] != payload["golden_set"]
+    assert rewritten["golden_set"]["questions"] == 1
+
+
+def test_the_fake_run_names_its_own_copy_and_says_it_is_fake() -> None:
+    """`--fake` is the one run whose corpus the operator did not choose, so the artifact has to
+    say both which directory was measured and that a hashing backend produced the numbers."""
+    payload = json.loads(_run_probe("--fake", "--json").stdout)
+    text = _run_probe("--fake").stdout
+
+    assert payload["kb_root"].endswith("demo-kb")
+    assert payload["kb_id"] == load(DEMO).kb.id
+    assert payload["fake_backend"] is True
+    assert payload["kb_id"] in text and "demo-kb" in text
 
 
 def test_calibration_fits_thresholds_and_prints_a_manifest_block(demo: Path) -> None:
