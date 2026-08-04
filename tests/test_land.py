@@ -148,3 +148,39 @@ def test_cleanup_does_not_run_when_the_landing_was_refused(repo: Path) -> None:
     assert result.returncode == 1
     assert worktree.exists(), "a refused landing destroyed the worktree"
     assert "feature" in git("branch", cwd=repo), "a refused landing deleted the branch"
+
+
+def test_cleanup_only_removes_a_branch_that_landed_earlier(repo: Path) -> None:
+    """The normal flow: land, watch CI, clean up later. Re-running `--cleanup` refuses by then."""
+    worktree = make_branch(repo, "feature")
+    git("push", "-u", "origin", "feature", cwd=worktree)
+    assert land("feature", cwd=repo).returncode == 0
+
+    refused = land("feature", "--cleanup", cwd=repo)
+    assert refused.returncode == 1, "landing twice must still refuse"
+
+    result = land("feature", "--cleanup-only", cwd=repo)
+
+    assert result.returncode == 0, result.stderr
+    assert not worktree.exists(), "worktree survived"
+    assert "feature" not in git("branch", cwd=repo), "local ref survived"
+    assert not git("ls-remote", "--heads", "origin", "feature", cwd=repo), "remote ref survived"
+
+
+def test_cleanup_only_refuses_a_branch_whose_content_never_landed(repo: Path) -> None:
+    """The guard that matters here: 'looks merged' is not 'landed'. Nothing may be destroyed."""
+    worktree = make_branch(repo, "feature")
+
+    result = land("feature", "--cleanup-only", cwd=repo)
+
+    assert result.returncode == 1
+    assert "has not landed" in result.stderr, result.stderr
+    assert worktree.exists(), "an unlanded branch's worktree was destroyed"
+    assert "feature" in git("branch", cwd=repo), "an unlanded branch was deleted"
+
+
+def test_cleanup_only_and_cleanup_are_alternatives(repo: Path) -> None:
+    make_branch(repo, "feature")
+    result = land("feature", "--cleanup", "--cleanup-only", cwd=repo)
+    assert result.returncode == 1
+    assert "alternatives" in result.stderr, result.stderr

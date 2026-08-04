@@ -632,6 +632,7 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | landing merges in the primary checkout even when invoked from the feature worktree | fix | `tests/test_land.py::test_merges_in_the_primary_checkout_even_when_invoked_from_the_feature_worktree` |
 | landing cannot fold uncommitted work into the merge, or land onto the wrong branch | fix | `tests/test_land.py::test_refuses_a_dirty_primary_checkout`, `tests/test_land.py::test_refuses_to_merge_the_default_branch_into_itself` |
 | `--cleanup` removes the worktree and **both** copies of the branch | fix | `tests/test_land.py::test_cleanup_removes_the_worktree_and_both_copies_of_the_branch` |
+| `--cleanup-only` destroys nothing unless the branch is an ancestor of `origin/main` — "looks merged" is not "landed" | fix | `tests/test_land.py::test_cleanup_only_refuses_a_branch_whose_content_never_landed`, `tests/test_land.py::test_cleanup_only_removes_a_branch_that_landed_earlier` |
 | the status-header gate is invoked, and can still fail | fix | `tests/test_check_script.py::test_check_sh_declares_the_status_header_gate`, `tests/test_check_script.py::test_ci_runs_the_status_header_gate_and_proves_it_can_fail` |
 
 ## The source walk stays inside the KB (0.7.1)
