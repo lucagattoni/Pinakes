@@ -647,6 +647,14 @@ with the instrument that measures retrieval quality rather than a reachability c
 99.2% of the graph's mass earns its place. **The arm reports; it does not gate.** A release is not
 blocked on its result.
 
+**A second arm: `--drop parent-child`, and a measured ceiling before this gate runs.** That kind is
+derived transitively — every ancestor path joined to every descendant path, *a·d* rows, projected at
+5.8×–53.5× the chunk count — and **the only corpus it has run against derived zero of them**, because
+every chunk there had an empty `heading_path`. So its cost is a projection, not a measurement.
+Before this gate runs: derive against a corpus whose chunker populates `heading_path`, and record
+edges per chunk, wall-clock and index growth. If that ceiling is alarming, the immediate-parent
+variant is the arm to *measure*, never the default to switch to first ([`20260804_1844-decision-parent-child-arity.md`](20260804_1844-decision-parent-child-arity.md)).
+
 
 **What lands.** `[retrieval] graph_channel = "off" | "expand"`, default `"off"`. When `"expand"`: the
 fused top-*k* as roots, expanded to depth ≤ 2, ranked, fed into RRF as a third input; an empty edge
