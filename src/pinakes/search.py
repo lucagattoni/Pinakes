@@ -411,9 +411,13 @@ def fused_candidates(
                 adjacent_k=settings.adjacent_k,
                 limit=settings.candidates_per_source,
                 ranking=ranking,
+                # The filters are the caller's, and the graph does not know about them. Handed in
+                # rather than applied to the result: a neighbour outside them is a row this search
+                # was told not to return, and one filtered afterwards has already spent a slot of
+                # the fan-out budget. Kept as a second check here because a filter that bounds a
+                # walk and a filter that bounds a result are two claims, and only one is cheap.
+                allowed=allowed,
             )
-            # The filters are the caller's, and the channel walks a graph that does not know about
-            # them: a neighbour outside them is a document this search was told not to return.
             if candidate.chunk_id in allowed
         )
         fused = _fuse(lexical, vector, [candidate.chunk_id for candidate in reached])

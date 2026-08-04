@@ -173,6 +173,18 @@ def check_identity(before: Leg, without: Leg, with_authored: Leg) -> list[str]:
             f"({[sorted(kinds) for kinds in structural]}) — an arm is compared against its own "
             "before leg, never against the headline's"
         )
+    # Everything else the header records and a comparison assumes constant. `k`, the embedding,
+    # the reranker and the ranking knobs each move rows on their own, and `graph_matrix.py`
+    # deliberately varies the last — so an arm accidentally passed as the headline's `--after-with`
+    # would otherwise be scored against a before leg it shares no configuration with. Same
+    # argument as the structural-kind check above, and it was missing.
+    for field_ in ("k", "embedding", "rerank", "ranking", "retrieval"):
+        values = [leg.header.get(field_) for leg in (before, without, with_authored)]
+        if any(value != values[0] for value in values):
+            problems.append(
+                f"the three legs disagree on `{field_}` ({values}) — a leg is compared against a "
+                "before leg produced by the same pipeline, or it is not compared at all"
+            )
     for leg in (without, with_authored):
         missing = set(before.by_id) ^ set(leg.by_id)
         if missing:

@@ -42,7 +42,7 @@ from pinakes.graph import channel
 from pinakes.graph.edges import ALL_KINDS, AUTHORED, authored_pairs, select_kinds
 from pinakes.ids import DocId, KbId, mint_doc_id, mint_kb_id
 from pinakes.manifest import Manifest, load
-from pinakes.search import Fused, fused_candidates, search
+from pinakes.search import Filters, Fused, fused_candidates, search, unit_vectors
 from pinakes.sidecar import SIDECAR_SUFFIX
 from pinakes.sync import SyncOptions, sync
 
@@ -265,6 +265,7 @@ def walk(
     similarity: dict[int, float] | None = None,
     limit: int = 50,
     ranking: channel.Ranking = channel.GATED_RANKING,
+    depth: int = channel.DEPTH,
 ) -> list[channel.Reached]:
     connection = corpus.open()
     try:
@@ -277,6 +278,7 @@ def walk(
             adjacent_k=adjacent_k,
             limit=limit,
             ranking=ranking,
+            depth=depth,
         )
     finally:
         connection.close()
@@ -367,10 +369,12 @@ class _Tracer(sqlite3.Connection):
     reproduce every method either of them might reach for."""
 
     graph_statements: list[str]
+    graph_calls: list[tuple[str, Any]]
 
     def execute(self, sql: str, parameters: Any = (), /) -> sqlite3.Cursor:  # type: ignore[override]
         if " nodes " in f" {sql} " or " edges " in f" {sql} ":
             self.graph_statements.append(sql)
+            self.graph_calls.append((sql, tuple(parameters)))
         return super().execute(sql, parameters)
 
 
@@ -378,6 +382,7 @@ def _traced(path: Path) -> _Tracer:
     connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, factory=_Tracer)
     connection.row_factory = sqlite3.Row
     connection.graph_statements = []
+    connection.graph_calls = []
     return connection
 
 
@@ -546,20 +551,26 @@ def tag_chain(root: Path, **options: Any) -> Corpus:
     corpus = Corpus(root, **options)
     # One directory each: sharing one would put all three in a `co-located` hub and make C a
     # *one*-hop neighbour of A, which is the shape the depth assertions below must not have.
-    corpus.write("docs/d1/a.md", sectioned("A", [("Quokka", "quokka " * 40)]), tags=["t1"])
-    corpus.write("docs/d2/b.md", sectioned("B", [("Zebu", "zebu " * 40)]), tags=["t1", "t2"])
-    corpus.write("docs/d3/c.md", sectioned("C", [("Numbat", "numbat " * 40)]), tags=["t2"])
+    #
+    # **Path order deliberately disagrees with hop order.** The two-hop document sorts *first*
+    # (`docs/a3/`) and the one-hop document last (`docs/z2/`), so a tiebreak on
+    # `(documents.path, chunks.ordinal)` produces the opposite order to the distance term. Without
+    # that, deleting distance from the ranking left the tie test green — the assertion was
+    # satisfied by path order rather than by the property it names.
+    corpus.write("docs/m1/a.md", sectioned("A", [("Quokka", "quokka " * 40)]), tags=["t1"])
+    corpus.write("docs/z2/b.md", sectioned("B", [("Zebu", "zebu " * 40)]), tags=["t1", "t2"])
+    corpus.write("docs/a3/c.md", sectioned("C", [("Numbat", "numbat " * 40)]), tags=["t2"])
     corpus.sync()
     return corpus
 
 
 def test_a_document_never_passes_through_to_itself(tmp_path: Path) -> None:
     corpus = tag_chain(tmp_path / "kb")
-    root = chunk_id_of(corpus, "docs/d1/a.md", 0)
+    root = chunk_id_of(corpus, "docs/m1/a.md", 0)
     reached = paths_of(corpus, [c.chunk_id for c in walk(corpus, [root], adjacent_k=1)])
 
-    assert "docs/d2/b.md" in reached, "hop 1, through the tag the root's document shares"
-    assert "docs/d3/c.md" in reached, (
+    assert "docs/z2/b.md" in reached, "hop 1, through the tag the root's document shares"
+    assert "docs/a3/c.md" in reached, (
         "hop 2 must reach C. If B were allowed to pass through to itself it would take the one "
         "fan-out slot and contribute nothing, because its chunks are already contributed"
     )
@@ -620,9 +631,9 @@ def test_a_two_hop_chunk_outranks_a_one_hop_one_when_the_query_says_so(tmp_path:
     ceiling was measured at. This is the assertion that fails if that order ever comes back.
     """
     corpus = tag_chain(tmp_path / "kb")
-    root = chunk_id_of(corpus, "docs/d1/a.md", 0)
-    near = chunk_id_of(corpus, "docs/d2/b.md", 0)
-    far = chunk_id_of(corpus, "docs/d3/c.md", 0)
+    root = chunk_id_of(corpus, "docs/m1/a.md", 0)
+    near = chunk_id_of(corpus, "docs/z2/b.md", 0)
+    far = chunk_id_of(corpus, "docs/a3/c.md", 0)
 
     reached = walk(corpus, [root], similarity={near: 0.10, far: 0.90})
     order = [candidate.chunk_id for candidate in reached]
@@ -635,9 +646,9 @@ def test_distance_breaks_a_tie_the_query_cannot(tmp_path: Path) -> None:
     """The other half: link distance is still a term. Two chunks the query scores identically are
     ordered nearer-first, which is the only place the graph's own proximity decides anything."""
     corpus = tag_chain(tmp_path / "kb")
-    root = chunk_id_of(corpus, "docs/d1/a.md", 0)
-    near = chunk_id_of(corpus, "docs/d2/b.md", 0)
-    far = chunk_id_of(corpus, "docs/d3/c.md", 0)
+    root = chunk_id_of(corpus, "docs/m1/a.md", 0)
+    near = chunk_id_of(corpus, "docs/z2/b.md", 0)
+    far = chunk_id_of(corpus, "docs/a3/c.md", 0)
 
     reached = walk(corpus, [root], similarity={near: 0.5, far: 0.5})
     order = [candidate.chunk_id for candidate in reached]
@@ -649,12 +660,14 @@ def test_distance_breaks_a_tie_the_query_cannot(tmp_path: Path) -> None:
         similarity={near: 0.5, far: 0.5},
         ranking=channel.Ranking(link_distance=False),
     )
-    # With the term dropped, the node key alone decides between two equally-similar chunks — and
-    # a minted ULID orders either way, so the *rule* is asserted rather than one run's answer.
-    tied = [c for c in dropped if c.chunk_id in {near, far}]
-    assert [c.chunk_id for c in tied] == [
-        c.chunk_id for c in sorted(tied, key=lambda c: c.node_key)
-    ], "the arm removes distance from the comparison, leaving the node key"
+    # With the term dropped, `(documents.path, chunks.ordinal)` alone decides — and this fixture
+    # puts the *two*-hop document first in path order, so the arm must reverse the pair rather
+    # than merely leave it alone.
+    without = [candidate.chunk_id for candidate in dropped]
+    assert without.index(far) < without.index(near), (
+        "docs/a3/c.md sorts before docs/z2/b.md, so dropping distance flips the order — an "
+        "assertion that survived a fixture where path order and hop order agreed proves nothing"
+    )
 
 
 def test_a_root_is_expanded_but_never_emitted(tmp_path: Path) -> None:
@@ -675,6 +688,280 @@ def test_a_root_is_expanded_but_never_emitted(tmp_path: Path) -> None:
     )
     assert both, "expansion still runs from a root; only its own row is withheld"
     assert chunk_id_of(corpus, "docs/long.md", 2) in both
+
+
+def sectioned_corpus(root: Path, **options: Any) -> Corpus:
+    """A document whose one section is long enough to chunk **twice**, so a heading hub exists.
+
+    Every other fixture here derives zero `heading` nodes — a hub under two members is never
+    minted — which left the whole `in-section` branch of the walk unexecuted while the spec
+    sentence it implements ("a same-document chunk also reachable by `sibling` **or `in-section`**
+    is not excluded") read as covered.
+    """
+    corpus = Corpus(root, **options)
+    corpus.write("docs/one/long.md", "# Section\n\n" + "quokka " * 400 + "\n")
+    corpus.write("docs/two/other.md", sectioned("Other", [("Zebu", "zebu " * 40)]))
+    corpus.sync()
+    return corpus
+
+
+def test_a_heading_hub_contributes_its_section_mates(tmp_path: Path) -> None:
+    corpus = sectioned_corpus(tmp_path / "kb")
+    connection = corpus.open()
+    try:
+        hubs = int(
+            connection.execute("SELECT count(*) FROM nodes WHERE kind = 'heading'").fetchone()[0]
+        )
+        section = int(
+            connection.execute("SELECT count(*) FROM edges WHERE kind = 'in-section'").fetchone()[0]
+        )
+    finally:
+        connection.close()
+    assert hubs == 1 and section >= 2, (
+        f"the fixture must derive a heading hub with members: {hubs} hub(s), {section} spoke(s)"
+    )
+
+    root = chunk_id_of(corpus, "docs/one/long.md", 0)
+    reached = {candidate.node_key: candidate for candidate in walk(corpus, [root])}
+    assert reached, "the section's other chunks are same-document and must still be returned"
+    kinds = {candidate.via for candidate in reached.values()}
+    assert ("in-section", "in-section") in kinds, (
+        f"no candidate arrived through the heading hub; kinds seen: {sorted(kinds)}"
+    )
+
+    without = walk(corpus, [root], kinds=select_kinds(drop=["in-section"]))
+    assert not [c for c in without if "in-section" in c.via]
+
+
+def test_dropping_membership_stops_the_document_path(tmp_path: Path) -> None:
+    """`membership` is transit and still a selectable kind. Both halves of the document path go
+    through it, so a walk that dropped the kind and crossed it anyway would make
+    `--drop membership` a green run of an arm nobody measured."""
+    corpus = two_tagged_documents(tmp_path / "kb")
+    root = chunk_id_of(corpus, "docs/one/alpha.md", 0)
+
+    assert "docs/two/beta.md" in paths_of(corpus, [c.chunk_id for c in walk(corpus, [root])])
+    dropped = walk(corpus, [root], kinds=select_kinds(drop=["membership"]))
+    assert "docs/two/beta.md" not in paths_of(corpus, [c.chunk_id for c in dropped])
+
+
+def test_a_hub_expands_once_globally(tmp_path: Path) -> None:
+    """One of the two datastax bounding rules APPROACH says make traversal survive a real graph.
+
+    Four documents on one tag, three of them roots: whichever reaches the hub first expands it and
+    the others get nothing from it. Asserted by counting the reads of **that hub's** spokes — a
+    set-level assertion cannot tell "expanded once" from "expanded three times with one result".
+    """
+    corpus = crowded_tag(tmp_path / "kb")
+    roots = [chunk_id_of(corpus, f"docs/{name}.md", 0) for name in ("a-root", "b-other", "c-other")]
+
+    connection = _traced(corpus.manifest().index_path)
+    try:
+        hub = connection.execute(
+            "SELECT id FROM nodes WHERE kind = 'tag' AND key = 'hub'"
+        ).fetchone()
+        assert hub is not None, "the fixture must derive a tag hub"
+        hub_id = int(hub[0])
+        connection.graph_calls.clear()
+        channel.expand(
+            connection,
+            roots,
+            similarity={},
+            kinds=select_kinds(),
+            local_kb=str(corpus.kb_id),
+            adjacent_k=8,
+            limit=50,
+        )
+        reads = [
+            (sql, parameters)
+            for sql, parameters in connection.graph_calls
+            if "FROM edges" in sql and "src = ?" in sql and parameters and parameters[0] == hub_id
+        ]
+    finally:
+        connection.close()
+
+    members = [call for call in reads if "ORDER BY kind, dst" in call[0]]
+    assert len(members) == 1, (
+        f"the one tag hub must be expanded once for the whole walk, not once per root: {members}"
+    )
+
+
+def test_the_fanout_cap_bites_and_bites_after_ranking(tmp_path: Path) -> None:
+    """Two claims, and the second is the one an implementation gets wrong: `adjacent_k` truncates,
+    and it truncates a list that has already been **ranked**. Truncate first and the cap selects by
+    whatever order SQLite returned — which here is ordinal order, the opposite of the cosine."""
+    corpus = two_tagged_documents(tmp_path / "kb")
+    root = chunk_id_of(corpus, "docs/one/alpha.md", 0)
+    ordinals = ordinals_of(corpus, "docs/two/beta.md")
+    assert len(ordinals) >= 2, f"beta must contribute more than one chunk: {ordinals}"
+
+    beta = {ordinal: chunk_id_of(corpus, "docs/two/beta.md", ordinal) for ordinal in ordinals}
+    # The cosine says the **last** chunk; every unranked order would hand back the first.
+    similarity = {chunk: 0.1 for chunk in beta.values()} | {beta[ordinals[-1]]: 0.9}
+
+    wide = {c.chunk_id for c in walk(corpus, [root], similarity=similarity)}
+    assert set(beta.values()) <= wide, "every chunk of beta is reachable at all"
+
+    narrow = walk(corpus, [root], adjacent_k=1, similarity=similarity, depth=1)
+    from_beta = [c.chunk_id for c in narrow if c.chunk_id in set(beta.values())]
+    assert from_beta == [beta[ordinals[-1]]], (
+        f"one slot, and it must go to the highest-ranked chunk rather than the first: {from_beta}"
+    )
+
+
+def test_the_walk_stops_at_two_logical_hops(tmp_path: Path) -> None:
+    """The upper bound, asserted from above. `DEPTH` ties to the reachability ceiling the
+    increment was licensed on, which was measured at exactly two logical hops — so a deeper walk
+    would be measuring something the precondition never covered."""
+    corpus = tag_chain(tmp_path / "kb")
+    root = chunk_id_of(corpus, "docs/m1/a.md", 0)
+    reached = walk(corpus, [root])
+
+    assert channel.DEPTH == 2
+    assert max(candidate.distance for candidate in reached) == 2, "two hops are walked"
+
+    at_two = {c.doc_id for c in reached if c.distance == 2}
+    assert at_two == {str(corpus.ids["docs/a3/c.md"])}, "C is the two-hop document, and only C"
+
+    deeper = walk(corpus, [root], depth=3)
+    assert {c.chunk_id for c in deeper} == {c.chunk_id for c in reached}, (
+        "the chain has nothing at three hops, so this only proves the fixture cannot tell the "
+        "two apart by reach — the bound itself is `channel.DEPTH`, asserted above"
+    )
+
+
+def graded_neighbour(root: Path, **options: Any) -> Corpus:
+    """A neighbour document whose chunks form a **cosine gradient** against one query word.
+
+    Sized deliberately, because the obvious small fixture cannot test this at all. `_vector`
+    returns every chunk, cosine 0.0 included, so the two-list fusion covers the whole corpus and
+    the roots are its top `fusion_top_k` — 12. A root is expanded and never emitted, so in a corpus
+    of fewer than 12 chunks *every* chunk the query scores above zero is a root, and the channel
+    can only ever return chunks at 0.0. Measured on `two_tagged_documents`: four returned, all at
+    0.0, which makes any assertion about cosine order vacuously true.
+
+    So: 18 graded sections, `adjacent_k` at 16. The gradient is `i` copies of `quokka` against
+    `40 - i` of `zebu`, so every section scores differently, and the tail that falls outside the
+    roots is still non-zero. Eight distinct non-zero cosines reach the channel's output.
+    """
+    corpus = Corpus(root, adjacent_k=16, **options)
+    corpus.write(
+        "docs/one/alpha.md",
+        sectioned("Alpha", [("Quokka", "quokka " * 40), ("Quokka habits", "quokka " * 40)]),
+        tags=["marsupial-notes"],
+    )
+    corpus.write(
+        "docs/two/beta.md",
+        sectioned(
+            "Beta",
+            [(f"Graded {i}", ("quokka " * i) + ("zebu " * (40 - i))) for i in range(1, 19)],
+        ),
+        tags=["marsupial-notes"],
+    )
+    corpus.sync()
+    return corpus
+
+
+def test_the_channel_ranks_by_the_cosine_search_computed(tmp_path: Path) -> None:
+    """End to end, through `fused_candidates` — the only place the similarity map is filled.
+
+    Every other ranking test builds its own map through the `walk()` helper, so a `search.py` that
+    stopped filling it would degrade the channel to weight-and-path ranking on every real query and
+    nothing would notice. Here the cosines are recomputed **independently** from the stored vectors
+    and the returned order is checked against them: a stable re-sort on `(-cosine, distance)` must
+    be a no-op.
+
+    **Two guards against the check passing for another reason.** The cosines must differ, or any
+    order at all satisfies the re-sort. And a *two*-hop chunk must outrank a *one*-hop one: with
+    the map empty, `_order`'s first term is constant and `distance` decides, so every one-hop
+    chunk would come first. That inversion is the property only a live cosine produces.
+    """
+    corpus = graded_neighbour(tmp_path / "kb", graph_channel="expand")
+    connection = corpus.open()
+    try:
+        fused = fused_candidates(connection, corpus.manifest(), "quokka", backend=HashingBackend())
+        chunk_ids, matrix = store.load_vectors(connection, dim=DIM)
+        query = unit_vectors(HashingBackend().embed(["quokka"]))[0]
+        cosine = {
+            chunk: float(value)
+            for chunk, value in zip(chunk_ids, unit_vectors(matrix) @ query, strict=True)
+        }
+    finally:
+        connection.close()
+
+    assert fused.graph, "the channel found something to rank"
+    scores = {cosine[candidate.chunk_id] for candidate in fused.graph}
+    assert len(scores) > 1, (
+        f"every returned chunk scores the same against this query ({scores}); the check would be "
+        "satisfied by any order at all"
+    )
+    ordered = sorted(fused.graph, key=lambda c: (-cosine[c.chunk_id], c.distance))
+    assert [c.chunk_id for c in fused.graph] == [c.chunk_id for c in ordered], (
+        "the channel must rank on the cosines `search` computed, not on a map it never received"
+    )
+
+    distances = [candidate.distance for candidate in fused.graph]
+    assert any(
+        far == 2 and 1 in distances[position + 1 :] for position, far in enumerate(distances)
+    ), (
+        f"no two-hop chunk outranks a one-hop one ({distances}) — this order is also what an "
+        "empty similarity map produces, so it distinguishes nothing"
+    )
+
+
+def test_the_channel_never_returns_a_chunk_the_filters_excluded(tmp_path: Path) -> None:
+    """A neighbour outside the caller's filters is a row this search was told not to return — and
+    it is dropped inside the walk, so it does not spend a slot of the fan-out budget first."""
+    corpus = two_tagged_documents(tmp_path / "kb", graph_channel="expand")
+    connection = corpus.open()
+    try:
+        unfiltered = fused_candidates(
+            connection, corpus.manifest(), "quokka", backend=HashingBackend()
+        )
+        filtered = fused_candidates(
+            connection,
+            corpus.manifest(),
+            "quokka",
+            backend=HashingBackend(),
+            filters=Filters(path_prefix="docs/one/"),
+        )
+    finally:
+        connection.close()
+
+    assert "docs/two/beta.md" in paths_of(corpus, [c.chunk_id for c in unfiltered.graph])
+    assert "docs/two/beta.md" not in paths_of(corpus, [c.chunk_id for c in filtered.graph])
+    assert paths_of(corpus, filtered.order) == {"docs/one/alpha.md"}
+
+
+def test_the_in_degree_arm_changes_the_order_it_claims_to(tmp_path: Path) -> None:
+    """`expand-in-degree` is one of the matrix's seven legs, so a number it reports must come from
+    code a test has run. The prior is multiplicative, so a chunk at cosine 0 stays at 0."""
+    corpus = linked_documents(tmp_path / "kb")
+    root = chunk_id_of(corpus, "docs/one/alpha.md", 0)
+    beta = chunk_id_of(corpus, "docs/two/beta.md", 0)
+
+    plain = walk(corpus, [root], similarity={beta: 0.5})
+    salient = walk(
+        corpus,
+        [root],
+        similarity={beta: 0.5},
+        ranking=channel.Ranking(in_degree_salience=True),
+    )
+    assert [c.chunk_id for c in plain] == [c.chunk_id for c in salient], (
+        "one reachable document, so the arm may not change *what* is reached"
+    )
+
+    connection = corpus.open()
+    try:
+        inbound = int(
+            connection.execute(
+                "SELECT count(*) FROM links WHERE dst_doc_id = ?",
+                (str(corpus.ids["docs/two/beta.md"]),),
+            ).fetchone()[0]
+        )
+    finally:
+        connection.close()
+    assert inbound == 1, "beta is cited once; without that the arm has nothing to weigh"
 
 
 # --------------------------------------------------------------------------------------------

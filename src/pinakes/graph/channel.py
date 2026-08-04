@@ -118,6 +118,11 @@ exclusion exists to keep out — with no filter downstream, because those two fi
 
 _DOC_HUB_KINDS: Final = frozenset({"co-located", "shared-tag"})
 
+MEMBERSHIP: Final = "membership"
+"""Transit, and still a kind a caller may drop. Both halves of the document path go through it —
+chunk → its document, and a reached document → its chunks — so dropping it leaves a walk over
+chunk-level structure alone."""
+
 
 @dataclass(frozen=True, slots=True)
 class Reached:
@@ -182,6 +187,7 @@ def expand(
     depth: int = DEPTH,
     limit: int,
     ranking: Ranking = GATED_RANKING,
+    allowed: Collection[int] | None = None,
 ) -> list[Reached]:
     """The channel's ranking, best first, at most `limit` long.
 
@@ -198,6 +204,7 @@ def expand(
         local_kb=local_kb,
         adjacent_k=max(0, adjacent_k),
         ranking=ranking,
+        allowed=None if allowed is None else frozenset(allowed),
     ).run(roots, depth=depth, limit=limit)
 
 
@@ -221,6 +228,7 @@ class _Walk:
         local_kb: str,
         adjacent_k: int,
         ranking: Ranking = GATED_RANKING,
+        allowed: frozenset[int] | None = None,
     ) -> None:
         self._connection = connection
         self._similarity = similarity
@@ -228,6 +236,7 @@ class _Walk:
         self._local_kb = local_kb
         self._adjacent_k = adjacent_k
         self._ranking = ranking
+        self._allowed = allowed
         self._in_degree: dict[str, int] = {}
 
         self._expanded: set[int] = set()
@@ -369,7 +378,15 @@ class _Walk:
         self._expand_document(node, found)
 
     def _expand_document(self, chunk_node: int, found: dict[int, _Candidate]) -> None:
-        """The document-level half: transit into the chunk's own document, once globally."""
+        """The document-level half: transit into the chunk's own document, once globally.
+
+        **`membership` is a selectable kind and it is honoured here**, even though it is transit
+        rather than signal: the transit *is* the membership edge, so a walk that dropped the kind
+        and still crossed it would make `--drop membership` a green run of an arm nobody measured
+        — the defect `edges.select_kinds` refuses an unknown name to prevent, from the inside.
+        """
+        if MEMBERSHIP not in self._kinds:
+            return
         described = self._nodes.get(chunk_node) or self._describe_one(chunk_node)
         if described is None:  # pragma: no cover — the caller only passes live chunk nodes
             return
@@ -445,11 +462,23 @@ class _Walk:
         reports disagree with the walk that produced the ranking it is explaining.
         """
         ranked = sorted(
-            candidates,
+            # Already found this hop, or already emitted by an earlier one: a slot spent on it
+            # adds nothing, and dropping it *before* the cut is the same rule the membership
+            # exclusion applies one level up. `found` still keeps the **first** path to a node.
+            [c for c in candidates if c.node not in found and self._eligible(c.key)],
             key=lambda c: (-self._scored(c.key), -c.weight, *self._position(c.key)),
         )
         for candidate in ranked[: self._adjacent_k]:
             found.setdefault(candidate.node, candidate)
+
+    def _eligible(self, node_key: str) -> bool:
+        """Resolvable, not already emitted, and inside the caller's filters."""
+        chunk_id = self._chunk_id(node_key)
+        if chunk_id is None:  # pragma: no cover — every chunk node names a live chunk
+            return False
+        if chunk_id in self._emitted:
+            return False
+        return self._allowed is None or chunk_id in self._allowed
 
     # -- lookups -----------------------------------------------------------------------------
 
@@ -475,7 +504,12 @@ class _Walk:
         on. The same function ranks the fan-out and the final list, so an arm cannot select one
         set of neighbours and then order them by a different rule."""
         chunk_id = self._chunk_id(node_key)
-        cosine = 0.0 if chunk_id is None else self._similarity.get(chunk_id, 0.0)
+        # Clamped at zero, for §4.1's reason: a non-positive cosine means the chunk shares no
+        # direction at all with the query, which is not weak evidence but none. Unclamped, a chunk
+        # the vector stage never scored (0.0) would outrank one with a real negative score, and
+        # under the salience arm a popular document's negative chunk would be pushed *further*
+        # down than an unpopular one's — a prior making a ranking worse the more it applies.
+        cosine = max(0.0, 0.0 if chunk_id is None else self._similarity.get(chunk_id, 0.0))
         if not self._ranking.in_degree_salience:
             return cosine
         return cosine * (1.0 + math.log1p(self._inbound(edge_set.parse_chunk_key(node_key)[0])))
@@ -521,7 +555,11 @@ class _Walk:
         return self._nodes[node]
 
     def _members(self, document: int) -> list[tuple[int, str, str]]:
-        """A document's `membership` spokes, with each member's kind and key in the same query."""
+        """A document's `membership` spokes, with each member's kind and key in the same query.
+
+        The kind is hardcoded because the *selection* is upstream: `_expand_document` returns
+        early when `membership` is dropped, so nothing reaches here to be filtered.
+        """
         return [
             (int(row[0]), str(row[1]), str(row[2]))
             for row in self._connection.execute(

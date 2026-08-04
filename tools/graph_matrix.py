@@ -197,18 +197,23 @@ def _document_ids(connection: Any, paths: Sequence[str]) -> dict[str, str]:
 
 
 def report(results: Sequence[LegResult], *, gated_class: str) -> str:
-    baseline = next(result for result in results if result.spec.name == "off")
+    """The table. **Without the `off` leg there is nothing to compare against**, so the discordant
+    columns are blank rather than the function raising — `--legs` exists for a partial re-run, and
+    a tool that crashes on its own documented flag is a tool that loses the run it just paid for.
+    """
+    baseline = next((result for result in results if result.spec.name == "off"), None)
     lines = [
         "leg                       questions  recall@k    mrr   "
         f"{gated_class:>10}  improved  regressed   ms/query",
     ]
     for result in results:
-        improved, regressed = discordant(baseline, result, gated_class)
+        improved, regressed = discordant(baseline, result, gated_class) if baseline else ([], [])
         lines.append(
             f"{result.spec.name:<24}  {result.metrics.questions:>9}  "
             f"{result.metrics.recall_at_k:>8.4f}  {result.metrics.mrr:>5.3f}  "
             f"{result.metrics.by_kind.get(gated_class, 0.0):>10.4f}  "
-            f"{len(improved):>8}  {len(regressed):>9}  {result.per_query_ms:>9.1f}"
+            f"{len(improved) if baseline else '—':>8}  "
+            f"{len(regressed) if baseline else '—':>9}  {result.per_query_ms:>9.1f}"
         )
     return "\n".join(lines)
 
