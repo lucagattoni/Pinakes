@@ -1,4 +1,4 @@
-## The progress printer's closing newline assumed the loop always reaches its own end (20260804 13:30)
+## The progress printer's closing newline assumed the loop always reaches its own end (20260804 13:07)
 
 **MEDIUM — an independent adversarial review found that `cli._progress_printer`'s "finished" branch
 (`done >= total`) is the only place the printer ever emits its closing newline, and `_run`'s loop

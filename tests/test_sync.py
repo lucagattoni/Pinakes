@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 import pytest
 import yaml
+from conftest import pdf_extraction_runnable
 
 from pinakes import store
 from pinakes.embed import EmbeddingBackend, ModelInfo, Vectors
@@ -487,6 +488,7 @@ def test_a_real_sync_stamps_utc_not_local_under_a_non_utc_timezone(
     assert recorded <= after.replace(second=0, microsecond=0) + timedelta(minutes=1)
 
 
+@pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")
 def test_estimate_only_stamps_utc_not_local_under_a_non_utc_timezone(
     monkeypatch: pytest.MonkeyPatch, kb: Path
 ) -> None:
@@ -494,7 +496,8 @@ def test_estimate_only_stamps_utc_not_local_under_a_non_utc_timezone(
     Isolated from the network and from real pricing — `default_transport`/`estimate_only`
     (`extract.claude`) and `estimate_document` (`budget.estimate`) are faked — so the only thing
     under test is the timestamp `_estimate_only` computes itself; `page_count` still runs for real
-    against a genuine one-page fixture, since faking it would leave nothing to walk.
+    against a genuine one-page fixture (`pinakes[pdf]`, hence the skip marker), since faking it
+    would leave nothing to walk.
     """
     manifest_path = kb / "pinakes.toml"
     manifest_path.write_text(
