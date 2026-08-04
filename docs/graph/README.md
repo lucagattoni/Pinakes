@@ -6,7 +6,9 @@ Research, not specification: where these disagree with [`../DESIGN.md`](../DESIG
 where they disagree with [`../../plans/links-and-graph.md`](../../plans/links-and-graph.md) about
 what is built when, the plan wins.
 
-Nothing here is built. See [`../STATUS.md`](../STATUS.md).
+**Partly built.** The links release this research shaped shipped in 0.5.0 and 0.6.0, and G1, G2
+and G4 of the graph release followed; the graph release's remaining increments are blocked on a
+corpus, not on code. [`../STATUS.md`](../STATUS.md) is the authority on what exists.
 
 ## Start here
 

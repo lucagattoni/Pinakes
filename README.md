@@ -53,8 +53,8 @@ See [what is actually built](docs/STATUS.md).
 renames, moves, and being shared with someone else. `pnk links` and the `pinakes_links` tool walk
 them — bounded, and a neighbour in another KB is returned but never expanded, because this index
 holds that KB's links pointing *here* and not its own. `pnk sync --scan-links` learns what points
-back by reading the other KB's committed sidecars. Authoring one from the command line is [still to
-come](docs/STATUS.md#release-roadmap).
+back by reading the other KB's committed sidecars, and `pnk link` authors one from the command
+line, straight into the source document's own sidecar.
 
 **Your sidecars are yours.** They are read and written through a round-trip parser, so a rewrite
 keeps your comments, your quoting and your own key order — and a value is stored as you wrote it:

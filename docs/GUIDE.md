@@ -259,7 +259,8 @@ sync finding a live lock exits 0 quietly, and `pnk doctor` reports any held lock
 
 ## Watching what it costs
 
-Nothing in the shipped surface spends money yet — but the accounting is already there, and
+The only shipped surface that spends is the opt-in Claude-vision extractor (0.3.0), and the
+accounting is already there for it — every call is priced and reserved before it is made, and
 `pnk budget` reads it:
 
 ```bash
@@ -408,7 +409,10 @@ them and `pnk links` traverses them: see [Following links between two KBs](#foll
 | A sync seems stuck behind a lock | A killed sync, or another machine | `pnk doctor` reports the holder and age; `pnk sync --force-unlock` if it is not this host |
 | Searches slow past ~50k chunks | NumPy tier is exact, not sublinear | Expected; `pnk doctor` warns. The `sqlite-vec` tier is the template release — splitting the KB is the honest answer |
 
-Nothing here spends money, and nothing can: see [STATUS](STATUS.md#the-surface-you-can-use-today).
+Everything in this section is free. The one path that can spend is the opt-in `claude-vision`
+extractor above, which needs `pinakes[claude]`, an explicit `--extract=claude-vision` or manifest
+key, **and** a real `ANTHROPIC_API_KEY`; it is bounded by the three `[budget]` caps and recorded in
+`pnk budget` ([STATUS](STATUS.md#the-surface-you-can-use-today)).
 
 ## Following links between two KBs
 

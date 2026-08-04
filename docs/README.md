@@ -97,9 +97,9 @@ is what stops the next plan from assuming a number that a parallel session has a
 > ### 🚫 Unbuilt work is named, never numbered
 >
 > **A version number belongs to a release when it is cut — never before.** Refer to unbuilt work by
-> name: **the paid-extraction release**, **the links release**, **the graph release**, **the deep
-> release**, **the template
-> release**. Never write `v0.4` for something that does not exist — not in docs, not in `--help`, not
+> name: **the graph release**, **the deep release**, **the template release**. (A name leaves this
+> list at its release's *final* cut — the paid-extraction release became 0.3.0, the links release
+> 0.5.0 + 0.6.0.) Never write `v0.4` for something that does not exist — not in docs, not in `--help`, not
 > in an error message, not in a code comment.
 >
 > Decided 20260729 00:09, after `v0.3` came to mean two different releases at once and picking either

@@ -62,7 +62,9 @@ promise. The wider design note is [KB-UPDATES.md](KB-UPDATES.md).
 
 ## `[sources]`
 
-What gets indexed. Paths are always relative to the KB root, POSIX separators.
+What gets indexed. `roots` entries are relative to the **KB root**; `include` and `exclude`
+patterns are relative to **each `roots` entry** — so with `roots = ["docs/"]`, the pattern matching
+`docs/a.md` is `**/*.md`, never `docs/**/*.md`. POSIX separators throughout.
 
 | Key | Default | Notes |
 |---|---|---|
@@ -161,8 +163,10 @@ Consumed only when `[retrieval] rerank = "local"`. Mirrors `[embedding]`.
 
 ## `[budget]`
 
-Parsed and validated from v0.1 so a KB authored today stays valid later. **Nothing spends against it
-yet** — see [STATUS](STATUS.md#the-surface-you-can-use-today).
+Parsed and validated since v0.1 so a KB authored today stays valid later, and **enforced since
+0.3.0**: all three caps are checked before each paid call and again for the whole document, and a
+breach refuses rather than overspends ([STATUS](STATUS.md#the-surface-you-can-use-today),
+[DESIGN §5](DESIGN.md#5-cost-control)).
 
 | Key | Default | Notes |
 |---|---|---|
@@ -234,7 +238,7 @@ provenance:
 | `title` | you | Shown in results |
 | `tags` | you | What `pnk search --tag` filters on |
 | `created` | sync | Optional; date filters use the document's mtime instead, since every document has one |
-| `links[].to` | you / [`pnk link`](CLI.md#pnk-link) | A `pnk://` URI. Aliases and `self` are resolved to ULIDs **on write**, so what reaches disk survives being shared |
+| `links[].to` | you / [`pnk link`](CLI.md#pnk-link) | A `pnk://` URI, ULIDs only. `self` expands to this KB's own ULID on write. An **alias** here is a hard error at read — `pnk link` resolves `<alias>:<path>` on the command line, before anything reaches disk, so what is stored survives being shared |
 | `links[].rel` | you / [`pnk link`](CLI.md#pnk-link) | Free-form relation, e.g. `cites`, `supersedes` |
 | `provenance.source` | you | Where the document came from |
 | `provenance.extraction` | **sync, paid PDFs only** | `{backend, fingerprint, extracted, content_hash}` |
