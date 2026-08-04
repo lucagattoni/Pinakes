@@ -14,7 +14,7 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**One live item, raised 20260804 05:00** — the first defect the RFC realism corpus surfaced, and it
+**Eleven live items as of 20260804 08:30** — ten of them from building the RFC realism corpus, which is what that corpus was for. **Earlier note: one live item, raised 20260804 05:00** — the first defect the RFC realism corpus surfaced, and it
 destroys user work.
 
 **Earlier state, for the record: no live items as of 20260804 04:20.** The one item raised on 20260803 was built and merged the
@@ -25,6 +25,76 @@ unblocks it is a corpus ([`20260801_0749-realism-corpus.md`](20260801_0749-reali
 ---
 
 ## Live
+
+### 2 · The sync lock's timestamp is UTC; every other timestamp is local
+
+**Verified at source 20260804 08:30.** `lock.py:138` writes `datetime.now(UTC).strftime("%Y%m%d %H:%M")`; `sync.py:709` writes `datetime.now().strftime(...)`. **Identical format, no marker, different clocks.** In Europe/Rome in August a lock taken 30 seconds ago reads as **two hours old**.
+
+**Why it is the most dangerous of these:** the age is the evidence a user weighs before `pnk sync --force-unlock`, and the documented remedy for a stale lock. A lock that looks two hours old but is live gets force-unlocked *against a running sync*.
+
+**Required:** one clock for both, or an explicit marker on each. Prefer local for both — the manifest's is local and it is the one a human compares against a wall clock. A test that sets a non-UTC `TZ`, takes a lock, and asserts the reported age is under a minute; it fails today under any non-UTC zone and passes under `TZ=UTC`, which is why the test must set the zone rather than inherit it.
+
+---
+
+### 3 · `strategy = "structural"` degrades to size-based chunking in silence
+
+**Measured on the RFC corpus:** **106 806 chunks, every one with `heading_path` empty** — over 300 RFCs, the most rigidly sectioned plain text in existence. The heading grammar is Markdown-shaped; RFC section numbering is not, so nothing matches and the strategy quietly becomes size-based. Nothing warns: `grep heading src/pinakes/doctor.py` returns nothing.
+
+**Two consequences, and the second is why this is not cosmetic.** Citations lose their heading component for the whole corpus. And `heading_path` is what `in-section`, `parent` and `child` derive from — **three of G3's seven edge kinds derive zero edges on a corpus whose headings were not recognised**, which a graph measurement would read as "structure does not help".
+
+**Required:** a `pnk doctor` check reporting the share of chunks with an empty `heading_path`, WARN past a threshold, naming `[chunking] strategy` and the corpus's format. Detection, not a new grammar — extending the grammar to RFC numbering is a separate decision. **The check must count over chunks actually in the index**, never re-chunk a sample: a check that re-derives its own input is checking a copy.
+
+---
+
+### 4 · The `[light]` first-sync error prescribes the 2 GB install to a user who chose `[light]`
+
+A first sync on a `[light]` install fails naming `sentence-transformers` — the torch dependency the extra exists to avoid — while `fastembed` is installed and visible. The manifest edit (two `provider` lines) is the actual fix and the message does not mention it, though `README.md` and `docs/GUIDE.md` both do.
+
+**Required:** when the configured provider is missing *and* a registered alternative is installed, name the alternative and the two manifest keys to change. Test: `[light]` present, `sentence-transformers` absent → the message contains `fastembed` and `[embedding]`, and does **not** recommend installing torch.
+
+---
+
+### 5 · `pnk init` cannot adopt a directory that already has content
+
+`_check_target` refuses a non-empty directory, so a KB cannot be initialised inside an existing repository — which is what [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) prescribes and what everyone does: create the repo, clone it, then init. A `.git`, a README and a `pyproject.toml` are already "not empty", and the message *"clear this one first"* is alarming when the directory holds the documents.
+
+**Hit three times independently** (probe rehearsal, dogfooding KB, corpus). **Required:** a decision, then an implementation — the guard exists to stop `pnk init` scribbling over someone's directory, so the answer is probably *refuse only when the directory is already a KB, or when a name it would write already exists*, rather than a blanket emptiness test. Whatever is chosen, `docs/GUIDE.md` gets the retrofit path.
+
+---
+
+### 6 · The first sync is multi-hour and completely silent
+
+~2.4 documents/minute on CPU; 300 documents ran over two hours with no output. **"Working" is indistinguishable from "hung"**, which is what makes findings 1 and 2 expensive: a user who cannot tell reaches for the remedy, and the remedies destroy work.
+
+**Required:** periodic progress on a TTY — documents done / total and a rate. Not a spinner: the number is what distinguishes slow from stuck. Silent when not a TTY, so `--ci` and hook output stay clean.
+
+---
+
+### 7 · Every document is titled by its filename
+
+All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so search results are unreadable. `sync` mints the title from the filename when the document has no Markdown H1 — correct for Markdown, useless for anything else.
+
+**Deliberately not worked around** by the corpus agent: hand-writing 300 titles would have hidden the finding, and editing the RFC text would have broken the licence position (verbatim reproduction is the grant). **Required:** a decision on whether a non-Markdown first line may become a title, recorded either way. This is a *quality* finding, not a defect — `title` is documented as the user's.
+
+---
+
+### 8 · `uv add "pinakes[light]"` fails where a KB user runs it
+
+The documented install line needs a `pyproject.toml`; a fresh KB directory has none, so it exits `No pyproject.toml found`. **Required:** `docs/GUIDE.md` shows the form that works in a bare directory (`uv init` first, or `uvx`), since that is where a new user is standing.
+
+---
+
+### 9 · `pnk doctor` prints the operator's home directory
+
+Absolute paths in output that is the natural thing to paste into an issue. **Required:** print paths relative to the KB root where they are inside it. Minor, but it is the one command whose output gets shared.
+
+---
+
+### 10 · Same-host lock reclaim is documented in `doctor` and not in the GUIDE
+
+The resumed corpus sync reclaimed its own stale lock and continued incrementally — `105 unchanged`, nothing re-embedded. That is the *good* behaviour, and `docs/GUIDE.md` offers only `--force-unlock`, which is the destructive one. **Required:** GUIDE says a lock left by a dead process on this host is reclaimed automatically, and `--force-unlock` is for another host.
+
+---
 
 ### 1 · `pnk doctor`'s model-coherence remedy destroys an interrupted sync's work
 
