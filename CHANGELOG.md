@@ -10,6 +10,48 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] — 20260804 13:35
+
+### Added
+
+- **`pnk sync` shows live progress on a terminal.** A CPU-only embedding run measured at ~2.4
+  documents/minute — 300 documents ran over two hours with nothing printed, making a slow sync and a
+  hung one look identical. `pnk sync` now prints `documents done/total` and a rate on one
+  self-overwriting line, throttled to about once a second, whenever stdout is a real terminal and
+  `-q`/`--quiet` was not passed; silent otherwise, so `--ci`, git hooks and piped output are
+  unaffected. `sync()` itself does no terminal I/O — it drives an injected `SyncOptions.progress`
+  callback, the same shape as the existing `ask` callback, so it stays testable without a tty.
+
+### Fixed
+
+- **`pnk doctor` no longer tells an interrupted first sync to `--rebuild`.** The embedding identity
+  keys are written to `meta` only after the document loop finishes, so a first sync killed mid-run
+  left them entirely absent — and the model-coherence check read that the same as a genuine model
+  change, reporting `FAIL` with a remedy that discards every embedding the interrupted sync already
+  wrote. Absent identity keys now report their own `WARN sync completeness`, remedy `pnk sync`
+  (incremental, keeps the work already done); keys present but different from the manifest still
+  `FAIL model coherence` with `--rebuild`, unchanged; a partially-written `meta` — some keys present,
+  some absent — still falls to the `FAIL` side, never the benign branch.
+
+- **`pnk sync`'s own timestamps are UTC, matching `sync.lock`'s.** `sync.py` stamped
+  `datetime.now()` (local) while `lock.py` already stamped `datetime.now(UTC)` — identical
+  `YYYYMMDD HH:MM` format, no marker, different clocks. In a zone ahead of UTC a lock taken seconds
+  ago could read hours old next to a `sync.py`-written timestamp from the same moment, which is the
+  evidence a user weighs before `pnk sync --force-unlock` — the risk being a force-unlock against a
+  sync that is still running. Both `sync()`'s own stamp (written into `meta['built_at']`, every
+  sidecar's `created`, and every failure's `happened`) and `--estimate-only`'s price-staleness clock
+  are now `datetime.now(UTC)`.
+
+- **The GUIDE's install line works where a KB user actually stands.** `uv add "pinakes[light]"`
+  needs a `pyproject.toml` and a knowledge-base directory has none, so the documented first command
+  exited `No pyproject.toml found`. The guide now leads with the two forms that work in a bare
+  directory — `uv init` first, or `uvx` with no install at all.
+- **The GUIDE names the safe lock remedy before the destructive one.** A lock left by a dead process
+  *on this host* is reclaimed automatically by re-running `pnk sync`, which continues incrementally
+  and re-embeds nothing; `--force-unlock` is for a lock held by another host. Troubleshooting
+  previously offered only `--force-unlock`. It also says to check the process rather than the age,
+  since the lock's clock is UTC while an older KB's manifest is local.
+
 ## [0.9.0] — 20260804 12:28
 
 ### Added
@@ -2164,7 +2206,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.10.0
 [0.9.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.9.0
 [0.8.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.8.0
 [0.7.1]: https://github.com/lucagattoni/pinakes/releases/tag/v0.7.1
