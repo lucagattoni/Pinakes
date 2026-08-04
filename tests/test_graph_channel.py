@@ -447,8 +447,8 @@ def _assert_flat_sections(corpus: Corpus, path: str, *, sections: int) -> None:
         rows = [
             (int(r[0]), None if r[1] is None else str(r[1]))
             for r in connection.execute(
-                "SELECT c.ordinal, c.heading_path FROM chunks c JOIN documents d ON d.id = c.doc_id "
-                "WHERE d.path = ? ORDER BY c.ordinal",
+                "SELECT c.ordinal, c.heading_path FROM chunks c "
+                "JOIN documents d ON d.id = c.doc_id WHERE d.path = ? ORDER BY c.ordinal",
                 (path,),
             )
         ]
