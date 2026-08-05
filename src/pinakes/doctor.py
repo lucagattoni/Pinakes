@@ -521,7 +521,7 @@ def _index(manifest: Manifest) -> Iterator[Check]:
         yield _calibration(manifest)
         yield _links(connection, manifest, active)
         yield _edge_hubs(connection)
-        yield _heading_coverage(connection)
+        yield _heading_coverage(manifest, connection)
 
         if counts["chunks"] > LARGE_CORPUS_CHUNKS:
             yield Check(
@@ -841,7 +841,7 @@ def _edge_hubs(connection: sqlite3.Connection) -> Check:
     return Check("edge hubs", Status.OK, detail)
 
 
-def _heading_coverage(connection: sqlite3.Connection) -> Check:
+def _heading_coverage(manifest: Manifest, connection: sqlite3.Connection) -> Check:
     """What share of chunks carry a `heading_path` — and which source types carry none at all.
 
     **This exists because the silence was measured, not imagined.** The RFC realism corpus indexed
@@ -864,6 +864,19 @@ def _heading_coverage(connection: sqlite3.Connection) -> Check:
     **Counted over chunks in the index, never by re-chunking a sample.** A check that re-derives
     its own input is checking a copy: it would report what today's chunker *would* do, not what the
     index every query actually runs against holds.
+
+    **Only `markdown` at 0% WARNs — everything else is reported as OK with a note.** The first
+    version warned whenever *any* source type sat at zero, which meant a KB containing one `.py`
+    file warned on every run, forever, with a remedy that amounted to *"this is a limit of the
+    tool"*. An un-actionable warning that cannot be cleared is how doctor output stops being read
+    at all, and that costs the actionable warnings too. `markdown` at 0% is the opposite case: the
+    chunker reads ATX headings, so a Markdown corpus with none is being silently size-sliced, and
+    the user can fix it. Decided by the user 20260805.
+
+    The note distinguishes the three cases, because they need different actions and only one is
+    nothing-to-be-done: `text` at 0% points at `[chunking] headings` — and says whether it is
+    already set, in which case the grammar was *offered* those documents and refused them. `code`
+    and `pdf` genuinely cannot carry one today.
     """
     rows = connection.execute(
         "SELECT d.source_type AS source_type, count(*) AS total, "
@@ -882,32 +895,47 @@ def _heading_coverage(connection: sqlite3.Connection) -> Check:
     if not silent:
         return Check("heading coverage", Status.OK, detail)
 
-    listed = ", ".join(f"{row['source_type']} ({int(row['total'])})" for row in silent)
-    unsupported = sorted(
-        str(row["source_type"]) for row in silent if str(row["source_type"]) != "markdown"
+    kinds = {str(row["source_type"]): int(row["total"]) for row in silent}
+    listed = ", ".join(f"{kind} ({count})" for kind, count in sorted(kinds.items()))
+    note = (
+        f" No chunk of these source types carries one: {listed} — so `in-section`, `parent` and "
+        "`child` derive nothing from them and their citations have no heading component."
     )
-    remedy = (
-        f"No chunk of these source types carries a heading path: {listed}. "
-        "`in-section`, `parent` and `child` edges derive nothing from them and their citations "
-        "have no heading component, so a retrieval or graph measurement over this KB is bounded "
-        "by that rather than by what the graph is worth."
-    )
-    if unsupported:
-        remedy += (
-            f" Heading detection runs for `markdown` only, so {', '.join(unsupported)} cannot "
-            "carry one today whatever the document contains — a limit of `[chunking] strategy`, "
-            "not of your files."
-        )
-    if any(str(row["source_type"]) == "markdown" for row in silent):
-        remedy += (
-            " The `markdown` share is a property of your documents: `structural` chunking reads "
-            "ATX headings (`# Title`), so files using another convention record none."
-        )
+
+    if "markdown" not in kinds:
+        # Reported, never WARNed. Nothing here is clearable by an action the user can take
+        # *today*, and an un-actionable warning that fires on every run is how doctor output stops
+        # being read at all — which costs the actionable warnings too.
+        for kind in sorted(kinds):
+            if kind == "text":
+                note += (
+                    ' `text` can carry one: set `[chunking] headings = "numbered"` and run '
+                    "`pnk sync --rebuild`"
+                    + (
+                        ". It is already set, so these documents were *offered* to the grammar and "
+                        "refused — their numbering does not form an outline it will trust, and it "
+                        "declines rather than inventing one"
+                        if manifest.chunking.headings != "none"
+                        else " (currently unset)"
+                    )
+                    + "."
+                )
+            else:
+                note += (
+                    f" `{kind}` cannot carry one today whatever the document contains — the "
+                    "chunker extracts headings for `markdown` and `text` only. A limit of the "
+                    "tool, not of your files."
+                )
+        return Check("heading coverage", Status.OK, detail + note)
+
     return Check(
         "heading coverage",
         Status.WARN,
-        f"{detail}; {len(silent)} source type(s) at 0%",
-        remedy,
+        f"{detail}; `markdown` is at 0%." + note,
+        "A `markdown` corpus with no heading path at all means the chunker read none: it reads "
+        "ATX headings (`# Title`), so files using another convention record nothing and are "
+        "chunked by size alone. That is the case this check exists for, and it is fixable — the "
+        "others reported above are not, and do not warn.",
     )
 
 

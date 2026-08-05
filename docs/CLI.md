@@ -176,13 +176,22 @@ happens** rather than clearing once it has been printed. An index built before t
 recorded carries none of it, which reads as *unknown* and never as drifted — so upgrading never
 demands a rebuild.
 
-**`heading coverage` reports what share of indexed chunks carry a `heading_path`, and WARNs when a
-source type carries none at all.** The predicate is **zero for a source type**, never a fitted
-share: a document's chunks before its first heading legitimately have none, so a partial share is
-ordinary, while a whole source type at zero means the structure was never extracted. Two causes and
-they need different answers — a source type that *cannot* carry one (heading detection runs for
-`markdown` only; everything else goes through the plain-text path), versus a Markdown corpus using
-a convention the grammar does not recognise.
+**`heading coverage` reports what share of indexed chunks carry a `heading_path`, and **WARNs only
+when `markdown` is at 0%**.** The predicate is **zero for a source type**, never a fitted share: a
+document's chunks before its first heading legitimately have none, so a partial share is ordinary,
+while a whole source type at zero means the structure was never extracted.
+
+**Every other source type at 0% is reported as OK with a note, not a warning.** A KB holding one
+`.py` file would otherwise warn on every run forever, with a remedy amounting to *"this is a limit
+of the tool"* — and an un-actionable warning that cannot be cleared is how doctor output stops being
+read at all, which costs the actionable warnings too. The three cases need different answers and the
+note says which applies:
+
+| at 0% | what it means |
+|---|---|
+| **`markdown`** | **WARN.** The chunker reads ATX headings (`# Title`), so a Markdown corpus with none is being silently chunked by size. Fixable, and the case this check exists for |
+| `text` | OK with a note pointing at [`[chunking] headings`](MANIFEST.md#chunking) — and saying whether it is *already* set, in which case the grammar was offered these documents and **refused** them rather than inventing an outline |
+| `code`, `pdf` | OK with a note. They cannot carry one today whatever the document contains |
 
 **It matters beyond citations.** `heading_path` is what the `in-section`, `parent` and `child`
 edges derive from, so a corpus at zero derives none of them — and a graph measurement over such a
