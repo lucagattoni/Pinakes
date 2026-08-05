@@ -121,6 +121,67 @@ def test_an_unsynced_kb_says_the_link_checks_did_not_run(kb: Path) -> None:
     assert "coverage" in (_remedy(kb, "index") or "")
 
 
+# --- doctor never prints an absolute path under the KB root (open-corrections item 5) -----------
+
+
+def test_model_cache_path_outside_the_kb_root_is_left_absolute(kb: Path) -> None:
+    """The model cache is not under the KB root, so it is deliberately never rewritten — see the
+    doctor module's `_de_homed` docstring for why (relativising a path outside the KB would either
+    be a no-op full of `..` noise, or invent a base that means nothing). Pins the boundary the two
+    leak tests below rely on: only a path under `manifest.root` gets rewritten, everything else is
+    printed exactly as the module that raised it wrote it."""
+    from pinakes.embed import hf_cache_dir
+
+    status, detail = checks(kb)["model cache"]
+    assert status is Status.OK
+    assert str(hf_cache_dir()) in detail
+
+
+def test_an_unreadable_sidecar_error_does_not_leak_the_kb_root(kb: Path) -> None:
+    """`sidecar.read` builds `SidecarError` from the absolute `Path` it was given
+    (`f"{path} {message}."`), and `_sidecars` used to forward that text verbatim after its own
+    relative-path prefix — so the absolute path still appeared, once, right after the relative one
+    doctor.py had just constructed correctly."""
+    broken = kb / "docs" / f"broken.md{SIDECAR_SUFFIX}"
+    broken.write_text("{not: valid: yaml:", encoding="utf-8")
+
+    status, detail = checks(kb)["sidecars"]
+    assert status is Status.FAIL
+    assert str(kb) not in detail, "the KB root must not appear in doctor's own output"
+    assert "docs/broken.md.pnk.yaml" in detail, "the file is still named, relative to the KB root"
+
+
+def test_a_schema_mismatch_error_does_not_leak_the_kb_root(kb: Path) -> None:
+    """`store._open` builds `IndexSchemaError`/`StoreError` from the absolute index path — reached
+    here without a real sync, since `store.create` plus a bad `schema_version` is enough to make
+    `connect_ro` refuse it, exactly as `_index` does on every `pnk doctor` run."""
+    connection = store.create(load(kb).index_path)
+    store.set_meta(connection, {"schema_version": "999"})
+    connection.commit()
+    connection.close()
+
+    status, detail = checks(kb)["index"]
+    assert status is Status.FAIL
+    assert str(kb) not in detail
+    assert ".pinakes/index.db" in detail
+
+
+def test_a_ledger_read_error_does_not_leak_the_kb_root(kb: Path) -> None:
+    """`budget.ledger.read` builds `LedgerError` from the absolute ledger path on any `OSError`
+    other than a missing file. A directory sitting where the ledger file should be is the simplest
+    portable way to force one — `Path.read_text()` on a directory raises `IsADirectoryError`."""
+    from pinakes.budget.ledger import ledger_path
+
+    manifest = load(kb)
+    manifest.state_dir.mkdir(parents=True, exist_ok=True)
+    ledger_path(manifest.state_dir).mkdir()
+
+    status, detail = checks(kb)["unknown outcomes"]
+    assert status is Status.FAIL
+    assert str(kb) not in detail
+    assert ".pinakes/ledger.jsonl" in detail
+
+
 def test_a_synced_kb_is_healthy(kb: Path) -> None:
     sync(load(kb), options=SyncOptions(), now="20260725 17:31")
     found = checks(kb)

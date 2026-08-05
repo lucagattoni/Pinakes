@@ -10,6 +10,7 @@ Nothing here changes anything, with one exception behind an explicit flag: `--pr
 orphaned sidecars, after printing every path it is about to remove (§6.4).
 """
 
+import os
 import sqlite3
 import tomllib
 from collections.abc import Iterator, Sequence
@@ -107,6 +108,39 @@ class Report:
         return Status.OK
 
 
+def _de_homed(text: str, root: Path) -> str:
+    """Strip the KB root's absolute prefix from every occurrence in *text*, leaving what follows
+    relative (open-corrections item 5: `pnk doctor` must not print the operator's home directory).
+
+    Most of this file already builds its own `Check` text from `Path` objects it holds, and those
+    are already relativised with `.relative_to(manifest.root)` at the point of formatting — see
+    `_sidecars`, `_index`'s duplicate-id and orphan checks. This function exists for the messages
+    doctor.py did **not** build itself: `StoreError`/`IndexSchemaError` (`store.py`),
+    `SidecarError` (`sidecar.py`) and `LedgerError` (`budget/ledger.py`) each construct their own
+    text from an absolute `Path` — `manifest.root` is always resolved absolute
+    (`manifest.load`'s `root.resolve()`), and every one of those paths sits inside `.pinakes/` or
+    under a sidecar's own directory, both inside the KB. `pnk doctor` forwards that text via
+    `exc.message`/`exc.remedy` as-is, so without this, an operator pasting `pnk doctor`'s FAIL line
+    for a corrupt index or an unreadable sidecar into an issue pastes their home directory along
+    with it. Fixing every raiser is a different module's job (and, for `store.py`, used by paths
+    that have nothing to do with a KB); rewriting the text once, here, at the point doctor.py is
+    about to print it, covers all of them without doctor.py reaching into any of those modules.
+
+    **A path outside `root` is left exactly as printed.** The model cache (`hf_cache_dir()`), a
+    linked KB resolved elsewhere, a packaged `prices.toml`/`floors.toml` — none of those is made of
+    the operator's home directory *by virtue of this KB's location*, and stripping them would
+    remove real troubleshooting information for a location this correction has no claim over.
+    """
+    return text.replace(f"{root}{os.sep}", "")
+
+
+def _local(exc: PinakesError, root: Path) -> tuple[str, str]:
+    """`(message, remedy)` with every absolute path under `root` rewritten relative to it — the
+    one place doctor.py forwards another module's exception text into a `Check` (see `_de_homed`).
+    """
+    return _de_homed(exc.message, root), _de_homed(exc.remedy, root)
+
+
 def diagnose(manifest: Manifest) -> Report:
     checks: list[Check] = []
     checks.extend(_environment())
@@ -197,7 +231,8 @@ def _backends(manifest: Manifest) -> Iterator[Check]:
         try:
             info = loader().info()
         except PinakesError as exc:
-            yield Check(label, Status.FAIL, exc.message, exc.remedy)
+            message, remedy = _local(exc, manifest.root)
+            yield Check(label, Status.FAIL, message, remedy)
             continue
 
         detail = f"{info.model} ({info.provider})"
@@ -277,7 +312,8 @@ def _sidecars(manifest: Manifest) -> tuple[list[Path], list[Check]]:
             try:
                 sidecars[path] = read_sidecar(path, owner=manifest.kb.id)
             except PinakesError as exc:
-                broken.append(f"{path.relative_to(manifest.root)}: {exc.message}")
+                message = _de_homed(exc.message, manifest.root)
+                broken.append(f"{path.relative_to(manifest.root)}: {message}")
                 continue
             if not document_for(path).is_file():
                 orphans.append(path)
@@ -430,7 +466,8 @@ def _index(manifest: Manifest) -> Iterator[Check]:
     try:
         connection = store.connect_ro(manifest.index_path)
     except PinakesError as exc:
-        yield Check("index", Status.FAIL, exc.message, exc.remedy)
+        message, remedy = _local(exc, manifest.root)
+        yield Check("index", Status.FAIL, message, remedy)
         return
 
     try:
@@ -1237,7 +1274,8 @@ def _unknown_outcomes(manifest: Manifest) -> Check:
     try:
         resolved = ledger_resolve(read_ledger(path).records)
     except LedgerError as exc:
-        return Check("unknown outcomes", Status.FAIL, exc.message, exc.remedy)
+        message, remedy = _local(exc, manifest.root)
+        return Check("unknown outcomes", Status.FAIL, message, remedy)
 
     unknown = [call for call in resolved.calls if call.state is CallState.UNKNOWN]
     if not unknown:
