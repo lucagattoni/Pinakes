@@ -72,6 +72,7 @@ number belongs to a release only when it is cut
 | **[0.10.0](#0100--you-can-see-it-working--20260804-1335)** | 20260804 13:35 | You can see it working | • `pnk sync` shows live progress on a terminal<br>• `pnk doctor` no longer tells an interrupted sync to `--rebuild`<br>• Sync timestamps are UTC<br>• ✅ Released and on PyPI |
 | **[0.11.0](#the-graph-release--shipped-0110)** | 20260805 07:14 | The graph release | • Structural edges at `schema_version` 3 — **every existing KB rebuilds once**<br>• `pnk doctor` reports the highest-degree hubs<br>• **The expansion channel ships `off`** — its gate improved 0 and regressed 3 |
 | **[0.12.0](#0120--the-check-that-would-have-caught-it--20260805-1802)** | 20260805 18:02 | The check that would have caught it | • `pnk doctor` reports heading-path coverage<br>• Missing-backend error names an installed alternative<br>• `pnk doctor` stops printing `$HOME`<br>• `tools/measure_sync_cpu.py` |
+| **[0.13.0](#0130--plain-text-can-carry-a-heading-path--20260805-2101)** | 20260805 21:01 | Plain text can carry a heading path | • `[chunking] headings = "numbered"`<br>• Measured on 980 real RFCs, 314/314 modern<br>• A `[chunking]` edit is no longer a silent no-op<br>• `tools/build_rfc_corpus.py` |
 | | | **[Open corrections](#open-corrections--four-live-items)** | • Four live code/tooling items<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
@@ -479,6 +480,35 @@ finding-looking one. And a test comparing two *differently rounded* renderings o
 locally and on two CI legs, failing only on the third.
 
 → [RETROSPECTIVES.md](RETROSPECTIVES.md) carries all three.
+
+---
+
+## 0.13.0 — Plain text can carry a heading path · 20260805 21:01
+
+- **`[chunking] headings = "numbered"`** reads a dotted-decimal outline (`1.`, `1.1.`, `2.`) into
+  `heading_path` for the `text` source type. Opt-in and off by default. Until now every type but
+  `markdown` recorded no `heading_path` at all — which is what left a 300-RFC corpus with 106 806
+  chunks and none, and so bounds [0.11.0's gate](#the-graph-release--shipped-0110): `in-section`,
+  `parent` and `child` all derive from it and derived **zero** edges there.
+- **It refuses rather than guesses.** `1.` at line start is also an ordered list, so acceptance is
+  decided over the whole document, and a document whose outline does not walk cleanly yields **no**
+  headings rather than a partial labelling. The floor is therefore exactly the previous behaviour.
+- **Measured against 980 real RFCs**, in rounds that doubled each time and re-ran every earlier fix:
+  644 accepted, and **314 of 314 modern-era documents — 100% at every round size**. Two thirds of
+  all rejections are documents with no numbered sections at all.
+- **A `[chunking]` edit is no longer a silent no-op.** An incremental sync re-chunks a document only
+  when the document changed, so editing any `[chunking]` key applied nothing and said nothing. The
+  index now records what it was built under; `pnk sync` names the key that moved and
+  [`pnk doctor`](CLI.md#pnk-doctor) reports `chunking coherence`.
+- **`tools/build_rfc_corpus.py`** builds the realism corpus from a script instead of one machine.
+
+The release's three retrospectives are all the same shape: something reported success while the
+thing it named had not happened. A guard that could not fire. A warning that cleared itself without
+the fix being applied. And two plausible predicate rules that the corpus refused — each removed a
+false positive and took genuine documents with it.
+
+→ [RETROSPECTIVES.md](RETROSPECTIVES.md), and the measurement in
+[§5.4](https://github.com/lucagattoni/pinakes/blob/main/plans/20260805_1721-metadata-as-retrieval-context.md).
 
 ---
 
