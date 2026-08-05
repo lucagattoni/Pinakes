@@ -74,6 +74,7 @@ number belongs to a release only when it is cut
 | **[0.11.0](#the-graph-release--shipped-0110)** | 20260805 07:14 | The graph release | • Structural edges at `schema_version` 3 — **every existing KB rebuilds once**<br>• `pnk doctor` reports the highest-degree hubs<br>• **The expansion channel ships `off`** — its gate improved 0 and regressed 3 |
 | **[0.12.0](#0120--the-check-that-would-have-caught-it--20260805-1802)** | 20260805 18:02 | The check that would have caught it | • `pnk doctor` reports heading-path coverage<br>• Missing-backend error names an installed alternative<br>• `pnk doctor` stops printing `$HOME`<br>• `tools/measure_sync_cpu.py` |
 | **[0.13.0](#0130--plain-text-can-carry-a-heading-path--20260805-2101)** | 20260805 21:01 | Plain text can carry a heading path | • `[chunking] headings = "numbered"`<br>• Measured on 980 real RFCs, 314/314 modern<br>• A `[chunking]` edit is no longer a silent no-op<br>• `tools/build_rfc_corpus.py` |
+| **[0.14.0](#0140--the-tool-stops-crying-wolf--20260805-2222)** | 20260805 22:22 | The tool stops crying wolf | • Heading coverage WARNs only for `markdown` at 0%<br>• `pnk init` adopts a directory with content<br>• A `titles` nudge, never a warning<br>• The sync loop stays serial — measured |
 | | | **[Open corrections](#open-corrections--none-live)** | • None live — first time since 20260731<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
@@ -510,6 +511,40 @@ false positive and took genuine documents with it.
 
 → [RETROSPECTIVES.md](RETROSPECTIVES.md), and the measurement in
 [§5.4](https://github.com/lucagattoni/pinakes/blob/main/plans/20260805_1721-metadata-as-retrieval-context.md).
+
+---
+
+## 0.14.0 — The tool stops crying wolf · 20260805 22:22
+
+Three changes with one theme: **a signal nobody can act on is worse than no signal**, because it
+teaches the reader to skip the ones that matter.
+
+- **[`pnk doctor`](CLI.md#pnk-doctor)'s heading coverage WARNs only for `markdown` at 0%** — the one
+  case a user can fix. A KB holding a single `.py` file used to warn on every run forever, with a
+  remedy amounting to *"a limit of the tool"*. The rest is reported OK with a note that separates
+  three facts previously wearing the same 0%: `text` *can* carry a heading path, `text` with the
+  grammar already on means those documents were **offered and refused**, and `code`/`pdf` cannot
+  today.
+- **[`pnk init`](CLI.md#pnk-init) adopts a directory that already has content.** Cloning a repo and
+  initialising inside it is how a KB actually starts, and a `.git`, a `README.md` and a
+  `pyproject.toml` made that *"not empty"*. The blanket refusal is gone; what replaces it is
+  narrower and stronger — **init never overwrites a file that is already there**. An adopted
+  `.gitignore` missing `.pinakes/` is flagged with the line to add, because that directory holds
+  the index and the spend ledger.
+- **A `titles` check** counts documents still carrying the title minted from their filename — the
+  `title: rfc9110` problem. A nudge, never a warning: both committed corpora are at 100%, and the
+  filename fallback is deliberate. Inference stays rejected — an RFC's first line is
+  `Internet Engineering Task Force (IETF)`.
+
+**And one question closed by measuring instead of arguing.** The first sync was suspected of using
+one core of ten. It uses **five**: peak 5.0, mean 4.8, over 55 RFCs and 16 557 chunks under
+`fastembed`. The loop is serial and the backend beneath it is not, so the document loop **stays
+serial** — a pool sized `os.cpu_count() - 1` would have been nine workers where there was room for
+two. The instrument proved itself in the same run: `uv run` sat at 0.0% while its child sustained
+491.9%, which is exactly the 0.0-cores answer the pre-fix tool would have reported and nobody would
+have questioned.
+
+→ [RETROSPECTIVES.md](RETROSPECTIVES.md).
 
 ---
 

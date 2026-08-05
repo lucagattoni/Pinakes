@@ -10,6 +10,69 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.14.0] — 20260805 22:22
+
+### Added
+
+- **`pnk doctor` reports how many documents still carry the title `sync` minted from their
+  filename.** The RFC realism corpus indexed 300 sidecars titled `rfc9110` rather than *"HTTP
+  Semantics"*, which made search results unreadable — and nothing said so.
+
+  **It is always OK, never a warning.** A filename-derived title is a legitimate state: the
+  fallback was kept deliberately, so warning would fire on every KB whose titles nobody has curated
+  yet — most of them, and both committed corpora at 100%. An un-actionable warning that fires
+  forever is how doctor output stops being read at all. This is a nudge with a count and a sample.
+
+  **Detection, never guessing.** Inferring a title from the document's first line is rejected: an
+  RFC's first line is `Internet Engineering Task Force (IETF)`, so inference would mint confidently
+  wrong titles at scale into sidecars the user then commits — and a plausible wrong title is far
+  harder to notice than one that is visibly a filename. `title` stays the user's field.
+
+  The check and the minter now share one `minted_title()` rather than each carrying a copy of the
+  rule, because a second copy would go quietly wrong — in the direction of reporting nothing — the
+  day either changed.
+
+### Changed
+
+- **`pnk init` adopts a directory that already has content, instead of refusing it.** Creating a
+  repository, cloning it, then running `pnk init` inside is the normal way to start a KB — and a
+  `.git`, a `README.md` and a `pyproject.toml` made that directory "not empty", so `init` refused
+  with *"clear this one first"*, which is an alarming thing to read about a directory holding the
+  documents you meant to index. Hit three times independently before it was changed.
+
+  **The blanket emptiness test is gone, and what replaces it is narrower and stronger: `init` never
+  overwrites a file that is already there.** Any file it would have written and found present is
+  left **byte-identical** and named in the output (`left as they were: .gitignore, README.md`), so
+  there is nothing left for an emptiness test to protect. The accepted cost, stated when the
+  decision was taken: a typo in the path now creates a KB among unrelated files rather than
+  refusing — recoverable by deleting `pinakes.toml`, where overwriting a README is not.
+
+  **Two things are called out rather than silently handled.** An adopted `.gitignore` that does not
+  mention `.pinakes/` is reported with the line to add — `init` will not edit a file it does not
+  own, and that directory holds the index and the spend ledger. And `--ci` is **refused** rather
+  than adopted when a workflow already exists, now *before anything is created*: it is an explicit
+  request, so honouring it by doing nothing would be worse than refusing.
+
+### Fixed
+
+- **`pnk doctor`'s heading-coverage check no longer warns about something you cannot fix.** It
+  WARNed whenever *any* source type sat at 0%, so a KB holding one `.py` file or one PDF warned on
+  **every run, forever**, with a remedy that amounted to *"this is a limit of the tool"*. An
+  un-actionable warning that cannot be cleared is how doctor output stops being read at all — which
+  costs the actionable warnings too, a larger loss than the one signal it gave up.
+
+  **WARN is now reserved for `markdown` at 0%**, the one case a user can act on: the chunker reads
+  ATX headings, so a Markdown corpus with none is being silently chunked by size. Everything else is
+  reported **OK with a note**, and the note separates three facts that previously wore the same 0%:
+  `text` *can* carry a heading path (set [`[chunking] headings`](../docs/MANIFEST.md#chunking));
+  `text` with that key **already set** means the grammar was offered those documents and **refused**
+  them rather than inventing an outline; `code` and `pdf` cannot carry one today whatever they
+  contain.
+
+  It also corrects a claim 0.13.0 falsified: the old remedy still said non-Markdown types cannot
+  carry a heading path *whatever the document contains*, which stopped being true when the numbered
+  grammar shipped.
+
 ## [0.13.0] — 20260805 21:01
 
 ### Added
@@ -2508,7 +2571,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.14.0
 [0.13.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.13.0
 [0.12.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.12.0
 [0.11.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.11.0
