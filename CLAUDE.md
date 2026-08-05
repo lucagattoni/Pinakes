@@ -150,7 +150,9 @@ G5's gate ran, did **not** pass, and `graph_channel` ships `off` — so nothing 
 and the staged channels (PPR, `[ner]`) are **not** licensed by that result
 ([`plans/20260804_1016-staged-channel-gates.md`](plans/20260804_1016-staged-channel-gates.md)).
 
-**The live plan is [`plans/20260804_1016-template-release.md`](plans/20260804_1016-template-release.md)**
+**The live investigation is [`plans/20260805_1721-metadata-as-retrieval-context.md`](plans/20260805_1721-metadata-as-retrieval-context.md)** — whether `title` and `heading_path` are retrieval context or display metadata. It carries the established facts, the agreed order of work, what is decided, and what is still open. **Read it before touching chunking, titles or `heading_path`.**
+
+**The other live plan is [`plans/20260804_1016-template-release.md`](plans/20260804_1016-template-release.md)**
 — reviewed, its four decisions taken, unstarted; re-run its Baseline block first. Beside it:
 whatever [`plans/20260731_1202-open-corrections.md`](plans/20260731_1202-open-corrections.md) lists
 as live. **Weigh its structural-chunking item first** — three of G3's seven edge kinds derived zero
