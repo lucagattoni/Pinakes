@@ -1536,3 +1536,81 @@ def test_a_cross_kb_link_into_a_kb_not_here_is_counted_but_not_called_unresolved
     assert "1 cross-KB" in detail
     assert "unresolved" not in detail
     assert "unchecked until the links release" not in detail
+
+
+# --- edge-hub reporting (G6) -------------------------------------------------------------------
+
+
+def _write_tagged_doc(kb: Path, path: str, *, tags: Sequence[str] = ()) -> None:
+    """A document with an explicit `tags` sidecar, for building `shared-tag` hub fixtures."""
+    target = kb / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"# {Path(path).stem}\n\nSome text.\n", encoding="utf-8")
+    sidecar: dict[str, object] = {"id": str(mint_doc_id()), "title": Path(path).stem}
+    if tags:
+        sidecar["tags"] = list(tags)
+    (kb / f"{path}{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump(sidecar, sort_keys=False), encoding="utf-8"
+    )
+
+
+def test_a_kb_with_no_edges_reports_none(kb: Path) -> None:
+    """The default fixture's one document shares no tag, heading or directory with anything, so
+    G3 derives zero hub edges. The check must say so cleanly — not crash, and not print an empty
+    table with only a header, which would read as a report that forgot to finish."""
+    sync(load(kb), options=SyncOptions(), now="20260805 05:00")
+
+    status, detail = checks(kb)["edge hubs"]
+    assert status is Status.OK
+    assert detail == "none"
+
+
+def test_edge_hubs_are_reported_highest_degree_first(kb: Path) -> None:
+    """A fixture where mint order and degree order disagree, so a missing or reversed sort passes
+    on the "natural" order and is caught here — the failure class this project keeps finding: an
+    assertion satisfied by something other than the property it names.
+
+    `derive()` mints a tag hub the first time its tag is seen, scanning documents **by path**.
+    `low` is first seen on `docs/aa1/x.md`, `high` on `docs/aa2/y.md` — `aa1` sorts before `aa2` —
+    so `low` mints a lower node id than `high`. `low` ends at degree 2 (`x`, `y`), `high` at degree
+    4 (`y`, `z`, `w`, `v`): printing in insertion order would put `low` first, exactly the
+    unsorted-output bug this pins against.
+
+    Each new document lives in its own directory, so no `co-located` hub reaches degree ≥ 2 and
+    neither can the fixture's existing `docs/a.md`, left as the sole, untagged member of `docs/` —
+    both would otherwise compete with the two tag hubs for the top of the list.
+    """
+    _write_tagged_doc(kb, "docs/aa1/x.md", tags=["low"])
+    _write_tagged_doc(kb, "docs/aa2/y.md", tags=["low", "high"])
+    _write_tagged_doc(kb, "docs/zz1/z.md", tags=["high"])
+    _write_tagged_doc(kb, "docs/zz2/w.md", tags=["high"])
+    _write_tagged_doc(kb, "docs/zz3/v.md", tags=["high"])
+    sync(load(kb), options=SyncOptions(), now="20260805 05:01")
+
+    status, detail = checks(kb)["edge hubs"]
+    assert status is Status.OK
+    assert "2 hub(s)" in detail
+    high_at = detail.index('tag "high"')
+    low_at = detail.index('tag "low"')
+    assert high_at < low_at, f"the degree-4 hub must print before the degree-2 hub: {detail!r}"
+    assert "degree 4" in detail
+    assert "degree 2" in detail
+
+
+def test_an_edge_hub_report_names_a_document_path_never_a_bare_node_id(kb: Path) -> None:
+    """A `heading` node's key is `<doc-ulid>:<heading_path>` (G3) — the one node kind whose key is
+    not already the human-facing value. Pasted raw into an issue it identifies nothing; this
+    asserts the check resolves it against `documents.path` instead, and never leaks the ULID.
+    """
+    (kb / "docs" / "a.md").write_text(
+        "# A\n\n## Same\n\nOne.\n\n## Same\n\nTwo.\n", encoding="utf-8"
+    )
+    sync(load(kb), options=SyncOptions(), now="20260805 05:02")
+    doc_id = _document_ids(kb)[0]
+
+    status, detail = checks(kb)["edge hubs"]
+    assert status is Status.OK
+    assert "heading" in detail
+    assert "a.md" in detail
+    assert doc_id not in detail, f"a raw document ULID leaked into the report: {detail!r}"
+    assert "unchecked until the links release" not in detail
