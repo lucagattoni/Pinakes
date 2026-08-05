@@ -1686,3 +1686,118 @@ def test_a_cross_kind_tie_breaks_on_kind_before_key(kb: Path) -> None:
     assert shown.startswith('directory "docs/shared" (degree 2), tag "aaa" (degree 2)'), (
         f"a cross-kind tie must break on kind before key: {detail!r}"
     )
+
+
+def test_heading_coverage_is_full_on_an_all_markdown_kb(kb: Path) -> None:
+    """The fixture's one document is `# A` plus a paragraph, so its single chunk carries a heading
+    path. Measured the same way on the committed corpora before this check was written: demo-kb
+    60/60 and partner-kb 55/55, which is the 100% end of the bimodal distribution the predicate
+    relies on."""
+    sync(load(kb), options=SyncOptions(), now="20260805 07:50")
+
+    status, detail = checks(kb)["heading coverage"]
+    assert status is Status.OK
+    assert detail == "1 of 1 chunks carry a heading path (100%)"
+
+
+def test_a_plain_text_source_type_is_reported_at_zero(kb: Path) -> None:
+    """The RFC case, in miniature — and the reason this check exists.
+
+    `chunk.py` routes anything that is not `markdown` to `_plain_blocks`, which sets
+    `heading_path=None` unconditionally, so a `.txt` file cannot carry one **whatever it
+    contains**. This one is written with a heading that looks exactly like an RFC's, to pin that
+    the absence is the code path and not the document: if a future change makes plain text carry
+    heading paths, this test fails and has to be re-decided rather than silently passing.
+
+    **Two chunks, not one**, and the count is the point: `_plain_blocks` splits on blank lines, so
+    the `1.  Introduction` line becomes a chunk *of its own* with no heading path and no body —
+    exactly the shape that made 106 806 RFC chunks look like prose with no structure in it.
+    """
+    (kb / "docs" / "rfc.txt").write_text(
+        "1.  Introduction\n\nThis document specifies a thing.\n", encoding="utf-8"
+    )
+    sync(load(kb), options=SyncOptions(), now="20260805 07:51")
+
+    status, detail = checks(kb)["heading coverage"]
+    assert status is Status.WARN
+    assert "1 source type(s) at 0%" in detail
+    remedy = _remedy(kb, "heading coverage")
+    assert "text (2)" in remedy
+    assert "`in-section`, `parent` and `child` edges derive nothing" in remedy
+    assert "runs for `markdown` only" in remedy
+    assert "not of your files" in remedy
+
+
+def test_a_markdown_kb_with_no_headings_gets_the_other_remedy(kb: Path) -> None:
+    """A markdown document *can* carry a heading path and does not, which is a fact about the
+    document rather than a limit of the chunker — so the remedy must say something different from
+    the plain-text one. A single remedy for both would send someone to change `[chunking]
+    strategy` when what they have is a file with no `#` in it."""
+    (kb / "docs" / "a.md").write_text("Just a paragraph, no heading.\n", encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260805 07:52")
+
+    status, _ = checks(kb)["heading coverage"]
+    assert status is Status.WARN
+    remedy = _remedy(kb, "heading coverage")
+    assert "ATX headings" in remedy
+    assert "property of your documents" in remedy
+    assert "not of your files" not in remedy
+
+
+def test_a_partial_share_within_a_source_type_is_not_a_warning(kb: Path) -> None:
+    """**The predicate is zero per source type, never "any chunk missing one".**
+
+    Text before a document's first heading legitimately has no heading path, so an "any missing"
+    rule would warn on an ordinary corpus and this check would be noise inside a week. This fixture
+    has both in one source type: one chunk with a heading path and one without.
+
+    The paragraph before the heading is padded past `max_tokens` so it cannot be folded into the
+    same block as the heading that follows it — without that the document yields a single chunk and
+    the test passes for the wrong reason, asserting nothing about partial coverage at all.
+    """
+    body = " ".join(["filler"] * 600)
+    (kb / "docs" / "a.md").write_text(f"{body}\n\n# Heading\n\nUnder it.\n", encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260805 07:53")
+
+    status, detail = checks(kb)["heading coverage"]
+    named, total = _heading_counts(kb)
+    assert 0 < named < total, f"fixture must be partial, got {named}/{total}"
+    assert status is Status.OK, detail
+
+
+def test_a_removed_documents_chunks_stop_being_counted(kb: Path) -> None:
+    """Deleting the only plain-text document must take the check back to OK.
+
+    **This test does *not* exercise the `state = 'active'` filter, and is deliberately not named
+    as though it does.** It was written as `..._counts_only_active_documents` and mutation testing
+    refuted that immediately: deleting the filter left it green. The reason is that `SoftDelete`
+    drops a document's chunks as well as flipping its state, so the join has nothing to over-count
+    either way — the filter is defensive consistency with `_links`, not a guard this fixture can
+    reach. `_links` needs its own filter because it counts *documents*; this counts *chunks*, and
+    the chunks are already gone.
+
+    Kept because the property it does prove is worth pinning: the check reflects the current index
+    rather than every document that has ever been in it."""
+    (kb / "docs" / "rfc.txt").write_text("1.  Introduction\n\nBody.\n", encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260805 07:54")
+    assert checks(kb)["heading coverage"][0] is Status.WARN
+
+    (kb / "docs" / "rfc.txt").unlink()
+    (kb / f"docs/rfc.txt{SIDECAR_SUFFIX}").unlink()
+    sync(load(kb), options=SyncOptions(), now="20260805 07:55")
+
+    status, detail = checks(kb)["heading coverage"]
+    assert status is Status.OK, detail
+    assert "1 of 1 chunks" in detail
+
+
+def _heading_counts(root: Path) -> tuple[int, int]:
+    connection = store.connect_ro(root / ".pinakes" / "index.db")
+    try:
+        row = connection.execute(
+            "SELECT count(c.heading_path) AS named, count(*) AS total FROM chunks c "
+            "JOIN documents d ON d.id = c.doc_id WHERE d.state = 'active'"
+        ).fetchone()
+        return int(row["named"]), int(row["total"])
+    finally:
+        connection.close()
