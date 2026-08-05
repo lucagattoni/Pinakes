@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from pinakes import template
+from pinakes.ci import WORKFLOW_PATH
 from pinakes.errors import InitError, TemplateError
 from pinakes.ids import parse_kb_id
 from pinakes.init import init
@@ -78,13 +79,77 @@ def test_refusing_to_re_initialise_explains_why(tmp_path: Path) -> None:
     assert "orphan every inbound link" in exc_info.value.remedy
 
 
-def test_a_non_empty_directory_is_refused(tmp_path: Path) -> None:
+def test_a_directory_that_already_has_content_is_adopted(tmp_path: Path) -> None:
+    """**Re-decided 20260805**, after the blanket emptiness refusal was hit three times
+    independently. Creating the repo, cloning it, then running `pnk init` inside it is what the
+    corpus plan prescribes and what everyone does — and a `.git`, a `README.md` and a
+    `pyproject.toml` are already "not empty". *"Clear this one first"* is an alarming thing to read
+    about a directory holding the documents you meant to index.
+
+    The emptiness test is gone because what replaced it is narrower and stronger: `init` never
+    overwrites a file that is already there, so there is nothing left for it to protect."""
     root = tmp_path / "occupied"
     root.mkdir()
     (root / "something.txt").write_text("hello", encoding="utf-8")
+
+    result = init(root)
+    assert (root / "pinakes.toml").exists()
+    assert (root / "something.txt").read_text(encoding="utf-8") == "hello"
+    assert result.adopted == []
+
+
+def test_init_never_overwrites_the_files_a_real_repository_already_has(tmp_path: Path) -> None:
+    """The adoption case in full: a repo has a README and a .gitignore before it is ever a KB, and
+    both are files `init` would otherwise write. Replacing them would be destroying the user's work
+    to make room for a template's — so they are left **byte-identical** and reported."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+    (root / "README.md").write_text("# My Project\n\nReal content.\n", encoding="utf-8")
+
+    result = init(root)
+
+    assert (root / ".gitignore").read_text(encoding="utf-8") == "node_modules/\n"
+    assert (root / "README.md").read_text(encoding="utf-8") == "# My Project\n\nReal content.\n"
+    assert {path.name for path in result.adopted} == {".gitignore", "README.md"}
+    assert all(path not in result.created for path in result.adopted), (
+        "a file that was left alone must never be reported as created"
+    )
+
+
+def test_an_adopted_gitignore_that_misses_pinakes_is_flagged(tmp_path: Path) -> None:
+    """`.gitignore` is the one skipped file whose *absence of content* has a consequence: an index
+    and a spend ledger that can leave the machine. It is reported rather than appended to, because
+    appending would be editing a file this tool does not own."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+    assert init(root).gitignore_unprotected is True
+
+    other = tmp_path / "already-safe"
+    other.mkdir()
+    (other / ".gitignore").write_text("build/\n.pinakes/\n", encoding="utf-8")
+    assert init(other).gitignore_unprotected is False, (
+        "a .gitignore that already covers .pinakes/ must not be flagged"
+    )
+
+
+def test_ci_refuses_an_existing_workflow_before_creating_anything(tmp_path: Path) -> None:
+    """`write_workflow` already refused to overwrite, but it ran *after* `pinakes.toml` was
+    written — so the refusal left a half-made KB that the next `pnk init` rejects as "already a
+    KB". The old emptiness check was incidentally preventing that; removing it exposed the gap.
+
+    `--ci` is refused rather than adopted because it is an explicit request: honouring it by
+    silently doing nothing is worse than refusing."""
+    root = tmp_path / "kb"
+    (root / WORKFLOW_PATH).parent.mkdir(parents=True)
+    (root / WORKFLOW_PATH).write_text("# mine\n", encoding="utf-8")
+
     with pytest.raises(InitError) as exc_info:
-        init(root)
-    assert "not empty" in exc_info.value.message
+        init(root, ci=True)
+    assert "already exists" in exc_info.value.message
+    assert not (root / "pinakes.toml").exists(), "nothing may be created before the refusal"
+    assert (root / WORKFLOW_PATH).read_text(encoding="utf-8") == "# mine\n"
 
 
 def test_an_unknown_template_lists_the_known_ones(tmp_path: Path) -> None:

@@ -45,6 +45,23 @@ Stamps a new KB and mints its **permanent** KB ULID.
 Writes `pinakes.toml`, `docs/` and a `.gitignore` covering `.pinakes/`. It does **not** create an
 index — the first `pnk sync` does that.
 
+**It adopts a directory that already has content, and never overwrites a file it finds there.**
+Creating a repository, cloning it, then running `pnk init` inside it is the normal way to start a
+KB — and such a directory already holds a `.git`, usually a `README.md`, often a `.gitignore`. Any
+file `init` would have written that is already present is **left byte-identical** and named in the
+output:
+
+    left as they were: .gitignore, README.md
+
+**One consequence is called out rather than fixed.** If the adopted `.gitignore` does not mention
+`.pinakes/`, `init` says so and prints the line to add. It will not append to it: that file is
+yours, and `.pinakes/` holds the index and the spend ledger, so ignoring it is what keeps them off
+any remote you push to.
+
+**`--ci` is refused rather than adopted** when a workflow already exists, and refused *before*
+anything is created — `--ci` is an explicit request, and honouring it by silently doing nothing
+would be worse. Re-run without `--ci` to initialise the KB and keep your workflow.
+
 `--ci`'s workflow runs `pnk sync --extract=pypdfium2` and says so on the line itself: CI is
 non-interactive and must never spend, exactly as the git hooks are. `init` prints that at write
 time too.

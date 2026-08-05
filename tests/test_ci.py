@@ -73,14 +73,19 @@ def test_the_cli_flag_is_wired_and_says_what_it_did(
 def test_init_ci_refuses_a_directory_that_already_holds_the_workflow(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`init` refuses a non-empty directory anyway; this asserts the *reported* failure rather
-    than a traceback, which is the only difference a user sees."""
+    """`init` refuses an existing workflow; this asserts the *reported* failure rather than a
+    traceback, which is the only difference a user sees.
+
+    It used to be refused as "not empty" — incidentally, by a blanket emptiness check that has
+    since been removed so a directory with content can be adopted (20260805). The refusal now
+    names the workflow itself, which is both more precise and the only thing actually in the way.
+    """
     root = tmp_path / "kb"
     (root / WORKFLOW_PATH).parent.mkdir(parents=True)
     (root / WORKFLOW_PATH).write_text("# mine\n", encoding="utf-8")
 
     assert main(["init", str(root), "--ci"]) == EXIT_FAILURE
-    assert "not empty" in capsys.readouterr().err
+    assert "already exists" in capsys.readouterr().err
 
 
 def test_the_generated_workflow_is_valid_yaml(tmp_path: Path) -> None:

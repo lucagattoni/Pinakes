@@ -100,6 +100,17 @@ def run_init(args: argparse.Namespace) -> int:
     if result.workflow is not None:
         print(f"  workflow: {result.workflow.relative_to(result.root)}")
         print(f"  it {FREE_BACKEND_NOTICE}")
+    if result.adopted:
+        # Named, never merely counted. A file silently *not* written is indistinguishable from one
+        # written and then reverted, and the whole point of adopting a directory is that the files
+        # already in it are the user's.
+        listed = ", ".join(str(path.relative_to(result.root)) for path in result.adopted)
+        print(f"  left as they were: {listed}")
+    if result.gitignore_unprotected:
+        print("\n  ⚠️  your .gitignore does not ignore `.pinakes/`. Add this line:")
+        print("        .pinakes/")
+        print("      It holds the index and the spend ledger — ignoring it is what keeps them")
+        print("      off any remote you push to.")
     print("\nNext:")
     print(f"  1. put Markdown files in {result.root / 'docs'}")
     print("  2. `pnk sync` to index them, then commit the sidecars it writes")

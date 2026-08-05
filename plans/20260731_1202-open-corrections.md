@@ -14,9 +14,9 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**Two live items as of 20260805 21:56**, both decided and unbuilt — **nothing is waiting on a
-measurement or a decision any more.** Each came from *building*: the RFC realism corpus, the
-graph release measured against it, or the grammar built on top of both.
+**One live item as of 20260805 22:11**, decided and unbuilt. It came from *building*, like
+every other item this list has held: the RFC realism corpus, the graph release measured
+against it, or the grammar built on top of both.
 
 The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
 finished. Note what is **not** here: **both releases in
@@ -33,18 +33,8 @@ the seven edge kinds derived zero edges*.
 
 
 
-### 1 · `pnk init` cannot adopt a directory that already has content
 
-`_check_target` refuses a non-empty directory, so a KB cannot be initialised inside an existing repository — which is what [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) prescribes and what everyone does: create the repo, clone it, then init. A `.git`, a README and a `pyproject.toml` are already "not empty", and the message *"clear this one first"* is alarming when the directory holds the documents.
-
-**Hit three times independently** (probe rehearsal, dogfooding KB, corpus).
-
-**DECIDED 20260805 13:13 — refuse only what would actually be overwritten** ([`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_1313-decisions-init-titles-and-grammar.md)). Drop the blanket emptiness test; keep the `pinakes.toml` and not-a-directory refusals; add a refusal naming any file `init` would write that already exists. The accepted cost is the loss of a cheap typo-catcher. `docs/GUIDE.md` gets the retrofit path.
-
----
-
-
-### 2 · Every document is titled by its filename
+### 1 · Every document is titled by its filename
 
 All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so search results are unreadable. `sync` mints the title from the filename when the document has no Markdown H1 — correct for Markdown, useless for anything else.
 
@@ -63,6 +53,7 @@ All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so searc
 
 | Was | Closed by |
 |---|---|
+| `pnk init` could not adopt a directory that already had content — a `.git`, a `README.md` and a `pyproject.toml` made it *"not empty"*, and *"clear this one first"* is alarming about a directory holding the documents you meant to index. **Hit three times independently** | 20260805 22:11. The blanket emptiness test is gone; what replaces it is narrower and stronger — **`init` never overwrites a file that is already there**, so nothing is left for an emptiness test to protect. Adopted files are left byte-identical and named in the output. **The decision as written said to *refuse* any file `init` would write that already exists; implemented literally that refuses on `README.md` and `.gitignore`, which a real repository always has, so adoption would still have been impossible in the exact case the item exists for.** The intent — do not destroy the user's files — is honoured by never overwriting and reporting instead. Two things are called out rather than silently handled: an adopted `.gitignore` missing `.pinakes/` is flagged with the line to add, and `--ci` is refused (an explicit request, so doing nothing would be worse) **before anything is created** — a gap the removed guard had been holding, found by an existing test |
 | The heading-coverage check WARNed forever on `code` and `pdf`, which can never carry a heading path — so a KB holding one `.py` file warned on every run with a remedy amounting to *"a limit of the tool"* | 20260805 21:56, as the user decided. **WARN only when `markdown` is at 0%** — the one case a user can fix, where the chunker reads ATX headings and found none, so the corpus is being silently size-sliced. Everything else is reported **OK with a note**, because an un-actionable warning that cannot be cleared is how doctor output stops being read at all, which costs the actionable warnings too. The note now separates three facts that wore the same 0%: `text` **can** carry one (set `[chunking] headings`), `text` with the key **already set** means the grammar was offered those documents and *refused* them, and `code`/`pdf` cannot today. It also corrects a claim 0.13.0 falsified — the old remedy still said non-Markdown types cannot carry a heading path *whatever the document contains* |
 | The first sync might be using one core of ten and nobody had measured which — 300 documents over two hours, with `sync.py` embedding one document at a time in a serial loop | **Measured 20260805 21:45, and the answer is no.** 55 modern RFCs (16 557 chunks) rebuilt under `fastembed`: **peak 5.0 cores, mean 4.8 of 10**, over 1 451 samples and 1 497 s. The loop is serial and the backend underneath it is not — ONNX Runtime is already using half the machine. **So the item's own fork resolves to *do not parallelise*:** *"the backend already saturates the machine → the loop is fine, and the win is a bigger batch, not processes"*. Stacking a pool on top would hit exactly what the item warned against — two workers would consume ~9.6 of 10 cores and anything beyond that oversubscribes. **The measurement also vindicated its own instrument in the field:** in the same process tree `uv run` sat at **0.0%** while its child sustained **~490%**, which is precisely the 0.0-cores answer the pre-fix tool would have reported. **Bounded: `fastembed` only** — `sentence-transformers` needs the 2 GB `[st]` extra and stays unmeasured, so nothing here licenses a claim about it |
 | A `[chunking]` edit was a silent no-op until `--rebuild` — an incremental sync re-chunks a document only when *the document* changed, so a manifest-only edit reported every file `unchanged`, applied nothing, and said nothing | 20260805 20:20. The index records the `[chunking]` settings it was built under; `pnk sync` names the key that moved and points at `--rebuild`, and `pnk doctor` reports it as `chunking coherence`. **Absence reads as unknown, never as drifted**, so upgrading demands no rebuild of any existing KB. The retrospective is the part worth keeping: the first draft wrote the identity at the end of *every* sync, so the warning fired once and the index then claimed a coherence it did not have — `pnk doctor` reporting OK over chunks built the old way. **A warning that clears itself without the fix being applied is worse than no warning.** Found by running the command a second time; no test asserted persistence, because that only fails on the second invocation |

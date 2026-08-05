@@ -98,6 +98,37 @@ my-kb/
 **That KB id is permanent.** Every cross-KB link ever written to this KB resolves through it, and
 there is no migration machinery by design. Never edit or regenerate it.
 
+### Adding a KB to a repository you already have
+
+The usual way to start is the other order: create the repository, clone it, and run `pnk init`
+inside it. That works — **`init` adopts a directory that already has content and never overwrites a
+file it finds there.**
+
+```bash
+git clone git@github.com:you/team-notes.git
+cd team-notes
+pnk init . --name "Team notes"
+```
+
+```
+created /path/to/team-notes from notes@1.0
+  kb id: 01KZ9ZEX1A4RYP0BSZFSSBATQG  (permanent — never edit it)
+  left as they were: .gitignore, README.md
+
+  ⚠️  your .gitignore does not ignore `.pinakes/`. Add this line:
+        .pinakes/
+      It holds the index and the spend ledger — ignoring it is what keeps them
+      off any remote you push to.
+```
+
+Your `README.md` and `.gitignore` are untouched. **Add `.pinakes/` to your `.gitignore` when it
+says so** — `init` will not edit that file for you, and without the line your index and spend
+ledger are committable.
+
+If you passed `--ci` and a `.github/workflows/pinakes.yml` already exists, `init` refuses **before
+creating anything** and tells you so. Re-run without `--ci` to set the KB up and keep your
+workflow.
+
 Drop a file in and index it:
 
 ```bash
