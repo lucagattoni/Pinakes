@@ -3383,6 +3383,462 @@ run, then `uv sync --extra light --extra pdf --extra claude --frozen` to restore
 the only way `./check.sh` passing locally actually predicts the `[light]` CI leg rather than just
 restating the worktree it ran in.
 
+## G3 — the node model and the edge set (20260804 16:30)
+
+**HIGH — a hierarchy derivation that was quadratic in a *document's* chunk count.** `parent-child`
+was derived by testing `child.heading_path.startswith(parent.heading_path + " > ")` over every
+chunk pair within a document. Measured on one document: 2 000 chunks 0.23 s, 4 000 chunks 0.85 s,
+8 000 chunks 3.32 s — so a single 32 000-chunk document (one long PDF) would have spent ~50 s
+deriving, on a path `pnk sync` runs from three git hooks. Replaced by grouping chunks by heading
+path and having each path look up its own ancestors (`" > ".join(segments[:d])`), which is the same
+relation and is linear in chunks: 32 000 chunks now 0.59 s. **The corpus that would have exposed
+this is the one that cannot**: the RFC realism corpus has an empty `heading_path` on every chunk, so
+its 106 806 chunks derived zero hierarchy edges and cost nothing. A performance defect invisible on
+the only corpus at scale.
+
+**HIGH — a mutant that nothing caught, in a filter that looked redundant.** `authored_pairs`
+filters `links` on `src_kb_id = ? AND dst_kb_id = ?` and then joins both ends to `doc` nodes.
+Changing the `AND` to an `OR` failed no test, because the join already drops a foreign document
+ULID — a foreign document has no local `doc` node. That reasoning is wrong in exactly one case, and
+it is a case that happens: **fork a KB** — copy the directory, mint a new `[kb] id`, and every
+document keeps its permanent ULID. A reverse scan of the fork then writes
+`(fork_kb, D, local_kb, E)` where `D` is *also* one of our documents, and the `OR` reads it as "our
+D cites E" — an edge nobody authored here. The lesson generalises: **a filter that a second filter
+appears to make redundant is only redundant under an assumption, and the assumption is the thing to
+test.** Pinned by `test_a_forked_kb_sharing_a_document_ulid_does_not_forge_a_local_authored_edge`,
+which builds two real KBs rather than inserting the row.
+
+**MEDIUM — the deriver was cross-checked against the instrument the go decision was measured on,
+and this was worth more than any single test.** `tools/reachable_ceiling_probe.py` derives the same
+relations in memory, written independently. Comparing the two censuses on `tests/demo-kb`
+(`test_the_stored_edge_set_agrees_with_the_probe_the_decision_was_taken_on`) caught two mutants no
+targeted test did, and the RFC corpus reproduced the go decision's drop table exactly — `sibling`
+106 506, `shared-tag` 643, `co-located` 262. A second implementation of the same spec is a cheaper
+oracle than a third round of hand-written assertions, and it answers a question no assertion can:
+*did G3 build the graph G2 measured, or a different plausible one.*
+
+**MEDIUM — the plan's orientation rule, read literally, makes every hub unreachable.** G3's spec
+says the provider queries "`src = ? OR dst = ?` for those kinds and `src = ?` for hub kinds". A hub
+spoke is stored hub-first, so `src = ?` answers "who is in me" — and a member asking "what am I in"
+needs `dst = ?`. Read literally, no member could ever enter a hub, and `co-located`/`shared-tag`
+are the two kinds the go decision measured carrying all nine liftable questions. The sentence's real
+content is the *symmetric* half: a `src`-only read of a symmetric kind silently drops half of every
+relation. Built as three explicit functions — `peers()`, `members()`, `hubs()` — so the two halves
+of a hub kind cannot be confused for one query, and pinned by
+`test_a_hub_is_entered_from_a_member_and_expanded_from_the_hub`.
+
+**HIGH — a kind selection that could be silently dropped, in the function that preaches against
+it.** `peers()`/`neighbours()` took `local_kb: str | None = None` and skipped `authored` when it was
+absent — the same "confident, wrong, smaller answer" its own docstring warns about for a `src`-only
+read, from the other side. G5's gate runs *with* and *without* authored edges; a caller who forgot
+the keyword would have got the "without" arm believing it ran the "with" one, and lost the
+highest-trust edge class with nothing printed. Now a `TraversalError` naming
+`select_kinds(drop=["authored"])` as the way to mean it. **`select_kinds()` refusing an unknown name
+was designed against exactly this and did not cover it** — the refusal guarded the *name* and left
+the *ingredient*.
+
+**MEDIUM — every corpus that certifies this increment has two of the six kinds at zero.**
+`parent-child` has derived zero edges in every measurement ever taken here — one-level headings in
+both committed corpora, an empty `heading_path` throughout the RFC corpus — and no committed sidecar
+carries a `tags:` key, so `shared-tag` is exercised only by synthetic fixtures. The cross-check
+against the probe therefore *passed with `_hierarchy_edges` deleted*, because its non-vacuity guard
+was a total over all kinds. Fixed by asserting each compared kind is non-zero and naming the two
+this corpus cannot exercise, so a kind that silently stops deriving fails rather than reads as
+agreement. **A "total > 0" guard on a per-item comparison is not a non-vacuity guard** — it is one
+item's evidence spread over all of them.
+
+**MEDIUM — `parent-child` is materialised pairwise, and its row count is the product of two
+sections.** APPROACH §3 keeps hierarchy direct — *"the one relation that stays direct"* — so an
+ancestor heading of *a* chunks and a descendant of *d* chunks is a·d rows. Measured at
+`max_tokens=400` on plausible document shapes: 5.8×, 16.3× and 53.5× the chunk count. Extrapolated
+to 300 documents of the worst shape that is ~10 M rows. Not changed here — hubbing it contradicts
+APPROACH §3 and restricting it to the immediate parent narrows the relation the go decision's probe
+measured — but pinned by a test that asserts the arity, and reported to the planner as a spec
+question rather than absorbed as an implementation choice.
+
+**LOW — a duplicated tag inflated a hub's member count where nothing could see it.** `derive`
+collects edges into a `set`, so `tags: [t, t]` produced one spoke — but `_tag_buckets` appended the
+document twice, and the `< 2` minting rule counts the *bucket*. A single document repeating one tag
+therefore minted a hub with one spoke and a divisor of 2. The test named
+`test_a_duplicate_tag_in_one_sidecar_is_one_spoke` passed with the deduplication removed, because
+the set downstream hid the mechanism it named. Deduplicated where the length is decided, and pinned
+by the single-document case that has no set to hide behind.
+
+**LOW — a hub with one member is derived state that connects nothing.** A directory holding one
+document, a tag on one document, a heading with one chunk: expanding it returns only the node that
+reached it. The spec only says degree-zero hubs are reaped, which full re-derivation gives for free.
+Degree-one hubs are minted at zero benefit — a node, a spoke, and an entry in G6's hub report — so
+they are skipped, which also makes the census directly comparable to the probe's (`_spoke_count`
+counts buckets of two or more). Reachability is unchanged **for the channel as APPROACH §4A defines
+it today**; §4B's all-chunk seeding is itself flagged for re-evaluation on the `sqlite-vec` tier, so
+the claim is scoped rather than unconditional. The alternative reading is recorded here because it
+was a choice, not a deduction.
+
+## G5 — the `parent-child` ceiling, measured before the gate ran (20260804 21:05)
+
+**The measurement the arity decision required, and the corpus that could supply it was neither of
+the two anyone would have reached for.** `plans/20260804_1844-decision-parent-child-arity.md`
+keeps `parent-child` transitive and asks for a ceiling *"against a corpus whose chunker actually
+populates `heading_path`"* — because the projection of 5.8×–53.5× the chunk count had never been
+run against one. Both obvious candidates fail for **different** reasons, and only the second was
+known:
+
+| corpus | documents | chunks | carry a `heading_path` | heading depth | `parent-child` |
+|---|---|---|---|---|---|
+| RFC realism | 300 | 106 806 | **0** | — | **0** — structural chunking degraded silently |
+| `tests/demo-kb` | 30 | 60 | 60 | **always 1** | **0** — every document is flat |
+| this repo's `docs/` + `plans/` | 43 | 2 671 | 2 671 | median 2, max 4 | **13 232** |
+
+`tests/demo-kb` populates `heading_path` on every chunk and still derives zero hierarchy edges,
+because a depth-1 path has no ancestor. **A corpus can satisfy "the chunker works" and still
+exercise nothing**, which is a second way to get a zero that looks like a measurement — and it is
+the shape the go decision's own bound warns about, one layer in.
+
+### The numbers
+
+Real Markdown, written by hand, with real nesting — 43 of this repository's own documents, indexed
+into a scratch KB (never committed; `docs/` and `plans/` are the corpus):
+
+* **4.95 `parent-child` rows per chunk** — 13 232 over 2 671 chunks. Against `sibling`'s 2 628 and
+  `in-section`'s 2 509, hierarchy is **71% of every stored edge**, on a corpus where `sibling` is
+  one row per adjacent chunk. It lands *below* the 5.8× floor the decision projected, so the
+  projection was pessimistic rather than optimistic.
+* **Derivation costs nothing.** The whole edge set derives in 0.158 s; the hierarchy alone is
+  **0.004 s** for those 13 232 rows. G3's ancestor-lookup form is linear in chunks and quadratic
+  only in a document's *distinct heading paths* (median 11 here, max 76), exactly as it claims.
+  **The cost is row count, never wall clock**, which is what the decision predicted and is worth
+  stating because it changes which mitigation would ever be needed.
+* **Index growth is 12.9%** — 11.17 MB with the hierarchy against 9.89 MB without, both `VACUUM`ed.
+  On a corpus of this shape the absolute number is 1.2 MB, and it scales with rows, not bytes of
+  text: an index dominated by 384-dimensional embeddings (the RFC corpus is 265 MB for 106 806
+  chunks) would grow proportionally far less.
+
+### The ceiling is not alarming, and the standing risk is unchanged
+
+Extrapolating 4.95 rows/chunk to the RFC corpus's 106 806 chunks gives **~529 000** hierarchy rows
+against its 107 802 total today — a five-fold graph, derived in well under a second. That is a
+number, not a problem, and it does **not** license switching to the immediate-parent variant: the
+decision is explicit that the variant is the arm to *measure* if the ceiling proves alarming, never
+the default to switch to first.
+
+**What is still unmeasured is the tail.** 4.95 is a mean over documents whose median depth is 2.
+The decision's standing risk — *"a corpus with deep heading nesting and large sections could make
+`parent-child` the dominant kind"* — is about a shape none of these three corpora has: deep
+nesting **and** many chunks per section, where the row count is the product. This corpus's worst
+document carries 76 distinct heading paths and its arity stays modest because its sections are
+short. Nothing here refutes that risk; it bounds the ordinary case and leaves the tail where the
+decision left it.
+
+### The tail, measured (20260804 22:39) — and it is alarming
+
+The paragraph above left the standing risk as prose. It is now a number. A **purpose-built
+worst-shape corpus** — six documents, heading depth 4, every heading path carrying ~26 chunks,
+which is the *a·d* product the risk names — was generated, synced with the same real backend, and
+measured the same way:
+
+| | this repo's `docs/` + `plans/` | worst-shape corpus |
+|---|---|---|
+| chunks | 2 671 | 2 483 |
+| heading depth, median / max | 2 / 4 | 3 / 4 |
+| chunks per heading path, median | short sections | **26** |
+| `parent-child` rows | 13 232 | **132 630** |
+| **rows per chunk** | **4.95** | **53.42** |
+| share of every stored edge | 71% | **94.7%** |
+| **index growth** | **+12.9%** (1.2 MB) | **+113.4%** (13.3 MB) |
+| derivation | 0.004 s (hierarchy) | 0.84 s (140 079 edges, every kind) |
+
+**53.42 lands at the very top of the decision's projected 5.8×–53.5× band**, so the projection was
+accurate at both ends rather than pessimistic: 4.95 sits below its floor for ordinary prose, 53.4
+reaches its ceiling for the shape it warned about. **The index more than doubles.** Derivation
+stays cheap — 140 079 edges in 0.84 s — which confirms the decision's own prediction that *the cost
+is row count, never wall clock*, and therefore that no mitigation aimed at derivation time would
+help.
+
+**What this corpus is, and is not.** Synthetic and deliberately adversarial: generated Markdown
+with uniform nesting and uniform section length, built to make the product as large as plausible
+rather than to resemble anyone's notes. It is **not** evidence that real corpora do this — neither
+real corpus measured above comes close. It is evidence that the shape is reachable without anything
+exotic, because depth 4 with long sections is an ordinary specification or manual.
+
+**No variant is switched to here, on purpose.**
+[`plans/20260804_1844-decision-parent-child-arity.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1844-decision-parent-child-arity.md)
+is explicit that if the ceiling proves alarming the immediate-parent form is *the arm to measure*,
+never the default to change first — and `--drop parent-child` is already a reported leg of G5's
+matrix. This is the input to that decision; the decision is the planner's.
+
+## G5 — the expansion channel (20260804 21:35)
+
+**HIGH — a ranking rule that would have made depth 2 unreachable, and it read as the careful
+choice.** The channel's output is ordered and then cut at `candidates_per_source`. The first
+implementation ranked `(distance, -cosine, …)`, on the reasoning that a two-hop chunk should not
+outrank a one-hop one on similarity alone — which sounds like the conservative reading of APPROACH
+§4A's *"score expanded chunks by edge weight and link distance"*. It is not conservative, it is
+**silently disabling half the feature**: with distance as the primary key, every one-hop chunk
+precedes every two-hop one, so on any corpus where one hop already fills the cut, depth 2
+contributes nothing to the output at all. The channel would have been depth-1 wearing a depth-2
+budget — and the reachability ceiling that unblocked this increment was measured at **two** logical
+hops, so the gate would have been measuring something the precondition never covered. Now
+`(-cosine, distance, …)`: cosine ranks, distance breaks the ties cosine cannot, and
+`test_a_two_hop_chunk_outranks_a_one_hop_one_when_the_query_says_so` fails if the order comes back.
+
+**HIGH — every tiebreak resolved to a surrogate id, and it looked stable because of another
+module's `ORDER BY`.** Fan-out, frontier order and the final ranking all broke ties on
+`nodes.id`. Those ids are deterministic today — but only because `edges.derive` enumerates
+documents `ORDER BY path` — so the channel's answers depended on an invariant of a different
+module, unstated in both. That is G1's defect in a new place: `_hydrate`'s unordered
+`WHERE c.id IN (…)` was stable in practice too, until a rebuild moved one golden-set question.
+Every tiebreak here now resolves to `(documents.path, chunks.ordinal)`, the total order G1 gave the
+rest of the pipeline. **The lesson is not "avoid surrogate ids"** — it is that *"this is
+deterministic"* is a claim about the code that computes it, and if that code is somewhere else, the
+determinism is an assumption rather than a property.
+
+**HIGH — a fixture that was not the shape its own docstring described, in the tests written to
+catch exactly that.** The membership-exclusion fixture built one document of six flat sections, so
+that ordinal 0 and ordinal 4 would be reachable *only* through their document's membership edge.
+Its body was `f"## Section {i}\n\nword{i} " * 30` — which repeats the **heading** thirty times, and
+produced 180 chunks nested under `Section 0 > Section 5`. A `parent-child` hierarchy, inside a
+fixture whose entire purpose was to have none, in a file whose docstring names "an assertion
+satisfied by something other than the property it names" as the failure it is written against. It
+was invisible until an unrelated ordering change made the walk reach one chunk more. Two things
+followed: dropping the `# Title` was **not** enough either — the chunker then reads the first `##`
+as the root and derives `Section 0 > Section n`, the same defect one heading level down — and a
+fixture that a test's meaning depends on now asserts its own shape (`_assert_flat_sections`: six
+chunks, every heading path depth 1, zero `parent-child` edges). **A fixture is an assertion.**
+
+**MEDIUM — a mutant that survived eighteen others, in the half of a rule the other half hides.**
+The membership exclusion is two filters: a document never passes through to itself, and a root's
+own document never contributes member chunks at any depth. Deleting the *second* left the whole
+suite green, because at hop 1 the source **is** the root's document, so the first already covers
+it — and no fixture ever reached a root document from somewhere else. The shape that does is
+`A —authored→ B —authored→ {A, C}` at `adjacent_k=1`: at hop 2 the source is B, the first filter
+does not apply, and without the second, A takes the only slot to re-contribute chunks the query
+already had. **Two rules that agree on every case you have built are one rule until you build the
+case that separates them.**
+
+**LOW — a throwaway mutation harness produced two runs of contradictory results.** Mutating a
+source file, running pytest and restoring in a loop reported extra failures in tests unrelated to
+the mutated file, twice, while the machine was also running a two-hour re-index and an eval matrix.
+Clearing `__pycache__` between mutants and running each mutant on a quiet machine gave seven clean,
+reproducible results. The mechanism was not pinned down — a stale bytecode cache after a
+same-second restore and a subprocess that failed to spawn under load are both consistent with what
+was seen. Recorded because the *reaction* is the reusable part: a mutation result that implicates a
+file the mutant did not touch is a result about the harness, and re-running it on a quiet machine
+costs a minute.
+
+## G5 — a root spends a fan-out slot it is then discarded from (20260804 22:30)
+
+**HIGH — the fourth review round, on a rule the third round had already written down.** Round three
+added a filter to `_offer_chunks` dropping candidates already found this hop or already emitted by
+an earlier one, with the reasoning stated in the comment: *"a slot spent on it adds nothing, and
+dropping it before the cut is the same rule the membership exclusion applies one level up"*. The
+rule is right. It was applied to two of the **three** categories it covers.
+
+A **root** reaching `found` is discarded twice over. `_accept` skips it before emitting, and `run`
+seeds `self._expanded` with the roots so it never joins the frontier either — so a root contributes
+neither a row nor a hop. Yet it had already taken one of the `adjacent_k` slots on the way, and the
+neighbours of a fused top-*k* chunk are very often *other* fused top-*k* chunks: `sibling` connects
+adjacent ordinals, and adjacent ordinals of a chunk the query matched are exactly what the vector
+stage also ranked highly.
+
+Measured on `graded_neighbour` at the shipped default `adjacent_k = 8`: **4 candidates returned as
+built, 10 with roots dropped before the cut** — and all six of the new ones are chunks fusion had
+not found, which is the only thing the channel exists to contribute.
+
+**Why it survived three rounds.** Every existing assertion about roots was set-level — *"neither
+root may be emitted"*, *"expansion still runs"* — and a set-level assertion cannot tell a slot
+spent from a slot saved. Both are satisfied by the defective walk. The test that catches it counts
+instead: `adjacent_k = 1`, two candidates, one of them a root, and the single slot must reach the
+non-root. With the filter removed the walk returns `[]`, which is the failure mode named in the
+assertion's own message.
+
+### What the fix is worth, and where that cannot be seen
+
+`tests/demo-kb` moved **zero questions** across all three gate legs — off, `expand`,
+`expand-no-authored` — with aggregates identical to four decimal places. That is not evidence the
+fix is inert: demo-kb's documents are about two chunks each, so `adjacent_k = 8` never saturates
+and a root never displaces anything. **A corpus can be incapable of exercising a change**, and
+reporting "no movement" from one is reporting the corpus, not the code. The RFC realism corpus —
+300 documents, 106 806 chunks — is where the fan-out cut actually binds, and it is the corpus the
+gate runs on.
+
+### The backstop that now survives mutation, on purpose
+
+`_accept`'s `if node in self._roots: continue` is unreachable once `_offer_chunks` filters. It
+stays: *"a root is never emitted"* is an invariant of the emit point, and a later caller adding a
+second way into `found` should not be able to break it from a distance. The honest consequence is
+recorded in the docstring and in the mutation table — **deleting that line fails no test**, while
+deleting the `_offer_chunks` filter fails exactly one. A backstop whose mutant survives is fine;
+a backstop silently *counted* as the enforcement is not, which is the same
+assertion-satisfied-by-something-else failure in its bookkeeping form.
+
+## G5 — the gate, run: `expand` ships `off` (20260804 22:52)
+
+**HIGH — the increment's deliverable is a negative measurement, and it is a clean one.** On the RFC
+realism corpus, at G5's own HEAD, against a schema-3 index rebuilt for this run:
+
+| leg | multi-hop | improved | regressed | p |
+|---|---|---|---|---|
+| `off` | 7/20 | — | — | — |
+| `expand`, drop `authored` | 4/20 | 0 | 3 | **1.0000** |
+| `expand`, all kinds | 4/20 | 0 | 3 | **1.0000** |
+
+**licensing p = 1.0000** (`max`, the more conservative of the two). **`expand` defaults `off`**, and
+`tools/graph_gate.py` exits 1. Clause 1 fails in both runs; clause 2 fails as well —
+`by_kind[multi-hop]` 0.350 → 0.200 against a 0.02 tolerance — and clause 4 fails on `recall_at_k`
+for the same movement.
+
+Lost: `content-disposition-http-takeover` (hit at rank 1 → **not found at all**),
+`http-rate-limit-status-code-provenance` (rank 4 → miss), `sip-invite-2xx-retransmission-defect`
+(rank 2 → miss). **Nothing was lifted.**
+
+### `reachable ≠ retrievable` — the finding, and the plan predicted its shape
+
+The reachability probe found **9** of the failing multi-hop questions reachable within two logical
+hops *without* authored edges, which is what unblocked the graph release. The retrieval instrument
+lifts **none** of them, and the channel's extra candidates displace three answers two-list fusion
+already had. The plan drew this distinction itself — *"a ceiling gauge cannot rank, and an argument
+cannot measure"* — and G5's whole existence is the reason it could be checked rather than assumed.
+**A reachability precondition is necessary and nowhere near sufficient**, and the gap between the
+two is not a small correction: it is 9 questions against 0.
+
+The go decision also anticipated the outcome's meaning: *"If `expand` did not pass, the finding is
+'graph structure does not help this corpus', and the response is a corpus or a different channel
+design, never an escalation to a more expensive one."* Nothing here licenses PPR.
+
+### Two things that make the number narrower than it looks, both stated rather than worked around
+
+**Clause 3 passes vacuously, and clause 4 nearly so.** The RFC corpus has `[retrieval.confidence]`
+commented out, so every question scores `confidence: unknown`; neither the confidence-lost nor the
+newly-found-at-low term can be non-zero there. The decomposition clause 3 exists for is exercised
+only by the synthetic artifacts in `tests/test_graph_channel.py` — which is precisely why the plan
+insisted the gate be driven by synthetic fixtures as well as by the corpus. **A gate whose only
+fixture is the real corpus can only be tested in whichever direction that corpus happens to point**,
+and here two of its four clauses would never have fired.
+
+**The `--drop parent-child` arm is inert on the gating corpus.** No chunk in the RFC corpus carries
+a `heading_path`, so `parent-child` and `in-section` derive **zero** edges and dropping them changes
+nothing by construction. The arm the arity decision added cannot say anything here. Its cost was
+measured separately (see the ceiling fragment); its retrieval value remains unmeasured, and the
+corpus that could measure it does not exist yet.
+
+### The `--drop sibling` arm answers its question, and the answer is "neither"
+
+The go decision added this arm to ask, *with the instrument that measures retrieval quality rather
+than a reachability ceiling*, whether 99.2% of the graph's mass earns its place. On this corpus
+`sibling` is 106 506 of the 107 411 non-transit structural edges, and dropping it produces
+**exactly the same 4/20, the same three regressions, and the same p = 1.0000** — one question's
+rank moves, and it is a miss either way.
+
+So `sibling` neither helps nor hurts. It is 99.2% of the stored graph and it is **inert in both
+gauges**: the reachability probe already found removing it cost nothing, and the retrieval
+instrument now agrees. Two independent measurements, and the harm the channel does comes from
+somewhere else entirely — the document-level path, `membership` transit into `co-located` (262
+edges) and `shared-tag` (643) hubs, which pull whole documents' chunks into the fusion.
+
+**With the caveat that makes it a narrower claim than it looks:** every chunk here has an empty
+`heading_path`, so a "sibling" in this corpus is an adjacent arbitrary *size-slice*, not an adjacent
+section. The arm has measured the value of size-slice adjacency, which is what this corpus's broken
+structural chunking produced — not the value of `sibling` as designed. On a corpus whose chunker
+works the question is still open.
+
+### Five legs land on the same number; the sixth does not, and I had already written that they all did
+
+**The full matrix**, `off` at 7/20 (recall@k 0.3500, MRR 0.421):
+
+| leg | multi-hop | improved | regressed | p | ms/query |
+|---|---|---|---|---|---|
+| `off` | 7/20 | — | — | — | 2012 |
+| `expand` | 4/20 | 0 | 3 | 1.0000 | 2051 |
+| `expand-no-authored` | 4/20 | 0 | 3 | 1.0000 | 2106 |
+| `expand-no-sibling` | 4/20 | 0 | 3 | 1.0000 | 2067 |
+| `expand-no-parent-child` | 4/20 | 0 | 3 | 1.0000 | 2028 |
+| `expand-no-link-distance` | 4/20 | 0 | 3 | 1.0000 | 2024 |
+| **`expand-in-degree`** | **6/20** | **1** | **2** | **0.8750** | 2237 |
+
+**MEDIUM — the process finding, and it is the file's own failure class caught in the act.** With
+five of the six legs written I recorded that *"every leg lands on the same number, which is what
+makes the result robust"* — a claim about six legs asserted from five, while the sixth was still
+running. The sixth then came back different: in-degree salience is the only configuration that
+lifts anything (`imap-utf8-two-strategies`), and the only one that regresses two rather than three.
+The claim was wrong within minutes of being written, in a fragment whose subject is an assertion
+satisfied by something other than the property it names. **A generalisation over N runs written
+while N−1 have finished is not a measurement, it is a prediction wearing a measurement's clothes.**
+The correction is recorded rather than quietly overwritten, because the tempting fix — waiting and
+writing the true sentence — would have hidden how easy it was to write the false one.
+
+**What the sixth leg does and does not license.** `expand-in-degree` at 1 improved / 2 regressed is
+p = 0.8750: nowhere near the gate, and still a net loss of one question against `off`. It is
+**reported, never gated** — three variables against one threshold is not a decision procedure — and
+noticing that it is the best-performing leg after seeing the numbers is exactly the exploratory
+fitting the pre-commitment forbids. It is a direction for a future measurement on a corpus that can
+carry one, not a result.
+
+**Latency, the other exit criterion.** `off` 2012 ms/query against `expand` 2051 — **1.02×**, so the
+channel costs about 2% on a 106 806-chunk index and the "slow at query time" risk did not
+materialise. In-degree salience is the expensive leg at 2237 ms (1.11×), which is the one place the
+matrix's timing separates the configurations at all.
+
+### The with/without-authored split is stronger here than on `tests/demo-kb`
+
+All **391** of the corpus's authored links are intra-KB — every `to:` names the corpus's own KB
+ULID — so unlike `tests/demo-kb`, where only 12 of 16 survive the cross-KB inertness rule, the
+with-authored leg has every one in play. They still move only two questions' *ranks* and flip no
+outcome, and both gated runs regress the identical three questions. The anti-circularity guard had
+nothing to catch, because there was no win to be circular about.
+
+### The pre-commitment held
+
+*A result short of the table ships the channel `off`, with counts and p-value recorded, untuned.*
+Nothing was tuned, no weight moved, no threshold was revisited after seeing the number. The
+`authored` weight's *measured at G5* marker is discharged by this run as **"measured, and it changed
+no outcome"** rather than by a fitted value.
+
+## G6 — Edge-hub reporting (20260805 06:20)
+
+**MEDIUM — the enumeration order this check's own sort relied on was implicit.** The first cut
+enumerated hub node ids with `SELECT DISTINCT src FROM edges WHERE kind = ?`, no `ORDER BY` — the
+only query touching `edges` in this codebase without one; every read in `graph/edges.py` orders
+explicitly, and that file's own docstring argues for it. It happened to come back in ascending
+`src` order today (a covering-index scan on `edges_src(src, kind)`), which is exactly the "mint
+order" the first test's fixture needed to differ from degree order to prove the `.sort()` was doing
+real work. That property held by accident of a query plan, not by anything this function asserted.
+Fixed with an explicit `ORDER BY src`. Found by an adversarial review agent, not by any test — no
+test could have caught it, since the property under test (the sort) still worked; only reading the
+query against the file's own convention surfaced it.
+
+**MEDIUM — one of the three hub kinds shipped with zero assertions on its printed text.** `_hub_label`
+has three branches — `tag`, `dir`, `heading` — and the landing commit tested `tag` (the sort-order
+fixture) and `heading` (the human-actionable-label fixture) but never `dir`. `co-located` appeared
+in a docstring only, explaining why the *other* fixtures were built to avoid triggering it — which
+reads, on a second look, exactly like the tests were routed around covering it rather than covering
+it. `test_a_directory_hub_is_named_by_its_kb_root_relative_path` closes it.
+
+**LOW, folded into the fix above — a degree tie had no assertion in either direction.** `top.sort(key=
+lambda item: item[1], reverse=True)` is a stable sort, so two hubs at equal degree kept whatever
+order they arrived in — which is to say, the same implicit query-plan order the first finding
+flags, one layer further in. Given a real tie the printed order was accidental twice over. Fixed by
+sorting on `(-degree, kind, key)` explicitly, and `test_a_degree_tie_breaks_deterministically_and_
+the_rest_are_counted` builds four hubs tied at degree 2 whose mint order is the *reverse* of their
+correct printed order — reverting the tiebreak makes the mutant print `d, c, b` instead of
+`a, b, c`, which is the sharpest test in this increment: it fails on a `reverse=True`-only sort
+that every other test here would still pass.
+
+**LOW, self-inflicted — a vacuous assertion, written by the implementer, in this same increment.**
+While extending an existing test's block with a new line, an assertion checking for a string that
+appears nowhere in `src/` — `"unchecked until the links release" not in detail` — was added twice
+(once by the edit that introduced the increment's other tests, once copied into a third test written
+later in the same session). It always passed, proved nothing, and is exactly the failure class this
+project's own `CLAUDE.md` names: *"an assertion satisfied by something other than the property it
+names."* Caught by cross-referencing the diff against `src/` during this same retrospective pass
+(`grep -rn "unchecked until the links release" src/` returns nothing), not by any tool — nothing
+in `check.sh` can distinguish a true-but-empty assertion from a load-bearing one. Removed.
+
+**Read together:** three of these four findings trace to the same root — an *implicit* order (query
+plan, sort stability) standing in for an *explicit* one, discovered because it happened to agree
+with what a fixture needed. G3's own docstrings warn about exactly this shape for a `src`-only read
+of a symmetric edge kind ("a confident, wrong, smaller answer"); this increment reproduced a milder
+version of it one level up, in the read that reports G3's own structure back to a human.
+
 ## Design review passes 1–7 (pre-implementation)
 
 Seven adversarial passes over [`DESIGN.md`](DESIGN.md) **before any code was written** — 58 findings

@@ -110,7 +110,14 @@ pnk sync --kb my-kb
 
 ```
 1 indexed, 0 renamed, 0 metadata-only, 0 unchanged, 0 removed
+1 edge(s) derived in 0.00s, 0 authored read from links: membership=1 sibling=0 parent-child=0 in-section=0 co-located=0 shared-tag=0 authored=0
 ```
+
+The second line is the **structural graph**, derived at sync time and reported per kind so a kind
+deriving nothing says so rather than being absent. One document with one chunk has only its own
+`membership` edge; the kinds that connect documents to each other need more than one document.
+Nothing queries it unless you turn the expansion channel on, and it ships off
+([MANIFEST](MANIFEST.md#retrieval), [STATUS](STATUS.md#did-the-expansion-channel-earn-its-default--no-measured-20260804-2252)).
 
 Sync also wrote `docs/retrieval.md.pnk.yaml` — the **sidecar**, holding that document's permanent
 ULID, its title, tags and links. Commit it alongside the document; the ID is the thing every inbound
