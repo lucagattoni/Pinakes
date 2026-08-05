@@ -1901,6 +1901,7 @@ def _index_document(
         max_tokens=manifest.chunking.max_tokens,
         overlap=manifest.chunking.overlap,
         kind=kind,
+        headings=manifest.chunking.headings,
         page_spans=page_spans,
     )
 

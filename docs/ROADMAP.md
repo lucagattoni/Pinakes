@@ -501,17 +501,18 @@ which is what that corpus was for. The interrupted-sync trio that used to sit he
 3. **The first sync may be using one core of ten**, and nobody has measured which. The instrument
    shipped in 0.12.0; **the measurement is still outstanding**, and nothing else in the item may be
    built before that number exists.
-4. **Numbered plain-text headings are not detected**, which is what left the RFC corpus with no
-   heading paths at all. Decided: `text` only, PDF disabled but never dismantled, behind a new
-   `[chunking] headings` key taking an enumerated value — so `strategy` stays inert and `structural`
-   gains no retroactive meaning. What remains is the value vocabulary and a false-positive predicate
-   written *before* it is fitted to the corpus.
-5. **The heading-coverage check WARNs forever on `code` and `pdf`**, which can never carry a heading
-   path. Decided 20260805: WARN only for `markdown` at 0% — the one fixable case — and report the
-   others as OK with a note naming the cause.
+4. **The heading-coverage check WARNs forever on `code` and `pdf`**, which can never carry a
+   heading path. Decided 20260805: WARN only for `markdown` at 0% — the one fixable case — and
+   report the others as OK with a note naming the cause.
+5. **A `[chunking]` edit is a silent no-op until `--rebuild`.** An incremental sync re-chunks a
+   document only when *the document* changed, so a manifest-only edit reports every file
+   `unchanged` and the setting does nothing. Measured, not reasoned. Pre-existing and shared by
+   `max_tokens` and `overlap`; the new `headings` key is what made it visible, being the first one
+   a user has a reason to flip on a KB already indexed.
 
-Three items closed since 20260804: the `[light]` backend error, `pnk doctor`'s home-directory leak,
-and the heading-coverage *detection* half — all in 0.12.0. The chunking item's original diagnosis
+Four items closed since 20260804: the `[light]` backend error, `pnk doctor`'s home-directory leak,
+the heading-coverage *detection* half — all in 0.12.0 — and **numbered plain-text heading detection
+itself**, which shipped after it as `[chunking] headings = "numbered"`. The chunking item's original diagnosis
 was **wrong and is corrected in the plan**: the Markdown grammar did not fail to match, it was never
 run, because `chunk.py` dispatches on source type and a `.txt` file takes `_plain_blocks`, which
 sets `heading_path=None` unconditionally.

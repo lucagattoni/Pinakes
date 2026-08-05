@@ -14,11 +14,12 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**Five live items as of 20260805 18:25.** Every one came from *building* — the RFC realism
-corpus, or the graph release measured against it — rather than from reading the code. **Nothing
-is in flight**: every branch open this morning landed and shipped in 0.12.0. **Four are decided
-and unbuilt**; one waits on a measurement nobody has taken. Item 5 is 0.12.0's own check needing
-a correction — the release that closed two items opened one.
+**Five live items as of 20260805 19:15.** Every one came from *building* — the RFC realism
+corpus, the graph release measured against it, or the grammar built on top of both — rather
+than from reading the code. **Three are decided and unbuilt**; one waits on a measurement
+nobody has taken. Items 4 and 5 are the newest and share a shape worth noticing: **both were
+opened by the work that closed something else**, and both are about a signal the tool fails to
+give.
 
 The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
 finished. Note what is **not** here: **both releases in
@@ -108,82 +109,8 @@ minutes it returns. Recorded so the analysis is not redone.
 
 ---
 
-### 4 · Numbered plain-text headings are not detected, and the graph result is bounded by it
 
-**Decided by the user 20260805: detection first (shipped), then an opt-in grammar. This is the
-second half.** `chunk.py` runs heading detection for `markdown` only; every other source type takes
-`_plain_blocks`, which records no `heading_path` at all. So a rigidly sectioned `.txt` corpus is
-chunked size-based however structural the manifest says it is.
-
-**Why it is not cosmetic.** `heading_path` is what `in-section`, `parent` and `child` derive from.
-On the RFC corpus those three of seven edge kinds derived **zero** edges — and that is the corpus
-the expansion channel's gate was measured against. The honest reading of that gate is *"the edge
-kinds that worked did not help this corpus"*, never *"graph structure does not help"*
-([`20260804_1442-decision-g3-go.md`](20260804_1442-decision-g3-go.md)).
-
-**Required:** numbered-heading detection for plain text, **opt-in** — never a change to what
-`structural` does today.
-
-**How it is switched on: DECIDED 20260805 18:25 by the user** — a **new key taking an enumerated
-value**, never a `strategy` value and never a boolean
-([§5.1](20260805_1721-metadata-as-retrieval-context.md)):
-
-    [chunking]
-    strategy = "structural"    # unchanged, still inert
-    headings  = "numbered"     # new, opt-in, `text` only
-
-An earlier draft of this item asserted "a new `[chunking] strategy` value" as required, and that is
-**withdrawn**. `strategy` is inert — validated by `table.choice`, never read at runtime — so a second
-value would make a dead key live and give `structural` a meaning it has never had, **retroactively,
-in every manifest already written**. A boolean was rejected for not extending: the PDF path is
-disabled rather than dismantled, so a second grammar is expected, and a boolean would force this
-same decision again with an installed base behind it.
-
-**Nothing blocks this item any more.** The vocabulary is settled — `headings` accepts `"none"`
-(default, and also writable explicitly) and `"numbered"`, never stamped into the template because
-`_toml.py` hard-errors on an unknown key ([§5.2](20260805_1721-metadata-as-retrieval-context.md)).
-So is the false-positive predicate, **written in full before any corpus was consulted**
-([§5.3](20260805_1721-metadata-as-retrieval-context.md)): five line-level clauses plus an
-outline-walk check over the whole document, and **if the walk fails anywhere the document yields no
-headings at all** — so a mis-read document falls back to exactly today's behaviour rather than
-minting confident nonsense. Measuring against the RFC corpus is the *second* step, and **a poor
-match is a finding to report, never a licence to loosen a clause**.
-
-**Two of the four blocking questions are DECIDED 20260805 13:13** ([`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_1313-decisions-init-titles-and-grammar.md)):
-
-* **Scope: the `text` source type only.** Markdown is not in scope because it already works —
-  `chunk.py` dispatches on source type and `markdown` already takes `_markdown_blocks`.
-  **`pdf` is disabled here, never dismantled:** nothing built for PDF is removed, narrowed or
-  weakened, and a PDF is extracted, chunked and indexed exactly as it is today. It simply does not
-  gain this grammar yet, and the precondition for extending it is **strong structure detection**.
-  If building this seems to require changing existing PDF behaviour, that is a spec defect — stop
-  and report it.
-* **`requires_pinakes`: a floor is set, explicitly.** Without one an older Pinakes rejects the new
-  value as an *unknown value*, which reads as a typo — the exact confusion G4 exists to prevent.
-  A build below the floor must produce the floor message, **not** the unknown-value message. The
-  accepted cost is that older builds cannot read a KB using the value; they would have refused it
-  anyway, with a worse message.
-
-**Two remain the planner's, and are still open:**
-
-1. **The value's name.**
-2. **False positives, written before the rule is fitted.** `1.` at line start is also an ordered
-   list. The predicate must be stated first and tested against the RFC corpus second, never derived
-   from it.
-
-**The eval risk is unusually well bounded, and that is worth using.** `tests/demo-kb` is Markdown,
-so a plain-text-only grammar **cannot** move the golden set — which makes `CLAUDE.md`'s "changing
-retrieval needs eval justification" provable rather than arguable here. Run it anyway and report
-before/after: **no movement is the expected result, and movement would itself be the finding.**
-
-**Re-running the graph gate afterwards is a separate decision.** It costs ~2 h of CPU embedding plus
-a `schema_version` 3 rebuild, and the anti-circularity discipline is not optional if it happens —
-questions stay frozen, nothing is tuned after seeing a number, and `expand-in-degree` stays
-reported, never gated.
-
----
-
-### 5 · The heading-coverage check WARNs forever on `code` and `pdf`
+### 4 · The heading-coverage check WARNs forever on `code` and `pdf`
 
 **Shipped in 0.12.0 and immediately in need of this correction.** `_heading_coverage` (`doctor.py`)
 returns `Status.WARN` when *any* source type sits at 0%. `code` and `pdf` can never carry a
@@ -213,10 +140,51 @@ deleted outright.
 
 ---
 
+### 5 · A `[chunking]` edit is a silent no-op until `--rebuild`
+
+**Found 20260805 19:15 while building the numbered-heading grammar, by running the thing rather
+than reading it.** An incremental `pnk sync` re-chunks a document only when *the document* changed.
+A manifest-only edit changes no content hash, so every file reports `unchanged` and the new setting
+does nothing — with no warning, no hint, and a `pnk doctor` that then reports exactly the condition
+the user just tried to fix.
+
+**Measured**, on a two-section `.txt` KB:
+
+| | result |
+|---|---|
+| `headings = "numbered"` added, plain `pnk sync` | `1 unchanged` · every `heading_path` still empty |
+| same manifest, `pnk sync --rebuild` | `1 indexed` · `1. Introduction`, `1. Introduction > 1.1. Scope`, `2. Terminology` |
+
+**The mechanism is shared by every `[chunking]` key** — `max_tokens` and `overlap` too, which is
+why this is a general item rather than a defect in the new grammar. It is **pre-existing and was
+not introduced by the grammar**; the grammar is what made it visible, being the first key a user has
+a reason to flip on a KB that is already indexed. Documented on the key
+([MANIFEST § `[chunking]`](../docs/MANIFEST.md#chunking)) so it is not discovered the hard way, but
+documentation is not the fix.
+
+**Required:** `pnk sync` must **notice** rather than rely on the user having read a warning. The
+shape that fits what is already there: record the chunking identity in `meta` beside the embedding
+identity `sync.py` already writes, and report a mismatch the way `pnk doctor` reports model
+coherence — a named check with `pnk sync --rebuild` as its remedy.
+
+**Two constraints on doing it, both learned here:**
+
+* **A missing `meta` key must not read as a mismatch.** Every KB indexed before this exists has no
+  chunking identity recorded, and a first upgrade that demands a full rebuild of every KB is a cost
+  nobody agreed to. Absent means *unknown*, which is a different thing from *different* — this is
+  the same distinction the interrupted-sync fix already had to make between a *missing* embedding
+  identity and a *wrong* one.
+* **WARN, not FAIL, and never an automatic rebuild.** A rebuild is the user's call: it is free in
+  money and expensive in time, and the interrupted-sync retrospective is the record of what
+  happens when a remedy discards work the user did not offer.
+
+---
+
 ## Closed — recorded so nobody reopens them
 
 | Was | Closed by |
 |---|---|
+| Numbered plain-text headings were not detected, so a rigidly sectioned `.txt` corpus was chunked size-based however structural the manifest read — which is what left the 300-RFC corpus with 106 806 chunks and not one `heading_path`, and so bounds the graph release's gate | `[chunking] headings = "numbered"`, 20260805. Opt-in, `text` only, a **new key** so `strategy` stays inert and `structural` gains no retroactive meaning. **The design is that it refuses rather than guesses:** five line-level clauses and then an outline walk over the whole document, and if the walk fails anywhere that document yields **no headings at all** — exactly the pre-grammar behaviour, never a partial labelling. The predicate was written in full *before any corpus was consulted*, and the tests are written against its clauses rather than against a corpus. Golden set unmoved as predicted (`recall@k` 0.9394, MRR 0.8806, both sides). **Still outstanding: the measurement against the RFC corpus**, which is a separate step and needs a corpus that is not in this repo |
 | `pnk doctor` printed the operator's home directory — absolute paths in the one command whose output is the natural thing to paste into an issue | Landed 20260805 (`293bf37`). A `_de_homed` helper strips the KB root's prefix from any message or remedy `doctor.py` forwards. The scope is what makes it right: `store.py`, `sidecar.py` and `ledger.py` all build their text from an absolute path because `manifest.root` is resolved, so the fix sits at the forwarding boundary rather than in each raiser. A path genuinely **outside** the KB — the model cache, a linked KB, a packaged `prices.toml` — is left exactly as printed |
 | The `[light]` first-sync error prescribed the 2 GB install to a user who chose `[light]` — `sentence-transformers` missing, `fastembed` sitting right there, and the message offered only the torch install the extra exists to avoid | Landed 20260805 17:31 (`43cef55`). `BackendMissingError` takes an `alternative`; `embed.py` finds it with `find_spec` and **never by loading it**, the same reasoning `CLAUDE.md` pins for the paid extractor — a check must not have the side effects of the thing it checks. When an alternative exists the remedy names only the manifest edit, per this item's own test. Its retrospective is the durable part: the pre-existing test looked environment-independent and was not — it blocked only `sentence_transformers`, leaving this checkout's transitively-installed `fastembed` genuinely importable, so both tests now monkeypatch `find_spec` and **name their precondition instead of inheriting `site-packages`** |
 | `strategy = "structural"` degraded to size-based chunking in silence — a 300-RFC corpus indexed **106 806 chunks with every `heading_path` empty**, and nothing said so. Three of the seven edge kinds derive from `heading_path`, so they derived **zero** edges on the corpus the graph release's gate was measured against | Detection shipped 20260805 (`_heading_coverage` in `doctor.py`). **This item's own diagnosis was wrong and is corrected here:** it said the Markdown heading grammar "is Markdown-shaped; RFC section numbering is not, so nothing matches", which describes a regex failing to match. What actually happens is `chunk.py:131` — `blocks = _markdown_blocks(text) if kind == "markdown" else _plain_blocks(text)`. `_markdown_blocks` is **never called** for a `.txt` file, and `_plain_blocks` sets `heading_path=None` unconditionally (`chunk.py:254`). **Nothing failed to match because nothing was tried**, which is why tightening a grammar would have fixed nothing. Its evidence line — *"`grep heading src/pinakes/doctor.py` returns nothing"* — has been false since G6. The remaining half, an opt-in grammar for numbered plain text, is live below |
