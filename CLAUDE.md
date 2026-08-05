@@ -1,5 +1,18 @@
 # Pinakes — project instructions
 
+> ## ▶️ Do this first, before any other work
+>
+> **Slim this file: it is 260 lines against its own ~150 guardrail.** Nothing is deleted —
+> relocate and leave pointers, exactly as `docs/RELEASING.md` was extracted on 20260801 for this
+> same reason. Move *Building a release* → `docs/BUILDING.md` and *Invariants that must not be
+> broken* → `docs/INVARIANTS.md`, each with a short pointer; compress *Docs* and *Landing work*,
+> whose detail `docs/README.md` and `docs/RELEASING.md` already own. Keep verbatim: the `land.py`
+> guard, the PUBLIC-repo rules, documentation ownership, naming, and unbuilt-work naming.
+>
+> **Show the diff and wait for the user before applying it** — this file governs every session.
+> **Then delete this block.** Deferred by the user 20260805 22:58 after a long session; the
+> misleading content was already fixed in `b9ffe63`, so what remains is size, not accuracy.
+
 Architecture and rationale live in [`docs/DESIGN.md`](docs/DESIGN.md); [`docs/README.md`](docs/README.md)
 indexes the rest (which file owns which fact). This file only carries rules that change how you work.
 
