@@ -500,13 +500,24 @@ whether the configured model is present locally, and `--offline` fails fast inst
 ### 4.6 Chunking and tokens
 
 Chunks are paragraphs under a heading, and **the heading line is part of the first chunk beneath
-it** — not consumed as pure structure. **Heading detection runs for Markdown only, and `[chunking] strategy` does not control it.**
-That key is validated at parse time and never read again; the document's **source type** is what
-dispatches. Every type but `markdown` takes the plain-text path, which records no `heading_path` at
-all — so a `.txt` corpus is chunked without structure however rigidly it is sectioned and whatever
-the manifest says.
-Nothing failed to match; nothing was tried. `pnk doctor`'s heading-coverage check exists because
-that was silent until a 106 806-chunk corpus indexed with zero heading paths and no warning. The lexical index only sees chunk text, so a word appearing
+it** — not consumed as pure structure. **The document's source type is what dispatches, and
+`[chunking] strategy` still does not control it** — that key is validated at parse time and never
+read again.
+
+`markdown` gets ATX headings. `text` gets a **numbered outline grammar, opt-in behind
+`[chunking] headings = "numbered"`** and off by default; `code` and `pdf` take the plain-text path
+and record no `heading_path` at all. For three releases every type but `markdown` did, so a `.txt`
+corpus was chunked without structure however rigidly it was sectioned — and **nothing failed to
+match, because nothing was tried**. `pnk doctor`'s heading-coverage check exists because that was
+silent until a 106 806-chunk corpus indexed with zero heading paths and no warning.
+
+**The numbered grammar's design principle is that it refuses rather than guesses.** `1.` at line
+start is also an ordered list, so acceptance is decided over the *whole document*: the numbers must
+form a valid outline walk, and **if the walk fails anywhere the document yields no headings at
+all**, falling back to exactly the pre-grammar behaviour. A misread document therefore loses nothing
+it had, where a partial labelling would have invented structure that was never there. This is the
+same judgement the title decision reached — a visibly absent value beats a plausible wrong one,
+because a wrong one is harder to notice. The lexical index only sees chunk text, so a word appearing
 only in a heading would otherwise be unsearchable, and a passage quoted back to the user reads
 better carrying the heading it belongs to. `heading_path` records the hierarchy separately, and it is
 worth being exact about what consumes it, because it is not retrieval: **citations**

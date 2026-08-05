@@ -58,7 +58,7 @@ def test_paths_derive_from_the_root(kb_root: Path) -> None:
 
 def test_omitted_sections_take_the_documented_defaults(write_manifest: WriteManifest) -> None:
     manifest = load(write_manifest(minimal()))
-    assert manifest.chunking == manifest.chunking.__class__("structural", 510, 64)
+    assert manifest.chunking == manifest.chunking.__class__("structural", 510, 64, "none")
     assert manifest.extraction == manifest.extraction.__class__("pypdfium2", "claude-opus-5")
     assert manifest.retrieval.candidates_per_source == 50
     assert manifest.retrieval.rerank == "local"
@@ -342,3 +342,28 @@ def test_adjacent_k_above_the_server_cap_is_refused_not_clamped(
     with pytest.raises(ManifestError) as caught:
         load(write_manifest(body))
     assert str(MAX_ADJACENT_K) in caught.value.message
+
+
+def test_chunking_headings_defaults_to_none(write_manifest: WriteManifest) -> None:
+    """The grammar is opt-in. A manifest written before the key existed must keep behaving exactly
+    as it did — the default is the whole compatibility story."""
+    assert load(write_manifest(minimal())).chunking.headings == "none"
+
+
+def test_chunking_headings_accepts_numbered_and_an_explicit_none(
+    write_manifest: WriteManifest,
+) -> None:
+    """Both are writable. `"none"` explicitly lets a manifest say *considered* rather than
+    *predates the feature* — different facts about a KB."""
+    for value in ("none", "numbered"):
+        body = minimal(chunking=f'\n[chunking]\nheadings = "{value}"\n')
+        assert load(write_manifest(body)).chunking.headings == value
+
+
+def test_chunking_headings_refuses_an_unknown_grammar(write_manifest: WriteManifest) -> None:
+    """`table.choice`, so an unknown value is a hard error rather than a silently ignored key.
+    `"markdown"` is the plausible wrong answer — it names a real grammar this key does not accept,
+    because Markdown already has one and does not route through here."""
+    body = minimal(chunking='\n[chunking]\nheadings = "markdown"\n')
+    with pytest.raises(ManifestError):
+        load(write_manifest(body))

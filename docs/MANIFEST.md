@@ -114,9 +114,18 @@ Override for one run with `pnk sync --extract=BACKEND`.
 
 ## `[chunking]`
 
+> ⚠️ **Changing any key here needs `pnk sync --rebuild`.** An incremental sync re-chunks a document
+> only when *the document* changed, so a manifest-only edit reports every file `unchanged` and the
+> new setting silently does nothing. Measured 20260805 on `headings`: flipped to `"numbered"`, a
+> plain `pnk sync` reported `1 unchanged` and left every `heading_path` empty; `--rebuild` produced
+> them. The same mechanism covers `max_tokens` and `overlap`. Nothing warns yet — that is
+> [an open correction](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md).
+
+
 | Key | Default | Notes |
 |---|---|---|
-| `strategy` | `structural` | The only accepted value, and **nothing reads it at runtime** — it is validated at parse time and never consulted again. What actually decides chunking is the document's **source type**: `markdown` gets heading and paragraph structure, every other type takes the plain-text path and records no `heading_path` at all. So setting this changes nothing today, and a `.txt` or PDF corpus is chunked without structure however this reads. `pnk doctor`'s heading-coverage check reports that rather than leaving it silent ([CLI](CLI.md#pnk-doctor)); an opt-in value for numbered plain text is [an open correction](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md) |
+| `strategy` | `structural` | The only accepted value, and **nothing reads it at runtime** — it is validated at parse time and never consulted again. What actually decides chunking is the document's **source type**: `markdown` gets heading and paragraph structure, every other type takes the plain-text path and records no `heading_path` at all. So setting this changes nothing, and it is **not** what turns on the plain-text heading grammar — `headings` below is. It was left inert deliberately rather than given a second value: every manifest ever written already carries `structural`, so defining it now would give an existing value a new meaning retroactively |
+| `headings` | `"none"` | `"none"` or `"numbered"`. Which heading grammar runs for the **`text`** source type — and only that type: `markdown` already has one, while `code` and `pdf` are out of scope by decision rather than oversight (the PDF path is *disabled here, never dismantled*, and extending it waits on structure detection worth trusting). `"numbered"` reads a dotted-decimal outline (`1.`, `1.1.`, `2.`) into `heading_path`. **It refuses rather than guesses:** `1.` at line start is also an ordered list, so the numbers must form a valid outline walk across the whole document, and **if the walk fails anywhere that document yields no headings at all** — exactly the pre-grammar behaviour, never a partial labelling. `"none"` is the default and is also writable explicitly, so a manifest can record that the choice was *considered* rather than *predating the feature*. **Not stamped into the template**, same reason as `adjacent_k`: `_toml.py` hard-errors on an unknown key, so a manifest carrying this one cannot be read at all by an older build |
 | `max_tokens` | `510` | Counted with **the embedding model's own tokenizer**, and validated against its `max_seq_length` minus special tokens. Asking for more is a hard error, not a silent truncation |
 | `overlap` | `64` | Must be `< max_tokens` |
 

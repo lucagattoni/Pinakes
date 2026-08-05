@@ -57,6 +57,19 @@ rather than from an unchanged result list.
 GRAPH_CHANNEL_DEFAULT = "off"
 """Named rather than inlined, because it is the value G5's gate licenses or does not."""
 CHUNK_STRATEGIES = ("structural",)
+HEADING_GRAMMARS = ("none", "numbered")
+"""`[chunking] headings` — which heading grammar runs for the `text` source type.
+
+**A key of its own rather than a second `CHUNK_STRATEGIES` value, decided 20260805.** `strategy` is
+*inert*: validated here and never read at runtime. A second accepted value would make a dead key
+live and give `structural` a meaning it has never had — retroactively, in every manifest already
+written. This key gives `structural` no new meaning, and changes nothing for a manifest omitting it.
+
+`"none"` is the default and is also writable explicitly, so a manifest can say *"considered"* rather
+than *"predates the feature"*. **Deliberately not stamped into the template**, for the reason
+`adjacent_k` carries below: `_toml.py` hard-errors on an unknown key, so a manifest holding this one
+cannot be read at all by a Pinakes built before it existed.
+"""
 ON_EXCEED = ("abort", "partial")
 EXTRACTION_BACKEND_DEFAULT = "pypdfium2"
 EXTRACTION_MODEL_DEFAULT = "claude-opus-5"
@@ -98,6 +111,7 @@ class ChunkingSection:
     strategy: str
     max_tokens: int
     overlap: int
+    headings: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -610,9 +624,10 @@ def _extraction(root_table: Table, path: Path) -> ExtractionSection:
 def _chunking(root_table: Table, path: Path) -> ChunkingSection:
     table = _optional_table(root_table, "chunking")
     if table is None:
-        return ChunkingSection(strategy="structural", max_tokens=510, overlap=64)
+        return ChunkingSection(strategy="structural", max_tokens=510, overlap=64, headings="none")
     section = ChunkingSection(
         strategy=table.choice("strategy", CHUNK_STRATEGIES, default="structural"),
+        headings=table.choice("headings", HEADING_GRAMMARS, default="none"),
         max_tokens=table.integer("max_tokens", default=510, minimum=1),
         overlap=table.integer("overlap", default=64, minimum=0),
     )

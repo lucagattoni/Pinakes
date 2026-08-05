@@ -222,3 +222,153 @@ def test_as_row_matches_the_store_signature(counter: TokenCounter) -> None:
 def test_token_counts_come_from_the_counter(counter: TokenCounter) -> None:
     chunk = chunked("# H\n\none two three four\n", counter)[0]
     assert chunk.token_count == 6  # "# H" plus the four words
+
+
+# --- The numbered-heading grammar (`[chunking] headings = "numbered"`) ---------------------------
+#
+# Every test below names the clause of the predicate it pins
+# (`plans/20260805_1721-metadata-as-retrieval-context.md` § 5.3). The predicate was written in full
+# *before* any corpus was consulted, and these tests are written against the clauses rather than
+# against a corpus, for the same reason: a rule fitted to its own answer proves nothing.
+
+_OUTLINE = """1. Introduction
+
+This document describes a thing.
+
+1.1. Scope
+
+It applies broadly.
+
+2. Terminology
+
+Words mean things.
+"""
+
+
+def _paths(text: str, counter: TokenCounter, *, kind: str = "text", headings: str = "numbered"):
+    chunks = chunk_document(
+        text, counter=counter, max_tokens=100, overlap=10, kind=kind, headings=headings
+    )
+    return [chunk.heading_path for chunk in chunks]
+
+
+def test_a_numbered_outline_becomes_a_heading_path(counter: TokenCounter) -> None:
+    assert _paths(_OUTLINE, counter) == [
+        "1. Introduction",
+        "1. Introduction > 1.1. Scope",
+        "2. Terminology",
+    ]
+
+
+def test_the_grammar_is_opt_in_and_off_by_default(counter: TokenCounter) -> None:
+    """`headings="none"` is the default. The same document that labels cleanly above must come back
+    with nothing when the key is absent — otherwise the key is decorative and every existing KB
+    silently changed behaviour on upgrade."""
+    assert set(_paths(_OUTLINE, counter, headings="none")) == {None}
+
+
+def test_an_ordered_list_that_restarts_yields_no_headings_at_all(counter: TokenCounter) -> None:
+    """Clause 8, the whole design. `1.` at line start is also an ordered list, and a list that
+    restarts breaks the outline walk. The document must fall back to *exactly* pre-grammar
+    behaviour — not to a partial labelling, which would be the confident-nonsense outcome."""
+    listy = "Steps:\n\n1. First do this.\n\n2. Then do that.\n\n1. Restarting the count.\n"
+    assert set(_paths(listy, counter)) == {None}
+
+
+def test_a_repeated_number_rejects_the_document(counter: TokenCounter) -> None:
+    """Clause 6's no-repeats rule, reached without a restart-to-1."""
+    doubled = "1. Alpha\n\nBody.\n\n2. Beta\n\nBody.\n\n2. Beta again\n\nBody.\n"
+    assert set(_paths(doubled, counter)) == {None}
+
+
+def test_a_table_of_contents_does_not_disqualify_the_document(counter: TokenCounter) -> None:
+    """Clause 3. Without the dot-leader rule a ToC's entries duplicate every real section number,
+    clause 6 sees repeats, and the whole document is rejected — so this asserts the *sections*
+    still label, which is what the clause exists to protect."""
+    with_toc = (
+        "Table of Contents\n\n"
+        "1. Introduction .......................... 3\n\n"
+        "2. Terminology ........................... 7\n\n"
+        "1. Introduction\n\nBody of the introduction.\n\n"
+        "2. Terminology\n\nBody of the terminology.\n"
+    )
+    # The ToC lines stay ordinary unlabelled blocks — they are content, not structure.
+    assert _paths(with_toc, counter) == [
+        None,
+        None,
+        None,
+        "1. Introduction",
+        "2. Terminology",
+    ]
+
+
+def test_an_indented_number_is_not_a_heading(counter: TokenCounter) -> None:
+    """Clause 1 — column 0. Indented enumerations are the commonest false positive, and with only
+    one real heading left the document falls below clause 7's minimum."""
+    indented = "1. Real Heading\n\nBody.\n\n    2. Indented item\n\nMore body.\n"
+    assert set(_paths(indented, counter)) == {None}
+
+
+def test_a_sentence_shaped_line_is_not_a_heading(counter: TokenCounter) -> None:
+    """Clause 4 — a heading is a label, not a sentence. Both halves: over-long, and
+    terminal punctuation."""
+    long_title = "x" * (100 + 1)
+    assert set(_paths(f"1. {long_title}\n\nBody.\n\n2. Beta\n\nBody.\n", counter)) == {None}
+    assert set(_paths("1. Alpha:\n\nBody.\n\n2. Beta:\n\nBody.\n", counter)) == {None}
+
+
+def test_a_line_not_preceded_by_a_blank_line_is_not_a_heading(counter: TokenCounter) -> None:
+    """Clause 5. A numbered line continuing a paragraph is prose, not structure."""
+    inline = "1. Alpha\n\nSome prose runs on and then\n2. Beta appears mid-paragraph\n\nMore.\n"
+    assert set(_paths(inline, counter)) == {None}
+
+
+def test_a_single_heading_is_not_an_outline(counter: TokenCounter) -> None:
+    """Clause 7. One candidate is likelier a stray list item than a document structure."""
+    assert set(_paths("1. Alpha\n\nBody with no second section.\n", counter)) == {None}
+
+
+def test_a_heading_may_return_to_an_ancestors_next_sibling(counter: TokenCounter) -> None:
+    """Clause 6's third permitted step — 1.1 -> 2 must be legal, or every real outline is
+    rejected the moment it climbs back out of a subsection."""
+    assert _paths("1. Alpha\n\nA.\n\n1.1. Sub\n\nB.\n\n2. Beta\n\nC.\n", counter) == [
+        "1. Alpha",
+        "1. Alpha > 1.1. Sub",
+        "2. Beta",
+    ]
+
+
+def test_a_skipped_number_rejects_the_document(counter: TokenCounter) -> None:
+    """Clause 6 admits +1 only. A jump from 1 to 3 is the signature of matched prose, not a
+    document that merely omitted a section."""
+    assert set(_paths("1. Alpha\n\nA.\n\n3. Gamma\n\nB.\n", counter)) == {None}
+
+
+@pytest.mark.parametrize("kind", ["pdf", "code", "markdown"])
+def test_the_grammar_runs_for_text_only(counter: TokenCounter, kind: str) -> None:
+    """Scope, decided 20260805: `text` only. `markdown` already has a grammar; `pdf` is *disabled
+    here, never dismantled*. A PDF whose extracted text happens to look like an outline must be
+    chunked exactly as it is today, whatever the manifest says."""
+    assert set(_paths(_OUTLINE, counter, kind=kind)) == {None}
+
+
+def test_the_heading_line_stays_inside_its_own_chunk(counter: TokenCounter) -> None:
+    """Same contract `_markdown_blocks` holds: the lexical index only sees chunk text, so a
+    heading consumed as pure structure would make its own words unsearchable."""
+    chunks = chunk_document(
+        _OUTLINE, counter=counter, max_tokens=100, overlap=10, kind="text", headings="numbered"
+    )
+    assert "1.1. Scope" in chunks[1].text
+
+
+def test_no_character_is_dropped_when_a_document_is_rejected(counter: TokenCounter) -> None:
+    """The fallback must be `_plain_blocks`, not a degraded parse: rejecting an outline may never
+    cost content."""
+    listy = "Steps:\n\n1. First do this.\n\n2. Then do that.\n\n1. Restarting the count.\n"
+    chunks = chunk_document(
+        listy, counter=counter, max_tokens=100, overlap=10, kind="text", headings="numbered"
+    )
+    plain = chunk_document(listy, counter=counter, max_tokens=100, overlap=10, kind="text")
+    assert [(c.text, c.char_start, c.char_end) for c in chunks] == [
+        (c.text, c.char_start, c.char_end) for c in plain
+    ]

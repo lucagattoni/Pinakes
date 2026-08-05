@@ -20,6 +20,7 @@ chunk.** Overlap may repeat text; nothing may drop it.
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Protocol
 
 from pinakes.errors import ChunkingError
@@ -30,6 +31,20 @@ PDF_SUFFIXES = frozenset({".pdf"})
 
 _ATX_HEADING = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<title>.+?)\s*#*\s*$")
 _FENCE = re.compile(r"^\s*(```|~~~)")
+_NUMBERED_HEADING = re.compile(r"^(?P<num>\d+(?:\.\d+)*)\.?[ \t]+(?P<title>\S.*)$")
+"""Clause 2 of the numbered-heading predicate. Anchored at column 0 by construction — the pattern
+opens on a digit, so any leading whitespace fails it, which *is* clause 1."""
+
+_DOT_LEADER = re.compile(r"\.{3,}")
+"""Clause 3. Three or more consecutive dots is a table-of-contents leader. Without this, a ToC's
+entries duplicate every real section number and clause 6's no-repeats rule rejects the document."""
+
+_MAX_HEADING_CHARS = 100
+"""Clause 4. A heading is a label; a sentence is not. A *shape* bound, not a fitted threshold —
+named here rather than inlined because this project has been bitten by an uncalibrated constant."""
+
+_MIN_HEADINGS = 2
+"""Clause 7. One candidate is likelier a stray list item than an outline."""
 
 
 class TokenCounter(Protocol):
@@ -111,6 +126,7 @@ def chunk_document(
     max_tokens: int,
     overlap: int,
     kind: str = "markdown",
+    headings: str = "none",
     page_spans: Sequence[tuple[int, int]] | None = None,
 ) -> list[Chunk]:
     """Split one document into chunks, preserving every character in at least one of them.
@@ -119,6 +135,11 @@ def chunk_document(
     miss) is consumed only for PDFs: each resulting chunk's `page_start`/`page_end` is looked up
     from it, never used to force an extra split — the existing block/fit machinery already
     produces the right chunk boundaries; this only labels them.
+
+    `headings` is `[chunking] headings` and is **read only when `kind == "text"`**. `markdown`
+    already has a grammar; `code` and `pdf` are out of scope by decision, not by oversight — the PDF
+    path is *disabled here, never dismantled*, and extending it waits on structure detection strong
+    enough to be worth trusting.
     """
     if overlap >= max_tokens:
         raise ChunkingError(
@@ -128,7 +149,12 @@ def chunk_document(
     if not text.strip():
         return []
 
-    blocks = _markdown_blocks(text) if kind == "markdown" else _plain_blocks(text)
+    if kind == "markdown":
+        blocks = _markdown_blocks(text)
+    elif kind == "text" and headings == "numbered":
+        blocks = _numbered_blocks(text)
+    else:
+        blocks = _plain_blocks(text)
 
     chunks: list[Chunk] = []
     for block in blocks:
@@ -227,6 +253,140 @@ def _markdown_blocks(text: str) -> list[Block]:
             if not stripped.strip():
                 flush()
                 continue
+
+        if block_start is None:
+            block_start = pending_start if pending_start is not None else line_start
+            pending_start = None
+        block_end = offset
+
+    flush()
+    return blocks
+
+
+def _numbered_candidates(text: str) -> list[tuple[int, tuple[int, ...], str]]:
+    """Every line passing clauses 1-5, as `(line_start, number, full_heading_text)`.
+
+    Clause 5 — preceded by a blank line, or the first line — is why this walks the document rather
+    than filtering lines independently.
+    """
+    found: list[tuple[int, tuple[int, ...], str]] = []
+    offset = 0
+    previous_blank = True  # start of document satisfies clause 5
+
+    for line in text.splitlines(keepends=True):
+        line_start = offset
+        offset += len(line)
+        stripped = line.rstrip("\n")
+
+        if not stripped.strip():
+            previous_blank = True
+            continue
+
+        match = _NUMBERED_HEADING.match(stripped) if previous_blank else None
+        previous_blank = False
+        if match is None:
+            continue
+
+        title = match.group("title").rstrip()
+        if _DOT_LEADER.search(title):  # clause 3
+            continue
+        if len(title) > _MAX_HEADING_CHARS or title[-1] in ".,;:":  # clause 4
+            continue
+
+        number = tuple(int(part) for part in match.group("num").split("."))
+        found.append((line_start, number, stripped.strip()))
+
+    return found
+
+
+def _is_valid_step(previous: tuple[int, ...], current: tuple[int, ...]) -> bool:
+    """Clause 6, for one pair: a first child, a sibling increment, or an ancestor's next sibling."""
+    if len(current) == len(previous) + 1 and current[:-1] == previous and current[-1] == 1:
+        return True  # first child: X -> X.1
+    depth = len(current)
+    if depth <= len(previous) and current[: depth - 1] == previous[: depth - 1]:
+        return current[depth - 1] == previous[depth - 1] + 1  # sibling, or ancestor's next sibling
+    return False
+
+
+def _outline_ok(numbers: Sequence[tuple[int, ...]]) -> bool:
+    """Clauses 6 and 7 over the whole document. **A single failure rejects every heading in it.**
+
+    That is the design, not a shortcut. The fallback is `_plain_blocks` — *exactly* the behaviour
+    before this grammar existed — so a document this misreads loses nothing it had, and an ordered
+    list restarting at `1.` disqualifies its document instead of minting confident nonsense. The
+    same judgement the title decision made: a visibly absent value beats a plausible wrong one,
+    because a wrong one is harder to notice.
+
+    **§5.3 also states "no number repeats". That is not checked here, because it cannot happen.**
+    Every step `_is_valid_step` admits raises the tuple lexicographically — a sibling raises its
+    last component, a first child appends to it, and an ancestor's next sibling raises a shallower
+    one — so an accepted sequence is strictly increasing and a repeat is unreachable. The first
+    draft did check it; **mutation testing found the check could be deleted with no test failing**,
+    which is the signature of dead code, not of a missing test. It is gone rather than kept as
+    defence in depth: a guard that cannot fire still reads as one, and would invite someone to
+    weaken the step rule believing this backs it up.
+    """
+    if len(numbers) < _MIN_HEADINGS:
+        return False
+    return all(_is_valid_step(before, after) for before, after in pairwise(numbers))
+
+
+def _numbered_blocks(text: str) -> list[Block]:
+    """`_plain_blocks`, but labelled by a numbered outline when the document has one.
+
+    The heading line is *included* in the block beneath it, exactly as `_markdown_blocks` does and
+    for the same two reasons: the lexical index only sees chunk text, and a quoted passage reads
+    better carrying its own heading. The number stays in the label — unlike Markdown's `#`, which is
+    syntax, `1.2` is content you would cite.
+    """
+    candidates = _numbered_candidates(text)
+    if not _outline_ok([number for _, number, _ in candidates]):
+        return _plain_blocks(text)
+
+    at_line: dict[int, tuple[tuple[int, ...], str]] = {
+        line_start: (number, label) for line_start, number, label in candidates
+    }
+    blocks: list[Block] = []
+    headings: list[str] = []
+    block_start: int | None = None
+    block_end = 0
+    pending_start: int | None = None
+    offset = 0
+
+    def flush() -> None:
+        nonlocal block_start
+        if block_start is None:
+            return
+        body = text[block_start:block_end].rstrip("\n")
+        if body.strip():
+            blocks.append(
+                Block(
+                    text=body,
+                    start=block_start,
+                    end=block_start + len(body),
+                    heading_path=" > ".join(headings) if headings else None,
+                )
+            )
+        block_start = None
+
+    for line in text.splitlines(keepends=True):
+        line_start = offset
+        offset += len(line)
+
+        heading = at_line.get(line_start)
+        if heading is not None:
+            flush()
+            number, label = heading
+            del headings[len(number) - 1 :]
+            headings.append(label)
+            if pending_start is None:
+                pending_start = line_start
+            continue
+
+        if not line.strip():
+            flush()
+            continue
 
         if block_start is None:
             block_start = pending_start if pending_start is not None else line_start
