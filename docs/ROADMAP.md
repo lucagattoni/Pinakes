@@ -75,6 +75,7 @@ number belongs to a release only when it is cut
 | **[0.12.0](#0120--the-check-that-would-have-caught-it--20260805-1802)** | 20260805 18:02 | The check that would have caught it | • `pnk doctor` reports heading-path coverage<br>• Missing-backend error names an installed alternative<br>• `pnk doctor` stops printing `$HOME`<br>• `tools/measure_sync_cpu.py` |
 | **[0.13.0](#0130--plain-text-can-carry-a-heading-path--20260805-2101)** | 20260805 21:01 | Plain text can carry a heading path | • `[chunking] headings = "numbered"`<br>• Measured on 980 real RFCs, 314/314 modern<br>• A `[chunking]` edit is no longer a silent no-op<br>• `tools/build_rfc_corpus.py` |
 | **[0.14.0](#0140--the-tool-stops-crying-wolf--20260805-2222)** | 20260805 22:22 | The tool stops crying wolf | • Heading coverage WARNs only for `markdown` at 0%<br>• `pnk init` adopts a directory with content<br>• A `titles` nudge, never a warning<br>• The sync loop stays serial — measured |
+| **[0.15.0](#0150--a-document-says-what-it-is-called--20260805-2248)** | 20260805 22:48 | A document says what it is called | • A Markdown `# ` heading becomes the title<br>• Fence-aware, `##` excluded, Markdown only<br>• No migration — existing titles are never rewritten |
 | | | **[Open corrections](#open-corrections--none-live)** | • None live — first time since 20260731<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
@@ -545,6 +546,29 @@ two. The instrument proved itself in the same run: `uv run` sat at 0.0% while it
 have questioned.
 
 → [RETROSPECTIVES.md](RETROSPECTIVES.md).
+
+---
+
+## 0.15.0 — A document says what it is called · 20260805 22:48
+
+- **A Markdown document is titled by its own `# ` heading.** `rfc9110-notes.md` opening on
+  `# HTTP Semantics` is now titled *HTTP Semantics* rather than *"rfc9110 notes"*.
+
+**This began as a correction, not a feature.** The record said `sync` mints from the filename *"when
+the document has no Markdown H1"* — implying it read one otherwise. It never did: `skeleton()` was
+called without `title=` at both call sites, and `title=` appeared nowhere in `sync.py`. The claim
+survived because the two forms usually differ only in capitalisation — `# Access restrictions`
+sitting beside `title: access restrictions` reads exactly as though the heading was used, when the
+value is the stem with its hyphens swapped for spaces.
+
+That is the same shape as the chunking diagnosis corrected in 0.13.0: **a fallback described for a
+mechanism that was never running.** Both were found by checking what the code does rather than what
+the note says.
+
+An H1 is structure, not inference — which is what keeps this distinct from the first-line heuristic
+that remains rejected, since an RFC's first line is `Internet Engineering Task Force (IETF)`.
+Markdown only, fence-aware, `##` excluded. **No migration:** titles are minted only when a sidecar
+is created, so every existing KB keeps what it has, and `title` stays the user's field.
 
 ---
 
