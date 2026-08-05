@@ -33,10 +33,12 @@ precision nobody measured.
   (p = 1.0000). `schema_version` 3 means **every existing KB rebuilds once**.
 - ⚠️ **`0.11.0`'s verdict is narrower than it reads** — three of the seven edge kinds derived
   **zero** edges on the corpus it was gated against
-  ([open correction 1](#open-corrections--six-live-items)).
+  ([open correction 4](#open-corrections--four-live-items)). **0.12.0 ships the check that reports it**, so a
+  future corpus cannot repeat it silently.
 - **[The template release](#the-template-release--ready-to-start) is unblocked** — plan written,
   reviewed, four decisions taken. Nobody has started it.
-- **[Six open corrections](#open-corrections--six-live-items)** are live, all small, none blocking.
+- **[Four open corrections](#open-corrections--four-live-items)** are live, all small, none blocking. Two are
+  decided and unbuilt; one waits on a measurement, one on a decision.
 
 ---
 
@@ -69,7 +71,8 @@ number belongs to a release only when it is cut
 | **[0.9.0](#090--a-site-and-a-name--20260804-1228)** | 20260804 12:28 | A site, and a name | • Docs published to a MkDocs site<br>• 31 dead links found and fixed<br>• Repo renamed → project is **Pinakes**<br>• ⚠️ First upload **refused** — the rename broke trusted publishing; [since fixed](STATUS.md#published-on-pypi) |
 | **[0.10.0](#0100--you-can-see-it-working--20260804-1335)** | 20260804 13:35 | You can see it working | • `pnk sync` shows live progress on a terminal<br>• `pnk doctor` no longer tells an interrupted sync to `--rebuild`<br>• Sync timestamps are UTC<br>• ✅ Released and on PyPI |
 | **[0.11.0](#the-graph-release--shipped-0110)** | 20260805 07:14 | The graph release | • Structural edges at `schema_version` 3 — **every existing KB rebuilds once**<br>• `pnk doctor` reports the highest-degree hubs<br>• **The expansion channel ships `off`** — its gate improved 0 and regressed 3 |
-| | | **[Open corrections](#open-corrections--six-live-items)** | • Six live code/tooling items<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
+| **[0.12.0](#0120--the-check-that-would-have-caught-it--20260805-1802)** | 20260805 18:02 | The check that would have caught it | • `pnk doctor` reports heading-path coverage<br>• Missing-backend error names an installed alternative<br>• `pnk doctor` stops printing `$HOME`<br>• `tools/measure_sync_cpu.py` |
+| | | **[Open corrections](#open-corrections--four-live-items)** | • Four live code/tooling items<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
 | | | **[The template release](#the-template-release--ready-to-start)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• Not started |
@@ -450,25 +453,64 @@ the corrected text. The locking model: [DESIGN § 6.5 Concurrency](DESIGN.md#65-
 
 ---
 
+## 0.12.0 — The check that would have caught it · 20260805 18:02
+
+- **[`pnk doctor`](CLI.md#pnk-doctor) reports what share of chunks carry a heading path, and warns
+  when a whole source type carries none.** The RFC realism corpus indexed **106 806 chunks with not
+  one heading path** and nothing said so — and that is what bounds 0.11.0's expansion-channel gate:
+  `in-section`, `parent` and `child` all derive from `heading_path`, so **three of the seven edge
+  kinds derived zero edges on the corpus the gate was measured against**. A graph result on such a
+  corpus reads as *"structure does not help"* when what it measured is *"the structure was never
+  extracted"*.
+- **The missing-backend error names an installed alternative** instead of prescribing the ~2 GB
+  `sentence-transformers` install to someone who deliberately chose `[light]`. It checks with
+  `find_spec` and never by loading the backend — a check must not have the side effects of the thing
+  it checks.
+- **`pnk doctor` no longer prints the operator's home directory**, in the one command whose output
+  is the natural thing to paste into an issue. A path genuinely outside the KB is left as printed.
+- **`tools/measure_sync_cpu.py`** — the cores-busy instrument the open sync-CPU item requires before
+  anything about that loop may change. **The measurement itself has not been taken.**
+
+Two of the three retrospectives this release earned are about tests rather than code, and both are
+the same defect wearing different clothes: an assertion that was satisfied by something other than
+the property it named. The sampler watched the launched pid, so `-- uv run pnk sync` measured `uv`
+and would have reported **0.0 cores for a saturated core** — not a broken-looking number, a
+finding-looking one. And a test comparing two *differently rounded* renderings of one value passed
+locally and on two CI legs, failing only on the third.
+
+→ [RETROSPECTIVES.md](RETROSPECTIVES.md) carries all three.
+
+---
+
 # Part 5 · What is not built
 
-## Open corrections — six live items
+## Open corrections — four live items
 
-Small code and tooling items, all unclaimed as of 20260804 13:21. **Every one** came from *building*
+Small code and tooling items, as of 20260805 18:02. **Every one** came from *building*
 [the RFC realism corpus](#the-corpus-exists--built-20260804-0800) rather than from reading code —
 which is what that corpus was for. The interrupted-sync trio that used to sit here closed in
 [`0.10.0`](#0100--you-can-see-it-working--20260804-1335). Owned by
 [`plans/20260731_1202-open-corrections.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md).
 
-1. **`strategy = "structural"` degrades to size-based chunking in silence** — its grammar is
-   Markdown-shaped, so it recognised **0 of 106,806** RFC chunks as having a heading
-   ([DESIGN § 4.6](DESIGN.md#46-chunking-and-tokens)).
-2. **The `[light]` first-sync error prescribes the 2 GB install** to a user who deliberately chose
-   `[light]` ([the caveat](STATUS.md#caveat-the-light-backend-needs-a-manifest-edit)).
-3. **[`pnk init`](CLI.md#pnk-init) cannot adopt a directory that already has content.**
-4. **Every document is titled by its filename.**
-5. **[`pnk doctor`](CLI.md#pnk-doctor) prints the operator's home directory.**
-6. **The first sync may be using one core of ten**, and nobody has measured which.
+1. **[`pnk init`](CLI.md#pnk-init) cannot adopt a directory that already has content.** Decided,
+   unbuilt: refuse only what would actually be overwritten.
+2. **Every document is titled by its filename.** Decided, unbuilt: keep the filename fallback and
+   add a `pnk doctor` check. The first-line heuristic is **rejected** — an RFC's first line is
+   `Internet Engineering Task Force (IETF)`, and a confidently wrong title is harder to notice than
+   an obviously wrong one.
+3. **The first sync may be using one core of ten**, and nobody has measured which. The instrument
+   shipped in 0.12.0; **the measurement is still outstanding**, and nothing else in the item may be
+   built before that number exists.
+4. **Numbered plain-text headings are not detected**, which is what left the RFC corpus with no
+   heading paths at all. Scope is decided (`text` only; PDF disabled, never dismantled) — **how it
+   is switched on is still open**, because `[chunking] strategy` is inert today and a second value
+   would give `structural` a retroactive meaning in every manifest already written.
+
+Three items closed since 20260804: the `[light]` backend error, `pnk doctor`'s home-directory leak,
+and the heading-coverage *detection* half — all in 0.12.0. The chunking item's original diagnosis
+was **wrong and is corrected in the plan**: the Markdown grammar did not fail to match, it was never
+run, because `chunk.py` dispatches on source type and a `.txt` file takes `_plain_blocks`, which
+sets `heading_path=None` unconditionally.
 
 > The list refills from use. An empty one means nobody has run Pinakes lately, never that it is
 > finished.
@@ -547,8 +589,11 @@ it changes neither reachability nor retrieval.
 
 **Not settled — and this is the honest bound on the headline.** Three of the seven edge kinds
 (`in-section`, `parent`, `child`) derived **zero** edges, because not one of the 106,806 chunks
-carries a `heading_path`: the chunker's heading grammar is Markdown-shaped and RFC section numbering
-is not ([open correction 1](#open-corrections--six-live-items)). So the verdict is *"the edge kinds
+carries a `heading_path`. **The reason is not the one first recorded here.** The grammar did not
+fail to match RFC section numbering — it was never run: `chunk.py` dispatches on *source type*, and
+every type but `markdown` takes `_plain_blocks`, which sets `heading_path=None` unconditionally.
+Nothing failed to match because nothing was tried, which is why tightening a grammar would have
+fixed nothing ([open correction 4](#open-corrections--four-live-items)). So the verdict is *"the edge kinds
 that worked did not help this corpus"*, never *"graph structure does not help"*. The `--drop
 parent-child` arm the arity decision added could say nothing at all here, by construction.
 
