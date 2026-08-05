@@ -258,7 +258,7 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.8.0** ✅ | **Breaking, paid path only:** the Claude-vision extractor's key is `PINAKES_ANTHROPIC_API_KEY` and is passed to the SDK explicitly — no fallback to `ANTHROPIC_API_KEY`, which the SDK used to read out of whatever environment it was handed. Rename the variable in your `.env`. Also `[budget]` defaults raised (`per_operation_eur` 0.05 → 0.30, `monthly_eur` 5.00 → 30.00), a `check.sh` gate pinning `docs/STATUS.md`'s own header to `__version__`, the reachability probe refusing a golden set it cannot measure rather than absorbing it, and sixteen documentation claims corrected against the code. No `schema_version` bump, so no rebuild |
 | **0.9.0** ✅ | **Documentation only — no code path changed.** `docs/` is now published as a site at [lucagattoni.github.io/pinakes](https://lucagattoni.github.io/pinakes/), built with `mkdocs build --strict` on every PR and deployed on every push to `main`; the strict build found and fixed 31 dead links and anchors in the existing docs. The repository moved to `github.com/lucagattoni/pinakes` (GitHub redirects the old URL) and prose across the repo now writes the project name **Pinakes**, while every identifier — the PyPI package, `pinakes.toml`, `.pinakes/`, `pinakes[st]`, `pinakes_search`, `requires_pinakes` — stays lowercase and unchanged. Also a per-kind edge census in `tools/reachable_ceiling_probe.py`. No `schema_version` bump, so no rebuild |
 | **0.10.0** ✅ | An interrupted first sync no longer reads as a model mismatch: `pnk doctor` reports `WARN sync completeness` with remedy `pnk sync`, instead of `FAIL` with `--rebuild` — which discarded every embedding the interrupted sync had already written. `pnk sync` also prints live progress on a terminal (documents done/total and a rate, one self-overwriting line, silent when piped or `--quiet`), after a 300-document run took over two hours with no output. And `sync.py`'s timestamps are UTC, matching `lock.py`'s — the two used identical formats on different clocks, so a lock taken seconds ago could read hours old. No `schema_version` bump, so no rebuild |
-| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. **Building again since 20260804:** its gate was measured negative on `tests/demo-kb` (1 of 18) and **positive on the RFC realism corpus** — 12 multi-hop questions failing, 9 reachable without authored edges, against a precondition of 7 and 7 ([decision](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1442-decision-g3-go.md)). Three increments have shipped: **G1** (reproducibility, and the tie-ordering defect it found) and **G4** (`requires_pinakes`) in 0.6.0, **G2** in 0.7.0. **G3 has landed on `main`, unreleased** — the node model and the edge set at `schema_version` 3, which forces one rebuild ([DESIGN §3.2](DESIGN.md#32-the-structural-graph)). **G5 is the increment being built**, then G6. The corpus that unblocked it lives in a repository of its own ([`plans/20260801_0749-realism-corpus.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260801_0749-realism-corpus.md)) |
+| *the graph release* | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. **Its gate was run on 20260804 and did not pass, so `expand` ships `off`** ([the numbers](STATUS.md#did-the-expansion-channel-earn-its-default--no-measured-20260804-2252)). Five increments have shipped or landed: **G1** and **G4** in 0.6.0, **G2** in 0.7.0, and **G3** (the node model and edge set at `schema_version` 3, one forced rebuild — [DESIGN §3.2](DESIGN.md#32-the-structural-graph)) and **G5** (the channel, its gate and the eval matrix) on `main`, unreleased. **G6 is what remains** — hub reporting, verification, the cut. The channel is built, measured and off; what would change that is a corpus or a different channel design, never a more expensive one ([decision](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1442-decision-g3-go.md)) |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
 | *the deep release* | `pnk ask --deep` |
 | *the template release* | Template ecosystem, `pnk upgrade` migrations, the `sqlite-vec` tier |
@@ -381,6 +381,51 @@ hub that decision 13's **2.0 undamped** weight was never designed for
 Ten friction findings from building it are in
 [`plans/20260731_1202-open-corrections.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md). `pnk doctor`
 reports no FAIL and five WARNs.
+
+### Did the expansion channel earn its default? — **no, measured 20260804 22:52**
+
+**No. `expand` ships `off`.** The graph release defaults its channel on only if an exact one-sided
+sign test finds enough multi-hop questions improving. Run on the RFC realism corpus, at G5's own
+HEAD, against a `schema_version` 3 index rebuilt for it:
+
+| leg | multi-hop | improved | regressed | p |
+|---|---|---|---|---|
+| `off` | 7/20 | — | — | — |
+| `expand`, without authored edges | 4/20 | 0 | **3** | 1.0000 |
+| `expand`, all kinds | 4/20 | 0 | **3** | 1.0000 |
+
+**Licensing p = 1.0000** — the more conservative of the two, as both runs bind. Nothing was lifted,
+and the channel's extra candidates **displaced three answers two-list fusion already had**.
+
+**The finding is `reachable ≠ retrievable`.** The reachability probe found **9** of those failing
+questions reachable within two logical hops without authored edges — the measurement that unblocked
+this release ([above](#can-the-graph-releases-gate-be-reached--yes-measured-20260804)). The
+retrieval instrument lifts **none** of them. That gap is not a small correction: it is 9 against 0,
+and it is exactly why the probe's own docstring says a high ceiling *"proves only that the gate is
+not impossible"*. **A reachability precondition is necessary and nowhere near sufficient.**
+
+**`sibling` is now inert in both gauges.** It is 106 506 of the corpus's 107 411 non-transit
+structural edges, and `--drop sibling` returns the same 4/20, the same three regressions and the
+same p. The reachability probe had already found removing it cost nothing; the retrieval instrument
+agrees independently. The harm comes from the document-level path instead — `membership` transit
+into `co-located` (262 edges) and `shared-tag` (643) hubs, which pull whole documents' chunks into
+the fusion.
+
+**Latency was not the problem.** `off` 2012 ms/query against `expand` 2051 — **1.02×** on a
+106 806-chunk index.
+
+Two bounds, both stated rather than worked around. The corpus has `[retrieval.confidence]`
+commented out, so **two of the gate's four clauses could not fire on it** and are exercised only by
+the synthetic fixtures in `tests/test_graph_channel.py` — a gate whose only fixture is the real
+corpus can be tested solely in whichever direction that corpus points. And **no chunk in it carries
+a `heading_path`**, so `parent-child` and `in-section` derive zero edges, the `--drop parent-child`
+arm is inert by construction, and a "sibling" there is an adjacent arbitrary *size-slice* rather
+than an adjacent section. What the arms measured is the value of size-slice adjacency on a corpus
+whose structural chunking had silently degraded.
+
+**Nothing was tuned after seeing the number** — no weight moved, no threshold revisited. The
+`authored` weight's *measured at G5* marker is discharged as *"measured, and it changed no
+outcome"*.
 
 ### Can the graph release's gate be reached? — **yes, measured 20260804**
 

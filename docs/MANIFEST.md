@@ -134,6 +134,7 @@ in the output would reveal it.
 | `rerank` | `local` | `local` or `none` |
 | `vector_tier` | `auto` | `auto`, `numpy` or `sqlite-vec`. **Only the NumPy tier is built** — `sqlite-vec` is the template release |
 | `adjacent_k` | `8` | Neighbours kept per expansion when traversing links, applied **after** ranking. Server-capped at 64 whatever this says, and a value above that is refused at parse time rather than silently clamped. **Not stamped into the template**: `pinakes.toml` hard-errors on an unknown key, so a manifest carrying `adjacent_k` cannot be read by any Pinakes released before it existed |
+| `graph_channel` | `"off"` | `"off"` or `"expand"`. With `"expand"` the fused top-*k* become roots, the structural edge set is walked to depth ≤ 2 logical hops, and what it reaches is ranked and fused as a **third** input. **Off, nothing runs** — no query touches `nodes` or `edges`. On over an empty edge set the result is today's two-list fusion *exactly*, by arithmetic rather than approximation. **It ships `off` and its golden-set gate is why** ([STATUS](STATUS.md#did-the-expansion-channel-earn-its-default--no-measured-20260804-2252)). `"ppr"` is not accepted: a manifest that can name a mode the code does not implement is a setting that silently does nothing. **Not stamped into the template**, same reason as `adjacent_k` |
 
 Three separate *pipeline* widths rather than one `top_k` (`adjacent_k` is not one of them — it bounds link traversal, not retrieval), because they are three different cut-offs.
 
