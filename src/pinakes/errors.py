@@ -150,18 +150,36 @@ class EmbeddingError(PinakesError):
 
 
 class BackendMissingError(PinakesError):
-    """The backend a manifest names is not installed. A supported state, not a broken one (§4.5)."""
+    """The backend a manifest names is not installed. A supported state, not a broken one (§4.5).
 
-    def __init__(self, provider: str, *, extra: str) -> None:
+    `alternative`, when given, names a *different* provider that is already importable on this
+    machine (`embed.py` checks with `find_spec`, never by loading it). That is the `[light]`
+    scenario item 2 describes: `sentence-transformers` is missing, `fastembed` sits right there,
+    and the real fix is two manifest lines, not a 2 GB install. When an alternative exists the
+    remedy names *only* the manifest edit — it must never also suggest installing the missing
+    provider, which would recommend the very install the alternative exists to avoid.
+    """
+
+    def __init__(self, provider: str, *, extra: str, alternative: str | None = None) -> None:
+        if alternative is None:
+            remedy = (
+                f'Install it with `uv add "pinakes[{extra}]"`. A core-only install can index and '
+                "search nothing that needs embeddings — that is expected, not a fault."
+            )
+        else:
+            remedy = (
+                f"`{alternative}` is already installed on this machine — no install needed. Set "
+                f'`provider = "{alternative}"` in both `[embedding]` and `[rerank]` in '
+                f"pinakes.toml, with the model {alternative} expects "
+                "(docs/GUIDE.md § Choosing a backend)."
+            )
         super().__init__(
             f"the `{provider}` backend is not installed.",
-            remedy=(
-                f'Install it with `uv add "pinakes[{extra}]"`. A core-only install can index and '
-                f"search nothing that needs embeddings — that is expected, not a fault."
-            ),
+            remedy=remedy,
         )
         self.provider = provider
         self.extra = extra
+        self.alternative = alternative
 
 
 class BackendUnknownError(PinakesError):

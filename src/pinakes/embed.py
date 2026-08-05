@@ -110,15 +110,47 @@ def hf_cache_dir() -> Path:
     return Path.home() / ".cache" / "huggingface" / "hub"
 
 
-def _import(module: str, extra: str, what: str) -> Any:
+# The package each provider's factories import — used only to check, via `find_spec`, whether a
+# *sibling* provider is already installed when the configured one is missing (never to import it:
+# probing availability by loading a backend is exactly what CLAUDE.md's paid-path rule forbids for
+# the paid extractor, and the same reasoning applies here — a check must not have the side effects
+# of the thing it is checking).
+_PROVIDER_PACKAGE: dict[str, str] = {
+    SENTENCE_TRANSFORMERS: "sentence_transformers",
+    FASTEMBED: "fastembed",
+}
+
+
+def _installed_alternative(missing: str, siblings: Sequence[str]) -> str | None:
+    """The first *other* registered provider whose package is importable on this machine, if any.
+
+    `siblings` is every provider registered for the same kind (embedding or rerank) — including
+    test fakes, which `_PROVIDER_PACKAGE` has no entry for and so are silently skipped rather than
+    misreported as installed.
+    """
+    from importlib.util import find_spec
+
+    for provider in siblings:
+        if provider == missing:
+            continue
+        package = _PROVIDER_PACKAGE.get(provider)
+        if package is not None and find_spec(package) is not None:
+            return provider
+    return None
+
+
+def _import(module: str, extra: str, what: str, *, siblings: Sequence[str]) -> Any:
     try:
         return __import__(module, fromlist=["_"])
     except ImportError as exc:
-        raise BackendMissingError(what, extra=extra) from exc
+        alternative = _installed_alternative(what, siblings)
+        raise BackendMissingError(what, extra=extra, alternative=alternative) from exc
 
 
 def _sentence_transformers_backend(section: EmbeddingSection, offline: bool) -> EmbeddingBackend:
-    module = _import("sentence_transformers", "st", section.provider)
+    module = _import(
+        "sentence_transformers", "st", section.provider, siblings=registered_embedding_providers()
+    )
     model = module.SentenceTransformer(
         section.model,
         revision=section.revision,
@@ -129,7 +161,7 @@ def _sentence_transformers_backend(section: EmbeddingSection, offline: bool) -> 
 
 
 def _sentence_transformers_reranker(section: RerankSection, offline: bool) -> Reranker:
-    module = _import("sentence_transformers", "st", section.provider)
+    module = _import("sentence_transformers", "st", section.provider, siblings=sorted(_RERANKERS))
     model = module.CrossEncoder(
         section.model,
         revision=section.revision,
@@ -140,14 +172,18 @@ def _sentence_transformers_reranker(section: RerankSection, offline: bool) -> Re
 
 
 def _fastembed_backend(section: EmbeddingSection, offline: bool) -> EmbeddingBackend:
-    module = _import("fastembed", "light", section.provider)
+    module = _import(
+        "fastembed", "light", section.provider, siblings=registered_embedding_providers()
+    )
     _require_online_or_cached(offline)
     model = module.TextEmbedding(model_name=section.model, cache_dir=str(hf_cache_dir()))
     return _FastembedBackend(section, model)
 
 
 def _fastembed_reranker(section: RerankSection, offline: bool) -> Reranker:
-    module = _import("fastembed.rerank.cross_encoder", "light", section.provider)
+    module = _import(
+        "fastembed.rerank.cross_encoder", "light", section.provider, siblings=sorted(_RERANKERS)
+    )
     _require_online_or_cached(offline)
     model = module.TextCrossEncoder(model_name=section.model, cache_dir=str(hf_cache_dir()))
     return _FastembedReranker(section, model)
