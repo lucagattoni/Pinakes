@@ -208,6 +208,58 @@ right. **A poor match is a finding to report, not a licence to loosen the rule.*
 clause after seeing the corpus is recorded *here*, with its reason, as a change made after the fact.
 Otherwise the predicate is fitted to the answer and proves nothing.
 
+### 5.4 · The measurement — **run 20260805, in doubling rounds, to 980 documents**
+
+Corpus fetched by [`tools/build_rfc_corpus.py`](../tools/build_rfc_corpus.py) across three
+rendering eras. **Each round doubled the previous one and re-ran every earlier fix**, on the
+user's instruction — because a fix validated at one corpus size has been validated at one corpus
+size, and clause 9 proved exactly that by surviving 66 documents and failing at 131.
+
+| round | documents | accepted | early | classic | **modern** |
+|---|---|---|---|---|---|
+| 1 | 66 | 42 (64%) | 3/22 | 17/22 | **22/22** |
+| 2 | 131 | 76 (58%) | 3/44 | 30/44 | **43/43** |
+| 3 | 259 | 152 (59%) | 7/88 | 62/88 | **83/83** |
+| 4 | 522 | 321 (61%) | 27/175 | 123/176 | **171/171** |
+| 5 | **980** | **644 (66%)** | 92/332 | 238/334 | **314/314** |
+
+**The headline is the last column: every modern-era RFC is accepted, 314 for 314, and the rate was
+100% at every round size.** That is the era the grammar targets and the format current documents
+use.
+
+**Two thirds of all rejections are documents with no numbered sections at all** — 221 of 324 in the
+final round. Those are *correct* rejections, not misses: an early RFC is frequently a memo with no
+outline to find. The remaining 103 are step-breaks, and the causes are named below.
+
+**What the corpus changed, both recorded as post-hoc in `chunk.py`:**
+
+* **Clause 9 — an outline starts at section 1.** Found at round 1: RFC 769's facsimile command
+  codes (`56 - SET-UP`, `57 - DATA`, `58 - END`) satisfied every clause and produced three headings
+  that are not headings.
+* **Clause 10 — a trailing `.0` is a style, not a depth.** Found at round 2: `1.0`/`2.0` numbering
+  is a recurring convention, mixed freely with plain numbers.
+
+**What the corpus *refused*, which is the more useful half:**
+
+* **"A title must not begin with punctuation"** — killed the false positive and three genuine
+  documents (`5.1.  /get`, `2.7.3.  "iprev"`, and RFC 2010's entire outline, which numbers real
+  sections `1 - Rationale and Scope` — the identical shape as the false positive).
+* **"A heading must be followed by a blank line"** — killed a second false positive and four
+  genuine documents, because **real headings wrap**:
+  `7.4.  The Network Information Center and` / `Requests for Comments Distribution Contact`.
+
+**Known bounds, accepted rather than chased:**
+
+| bound | why it is not fixed |
+|---|---|
+| **Early-era RFCs centre their top-level headings** (`␣␣␣␣2.  OVERVIEW`) while left-aligning subsections, so the walk breaks at `1.4 → 2.1`. This is most of the 14–28% early-era acceptance | Relaxing clause 1's column-0 rule to admit indented lines would match indented prose and table rows across every era. The cost is concentrated in documents from the 1980s; the risk is spread over all of them |
+| **RFC 778 numbers a procedure** — `1. Connect to…`, `2. Send the command…` — and is accepted | Starting at 1 and consecutive, it is indistinguishable from an outline by any clause that does not also reject real headings. Labelling the steps of a numbered procedure as sections is defensible; `56 - SET-UP` was not |
+| **A skipped number rejects the document** (`7 → 9`, `3.1.1 → 3.1.3`) | Almost always a heading the clauses missed rather than a genuine gap. Admitting gaps would weaken the walk, which is the only thing standing between this grammar and an ordered list |
+
+**Every rejection costs nothing that existed before.** The document falls back to `_plain_blocks` —
+exactly pre-grammar behaviour — so the measurement's floor is *today*, and 644 documents gained
+structure they did not have.
+
 ---
 
 ## 6 · The permanent `code`/`pdf` WARN — **DECIDED 20260805 18:25 by the user**

@@ -299,6 +299,22 @@ def _numbered_candidates(text: str) -> list[tuple[int, tuple[int, ...], str]]:
     return found
 
 
+def _normalise(number: tuple[int, ...]) -> tuple[int, ...]:
+    """`(1, 0)` is section 1. Trailing zero components are a numbering *style*, not a depth.
+
+    **Clause 10, added after measuring — like clause 9 and unlike clauses 1-8.** A recurring
+    convention numbers top-level sections `1.0`, `2.0`, and mixes the two freely: RFC 2006 runs
+    `6` then `7.0`, RFC 2024 runs `1.1` then `2.0`. Without this they read as depth changes that no
+    outline walk can accept, and the document is rejected whole.
+
+    A genuine subsection never carries `.0` — subsections start at `.1` — so nothing real is
+    conflated by folding it away.
+    """
+    while len(number) > 1 and number[-1] == 0:
+        number = number[:-1]
+    return number
+
+
 def _is_valid_step(previous: tuple[int, ...], current: tuple[int, ...]) -> bool:
     """Clause 6, for one pair: a first child, a sibling increment, or an ancestor's next sibling."""
     if len(current) == len(previous) + 1 and current[:-1] == previous and current[-1] == 1:
@@ -326,10 +342,27 @@ def _outline_ok(numbers: Sequence[tuple[int, ...]]) -> bool:
     which is the signature of dead code, not of a missing test. It is gone rather than kept as
     defence in depth: a guard that cannot fire still reads as one, and would invite someone to
     weaken the step rule believing this backs it up.
+
+    **The start-at-1 rule is clause 9, and it was added *after* measuring — recorded as such.**
+    §5.3's predicate was written before any corpus was consulted; this clause was not. Measuring 66
+    real RFCs found one false positive: RFC 769's command-code list (`56 - SET-UP`, `57 - DATA`,
+    `58 - END`) satisfied every clause — consecutive integers, short labels, column 0, blank lines
+    around — and produced three headings that are not headings. What separates it from a real
+    outline is not its *form*: RFC 2010 numbers real sections `1 - Rationale and Scope`, the
+    identical shape. It is where it starts. An outline begins at section 1; a list of opcodes
+    begins at 56.
+
+    A different discriminator was tried first and **rejected on the evidence**: "the title must not
+    begin with punctuation" also killed the false positive, but took three genuine documents with
+    it — `5.1.  /get`, `2.7.3.  "iprev"` and RFC 2010's whole dash-separated outline are all real
+    headings. Start-at-1 changes exactly one verdict across the corpus, and it is the wrong one.
     """
     if len(numbers) < _MIN_HEADINGS:
         return False
-    return all(_is_valid_step(before, after) for before, after in pairwise(numbers))
+    walk = [_normalise(number) for number in numbers]
+    if walk[0][0] != 1:
+        return False
+    return all(_is_valid_step(before, after) for before, after in pairwise(walk))
 
 
 def _numbered_blocks(text: str) -> list[Block]:
@@ -378,7 +411,11 @@ def _numbered_blocks(text: str) -> list[Block]:
         if heading is not None:
             flush()
             number, label = heading
-            del headings[len(number) - 1 :]
+            # The *normalised* depth, matching the walk. `2.0` is a top-level section, so reading
+            # its raw length would nest it under `1.0` instead of making it a sibling — the walk
+            # would accept the document and the hierarchy would still come out wrong.
+            depth = len(_normalise(number))
+            del headings[depth - 1 :]
             headings.append(label)
             if pending_start is None:
                 pending_start = line_start
