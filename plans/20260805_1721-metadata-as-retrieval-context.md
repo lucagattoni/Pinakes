@@ -82,7 +82,7 @@ recorded here.**
 
 | # | Step | Blocked on | Cost |
 |---|---|---|---|
-| 1 | **Numbered-heading grammar for `.txt`** | The two open questions in §5 | Moderate |
+| 1 | **Numbered-heading grammar for `.txt`** | §5.2 and §5.3 — both the planner's. **§5.1, the one needing the user, is answered** | Moderate |
 | 2 | **The injection experiment** (§2) | Step 1 | ~2 h rebuild + eval |
 | 3 | **Markdown H1 → title** | Nothing — could start today | Small |
 | 4 | **`pnk doctor` title check** (B3) | Nothing | Small |
@@ -112,19 +112,35 @@ Full records: [`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_13
 
 ---
 
-## 5 · Open questions — the planner's, and blocking step 1
+## 5 · Step 1's blocking questions — **the user's is answered; two remain the planner's**
 
-### 5.1 · A new `strategy` value, or its own key? **(needs the user — a permanent contract)**
+### 5.1 · A new `strategy` value, or its own key? **DECIDED 20260805 18:25 by the user**
 
-`[chunking] strategy` is **inert today** (§1). Adding a second accepted value makes it live for the
-first time, which means `structural` acquires meaning it has never had.
+**Its own key, taking an enumerated value — not a `strategy` value, and not a boolean.**
 
-| Option | For | Against |
-|---|---|---|
-| **New `strategy` value** | The extension point already exists (`CHUNK_STRATEGIES`, `table.choice`); one key for "how chunking works" | Makes a dead key live; `structural` must then be defined, and every existing manifest carries it already |
-| **A separate key** (e.g. `[chunking] plain_text_headings`) | Explicit about what it controls; leaves an inert key alone; no retroactive meaning for `structural` | A second key in the same table doing an adjacent job; two things to explain instead of one |
+    [chunking]
+    strategy = "structural"    # unchanged, still inert
+    headings  = "numbered"     # new, opt-in, `text` only
 
-### 5.2 · The value's name — planner's, pending 5.1
+**Why not a `strategy` value.** `strategy` is inert (§1): validated by `table.choice` and never read
+at runtime. A second accepted value makes it live for the first time, which forces `structural` to
+be *defined* — and every manifest ever written already carries that value, so whatever definition is
+chosen applies **retroactively to KBs nobody will revisit**. Inventing a contract for existing data
+in order to add an opt-in feature is the wrong trade.
+
+**Why not a boolean.** A boolean does not extend. The PDF path is *disabled, never dismantled*
+(§4), so a second grammar is expected eventually — and with a boolean that means either a second
+boolean or a migration to a value, i.e. **this same decision again, but with an installed base**.
+An enumerated key absorbs it as `headings = "pdf-structural"` and touches nothing.
+
+**What this leaves untouched, deliberately:** `strategy` stays inert, `structural` gains no new
+meaning, and no existing manifest changes behaviour.
+
+### 5.2 · The value's name — planner's
+
+The **key** is `headings`. The first value is `"numbered"`. Still open: whether an explicit
+`"off"`/`"none"` is accepted alongside key-absent, and the `requires_pinakes` floor's exact version
+(§4 fixed *that a floor is set*, not which).
 
 ### 5.3 · The false-positive predicate — planner's, and **must be written before it is fitted**
 
@@ -133,28 +149,46 @@ corpus second, never derived from it** — otherwise it is fitted to the answer.
 
 ---
 
-## 6 · Unresolved, raised and not yet ruled on
+## 6 · The permanent `code`/`pdf` WARN — **DECIDED 20260805 18:25 by the user**
 
-**The shipped heading-coverage check WARNs permanently on `code` and `pdf`.** `_heading_coverage`
-returns `Status.WARN` when *any* source type sits at 0%, and those two can never carry a heading
-today. So **a KB containing one `.py` file or one PDF warns on every `pnk doctor` run, forever**,
-with a remedy saying it is a limit of the tool. An un-actionable warning that cannot be cleared is
-how doctor output stops being read. It did not surface in verification because both committed
-corpora are pure Markdown at 100%.
+**WARN only when `markdown` sits at 0%.** Other source types report OK with a note naming why they
+carry none.
 
-**Proposed** (not applied): WARN only for `markdown` at 0% — a real, fixable condition — and report
-the other types as OK with a note until a grammar exists for them.
+**The problem.** `_heading_coverage` (shipped in 0.12.0) returns `Status.WARN` when *any* source
+type sits at 0%, and `code` and `pdf` can never carry a heading today. So a KB containing one `.py`
+file or one PDF warned on **every `pnk doctor` run, forever**, with a remedy saying it is a limit of
+the tool. It did not surface in verification because both committed corpora are pure Markdown at
+100%.
+
+**Why this way.** An un-actionable warning that cannot be cleared is how doctor output stops being
+read *at all* — it costs the actionable warnings too, which is a larger loss than this one signal.
+`markdown` at 0% is the opposite case: real, fixable, and exactly the defect the check was built
+for — the chunker silently size-slicing a corpus whose files use a heading convention it does not
+read.
+
+**The accepted cost, stated:** the zero-heading-paths condition that bounds 0.11.0's gate becomes
+quieter on `text` and `pdf` corpora. It is still *reported* — the percentage and the note are
+printed — just not as a WARN. When `headings = "numbered"` (§5.1) ships, a `text` corpus becomes
+fixable and can be re-judged then.
+
+**Required:** the note must name the cause, not just the number — *"the chunker extracts headings
+for `markdown` only"* — so a reader is not sent to edit documents that are not the problem.
 
 ---
 
-## 7 · Work in flight — branches pushed, unreviewed, unlanded
+## 7 · Work in flight — **none. Everything here has landed and shipped in 0.12.0**
 
-| Branch | Commit | Contents |
+Both branches this section used to track were reviewed, corrected and landed 20260805 17:31–17:36,
+and 0.12.0 published them. What the review changed is worth carrying forward, because in both cases
+the *code* was fine and the *test* was not:
+
+| Branch | Landed | What the review found |
 |---|---|---|
-| `20260805_0730-i2-light-backend-error` | `4b0347d` | The `[light]` first-sync error prescribing the 2 GB torch install. `errors.py` + `test_embed.py`, 5 files |
-| `20260805_0745-i6-sync-cpu-measurement` | `776ea1d` | `tools/measure_sync_cpu.py` + tests — **the instrument, not the answer.** Item 6 is measurement-first: nothing may be built before the number exists |
+| `…-i2-light-backend-error` | `43cef55` | Nothing wrong with the fix. Its own retrospective is the value: the pre-existing test looked environment-independent and was not — it blocked only `sentence_transformers`, leaving this checkout's transitively-installed `fastembed` genuinely importable |
+| `…-i6-sync-cpu-measurement` | `1511be4` | **A HIGH defect the tests could not see.** `sample_percent` watched the launched pid, so the tool's own documented invocation — `-- uv run pnk sync …` — measured `uv`, which burns nothing. Identical one-core load: **1.0 cores direct, 0.0 through `uv run`**. Every test ran a direct child that did the work itself, so code coverage was complete and coverage of the *invocation* was zero |
 
-Both are on `origin`. Neither has been reviewed by the planner.
+**The instrument now exists and is correct; the measurement it exists for has still not been taken.**
+That remains open correction 3.
 
 ---
 
