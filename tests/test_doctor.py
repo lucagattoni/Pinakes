@@ -23,7 +23,7 @@ from pinakes.embed import (
 from pinakes.ids import mint_doc_id, mint_kb_id
 from pinakes.init import init
 from pinakes.manifest import load
-from pinakes.sidecar import SIDECAR_SUFFIX
+from pinakes.sidecar import SIDECAR_SUFFIX, minted_title
 from pinakes.sync import SyncOptions, sync
 
 DIM = 3
@@ -1956,3 +1956,52 @@ def test_text_at_zero_with_the_grammar_on_says_the_documents_were_refused(kb: Pa
     assert status is Status.OK
     assert "refused" in detail
     assert "currently unset" not in detail
+
+
+def test_minted_titles_are_reported_but_never_warned(kb: Path) -> None:
+    """**The decision, and it is deliberate**: a filename-derived title is a legitimate state — the
+    fallback was kept on purpose — so warning would fire on every KB whose titles nobody has
+    curated, which is most of them and *both committed corpora at 100%*. That is the unclearable
+    warning the heading-coverage check already had to answer for, and repeating it one check later
+    would cost the warnings that do mean something."""
+    (kb / "docs" / "access-restrictions.md").write_text("# Anything\n\nBody.\n", encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260805 22:15")
+
+    status, detail = checks(kb)["titles"]
+    assert status is Status.OK, "a minted title is reported, never warned"
+    assert "access-restrictions.md" in detail
+    assert "carry the title minted from their filename" in detail
+
+
+def test_an_authored_title_is_not_counted_as_minted(kb: Path) -> None:
+    """Otherwise the check reports a number nobody can act on and everybody learns to ignore."""
+    (kb / "docs" / "access-restrictions.md").write_text("# Anything\n\nBody.\n", encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260805 22:16")
+
+    counted_before = checks(kb)["titles"][1]
+    sidecar = kb / "docs" / f"access-restrictions.md{SIDECAR_SUFFIX}"
+    sidecar.write_text(
+        sidecar.read_text(encoding="utf-8").replace(
+            "title: access restrictions", "title: Who may see what"
+        ),
+        encoding="utf-8",
+    )
+    sync(load(kb), options=SyncOptions(), now="20260805 22:17")
+
+    after = checks(kb)["titles"][1]
+    assert "access-restrictions.md" in counted_before, "precondition: it started out minted"
+    assert "access-restrictions.md" not in after, (
+        "an authored title must stop being counted; the fixture's own documents still are"
+    )
+    assert checks(kb)["titles"][0] is Status.OK
+
+
+def test_the_check_recomputes_minting_the_way_sync_does_it(kb: Path) -> None:
+    """`minted_title` is shared by the minter and this check precisely so they cannot disagree.
+    Underscores *and* hyphens both become spaces, and a check carrying its own copy of that rule
+    would go quietly wrong — in the direction of reporting nothing — the day either copy changed."""
+    (kb / "docs" / "annual_report-2026.md").write_text("# X\n\nBody.\n", encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260805 22:18")
+
+    assert minted_title(Path("docs/annual_report-2026.md")) == "annual report 2026"
+    assert "annual_report-2026.md" in checks(kb)["titles"][1]

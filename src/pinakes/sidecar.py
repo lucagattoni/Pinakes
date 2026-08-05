@@ -663,11 +663,22 @@ def create(path: Path, sidecar: Sidecar) -> None:
     write(path, sidecar)
 
 
+def minted_title(document: Path) -> str:
+    """The title `skeleton` mints from a filename when the document offers none.
+
+    **A function rather than an inline expression because two callers need to agree exactly.**
+    `pnk doctor` reports documents still carrying a minted title, and it can only do that by
+    recomputing what minting *would* produce — so a second copy of this rule would make the check
+    quietly wrong the day either copy changed, in the direction of reporting nothing.
+    """
+    return document.stem.replace("-", " ").replace("_", " ")
+
+
 def skeleton(document: Path, *, title: str | None = None, created: str | None = None) -> Sidecar:
     """The sidecar minted for a newly ingested document: an id, and as little else as possible."""
     return Sidecar(
         id=mint_doc_id(),
-        title=title if title is not None else document.stem.replace("-", " ").replace("_", " "),
+        title=title if title is not None else minted_title(document),
         created=created,
     )
 

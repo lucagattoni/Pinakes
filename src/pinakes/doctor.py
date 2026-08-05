@@ -68,7 +68,13 @@ from pinakes.linkscan import (
 from pinakes.lock import LOCK_NAME, read_holder
 from pinakes.manifest import Manifest
 from pinakes.search import check_coherence
-from pinakes.sidecar import SIDECAR_SUFFIX, Sidecar, document_for, find_duplicate_ids
+from pinakes.sidecar import (
+    SIDECAR_SUFFIX,
+    Sidecar,
+    document_for,
+    find_duplicate_ids,
+    minted_title,
+)
 from pinakes.sidecar import read as read_sidecar
 from pinakes.sync import hash_file
 
@@ -517,6 +523,7 @@ def _index(manifest: Manifest) -> Iterator[Check]:
             yield Check("extraction coherence", Status.FAIL, exc.message, exc.remedy)
 
         yield _chunking_drift(manifest, connection)
+        yield _titles(connection)
         yield _text_yield(manifest, connection)
         yield _calibration(manifest)
         yield _links(connection, manifest, active)
@@ -549,6 +556,46 @@ def _index(manifest: Manifest) -> Iterator[Check]:
             yield Check("failures", Status.OK, "none recorded")
     finally:
         connection.close()
+
+
+def _titles(connection: sqlite3.Connection) -> Check:
+    """How many documents still carry the title `sync` minted from their filename.
+
+    **Reported, never warned, and that is the decision rather than an oversight** (user, 20260805).
+    A filename-derived title is a legitimate state — the fallback was deliberately kept — so a
+    warning would fire on every KB whose titles nobody has curated yet, which is most of them and
+    both committed corpora at **100%**. That is the unclearable-warning failure the heading-coverage
+    check already had to answer for, and repeating it one check later would cost the warnings that
+    do mean something.
+
+    **Detection, never guessing.** The first-line heuristic was rejected: an RFC's first line is
+    `Internet Engineering Task Force (IETF)`, so inferring titles would mint confidently wrong ones
+    at scale into sidecars the user then commits — and a plausible wrong title is far harder to
+    notice than one that is visibly a filename. `title` stays the user's field; this only says how
+    many are still untouched.
+    """
+    rows = connection.execute(
+        "SELECT path, title FROM documents WHERE state = 'active' AND title IS NOT NULL"
+    ).fetchall()
+    if not rows:
+        return Check("titles", Status.OK, "no active documents")
+
+    minted = [row for row in rows if str(row["title"]) == minted_title(Path(str(row["path"])))]
+    if not minted:
+        return Check("titles", Status.OK, f"all {len(rows)} titles are the author's")
+
+    sample = ", ".join(str(row["path"]) for row in minted[:3])
+    more = len(minted) - 3
+    return Check(
+        "titles",
+        Status.OK,
+        f"{len(minted)} of {len(rows)} documents still carry the title minted from their "
+        f"filename: {sample}" + (f" and {more} more" if more > 0 else ""),
+        "Not a fault — search results read better with a real title, and `title` in each "
+        "`.pnk.yaml` is yours to write. Nothing infers one for you: guessing from a document's "
+        "first line produces confidently wrong titles at scale, which are harder to notice than a "
+        "title that is visibly a filename.",
+    )
 
 
 def _chunking_drift(manifest: Manifest, connection: sqlite3.Connection) -> Check:
