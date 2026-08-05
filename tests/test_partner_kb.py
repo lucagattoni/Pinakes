@@ -458,7 +458,7 @@ def test_every_committed_sidecar_round_trips_through_read_and_write(tmp_path: Pa
         source = Path(corpus)
         owner = load(source).kb.id
         copy = tmp_path / source.name
-        shutil.copytree(source, copy)
+        shutil.copytree(source, copy, ignore=shutil.ignore_patterns(".pinakes"))
 
         for path in sorted(copy.rglob("*.pnk.yaml")):
             before = path.read_text(encoding="utf-8")

@@ -912,8 +912,16 @@ def test_the_stored_edge_set_agrees_with_the_probe_the_decision_was_taken_on() -
 
     with tempfile.TemporaryDirectory() as raw:
         workspace = Path(raw)
-        shutil.copytree(REPO / "tests" / "demo-kb", workspace / "demo-kb")
-        shutil.copytree(REPO / "tests" / "partner-kb", workspace / "partner-kb")
+        shutil.copytree(
+            REPO / "tests" / "demo-kb",
+            workspace / "demo-kb",
+            ignore=shutil.ignore_patterns(".pinakes"),
+        )
+        shutil.copytree(
+            REPO / "tests" / "partner-kb",
+            workspace / "partner-kb",
+            ignore=shutil.ignore_patterns(".pinakes"),
+        )
         loaded = load(workspace / "demo-kb")
         sync(loaded, options=SyncOptions(scan_links=True), backend_factory=fake_factory)
 
