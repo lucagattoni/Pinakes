@@ -5,9 +5,11 @@ unless they are already cached — a clean checkout must never be blocked on a 1
 (which caches `HF_HOME`) runs them for real.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import ModuleType
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -88,8 +90,19 @@ def test_an_unknown_provider_lists_the_known_ones() -> None:
     assert SENTENCE_TRANSFORMERS in exc_info.value.remedy
 
 
-def test_a_missing_extra_names_the_install_command(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A core-only install is a supported state — it just has to say so precisely (§4.5)."""
+def _no_module_installed(name: str) -> ModuleSpec | None:
+    """A `find_spec` replacement reporting nothing installed — no sibling to recommend."""
+    return None
+
+
+def _only_fastembed_installed(name: str) -> ModuleSpec | None:
+    """A `find_spec` replacement reporting `fastembed` installed and nothing else — the `[light]`
+    machine item 2 describes."""
+    return Mock(spec=ModuleSpec) if name == "fastembed" else None
+
+
+def _refuse_import(*names: str) -> Callable[..., ModuleType]:
+    """A `builtins.__import__` replacement that fails only for modules starting with `names`."""
     import builtins
 
     real_import = builtins.__import__
@@ -102,15 +115,77 @@ def test_a_missing_extra_names_the_install_command(monkeypatch: pytest.MonkeyPat
         fromlist: Sequence[str] = (),
         level: int = 0,
     ) -> ModuleType:
-        if name.startswith("sentence_transformers"):
-            raise ImportError("no module named sentence_transformers")
+        if any(name.startswith(refused) for refused in names):
+            raise ImportError(f"no module named {name}")
         return real_import(name, globals, locals, fromlist, level)
 
-    monkeypatch.setattr(builtins, "__import__", refuse)
+    return refuse
+
+
+def test_a_missing_extra_names_the_install_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A core-only install is a supported state — it just has to say so precisely (§4.5).
+
+    No sibling provider is importable here (`find_spec` is forced to `None` for everything), so
+    there is nothing to recommend switching to — the message falls back to the plain install line.
+    """
+    import builtins
+
+    monkeypatch.setattr(builtins, "__import__", _refuse_import("sentence_transformers"))
+    monkeypatch.setattr("importlib.util.find_spec", _no_module_installed)
     with pytest.raises(BackendMissingError) as exc_info:
         load_backend(_section(provider=SENTENCE_TRANSFORMERS))
     assert exc_info.value.extra == "st"
+    assert exc_info.value.alternative is None
     assert 'uv add "pinakes[st]"' in exc_info.value.remedy
+
+
+def test_a_missing_extra_with_an_installed_alternative_names_it_instead(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The item 2 case: `[light]` is present (`fastembed` importable), `sentence-transformers` is
+    not. The message must name the free fix — flip `provider` in `pinakes.toml` — and must not
+    also recommend the 2 GB install it exists to avoid: naming `fastembed` while still saying
+    `uv add "pinakes[st]"` would pass a naive contains-check on the positive half alone and still
+    be the defect.
+    """
+    import builtins
+
+    monkeypatch.setattr(builtins, "__import__", _refuse_import("sentence_transformers"))
+    monkeypatch.setattr("importlib.util.find_spec", _only_fastembed_installed)
+    with pytest.raises(BackendMissingError) as exc_info:
+        load_backend(_section(provider=SENTENCE_TRANSFORMERS))
+    remedy = exc_info.value.remedy
+
+    # Positive half: names the alternative and where to change it.
+    assert exc_info.value.alternative == FASTEMBED
+    assert "fastembed" in remedy
+    assert "[embedding]" in remedy
+
+    # Negative half: never also points at the install it exists to avoid.
+    assert "torch" not in remedy.lower()
+    assert "pinakes[st]" not in remedy
+    assert "uv add" not in remedy
+
+
+def test_a_missing_reranker_extra_gets_the_same_alternative_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`[rerank]` carries its own `provider` and defaults to `sentence-transformers` too — the same
+    `[light]` install fails the same way loading the reranker, and the fix is symmetric: one
+    message names both `[embedding]` and `[rerank]`, since a `[light]` install needs both flipped.
+    """
+    import builtins
+
+    monkeypatch.setattr(builtins, "__import__", _refuse_import("sentence_transformers"))
+    monkeypatch.setattr("importlib.util.find_spec", _only_fastembed_installed)
+    with pytest.raises(BackendMissingError) as exc_info:
+        load_reranker(RerankSection(provider=SENTENCE_TRANSFORMERS, model="m", revision=None))
+    remedy = exc_info.value.remedy
+    assert exc_info.value.alternative == FASTEMBED
+    assert "[embedding]" in remedy
+    assert "[rerank]" in remedy
+    assert "torch" not in remedy.lower()
+    assert "pinakes[st]" not in remedy
 
 
 def test_reranker_registry_rejects_unknown_providers() -> None:
