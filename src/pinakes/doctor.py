@@ -700,7 +700,10 @@ def _hub_label(connection: sqlite3.Connection, hub: graph_edges.Node) -> str:
     if hub.kind == "heading":
         doc_id, _, heading_path = hub.key.partition(":")
         row = connection.execute("SELECT path FROM documents WHERE id = ?", (doc_id,)).fetchone()
-        location = str(row[0]) if row is not None else doc_id
+        # `row is None` is unreachable — a heading node's doc_id names an active document in the
+        # same read that derived it — but falls back to the raw id rather than crashing, like the
+        # other defensive branches in this function.
+        location = doc_id if row is None else str(row[0])
         return f'heading "{heading_path}" in {location}'
     if hub.kind == "dir":
         return f'directory "{hub.key}"'
@@ -725,13 +728,15 @@ def _edge_hubs(connection: sqlite3.Connection) -> Check:
     `members`, `hubs`, `census` and `node` all take a node id they assume the caller already has —
     so this is the one new query in the file: which `src` ids appear under each of `HUB_KINDS`.
     Everything downstream of that id — its degree, its `(kind, key)` — comes from `hub_degree()`
-    and `node()`, not from re-deriving either. `ORDER BY src` on it, like every read in
-    `graph.edges`, so the enumeration is not left to depend on whichever query plan SQLite happens
-    to pick today.
+    and `node()`, not from re-deriving either. `ORDER BY src` on it, matching every read in
+    `graph.edges` — harmless here since the sort below is what actually decides print order, but
+    consistent with the file whose own docstring argues a reader should never have to ask what
+    order an unordered query happens to return.
 
-    **The sort key breaks a degree tie on `(kind, key)`, explicitly** — never left as "whatever
-    order the rows arrived in", which for two hubs at equal degree would silently depend on the
-    query plan above rather than on anything this function decided.
+    **The sort below breaks a degree tie on `(kind, key)`, explicitly — the property that actually
+    makes the output deterministic**, since `nodes`' `UNIQUE (kind, key)` makes that pair a total
+    order over `top` with no remaining ties for arrival order to decide. Left as "whatever order
+    the rows arrived in", two hubs at equal degree would print in an order nothing here chose.
     """
     seen: set[int] = set()
     top: list[tuple[graph_edges.Node, int]] = []
