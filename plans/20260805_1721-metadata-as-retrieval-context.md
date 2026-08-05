@@ -82,7 +82,7 @@ recorded here.**
 
 | # | Step | Blocked on | Cost |
 |---|---|---|---|
-| 1 | **Numbered-heading grammar for `.txt`** | §5.2 and §5.3 — both the planner's. **§5.1, the one needing the user, is answered** | Moderate |
+| 1 | **Numbered-heading grammar for `.txt`** | **Nothing — unblocked 20260805 18:40.** All of §5 is settled: the key and vocabulary (§5.2) and the full predicate, written before any corpus was consulted (§5.3) | Moderate |
 | 2 | **The injection experiment** (§2) | Step 1 | ~2 h rebuild + eval |
 | 3 | **Markdown H1 → title** | Nothing — could start today | Small |
 | 4 | **`pnk doctor` title check** (B3) | Nothing | Small |
@@ -112,7 +112,7 @@ Full records: [`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_13
 
 ---
 
-## 5 · Step 1's blocking questions — **the user's is answered; two remain the planner's**
+## 5 · Step 1's blocking questions — **all three settled; step 1 is unblocked**
 
 ### 5.1 · A new `strategy` value, or its own key? **DECIDED 20260805 18:25 by the user**
 
@@ -136,16 +136,77 @@ An enumerated key absorbs it as `headings = "pdf-structural"` and touches nothin
 **What this leaves untouched, deliberately:** `strategy` stays inert, `structural` gains no new
 meaning, and no existing manifest changes behaviour.
 
-### 5.2 · The value's name — planner's
+### 5.2 · The vocabulary — **SETTLED 20260805 18:40, planner's**
 
-The **key** is `headings`. The first value is `"numbered"`. Still open: whether an explicit
-`"off"`/`"none"` is accepted alongside key-absent, and the `requires_pinakes` floor's exact version
-(§4 fixed *that a floor is set*, not which).
+    [chunking]
+    headings = "numbered"      # accepted: "none" (default) | "numbered"
 
-### 5.3 · The false-positive predicate — planner's, and **must be written before it is fitted**
+**Key absent means `"none"`**, and `"none"` is also accepted explicitly — a default, not an
+ambiguity. Writing it lets a manifest say *"this was considered"* rather than *"this predates the
+feature"*, which are different facts about a KB.
 
-`1.` at line start is also an ordered list. **The rule is stated first and tested against the RFC
-corpus second, never derived from it** — otherwise it is fitted to the answer.
+**Never stamped into the template.** This follows `adjacent_k` and `graph_channel`, and the reason
+is in `manifest.py:653` verbatim: `_toml.py` hard-errors on an unknown key, so a manifest carrying
+the key **cannot be read at all** by any Pinakes built before it existed. Settable-but-unstamped
+until a release deliberately accepts that break.
+
+**A correction to §4's framing, from reading the parser.** §4 said a floor is needed because an
+older build would reject the new *value* as a typo. With a new **key** the mechanics are
+**identical, not worse**: `table.choice` hard-errors on an unknown value and `table.done()`
+hard-errors on an unknown key, and G4's `requires_pinakes` pre-pass runs **over the raw TOML before
+either** (`manifest.py:18-22`, and `manifest.py:450-457` for why the field must be consumed again
+afterwards so strictness does not reject the very field that explains it). So a build with the
+pre-pass — G4 shipped in 0.6.0 — reports *"this KB requires pinakes >= X"* for the key exactly as it
+would for a value. Choosing a key over a value costs nothing here.
+
+**The floor's version is set at the release that ships it**, per `CLAUDE.md`: unbuilt work is named,
+never numbered.
+
+### 5.3 · The false-positive predicate — **SETTLED 20260805 18:40, written before any corpus was consulted**
+
+`1.` at line start is also an ordered list. This is the rule, stated in full **first**; the RFC
+corpus is measured against it **second**.
+
+**Line-level candidate — every clause must hold:**
+
+1. The line starts at **column 0** — no leading whitespace.
+2. It matches `^(\d+(?:\.\d+)*)\.?[ \t]+(\S.*)$` — a dotted-decimal number, optional trailing
+   dot, whitespace, then non-empty text.
+3. The text contains **no run of three or more dots** (`\.{3,}`). A dot leader marks a
+   table-of-contents entry, which would otherwise duplicate every real section number.
+4. The text is **≤ 100 characters** and does not end in `.`, `,`, `;` or `:`. A heading is a label;
+   a sentence is not.
+5. It is preceded by a **blank line**, or is the first line of the document.
+
+**Document-level acceptance — the part that does the real work:**
+
+6. The candidates, in order, must form a valid outline walk: each number is a **sibling increment**
+   (+1 on the last component), a **first child** (`X` → `X.1`), or a **return to an ancestor's next
+   sibling**. No number repeats.
+7. There must be **at least two** candidates — one is more likely a stray list item than an outline.
+8. **If the walk fails anywhere, the document yields no headings at all.**
+
+**Clause 8 is the whole design.** The failure mode is *exactly today's behaviour* — no
+`heading_path` — never a wrong one. An ordered list restarting at `1.` breaks the walk and
+disqualifies its document rather than minting confident nonsense. This is the same judgement the
+title decision already made: a visibly absent value beats a plausible wrong one, because a wrong one
+is harder to notice.
+
+**Bounds, stated now rather than discovered later:**
+
+* A document mixing a genuine numbered outline with an ordered list is **rejected whole**. Accepted:
+  silence is the current state, and it is safe.
+* Clause 3 comes from the general convention of tables of contents, not from the RFC corpus. It is
+  the one clause written with a document format in mind, and it is flagged as such.
+* Clauses 4 and 7 carry the only two constants (100, 2). Both are *shape* bounds, not thresholds
+  fitted to a distribution — but they are constants, and this project has been bitten by an
+  uncalibrated constant before, so they are named here to be argued with.
+
+**How it is measured, second:** run over the RFC corpus and report documents accepted, documents
+rejected, and — for a sample of ten accepted — whether the extracted `heading_path`s are actually
+right. **A poor match is a finding to report, not a licence to loosen the rule.** Any change to a
+clause after seeing the corpus is recorded *here*, with its reason, as a change made after the fact.
+Otherwise the predicate is fitted to the answer and proves nothing.
 
 ---
 

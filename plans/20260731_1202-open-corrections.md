@@ -139,9 +139,15 @@ in every manifest already written**. A boolean was rejected for not extending: t
 disabled rather than dismantled, so a second grammar is expected, and a boolean would force this
 same decision again with an installed base behind it.
 
-**Still the planner's, and still blocking:** the exact value vocabulary (§5.2) and the
-false-positive predicate (§5.3) — `1.` at line start is also an ordered list, and **the rule is
-stated before it is tested against the RFC corpus, never derived from it**.
+**Nothing blocks this item any more.** The vocabulary is settled — `headings` accepts `"none"`
+(default, and also writable explicitly) and `"numbered"`, never stamped into the template because
+`_toml.py` hard-errors on an unknown key ([§5.2](20260805_1721-metadata-as-retrieval-context.md)).
+So is the false-positive predicate, **written in full before any corpus was consulted**
+([§5.3](20260805_1721-metadata-as-retrieval-context.md)): five line-level clauses plus an
+outline-walk check over the whole document, and **if the walk fails anywhere the document yields no
+headings at all** — so a mis-read document falls back to exactly today's behaviour rather than
+minting confident nonsense. Measuring against the RFC corpus is the *second* step, and **a poor
+match is a finding to report, never a licence to loosen a clause**.
 
 **Two of the four blocking questions are DECIDED 20260805 13:13** ([`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_1313-decisions-init-titles-and-grammar.md)):
 
