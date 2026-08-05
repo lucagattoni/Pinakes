@@ -84,7 +84,7 @@ recorded here.**
 |---|---|---|---|
 | 1 | **Numbered-heading grammar for `.txt`** | **Nothing — unblocked 20260805 18:40.** All of §5 is settled: the key and vocabulary (§5.2) and the full predicate, written before any corpus was consulted (§5.3) | Moderate |
 | 2 | **The injection experiment** (§2) | Step 1 | ~2 h rebuild + eval |
-| 3 | **Markdown H1 → title** | Nothing — could start today | Small |
+| 3 | **Markdown H1 → title** | ✅ **Done 20260805 22:30.** `first_h1()` in `chunk.py`, wired at mint time. Existing sidecars are never rewritten, so no migration | Small |
 | 4 | **`pnk doctor` title check** (B3) | Nothing | Small |
 | 5 | PDF layout heuristics + confidence scoring | **Step 2 showing movement** | High |
 | 6 | Paid LLM title inference | **Step 2 showing movement** | High — the full paid-path apparatus |

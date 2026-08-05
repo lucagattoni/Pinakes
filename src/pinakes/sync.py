@@ -37,7 +37,13 @@ if TYPE_CHECKING:  # `budget.accountant` reads the price table; a free sync must
 from ruamel.yaml.scalarbool import ScalarBoolean
 
 from pinakes import linkscan
-from pinakes.chunk import PDF_SUFFIXES, assert_chunkable, chunk_document, source_type
+from pinakes.chunk import (
+    PDF_SUFFIXES,
+    assert_chunkable,
+    chunk_document,
+    first_h1,
+    source_type,
+)
 from pinakes.embed import EmbeddingBackend, load_backend
 from pinakes.errors import (
     BackendUnknownError,
@@ -1388,13 +1394,32 @@ def _mint(
     """
     document = manifest.root / path
     target = sidecar_path(document)
-    made = skeleton(document, created=stamp)
+    made = skeleton(document, title=_title_from_content(document, path), created=stamp)
     if options.index_only:
         return made.id, None
     _refuse_naming_the_reason(target, owner=manifest.kb.id)
     create_sidecar(target, made)
     report.sidecars_written.append(target.relative_to(manifest.root).as_posix())
     return made.id, hash_file(target)
+
+
+def _title_from_content(document: Path, path: str) -> str | None:
+    """A Markdown document's own `# ` heading, when it has one.
+
+    **Markdown only, and deliberately narrow.** `code` would yield a shell comment; a `pdf`'s bytes
+    are not text at all and reading them here would be a second extraction outside the cache. Every
+    other type keeps the filename fallback, which is visibly a filename — the property that made it
+    worth keeping.
+
+    Unreadable is not a failure: minting a sidecar must not depend on decoding a document that the
+    indexing path is about to report on properly.
+    """
+    if source_type(path) != "markdown":
+        return None
+    try:
+        return first_h1(document.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def _write_missing_sidecars(
