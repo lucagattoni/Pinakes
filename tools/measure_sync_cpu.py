@@ -13,11 +13,26 @@ sample answers that; instrumenting the loop would only ever show the loop's own 
 reports ~100%; seven cores busy reports ~700%. `CpuTrace.cores()` divides by 100 to turn a sampled
 percentage into "how many cores", which is the only unit item 6's write-up asks for.
 
+**The whole process tree is sampled, never just the launched pid — and that is the difference
+between a right answer and a confident wrong one.** The invocation this tool exists for wraps the
+real work in a launcher: `-- uv run pnk sync ...` makes `uv` the measured process and `pnk` its
+*child*, and `uv` itself burns nothing. Measured 20260805 on this repo, one identical one-core busy
+loop: **1.0 cores** when launched directly, **0.0 cores** through `uv run`. A tool answering "how
+many cores does sync keep busy" with `0.0` because it watched the launcher would not read as broken
+— it would read as a finding. So `sample_percent` sums `%cpu` across the root pid and every
+descendant, from a single `ps` snapshot.
+
+**`%cpu` is a decaying average over up to a minute of previous real time** (`man ps`), not an
+instantaneous reading. For the multi-minute, steady-state embedding loop this tool is pointed at,
+that is what you want. It does mean `peak` is the peak of a *smoothed* series: a burst shorter than
+the decay window is averaged away rather than reported, so a low peak is weaker evidence of an idle
+machine than a high peak is of a busy one.
+
 **Not a CI gate.** Nothing in `check.sh` calls this — it is an operator tool, run by hand against
 a real `pnk sync`, on a real corpus, because the number it exists to produce is meaningless on a
 fixture too small to saturate anything. Its own test exercises the sampling and reporting logic
-against a synthetic CPU-bound child process instead, so it stays fast, needs no model weights, and
-proves the *sampler* correct independently of any particular sync run.
+against synthetic CPU-bound child processes instead — direct *and* behind a launcher — so it stays
+fast, needs no model weights, and proves the *sampler* correct independently of any sync run.
 """
 
 from __future__ import annotations
@@ -56,21 +71,56 @@ class CpuTrace:
         return percent / 100.0
 
 
-def sample_percent(pid: int) -> float | None:
-    """This process's current aggregate `%cpu` across every thread, or `None` once it has exited.
+def _process_table() -> dict[int, tuple[int, float]]:
+    """Every visible process as `pid -> (ppid, %cpu)`, from one `ps` snapshot.
 
-    `ps -p <pid>` prints nothing (empty stdout, exit code 1) for a pid that is no longer running —
-    the process ended between the caller's `poll()` and this call, which is a race, not an error.
+    One snapshot rather than a `ps` call per pid: the tree must be summed from a *single* moment,
+    or a child that starts or exits mid-walk is counted twice or not at all.
     """
-    result = subprocess.run(
-        ["ps", "-o", "%cpu=", "-p", str(pid)],
-        capture_output=True,
-        text=True,
-    )
-    output = result.stdout.strip()
-    if not output:
+    result = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,%cpu="], capture_output=True, text=True)
+    table: dict[int, tuple[int, float]] = {}
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) != 3:  # a command name with spaces cannot appear — no `comm` is requested
+            continue
+        try:
+            table[int(fields[0])] = (int(fields[1]), float(fields[2]))
+        except ValueError:  # pragma: no cover — a malformed row is skipped, never fatal
+            continue
+    return table
+
+
+def sample_percent(pid: int) -> float | None:
+    """Aggregate `%cpu` across `pid` **and every descendant**, or `None` once `pid` has exited.
+
+    Summing the tree rather than the one pid is the point: the measured command is normally a
+    launcher (`uv run pnk sync ...`), whose own CPU is ~0 while its child does all the work. See
+    the module docstring for the measurement that establishes it.
+
+    `None` means the root pid is no longer in the process table — it ended between the caller's
+    `wait()` timing out and this call, which is a race, not an error. Descendants that outlive
+    their parent are re-parented away from it and cannot be attributed to it, so they are lost
+    either way; a command whose work outlives the process this tool waits on is outside what a
+    wall-clock-bounded sampler can measure at all.
+    """
+    table = _process_table()
+    if pid not in table:
         return None
-    return float(output.splitlines()[0])
+    children: dict[int, list[int]] = {}
+    for child, (parent, _) in table.items():
+        children.setdefault(parent, []).append(child)
+
+    total = 0.0
+    seen: set[int] = set()
+    frontier = [pid]
+    while frontier:  # breadth-first with `seen`, so a pid cycle cannot loop forever
+        current = frontier.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        total += table[current][1]
+        frontier.extend(kid for kid in children.get(current, []) if kid not in seen)
+    return total
 
 
 def measure(command: list[str], *, interval: float) -> CpuTrace:

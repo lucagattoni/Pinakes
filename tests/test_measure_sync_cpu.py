@@ -26,11 +26,23 @@ _BUSY = "s=0\nfor _ in range(200_000_000):\n    s += 1\n"
 """A pure-Python busy loop, no imports — burns one core for a bit over a second, predictably, with
 nothing the sampler is supposed to be independent of."""
 
+_LAUNCHER = (
+    "import subprocess, sys\n"
+    f"sys.exit(subprocess.run([sys.executable, '-c', {_BUSY!r}]).returncode)\n"
+)
+"""A process that burns nothing itself and does all its work in a child — the shape of
+`uv run pnk sync ...`, which is the only invocation this tool exists to be pointed at."""
+
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(TOOL), *args], capture_output=True, text=True, timeout=30
+        [sys.executable, str(TOOL), *args], capture_output=True, text=True, timeout=60
     )
+
+
+def _peak_cores(stdout: str) -> float:
+    line = next(entry for entry in stdout.splitlines() if entry.startswith("peak:"))
+    return float(line.split("(")[1].split(" cores")[0])
 
 
 def test_measures_a_genuinely_busy_process_at_a_nonzero_peak() -> None:
@@ -38,6 +50,24 @@ def test_measures_a_genuinely_busy_process_at_a_nonzero_peak() -> None:
     assert result.returncode == 0
     assert "peak: 0% cpu" not in result.stdout
     assert "samples: 0" not in result.stdout, "a >1s busy loop polled every 50ms must be sampled"
+
+
+def test_a_launcher_is_measured_by_its_child_not_by_itself() -> None:
+    """The defect this test exists for: `ps -p <pid>` watches only the launched process, so
+    `-- uv run pnk sync ...` measured `uv` — which burns nothing — and reported 0.0 cores for a
+    sync saturating one. Measured 20260805 before the fix: the identical busy loop read 1.0 cores
+    direct and 0.0 cores behind a launcher.
+
+    A near-idle *upper* bound is what makes this adversarial. Asserting only "> 0" would pass on
+    the launcher's own interpreter startup, so the threshold sits above anything a process that
+    merely waits on a child could produce, and below one core.
+    """
+    result = _run("--interval", "0.05", "--", sys.executable, "-c", _LAUNCHER)
+    assert result.returncode == 0
+    assert _peak_cores(result.stdout) > 0.5, (
+        "the busy child's CPU was not attributed to the measured tree — "
+        "the sampler is watching the launcher alone"
+    )
 
 
 def test_reports_cores_the_way_macos_percent_converts_to_them() -> None:
