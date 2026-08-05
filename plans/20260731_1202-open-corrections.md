@@ -14,10 +14,11 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**Four live items as of 20260805 18:00.** Every one came from *building* — the RFC realism corpus,
-or the graph release measured against it — rather than from reading the code. **Nothing is in
-flight**: every branch open this morning has landed. Each remaining item is blocked on a decision or
-a measurement rather than on effort, and says which in its own text.
+**Five live items as of 20260805 18:25.** Every one came from *building* — the RFC realism
+corpus, or the graph release measured against it — rather than from reading the code. **Nothing
+is in flight**: every branch open this morning landed and shipped in 0.12.0. **Four are decided
+and unbuilt**; one waits on a measurement nobody has taken. Item 5 is 0.12.0's own check needing
+a correction — the release that closed two items opened one.
 
 The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
 finished. Note what is **not** here: **both releases in
@@ -123,14 +124,24 @@ kinds that worked did not help this corpus"*, never *"graph structure does not h
 **Required:** numbered-heading detection for plain text, **opt-in** — never a change to what
 `structural` does today.
 
-**How it is switched on is open, and this file no longer answers it.** An earlier draft of this item
-asserted "a new `[chunking] strategy` value" as required. That was written before the analysis in
-[`20260805_1721-metadata-as-retrieval-context.md` § 5.1](20260805_1721-metadata-as-retrieval-context.md),
-which found the choice is a **permanent contract needing the user**: `strategy` is *inert today* —
-validated by `table.choice` and never read at runtime — so adding a second value makes a dead key
-live and gives `structural` a meaning it has never had, retroactively, in every manifest already
-written. The alternative is a separate key. **§5.1 owns that question; nothing here overrides it**,
-and per this file's own header, an item that reads as a question is a defect in the item.
+**How it is switched on: DECIDED 20260805 18:25 by the user** — a **new key taking an enumerated
+value**, never a `strategy` value and never a boolean
+([§5.1](20260805_1721-metadata-as-retrieval-context.md)):
+
+    [chunking]
+    strategy = "structural"    # unchanged, still inert
+    headings  = "numbered"     # new, opt-in, `text` only
+
+An earlier draft of this item asserted "a new `[chunking] strategy` value" as required, and that is
+**withdrawn**. `strategy` is inert — validated by `table.choice`, never read at runtime — so a second
+value would make a dead key live and give `structural` a meaning it has never had, **retroactively,
+in every manifest already written**. A boolean was rejected for not extending: the PDF path is
+disabled rather than dismantled, so a second grammar is expected, and a boolean would force this
+same decision again with an installed base behind it.
+
+**Still the planner's, and still blocking:** the exact value vocabulary (§5.2) and the
+false-positive predicate (§5.3) — `1.` at line start is also an ordered list, and **the rule is
+stated before it is tested against the RFC corpus, never derived from it**.
 
 **Two of the four blocking questions are DECIDED 20260805 13:13** ([`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_1313-decisions-init-titles-and-grammar.md)):
 
@@ -163,6 +174,36 @@ before/after: **no movement is the expected result, and movement would itself be
 a `schema_version` 3 rebuild, and the anti-circularity discipline is not optional if it happens —
 questions stay frozen, nothing is tuned after seeing a number, and `expand-in-degree` stays
 reported, never gated.
+
+---
+
+### 5 · The heading-coverage check WARNs forever on `code` and `pdf`
+
+**Shipped in 0.12.0 and immediately in need of this correction.** `_heading_coverage` (`doctor.py`)
+returns `Status.WARN` when *any* source type sits at 0%. `code` and `pdf` can never carry a
+`heading_path` today — `chunk.py` runs heading detection for `markdown` only — so **a KB containing
+one `.py` file or one PDF warns on every `pnk doctor` run, forever**, with a remedy that says it is
+a limit of the tool. It did not surface in verification because both committed corpora are pure
+Markdown at 100%.
+
+**DECIDED 20260805 18:25 by the user** ([§6](20260805_1721-metadata-as-retrieval-context.md)).
+
+**Required:** WARN **only** when `markdown` sits at 0%. Every other source type reports OK with a
+note, and **the note names the cause, not just the number** — *"the chunker extracts headings for
+`markdown` only"* — so a reader is not sent to edit documents that are not the problem.
+
+**Why:** an un-actionable warning that cannot be cleared is how doctor output stops being read *at
+all*, which costs the actionable warnings too. `markdown` at 0% is the opposite case: real, fixable,
+and exactly the defect the check was built for.
+
+**The accepted cost, stated:** the zero-heading-paths condition that bounds the graph release's gate
+becomes quieter on `text` and `pdf` corpora. It is still reported — percentage and note are printed
+— just not as a WARN. When `[chunking] headings` (item 4) ships, a `text` corpus becomes fixable and
+this can be re-judged.
+
+**Test:** a corpus with `markdown` at 100% and `code` at 0% is **OK with a note**; a corpus with
+`markdown` at 0% is **WARN**. Both are needed — a test for only the first passes if the check is
+deleted outright.
 
 ---
 
