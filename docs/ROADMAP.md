@@ -27,7 +27,7 @@ precision nobody measured.
   rename broke PyPI trusted publishing — and went out once the publisher was corrected.
 - **Three of four planned releases are done.** The links release shipped across
   [`0.5.0`](#050--links-you-can-walk--20260731-1127)–[`0.6.0`](#060--links-you-can-write--20260801-1051).
-- **[The graph release](#the-graph-release--building-since-20260804) is building again since
+- **[The graph release](#the-graph-release--shipped-0110) is building again since
   20260804.** It was blocked for three days — not on code, on a *corpus*. Its gate failed on the demo
   KB (1 of 18) and **passed on the 300-RFC corpus** that
   [now exists](#the-corpus-exists--built-20260804-0800): 12 multi-hop questions failing, 9 reachable
@@ -68,7 +68,7 @@ number belongs to a release only when it is cut
 | **[0.9.0](#090--a-site-and-a-name--20260804-1228)** | 20260804 12:28 | A site, and a name | • Docs published to a MkDocs site<br>• 31 dead links found and fixed<br>• Repo renamed → project is **Pinakes**<br>• ⚠️ First upload **refused** — the rename broke trusted publishing; [since fixed](STATUS.md#published-on-pypi) |
 | **[0.10.0](#0100--you-can-see-it-working--20260804-1335)** | 20260804 13:35 | You can see it working | • `pnk sync` shows live progress on a terminal<br>• `pnk doctor` no longer tells an interrupted sync to `--rebuild`<br>• Sync timestamps are UTC<br>• ✅ Released and on PyPI |
 | | | **[Open corrections](#open-corrections--six-live-items)** | • Six live code/tooling items<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
-| | | **[The graph release](#the-graph-release--building-since-20260804)** | • Structural edges, expansion channel, `schema_version` 3<br>• ▶ **Building** — its gate failed on the demo KB (20260801) and passed on the 300-RFC corpus (20260804)<br>• G3 on `main`, unreleased: `nodes`/`edges` at `schema_version` 3<br>• G5 next, then G6 |
+| **[0.11.0](#the-graph-release--shipped-0110)** | 20260805 07:14 | The graph release | • Structural edges at `schema_version` 3 — **every existing KB rebuilds once**<br>• `pnk doctor` reports the highest-degree hubs<br>• **The expansion channel ships `off`** — its gate improved 0 and regressed 3 |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
 | | | **[The template release](#the-template-release--ready-to-start)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• Not started |
@@ -339,7 +339,7 @@ improvement can only come from a question that fails today.
 | Multi-hop questions failing today | ≥ 7 | **1** |
 | Of those, reachable without authored edges | ≥ 7 | **1** |
 
-**So [the graph release](#the-graph-release--building-since-20260804) stopped here.** No
+**So [the graph release](#the-graph-release--shipped-0110) stopped here.** No
 `schema_version` bump, no forced rebuild for every KB in existence, for an edge table whose channel
 could never be licensed.
 
@@ -472,7 +472,7 @@ which is what that corpus was for. The interrupted-sync trio that used to sit he
 > The list refills from use. An empty one means nobody has run Pinakes lately, never that it is
 > finished.
 
-## The graph release — building since 20260804
+## The graph release — shipped 0.11.0
 
 ✅ **Shipped in 0.11.0** (20260805 07:14), with its channel `off`. Blocked for three days on a
 corpus, not on code; the corpus cleared the *reachability* precondition — and then the retrieval gate, run

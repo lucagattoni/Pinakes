@@ -639,7 +639,7 @@ rows in [`docs/VERIFICATION.md`](../docs/VERIFICATION.md).
 **Its deliverable is a measurement, and the measurement is negative.** `expand` ships `off`;
 licensing p = 1.0000; nothing lifted and three questions regressed
 ([`docs/STATUS.md`](../STATUS.md#did-the-expansion-channel-earn-its-default--no-measured-20260804-2252)). The pre-commitment held — nothing tuned, no weight moved, no
-threshold revisited after seeing the number. **G6 is what remains.** The spec below is left as
+threshold revisited after seeing the number. **G6 shipped in 0.11.0, and the graph release is complete.** The spec below is left as
 written: it is what was built against.
 
 **Follows G3.** G2's precondition is met on the RFC realism corpus — the multi-hop class has **12**
