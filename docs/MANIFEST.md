@@ -116,7 +116,7 @@ Override for one run with `pnk sync --extract=BACKEND`.
 
 | Key | Default | Notes |
 |---|---|---|
-| `strategy` | `structural` | Headings and paragraphs, not blind character windows. The only value today. **Heading detection runs for Markdown only** — every other source type takes the plain-text path and records no `heading_path`, so this setting is size-based in substance on a `.txt` or PDF corpus. `pnk doctor`'s heading-coverage check reports it rather than leaving it silent ([CLI](CLI.md#pnk-doctor)) |
+| `strategy` | `structural` | The only accepted value, and **nothing reads it at runtime** — it is validated at parse time and never consulted again. What actually decides chunking is the document's **source type**: `markdown` gets heading and paragraph structure, every other type takes the plain-text path and records no `heading_path` at all. So setting this changes nothing today, and a `.txt` or PDF corpus is chunked without structure however this reads. `pnk doctor`'s heading-coverage check reports that rather than leaving it silent ([CLI](CLI.md#pnk-doctor)); an opt-in value for numbered plain text is [an open correction](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md) |
 | `max_tokens` | `510` | Counted with **the embedding model's own tokenizer**, and validated against its `max_seq_length` minus special tokens. Asking for more is a hard error, not a silent truncation |
 | `overlap` | `64` | Must be `< max_tokens` |
 
