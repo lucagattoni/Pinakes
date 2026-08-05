@@ -41,7 +41,9 @@ A first sync on a `[light]` install fails naming `sentence-transformers` — the
 
 `_check_target` refuses a non-empty directory, so a KB cannot be initialised inside an existing repository — which is what [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) prescribes and what everyone does: create the repo, clone it, then init. A `.git`, a README and a `pyproject.toml` are already "not empty", and the message *"clear this one first"* is alarming when the directory holds the documents.
 
-**Hit three times independently** (probe rehearsal, dogfooding KB, corpus). **Required:** a decision, then an implementation — the guard exists to stop `pnk init` scribbling over someone's directory, so the answer is probably *refuse only when the directory is already a KB, or when a name it would write already exists*, rather than a blanket emptiness test. Whatever is chosen, `docs/GUIDE.md` gets the retrofit path.
+**Hit three times independently** (probe rehearsal, dogfooding KB, corpus).
+
+**DECIDED 20260805 13:13 — refuse only what would actually be overwritten** ([`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_1313-decisions-init-titles-and-grammar.md)). Drop the blanket emptiness test; keep the `pinakes.toml` and not-a-directory refusals; add a refusal naming any file `init` would write that already exists. The accepted cost is the loss of a cheap typo-catcher. `docs/GUIDE.md` gets the retrofit path.
 
 ---
 
@@ -50,7 +52,9 @@ A first sync on a `[light]` install fails naming `sentence-transformers` — the
 
 All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so search results are unreadable. `sync` mints the title from the filename when the document has no Markdown H1 — correct for Markdown, useless for anything else.
 
-**Deliberately not worked around** by the corpus agent: hand-writing 300 titles would have hidden the finding, and editing the RFC text would have broken the licence position (verbatim reproduction is the grant). **Required:** a decision on whether a non-Markdown first line may become a title, recorded either way. This is a *quality* finding, not a defect — `title` is documented as the user's.
+**Deliberately not worked around** by the corpus agent: hand-writing 300 titles would have hidden the finding, and editing the RFC text would have broken the licence position (verbatim reproduction is the grant).
+
+**DECIDED 20260805 13:13 — keep the filename fallback, and report it** ([`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_1313-decisions-init-titles-and-grammar.md)). The first-line heuristic is **rejected**: an RFC's first line is `Internet Engineering Task Force (IETF)`, so it would mint confidently wrong titles at scale into sidecars the user then commits, which is worse than a filename that is visibly a filename. **Required:** a `pnk doctor` check reporting documents whose `title` equals the filename stem *as minted* — detection, never guessing, and a nudge rather than a FAIL. `title` stays the user's field.
 
 ---
 
@@ -117,16 +121,25 @@ kinds that worked did not help this corpus"*, never *"graph structure does not h
 value**, opt-in — never a change to what `structural` does today. `manifest.py` already has the
 extension point: `CHUNK_STRATEGIES = ("structural",)`, validated by `table.choice(...)`.
 
-**Four things must be decided and recorded before it is built — they are the planner's, not the
-implementer's:**
+**Two of the four blocking questions are DECIDED 20260805 13:13** ([`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_1313-decisions-init-titles-and-grammar.md)):
 
-1. **The value's name and scope.**
-2. **Does it cover `pdf` as well as `text`?** Both take `_plain_blocks`. A PDF is the source type
-   least able to verify its own structure.
-3. **`requires_pinakes`.** An older Pinakes meets the new value through `table.choice` and rejects
-   it as an *unknown value* — reading as a typo, which is exactly the confusion G4 exists to
-   prevent. Decide whether shipping it sets a floor.
-4. **False positives, written before the rule is fitted.** `1.` at line start is also an ordered
+* **Scope: the `text` source type only.** Markdown is not in scope because it already works —
+  `chunk.py` dispatches on source type and `markdown` already takes `_markdown_blocks`.
+  **`pdf` is disabled here, never dismantled:** nothing built for PDF is removed, narrowed or
+  weakened, and a PDF is extracted, chunked and indexed exactly as it is today. It simply does not
+  gain this grammar yet, and the precondition for extending it is **strong structure detection**.
+  If building this seems to require changing existing PDF behaviour, that is a spec defect — stop
+  and report it.
+* **`requires_pinakes`: a floor is set, explicitly.** Without one an older Pinakes rejects the new
+  value as an *unknown value*, which reads as a typo — the exact confusion G4 exists to prevent.
+  A build below the floor must produce the floor message, **not** the unknown-value message. The
+  accepted cost is that older builds cannot read a KB using the value; they would have refused it
+  anyway, with a worse message.
+
+**Two remain the planner's, and are still open:**
+
+1. **The value's name.**
+2. **False positives, written before the rule is fitted.** `1.` at line start is also an ordered
    list. The predicate must be stated first and tested against the RFC corpus second, never derived
    from it.
 
