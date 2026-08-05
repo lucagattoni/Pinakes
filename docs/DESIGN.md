@@ -508,8 +508,14 @@ the manifest says.
 Nothing failed to match; nothing was tried. `pnk doctor`'s heading-coverage check exists because
 that was silent until a 106 806-chunk corpus indexed with zero heading paths and no warning. The lexical index only sees chunk text, so a word appearing
 only in a heading would otherwise be unsearchable, and a passage quoted back to the user reads
-better carrying the heading it belongs to. `heading_path` still records the hierarchy separately,
-for filtering and citation.
+better carrying the heading it belongs to. `heading_path` records the hierarchy separately, and it is
+worth being exact about what consumes it, because it is not retrieval: **citations**
+(`path:locator (heading > path)`), the **`in-section`, `parent` and `child` edges** derived from it,
+and the passage payload returned over the CLI and MCP surfaces. **Nothing filters or ranks on it** —
+FTS5 indexes `chunks.text` and embeddings are computed over `chunks.text`, so a chunk's recall is
+unaffected by whether it carries one. That is the point of putting the heading line *into* the
+chunk: the words stay searchable either way, and `heading_path` buys attribution and structure
+rather than reach.
 
 **The span invariant, stated over the *indexed* text** (amended 20260728 16:40 — I5 shipped the
 behaviour without this edit). Every chunk satisfies:
