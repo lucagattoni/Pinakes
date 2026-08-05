@@ -1961,3 +1961,85 @@ def test_drift_is_reported_for_max_tokens_and_overlap_too(kb: Path) -> None:
         "chunking_max_tokens": (str(before.max_tokens), "256"),
         "chunking_overlap": (str(before.overlap), "32"),
     }
+
+
+# --- A Markdown document titles itself from its own `# ` heading -------------------------------
+
+
+def _title_of(kb: Path, name: str) -> str:
+    import yaml
+
+    text = (kb / "docs" / f"{name}{SIDECAR_SUFFIX}").read_text(encoding="utf-8")
+    return str(yaml.safe_load(text)["title"])
+
+
+def test_a_markdown_h1_becomes_the_title(kb: Path) -> None:
+    """Until now `sync` never read a document's content for its title, and it was easy to miss:
+    `# Access restrictions` sat beside `title: access restrictions`, which looks like the H1 *was*
+    used when the value is the filename stem with hyphens swapped for spaces. The capital letter is
+    the tell."""
+    (kb / "docs" / "rfc9110-notes.md").write_text("# HTTP Semantics\n\nBody.\n", encoding="utf-8")
+    run(kb)
+    assert _title_of(kb, "rfc9110-notes.md") == "HTTP Semantics"
+
+
+def test_a_document_with_no_h1_keeps_the_filename_fallback(kb: Path) -> None:
+    """The fallback was kept deliberately — a title that is visibly a filename is honest about
+    being one."""
+    (kb / "docs" / "plain-notes.md").write_text("No heading here.\n", encoding="utf-8")
+    run(kb)
+    assert _title_of(kb, "plain-notes.md") == "plain notes"
+
+
+def test_a_hash_inside_a_code_fence_is_not_a_title(kb: Path) -> None:
+    """`#` opens a comment in half the languages there are, so a fenced one would title a document
+    after whatever its first code sample happens to say."""
+    (kb / "docs" / "fenced.md").write_text(
+        "```\n# not a heading\n```\n\n# Real Title\n\nBody.\n", encoding="utf-8"
+    )
+    run(kb)
+    assert _title_of(kb, "fenced.md") == "Real Title"
+
+
+def test_only_a_level_one_heading_titles_the_document(kb: Path) -> None:
+    """`##` is a section, not the document's name. A file that opens on a subsection would
+    otherwise be titled after it."""
+    (kb / "docs" / "subsection-first.md").write_text("## A Section\n\nBody.\n", encoding="utf-8")
+    run(kb)
+    assert _title_of(kb, "subsection-first.md") == "subsection first"
+
+
+def test_a_plain_text_file_is_not_titled_from_a_hash_line(kb: Path) -> None:
+    """Markdown only. A `#` in a `.txt` is a comment character, not a heading — and reading a PDF
+    here would be a second extraction outside the cache."""
+    manifest = kb / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md"]', 'include = ["**/*.md", "**/*.txt"]', 1
+        ),
+        encoding="utf-8",
+    )
+    (kb / "docs" / "notes.txt").write_text("# Looks Like A Heading\n\nBody.\n", encoding="utf-8")
+    run(kb)
+    assert _title_of(kb, "notes.txt") == "notes"
+
+
+def test_an_existing_sidecars_title_is_never_rewritten(kb: Path) -> None:
+    """**The invariant that makes this safe to ship without a migration.** `skeleton()` runs only
+    when a sidecar is minted, so every KB already indexed keeps the titles it has — and `title` is
+    the user's field, which a sync must never overwrite."""
+    document = kb / "docs" / "rfc9110-notes.md"
+    document.write_text("# HTTP Semantics\n\nBody.\n", encoding="utf-8")
+    run(kb)
+
+    sidecar = kb / "docs" / f"rfc9110-notes.md{SIDECAR_SUFFIX}"
+    sidecar.write_text(
+        sidecar.read_text(encoding="utf-8").replace(
+            "title: HTTP Semantics", "title: What I Actually Call It"
+        ),
+        encoding="utf-8",
+    )
+    document.write_text("# A Completely Different H1\n\nBody, edited.\n", encoding="utf-8")
+    run(kb)
+
+    assert _title_of(kb, "rfc9110-notes.md") == "What I Actually Call It"

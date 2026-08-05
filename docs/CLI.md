@@ -186,7 +186,8 @@ the free one, the highest-degree structural edge hubs, heading coverage, chunkin
 titles.
 
 **`titles` counts documents still carrying the title `sync` minted from their filename, and is
-always OK.** A filename-derived title is a legitimate state — the fallback is deliberate — so
+always OK.** A **Markdown** document titles itself from its own `# ` heading, so this mostly counts
+the types that cannot: plain text, code, PDFs, and Markdown files with no `# `. A filename-derived title is a legitimate state — the fallback is deliberate — so
 warning would fire on every KB whose titles nobody has curated yet, which is most of them and both
 committed corpora at 100%. It is a nudge: search results read better with a real title, and `title`
 in each `.pnk.yaml` is yours to write. **Nothing infers one for you.** Guessing from a document's

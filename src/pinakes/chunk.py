@@ -189,6 +189,38 @@ def _page_for(position: int, page_spans: Sequence[tuple[int, int]]) -> int:
     )
 
 
+def first_h1(text: str) -> str | None:
+    """The document's first ATX `# ` heading, or `None`.
+
+    **Used to title a Markdown document at mint time, and nothing else.** Until now `sync` never
+    read a document's content for its title — `skeleton()` was called without `title=` at both
+    sites, so the filename stem always won. That was easy to miss because the two usually differ
+    only in capitalisation: `# Access restrictions` alongside `title: access restrictions` reads
+    like the H1 *was* used, when the value is the stem with its hyphens swapped for spaces.
+
+    **An H1 is structure, not a guess, which is what separates this from the rejected heuristic.**
+    Inferring a title from a document's *first line* was refused because an RFC's first line is
+    `Internet Engineering Task Force (IETF)` — confidently wrong, at scale, in files the user then
+    commits. `# ` is an explicit authored marker: a document carrying one has said what it is
+    called. Where there is none, the filename fallback stands unchanged.
+
+    Fence-aware, because a `#` inside a code block is a comment in half the languages there are.
+    """
+    in_fence = False
+    for line in text.splitlines():
+        stripped = line.rstrip()
+        if _FENCE.match(stripped):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        heading = _ATX_HEADING.match(stripped)
+        if heading is not None and len(heading.group("hashes")) == 1:
+            title = heading.group("title").strip()
+            return title or None
+    return None
+
+
 def _markdown_blocks(text: str) -> list[Block]:
     """Paragraphs, carrying — and *including* — the headings they sit under.
 

@@ -1964,7 +1964,9 @@ def test_minted_titles_are_reported_but_never_warned(kb: Path) -> None:
     curated, which is most of them and *both committed corpora at 100%*. That is the unclearable
     warning the heading-coverage check already had to answer for, and repeating it one check later
     would cost the warnings that do mean something."""
-    (kb / "docs" / "access-restrictions.md").write_text("# Anything\n\nBody.\n", encoding="utf-8")
+    # No `# ` heading: since 20260805 a Markdown H1 titles the document, so a file with one is
+    # *authored*, not minted — which is exactly what this check must not count.
+    (kb / "docs" / "access-restrictions.md").write_text("Body, no heading.\n", encoding="utf-8")
     sync(load(kb), options=SyncOptions(), now="20260805 22:15")
 
     status, detail = checks(kb)["titles"]
@@ -1975,7 +1977,9 @@ def test_minted_titles_are_reported_but_never_warned(kb: Path) -> None:
 
 def test_an_authored_title_is_not_counted_as_minted(kb: Path) -> None:
     """Otherwise the check reports a number nobody can act on and everybody learns to ignore."""
-    (kb / "docs" / "access-restrictions.md").write_text("# Anything\n\nBody.\n", encoding="utf-8")
+    # No `# ` heading: since 20260805 a Markdown H1 titles the document, so a file with one is
+    # *authored*, not minted — which is exactly what this check must not count.
+    (kb / "docs" / "access-restrictions.md").write_text("Body, no heading.\n", encoding="utf-8")
     sync(load(kb), options=SyncOptions(), now="20260805 22:16")
 
     counted_before = checks(kb)["titles"][1]
@@ -2000,7 +2004,7 @@ def test_the_check_recomputes_minting_the_way_sync_does_it(kb: Path) -> None:
     """`minted_title` is shared by the minter and this check precisely so they cannot disagree.
     Underscores *and* hyphens both become spaces, and a check carrying its own copy of that rule
     would go quietly wrong — in the direction of reporting nothing — the day either copy changed."""
-    (kb / "docs" / "annual_report-2026.md").write_text("# X\n\nBody.\n", encoding="utf-8")
+    (kb / "docs" / "annual_report-2026.md").write_text("Body, no heading.\n", encoding="utf-8")
     sync(load(kb), options=SyncOptions(), now="20260805 22:18")
 
     assert minted_title(Path("docs/annual_report-2026.md")) == "annual report 2026"
