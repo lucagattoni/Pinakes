@@ -17,22 +17,23 @@ precision nobody measured.
 
 ---
 
-## Where things stand right now — 20260804 14:00 UTC
+## Where things stand right now — 20260805 07:36 UTC
 
-- **18 releases in 10 days.** [`0.1.0`](#010--the-engine--20260725-1527) on 20260725;
-  [`0.10.0`](#0100--you-can-see-it-working--20260804-1335) today.
-- **Latest on PyPI: `0.10.0`**, uploaded 20260804 13:39 UTC. Every release from `0.2.2` on is
+- **19 releases in 11 days.** [`0.1.0`](#010--the-engine--20260725-1527) on 20260725;
+  [`0.11.0`](#the-graph-release--shipped-0110) on 20260805.
+- **Latest on PyPI: `0.11.0`**, uploaded 20260805 07:18 UTC. Every release from `0.2.2` on is
   published ([STATUS § Published on PyPI](STATUS.md#published-on-pypi)).
-  [`0.9.0`](#090--a-site-and-a-name--20260804-1228)'s upload was refused at first — the repository
-  rename broke PyPI trusted publishing — and went out once the publisher was corrected.
-- **Three of four planned releases are done.** The links release shipped across
-  [`0.5.0`](#050--links-you-can-walk--20260731-1127)–[`0.6.0`](#060--links-you-can-write--20260801-1051).
-- **[The graph release](#the-graph-release--shipped-0110) is building again since
-  20260804.** It was blocked for three days — not on code, on a *corpus*. Its gate failed on the demo
-  KB (1 of 18) and **passed on the 300-RFC corpus** that
-  [now exists](#the-corpus-exists--built-20260804-0800): 12 multi-hop questions failing, 9 reachable
-  without authored edges, against a precondition of 7 and 7
-  ([the measurement](STATUS.md#can-the-graph-releases-gate-be-reached--yes-measured-20260804)).
+- **Two of the four named releases have shipped** — the links release across
+  [`0.5.0`](#050--links-you-can-walk--20260731-1127)–[`0.6.0`](#060--links-you-can-write--20260801-1051),
+  the graph release in [`0.11.0`](#the-graph-release--shipped-0110). The deep and template releases
+  are unbuilt.
+- **[The graph release](#the-graph-release--shipped-0110) shipped — and its channel is `off`.**
+  Blocked for three days on a *corpus*, not on code; the RFC corpus cleared the reachability
+  precondition, and then the retrieval gate improved **0** multi-hop questions and regressed **3**
+  (p = 1.0000). `schema_version` 3 means **every existing KB rebuilds once**.
+- ⚠️ **`0.11.0`'s verdict is narrower than it reads** — three of the seven edge kinds derived
+  **zero** edges on the corpus it was gated against
+  ([open correction 1](#open-corrections--six-live-items)).
 - **[The template release](#the-template-release--ready-to-start) is unblocked** — plan written,
   reviewed, four decisions taken. Nobody has started it.
 - **[Six open corrections](#open-corrections--six-live-items)** are live, all small, none blocking.
@@ -67,8 +68,8 @@ number belongs to a release only when it is cut
 | **[0.8.0](#080--our-key-not-the-sdks--20260804-0840)** | 20260804 08:40 | Our key, not the SDK's | • **Breaking (paid path):** `PINAKES_ANTHROPIC_API_KEY`, no fallback<br>• Budget defaults raised<br>• STATUS header pinned by a gate<br>• 16 doc claims corrected |
 | **[0.9.0](#090--a-site-and-a-name--20260804-1228)** | 20260804 12:28 | A site, and a name | • Docs published to a MkDocs site<br>• 31 dead links found and fixed<br>• Repo renamed → project is **Pinakes**<br>• ⚠️ First upload **refused** — the rename broke trusted publishing; [since fixed](STATUS.md#published-on-pypi) |
 | **[0.10.0](#0100--you-can-see-it-working--20260804-1335)** | 20260804 13:35 | You can see it working | • `pnk sync` shows live progress on a terminal<br>• `pnk doctor` no longer tells an interrupted sync to `--rebuild`<br>• Sync timestamps are UTC<br>• ✅ Released and on PyPI |
-| | | **[Open corrections](#open-corrections--six-live-items)** | • Six live code/tooling items<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
 | **[0.11.0](#the-graph-release--shipped-0110)** | 20260805 07:14 | The graph release | • Structural edges at `schema_version` 3 — **every existing KB rebuilds once**<br>• `pnk doctor` reports the highest-degree hubs<br>• **The expansion channel ships `off`** — its gate improved 0 and regressed 3 |
+| | | **[Open corrections](#open-corrections--six-live-items)** | • Six live code/tooling items<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
 | | | **[The template release](#the-template-release--ready-to-start)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• Not started |
@@ -476,9 +477,7 @@ which is what that corpus was for. The interrupted-sync trio that used to sit he
 
 ✅ **Shipped in 0.11.0** (20260805 07:14), with its channel `off`. Blocked for three days on a
 corpus, not on code; the corpus cleared the *reachability* precondition — and then the retrieval gate, run
-20260804 22:52, did not pass. `expand` defaults `off` ([the numbers](STATUS.md#did-the-expansion-channel-earn-its-default--no-measured-20260804-2252)). **G6 remains**: hub
-reporting, verification, the cut.
-
+20260804 22:52, did not pass. `expand` defaults `off` ([the numbers](STATUS.md#did-the-expansion-channel-earn-its-default--no-measured-20260804-2252)). 
 **The finding is worth more than the feature.** The reachability probe found 9 failing multi-hop
 questions reachable within two hops; the retrieval instrument lifted **none** of them, and the
 channel displaced three answers the existing fusion already had. `reachable ≠ retrievable`, by 9
@@ -539,22 +538,33 @@ threshold ([DESIGN § 3.1](DESIGN.md#31-vector-search-what-the-tiers-actually-bu
 → The full comparison table:
 [STATUS § The realism corpus exists](STATUS.md#the-realism-corpus-exists-and-it-falsified-a-design-premise--built-20260804-0800).
 
-### What has to happen next
+### What it settled, and what it did not — 20260804 22:52
 
-1. **Convert the frozen question set** — the corpus's questions are plain data, authored by an agent
-   barred from reading Pinakes internals. Conversion rules are written and deliberately biased
-   against the converter
-   ([`plans/20260803_2239-corpus-probe-run.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260803_2239-corpus-probe-run.md)).
-2. **Re-run the reachability probe** against the RFC corpus.
-3. **If it passes**, work through the re-entry checklist
-   ([`plans/20260804_1016-graph-remainder-reentry.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1016-graph-remainder-reentry.md))
-   — five releases have landed since G3 was specified.
-4. **If it fails again**, the graph release does not ship. That is an acceptable outcome, and it is
-   why the measurement was sequenced *before* the schema change.
+**Settled.** Structural edges can be derived, stored and walked at corpus scale: 107,411 edges over
+106,806 chunks, and the channel costs **1.02×** query latency, so the "slow at query time" risk did
+not materialise. `sibling` is 99.2% of the graph's mass and is **inert in both gauges** — dropping
+it changes neither reachability nor retrieval.
 
-> **The honesty constraint:** the questions were frozen before the probe existed, and are never
-> re-authored to produce failures. Fitting the question set to the edge set is a circularity that is
-> undetectable afterwards — it was already removed once, when cross-KB questions were cut.
+**Not settled — and this is the honest bound on the headline.** Three of the seven edge kinds
+(`in-section`, `parent`, `child`) derived **zero** edges, because not one of the 106,806 chunks
+carries a `heading_path`: the chunker's heading grammar is Markdown-shaped and RFC section numbering
+is not ([open correction 1](#open-corrections--six-live-items)). So the verdict is *"the edge kinds
+that worked did not help this corpus"*, never *"graph structure does not help"*. The `--drop
+parent-child` arm the arity decision added could say nothing at all here, by construction.
+
+**What would change it**, in the order the project would try them:
+
+1. **Detect the silence** — a `pnk doctor` check on the share of chunks with an empty `heading_path`.
+   Detection only; extending the grammar is a separate decision.
+2. **Make the three inert kinds derivable** on a corpus that has sections, then re-run the gate.
+3. **A different channel design.** Explicitly *not* a more expensive one — G5's result licenses
+   neither PPR nor the `[ner]` extra, and the pre-commitment said so before the number was known.
+
+> **The honesty constraint held.** The questions were frozen before the probe existed and were never
+> re-authored to produce failures. Nothing was tuned after the result: no weight moved, no threshold
+> was revisited. `expand-in-degree` was the one leg that lifted anything, and it is **reported, never
+> gated** — noticing the best-performing leg after seeing the numbers is exactly the exploratory
+> fitting the pre-commitment forbids.
 
 ## The graph release, staged — gates only, not scheduled
 

@@ -3,15 +3,27 @@
 **Status:** revised after adversarial passes 1 (22 HIGH), 2 (26 HIGH), 3 (24 HIGH), 4 (13 HIGH),
 5 (3 HIGH), 6 (2 HIGH) and 7 (6 HIGH) on L1–L8 and G1–G6; then **seven passes on L5b alone**
 (8, 8, 7, 6, 7, 7, 7 HIGH) plus an adversarial code review of the implementation (5 HIGH).
-**The links release is complete; the graph release is running again.** L1–L5b shipped in 0.5.0,
-L6–L8 in 0.6.0 (20260801), L5c closed unbuilt because its one refusal shipped with L5b. G1 and G4
-shipped in 0.6.0, G2 in 0.7.0.
+> ## ✅ CLOSED 20260805 — both releases shipped. Nothing here is live.
+>
+> **The links release** shipped L1–L5b in 0.5.0 and L6–L8 in 0.6.0 (20260801); L5c closed unbuilt
+> because its one refusal shipped with L5b. **The graph release** shipped G1 and G4 in 0.6.0, G2 in
+> 0.7.0, and **G3, G5 and G6 in 0.11.0** (20260805).
+>
+> **G5's gate ran and did not pass**, so `graph_channel` ships `off`: on the RFC realism corpus it
+> improved 0 multi-hop questions and regressed 3, licensing p = 1.0000. Nothing was tuned after
+> seeing that. The finding is `reachable ≠ retrievable` — the probe called 9 questions liftable and
+> the retrieval instrument lifted none. That result **does not license** the staged PPR channel or
+> the `[ner]` extra ([`20260804_1016-staged-channel-gates.md`](20260804_1016-staged-channel-gates.md)).
+>
+> **Read this file as a record of what was decided, never as instructions.** The live plan is
+> [`20260804_1016-template-release.md`](20260804_1016-template-release.md).
 
 **G2's headroom measurement came back negative on `tests/demo-kb` and positive on the RFC realism
 corpus** — 12 multi-hop questions failing and 9 reachable without authored edges, against a
-precondition of 7 and 7. **G3 starts** ([`20260804_1442-decision-g3-go.md`](20260804_1442-decision-g3-go.md), decided 20260804 13:50); G5 and G6 follow it. The
-corpus that unblocked this is [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md),
-built in a repository of its own.
+precondition of 7 and 7 ([`20260804_1442-decision-g3-go.md`](20260804_1442-decision-g3-go.md),
+decided 20260804 13:50). The corpus that unblocked it is
+[`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md), built in a repository of its
+own.
 
 > ## ⚠ 20260731 — L5b is split into **L5b** and **L5c** (decision 28)
 >

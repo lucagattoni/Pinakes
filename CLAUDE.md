@@ -140,16 +140,23 @@ across the repo 20260804 11:55, history included.
 
 ## Building a release — one increment at a time
 
-The build order is [`plans/20260729_0256-links-and-graph.md`](plans/20260729_0256-links-and-graph.md) — **not** "the newest
-file in `plans/`", which also holds shipped plans, an iteration log, standalone increments and
-decision records ([`docs/README.md`](docs/README.md) tells them apart). **That plan is open at G3**
-— the links release is complete, and the graph release restarted on 20260804 when the RFC corpus
-cleared G2's precondition
-([decision](plans/20260804_1442-decision-g3-go.md)). **G3 is the live increment**, then G5, then G6.
-Beside it: whatever [`plans/20260731_1202-open-corrections.md`](plans/20260731_1202-open-corrections.md)
-lists as live — its structural-chunking item is required by that decision, because it is what
-contaminated three of the six edge kinds in the measurement. Never batch increments; each
-is a separate, bisectable landing:
+Read the build order out of `plans/` — **never** "the newest file" there, which also holds shipped
+plans, an iteration log, standalone increments and decision records
+([`docs/README.md`](docs/README.md) tells them apart).
+
+**[`plans/20260729_0256-links-and-graph.md`](plans/20260729_0256-links-and-graph.md) is closed.** Both
+its releases shipped: the links release in 0.5.0–0.6.0, the graph release in 0.11.0 (G3, G5, G6).
+G5's gate ran, did **not** pass, and `graph_channel` ships `off` — so nothing in that plan is live,
+and the staged channels (PPR, `[ner]`) are **not** licensed by that result
+([`plans/20260804_1016-staged-channel-gates.md`](plans/20260804_1016-staged-channel-gates.md)).
+
+**The live plan is [`plans/20260804_1016-template-release.md`](plans/20260804_1016-template-release.md)**
+— reviewed, its four decisions taken, unstarted; re-run its Baseline block first. Beside it:
+whatever [`plans/20260731_1202-open-corrections.md`](plans/20260731_1202-open-corrections.md) lists
+as live. **Weigh its structural-chunking item first** — three of G3's seven edge kinds derived zero
+edges on the corpus G5 was gated against, so it bounds what that verdict established.
+
+Never batch increments; each is a separate, bisectable landing:
 
 1. Own worktree, branch `YYYYMMDD_HHMM-i<N>-<slug>`.
 2. Implement the increment **with its tests** — tests ship in the increment that introduces the
