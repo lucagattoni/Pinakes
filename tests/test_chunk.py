@@ -372,3 +372,44 @@ def test_no_character_is_dropped_when_a_document_is_rejected(counter: TokenCount
     assert [(c.text, c.char_start, c.char_end) for c in chunks] == [
         (c.text, c.char_start, c.char_end) for c in plain
     ]
+
+
+def test_an_outline_must_start_at_section_one(counter: TokenCounter) -> None:
+    """Clause 9 — **added after measuring, unlike clauses 1-8**, and the docstring says so.
+
+    RFC 769 lists facsimile command codes as `56 - SET-UP`, `57 - DATA`, `58 - END`: consecutive
+    integers, short labels, column 0, blank lines around. Every other clause passes and it produced
+    three headings that are not headings. Form cannot separate it from a real outline — RFC 2010
+    numbers genuine sections `1 - Rationale and Scope`, the identical shape — but the starting
+    number can.
+    """
+    codes = "Commands:\n\n56 - SET-UP\n\nA block.\n\n57 - DATA\n\nAnother.\n\n58 - END\n\nLast.\n"
+    assert set(_paths(codes, counter)) == {None}
+
+    # The same shape starting at 1 is a real outline and must still be read as one.
+    sections = "1 - Rationale\n\nA block.\n\n2 - Requirements\n\nAnother.\n"
+    assert _paths(sections, counter) == ["1 - Rationale", "2 - Requirements"]
+
+
+def test_a_top_level_section_may_be_numbered_with_a_trailing_zero(counter: TokenCounter) -> None:
+    """Clause 10 — **added after measuring**, like clause 9. A recurring convention numbers
+    top-level sections `1.0`, `2.0`, and real documents mix the two freely: RFC 2006 runs `6` then
+    `7.0`, RFC 2024 runs `1.1` then `2.0`. Read literally those are depth changes no outline walk
+    can accept, and the whole document is rejected."""
+    assert _paths("1.0  Overview\n\nA.\n\n2.0  Model\n\nB.\n", counter) == [
+        "1.0  Overview",
+        "2.0  Model",
+    ]
+
+    mixed = "1.  Intro\n\nA.\n\n1.1.  Sub\n\nB.\n\n2.0  Next\n\nC.\n"
+    assert _paths(mixed, counter) == ["1.  Intro", "1.  Intro > 1.1.  Sub", "2.0  Next"]
+
+
+def test_a_genuine_subsection_is_not_confused_with_a_trailing_zero(counter: TokenCounter) -> None:
+    """The normalisation is safe only because a real subsection never carries `.0` — they start at
+    `.1`. If it folded those away too, `1.1` and `1` would become the same node and the hierarchy
+    would collapse."""
+    assert _paths("1.  Intro\n\nA.\n\n1.1.  Sub\n\nB.\n", counter) == [
+        "1.  Intro",
+        "1.  Intro > 1.1.  Sub",
+    ]
