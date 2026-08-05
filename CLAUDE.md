@@ -152,11 +152,19 @@ and the staged channels (PPR, `[ner]`) are **not** licensed by that result
 
 **The live investigation is [`plans/20260805_1721-metadata-as-retrieval-context.md`](plans/20260805_1721-metadata-as-retrieval-context.md)** — whether `title` and `heading_path` are retrieval context or display metadata. It carries the established facts, the agreed order of work, what is decided, and what is still open. **Read it before touching chunking, titles or `heading_path`.**
 
+**Its steps 1, 3 and 4 shipped in 0.13.0–0.15.0.** What remains is **step 2, the injection
+experiment** — the question the whole investigation was opened to answer, and now unblocked:
+[`tools/build_rfc_corpus.py`](tools/build_rfc_corpus.py) builds a corpus with real `heading_path`s,
+which no committed fixture has. §5.4 records the grammar's measurement against 980 RFCs, including
+**two candidate rules the corpus refused** — read it before proposing a fifth.
+
 **The other live plan is [`plans/20260804_1016-template-release.md`](plans/20260804_1016-template-release.md)**
-— reviewed, its four decisions taken, unstarted; re-run its Baseline block first. Beside it:
-whatever [`plans/20260731_1202-open-corrections.md`](plans/20260731_1202-open-corrections.md) lists
-as live. **Weigh its structural-chunking item first** — three of G3's seven edge kinds derived zero
-edges on the corpus G5 was gated against, so it bounds what that verdict established.
+— reviewed, its four decisions taken, unstarted; re-run its Baseline block first.
+
+**[`plans/20260731_1202-open-corrections.md`](plans/20260731_1202-open-corrections.md) is empty as
+of 20260805 22:18**, for the first time since it opened. That is not a finish line: **the list
+refills from *use*, and every entry it ever held came from building something rather than from
+reading code.** An empty one means nobody has run Pinakes lately. Add to it when something bites.
 
 Never batch increments; each is a separate, bisectable landing:
 
