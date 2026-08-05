@@ -4053,6 +4053,145 @@ values before formatting, or state a tolerance derived from the display precisio
 comparison "because they should be equal". This is the repo's recurring class once more: the
 assertion named "the conversion is right" was actually testing "the two roundings happen to agree".
 
+## Mutation testing found a guard that could not fire (20260805 19:07)
+
+**LOW as a defect, worth keeping as a method result.** The numbered-heading predicate's
+document-level check was written straight from its own spec, which says the numbers must form a
+valid outline walk **and** that no number repeats. Both were implemented: a `seen` set alongside the
+step-validity rule.
+
+Mutating the clauses one at a time, eight of nine mutants were killed by the test named for that
+clause. **The ninth — deleting the no-repeats check entirely — broke nothing.**
+
+The first instinct is "write the missing test". The right answer was that **no such test can
+exist**: every step the walk permits raises the number tuple lexicographically — a sibling raises
+its last component, a first child appends to it, an ancestor's next sibling raises a shallower one —
+so an accepted sequence is strictly increasing and a repeat is unreachable. The check was dead code
+wearing a guard's clothes.
+
+It was **removed rather than kept as defence in depth**, and the reasoning put in the docstring. A
+guard that cannot fire still reads as one, and the next person to touch the step rule would weaken
+it believing this had their back. The spec keeps the no-repeats sentence — as a statement of intent
+it is correct, and the implementation note now says why it needs no code.
+
+**Generalisable:** a surviving mutant asks a question before it asks for a test — *is this
+reachable at all?* Adding a test for unreachable code is how dead code acquires the appearance of
+coverage. This is the inverse of the failure this project keeps meeting: usually an assertion is
+satisfied by something other than the property it names; here a *guard* was satisfied by something
+other than itself.
+
+## Running it found what reading it could not (20260805 19:15)
+
+**MEDIUM, and the reason it is recorded beside the note above: the two findings came from opposite
+methods on the same increment.** The dead guard was found by mutating code. This one was found only
+by building a KB and using the feature the way a user would.
+
+`[chunking] headings = "numbered"` added to an already-synced KB, then a plain `pnk sync`:
+
+| | result |
+|---|---|
+| plain `pnk sync` | `1 unchanged` · every `heading_path` still empty |
+| `pnk sync --rebuild` | `1 indexed` · the three heading paths, and the first `parent-child` edge |
+
+An incremental sync re-chunks a document only when *the document* changed. A manifest-only edit
+changes no content hash, so the feature silently does nothing — and `pnk doctor` then reports
+exactly the condition the user just tried to fix.
+
+**Every test passed throughout, and no test could have caught it.** The unit tests call
+`chunk_document` directly with the parameter set; the mechanism that drops it lives in `sync.py`'s
+change detection, one layer up. The defect is not in either component — it is in the seam, and a
+seam is only visible from outside both.
+
+**It is also pre-existing**: `max_tokens` and `overlap` have always behaved this way. Three releases
+did not surface it because no `[chunking]` key had ever been worth flipping on a KB already indexed.
+Adding the first one that is, is what made an old defect newly reachable — and *"my change did not
+cause this"* is not the same as *"my change did not make it matter"*.
+
+**Generalisable:** for any change that adds a knob, turn the knob on a real KB before landing. Unit
+tests verify a component honours a parameter; only using it verifies the parameter *arrives*.
+
+## A warning that cleared itself without the fix being applied (20260805 20:20)
+
+**HIGH — the first draft turned a silent defect into a *lying* one, and every test passed.** The
+chunking-drift warning was correct. What was wrong sat 300 lines away: `sync.py` wrote the current
+chunking identity into `meta` at the end of **every** sync, including the incremental one that had
+just refused to re-chunk anything.
+
+So the sequence was:
+
+| step | what the user saw | what was true |
+|---|---|---|
+| edit manifest, `pnk sync` | `1 unchanged` + the new warning | index still built the old way |
+| `pnk sync` again | `1 unchanged`, **no warning** | index still built the old way |
+| `pnk doctor` | **`OK chunking coherence`** | index still built the old way |
+
+A warning that clears itself without the fix being applied is worse than no warning: it converts
+"the tool said nothing" into "the tool said it was fine". The index actively claimed a coherence it
+did not have.
+
+**Found by running it a second time, not by testing it.** The unit tests asserted the warning
+appears — it did. Nothing asserted it *persists*, because persistence only fails on the second
+invocation, and a test that runs an operation once cannot see a defect that needs it twice. The
+fix's own test is now `..._persists_until_the_rebuild_actually_happens`, which syncs three times.
+
+**The correct rule turned out to be narrow:** record the identity only when *every* chunk in the
+index was produced by this run — a rebuild, or a first build into an empty index. An incremental
+sync re-chunks only what changed, so after one the index is a *mixture*, and there is no single
+honest value to record. Leaving the old value is right: it keeps warning, which is exactly what a
+mixed index deserves.
+
+**Generalisable, and it is the second time today:** a state-writing side effect belongs with the
+work it describes, not with the command that happened to run. `set_meta` is called once per sync and
+was treated as "the place identity goes" — but identity is a claim about the *chunks*, and only one
+of those code paths actually produced them all.
+
+## The corpus rejected two of my fixes, and that is the result (20260805 21:00)
+
+**The measurement §5.3 demanded was run, on real RFCs, in doubling rounds: 66 → 131 → 259 → …**
+The rule was *state the predicate first, measure second, and treat a poor match as a finding rather
+than a licence to loosen a clause*. It held, twice, in the direction that costs something.
+
+**Round 1 (66 documents) found a false positive.** RFC 769 lists facsimile command codes as
+`56 - SET-UP`, `57 - DATA`, `58 - END`. Consecutive integers, short labels, column 0, blank lines
+around — every clause passed, and the predicate produced three headings that are not headings.
+
+**The first fix was wrong, and the corpus said so.** "A heading's title must not begin with
+punctuation" kills it. It also killed three genuine documents: `5.1.  /get`, `2.7.3.  "iprev"`, and
+RFC 2010's entire outline, which numbers real sections `1 - Rationale and Scope` — *the identical
+shape as the false positive*. Form cannot separate them. **What separates them is where they
+start:** an outline begins at section 1, a list of opcodes begins at 56. That rule changes exactly
+one verdict across the corpus, and it is the wrong one. It shipped as clause 9.
+
+**Round 2 (131 documents) found a second false positive, and rejected a second fix.** RFC 778
+numbers a *procedure* — `1.  Connect to COMSAT-GAT host…`, `2.  Send the command…` — starting at 1,
+so clause 9 does not catch it. The obvious discriminator is that a heading stands alone: require a
+blank line *after* the candidate. Measured, it removed the false positive and **four genuine
+documents with it**, because real headings wrap:
+
+    7.4.  The Network Information Center and
+          Requests for Comments Distribution Contact
+
+**Rejected, and RFC 778 is recorded as an accepted bound instead.** Labelling the steps of a
+numbered procedure as sections is defensible; `56 - SET-UP` was not. Not every false positive is
+worth a rule, and a rule that costs real structure to buy a marginal one is a bad trade even when
+its net count looks fine.
+
+**What the corpus did buy: clause 10.** A recurring convention numbers top-level sections `1.0`,
+`2.0`, mixing the two freely — RFC 2006 runs `6` then `7.0`, RFC 2024 runs `1.1` then `2.0`. Read
+literally those are depth changes no walk can accept, and the document is rejected whole.
+Normalising a trailing zero fixes it, and is safe precisely because a real subsection never carries
+`.0`.
+
+**Clause 10's own test then caught a bug the walk could not see.** The walk normalised `2.0` to `2`
+and accepted the document — while the heading stack still used the raw depth, nesting `2.0` *under*
+`1.0`. The document passed and the hierarchy was wrong. Two places consume a number's depth and only
+one had been taught the convention.
+
+**Generalisable, and the reason the doubling protocol matters:** clause 9 was derived from 66
+documents and looked complete; 131 documents produced a false positive it could not catch. A fix
+validated at one corpus size has been validated at one corpus size. Every round both re-checks the
+previous fixes and gets a vote on the next.
+
 ## Design review passes 1–7 (pre-implementation)
 
 Seven adversarial passes over [`DESIGN.md`](DESIGN.md) **before any code was written** — 58 findings

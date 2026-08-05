@@ -10,6 +10,99 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.0] — 20260805 21:01
+
+### Added
+
+- **`[chunking] headings = "numbered"` reads a dotted-decimal outline in plain text into
+  `heading_path`.** Opt-in, `"none"` by default, and **`text` only** — `markdown` already has a
+  grammar, and `code` and `pdf` are out of scope by decision rather than oversight. Until now every
+  source type but `markdown` took the plain-text path and recorded no `heading_path` at all, so a
+  rigidly sectioned `.txt` corpus was chunked size-based however structural the manifest read. That
+  is what left a 300-RFC corpus with 106 806 chunks and not one heading path — which in turn bounds
+  the graph release's gate, since `in-section`, `parent` and `child` all derive from `heading_path`
+  and so derived **zero** edges on the corpus that gate was measured against.
+
+  **It refuses rather than guesses.** `1.` at line start is also an ordered list, so acceptance is
+  decided over the whole document: five line-level clauses (column 0, dotted-decimal, no
+  table-of-contents dot leaders, label-shaped rather than sentence-shaped, preceded by a blank
+  line) and then an outline walk over every candidate. **If the walk fails anywhere, that document
+  yields no headings at all** and falls back to exactly the pre-grammar behaviour — a misread
+  document loses nothing it had, where a partial labelling would invent structure that was never
+  there.
+
+  **Turning it on needs `pnk sync --rebuild`.** An incremental sync re-chunks a document only when
+  *the document* changed, so a manifest-only edit reports every file `unchanged` and the key does
+  nothing until a rebuild. That is true of `max_tokens` and `overlap` too and is not new, but this
+  is the key most likely to be flipped deliberately — so it is written on the key in
+  [MANIFEST](../docs/MANIFEST.md#chunking) and logged as its own open correction, rather than left
+  to be discovered.
+
+  It is a **new key rather than a second `[chunking] strategy` value**: `strategy` is inert, and
+  giving it a second value would define `structural` retroactively for every manifest already
+  written. Not stamped into the template, because `_toml.py` hard-errors on an unknown key.
+
+  Golden set unmoved, as predicted and reported rather than assumed: `recall@k` 0.9394, MRR 0.8806,
+  false-abstain 0.0152 on both `main` and this change. `tests/demo-kb` is Markdown *and* omits the
+  key, so two independent reasons say it cannot move — movement would itself have been the finding.
+
+- **`tools/build_rfc_corpus.py` fetches RFCs and builds a KB from them — the realism corpus as a
+  script rather than a directory on one machine.** This repository commits no harvested content, so
+  the 300-document corpus that produced this project's most useful findings lived locally and died
+  with the machine; that is why its measurement cannot be re-run and its verdict is correspondingly
+  hard to revisit. Nothing harvested is committed here — only the script, and a `corpus.json`
+  recording exactly which RFCs a run fetched, so a later run can be *compared* with an earlier one
+  rather than merely repeated.
+
+  It refuses to build inside this repository, caches downloads so a re-run costs nothing and a
+  partial run resumes, and takes an `--era` band because RFC rendering changed between the nroff
+  and xml2rfc generations: **a measurement over this corpus is a measurement over that era**, and
+  saying which is the difference between a result and an anecdote.
+
+### Changed
+
+- **The numbered-heading predicate gained two clauses, both derived from measuring it against real
+  RFCs rather than from reasoning about them.** Clauses 1–8 were written before any corpus was
+  consulted, as `plans/20260805_1721-metadata-as-retrieval-context.md` § 5.3 requires; these two
+  were not, and are recorded as post-hoc in the code that implements them.
+
+  - **Clause 9 — an outline starts at section 1.** RFC 769 lists facsimile command codes as
+    `56 - SET-UP`, `57 - DATA`, `58 - END`: consecutive integers, short labels, column 0, blank
+    lines around, every clause satisfied, three headings produced that are not headings. Form
+    cannot separate it from a real outline — RFC 2010 numbers genuine sections `1 - Rationale and
+    Scope`, the identical shape — but its starting number can.
+  - **Clause 10 — a trailing `.0` is a numbering style, not a depth.** A recurring convention
+    numbers top-level sections `1.0`, `2.0` and mixes the two freely (RFC 2006 runs `6` then `7.0`;
+    RFC 2024 runs `1.1` then `2.0`). Read literally those are depth changes no outline walk can
+    accept, so the whole document was rejected. Safe because a real subsection never carries `.0`.
+
+  **Two other candidate rules were tried and rejected on the evidence, which is the part worth
+  keeping.** "A title must not begin with punctuation" removed the false positive and three genuine
+  documents with it (`5.1.  /get`, `2.7.3.  "iprev"`, RFC 2010's whole outline). "A heading must be
+  followed by a blank line" removed a second false positive and four genuine documents, because real
+  headings wrap onto a second line. Neither shipped.
+
+### Fixed
+
+- **A `[chunking]` edit is no longer a silent no-op.** An incremental `pnk sync` re-chunks a
+  document only when *the document* changed, so editing `headings`, `max_tokens` or `overlap` left
+  every content hash intact, reported `unchanged`, and applied nothing — with no warning, and a
+  `pnk doctor` that then reported exactly the condition the user had just tried to fix. Measured:
+  `headings = "numbered"` added to a synced KB, plain `pnk sync` → `1 unchanged` and every
+  `heading_path` still empty.
+
+  The index now records which `[chunking]` settings it was built under. `pnk sync` names the key
+  that moved and points at `--rebuild`; [`pnk doctor`](../docs/CLI.md#pnk-doctor) reports the same
+  as `chunking coherence`. **The warning persists until the rebuild actually happens** — the first
+  draft wrote the new identity at the end of every sync, so it fired once and the index then
+  claimed a coherence it did not have.
+
+  **Upgrading demands nothing.** An index built before this carries no recorded identity, and
+  absence reads as *unknown*, never as *different* — a check that fired on every existing KB would
+  be an unclearable warning about a setting that probably never changed. `max_tokens` and `overlap`
+  have behaved this way since v0.1; `headings` is only what made it reachable, being the first
+  `[chunking]` key worth flipping on an already-indexed KB.
+
 ## [0.12.0] — 20260805 18:02
 
 ### Added
@@ -2415,7 +2508,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.13.0
 [0.12.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.12.0
 [0.11.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.11.0
 [0.10.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.10.0
