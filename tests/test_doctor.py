@@ -1535,7 +1535,6 @@ def test_a_cross_kb_link_into_a_kb_not_here_is_counted_but_not_called_unresolved
     assert status is Status.OK
     assert "1 cross-KB" in detail
     assert "unresolved" not in detail
-    assert "unchecked until the links release" not in detail
 
 
 # --- edge-hub reporting (G6) -------------------------------------------------------------------
@@ -1613,4 +1612,48 @@ def test_an_edge_hub_report_names_a_document_path_never_a_bare_node_id(kb: Path)
     assert "heading" in detail
     assert "a.md" in detail
     assert doc_id not in detail, f"a raw document ULID leaked into the report: {detail!r}"
-    assert "unchecked until the links release" not in detail
+
+
+def test_a_directory_hub_is_named_by_its_kb_root_relative_path(kb: Path) -> None:
+    """The one hub kind the first review round left untested: `co-located` mints a `dir` node
+    whose key already *is* the KB-root-relative directory (`derive()`'s `directory_of`), so
+    `_hub_label` prints it verbatim rather than resolving anything — unlike `heading`, it needs no
+    lookup, and this is the test that would catch a label reverting to a bare `nodes.id` here too.
+    """
+    for name in ("one.md", "two.md"):
+        (kb / "docs" / "pair" / name).parent.mkdir(parents=True, exist_ok=True)
+        (kb / "docs" / "pair" / name).write_text(f"# {name}\n\nText.\n", encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260805 05:03")
+
+    status, detail = checks(kb)["edge hubs"]
+    assert status is Status.OK
+    assert 'directory "docs/pair"' in detail
+    assert "degree 2" in detail
+
+
+def test_a_degree_tie_breaks_deterministically_and_the_rest_are_counted(kb: Path) -> None:
+    """Four tags, each on exactly two documents — every hub tied at degree 2 — so nothing but an
+    explicit tiebreak decides print order, and the review that found this gap showed the *implicit*
+    order (whatever `SELECT DISTINCT src` happens to return) is mint order: `d` first, `a` last,
+    because each document's path sorts in that order and mints its tag the first time it is seen
+    (`derive()`'s `_active_documents` scans by path). The tiebreak sorts on `(kind, key)`, so the
+    printed order is alphabetical — `a`, `b`, `c` — the reverse of mint order, and a tiebreak that
+    quietly fell back to insertion order would print `d`, `c`, `b` here instead.
+
+    `EDGE_HUB_SAMPLE = 3` also gets its only exercise here: four equally-tied hubs is the smallest
+    fixture that forces the "and N more" branch.
+    """
+    for tag, prefix in (("d", "n1"), ("c", "n2"), ("b", "n3"), ("a", "n4")):
+        _write_tagged_doc(kb, f"docs/{prefix}a/x.md", tags=[tag])
+        _write_tagged_doc(kb, f"docs/{prefix}b/y.md", tags=[tag])
+    sync(load(kb), options=SyncOptions(), now="20260805 05:04")
+
+    status, detail = checks(kb)["edge hubs"]
+    assert status is Status.OK
+    assert "4 hub(s)" in detail
+    assert "and 1 more" in detail
+    shown = detail.partition(": ")[2].split(", and")[0]
+    assert shown.startswith('tag "a" (degree 2), tag "b" (degree 2), tag "c" (degree 2)'), (
+        f"a degree tie must break on (kind, key), not on arrival order: {detail!r}"
+    )
+    assert 'tag "d"' not in detail, f"the fourth tied hub must be counted, not printed: {detail!r}"

@@ -725,12 +725,20 @@ def _edge_hubs(connection: sqlite3.Connection) -> Check:
     `members`, `hubs`, `census` and `node` all take a node id they assume the caller already has —
     so this is the one new query in the file: which `src` ids appear under each of `HUB_KINDS`.
     Everything downstream of that id — its degree, its `(kind, key)` — comes from `hub_degree()`
-    and `node()`, not from re-deriving either.
+    and `node()`, not from re-deriving either. `ORDER BY src` on it, like every read in
+    `graph.edges`, so the enumeration is not left to depend on whichever query plan SQLite happens
+    to pick today.
+
+    **The sort key breaks a degree tie on `(kind, key)`, explicitly** — never left as "whatever
+    order the rows arrived in", which for two hubs at equal degree would silently depend on the
+    query plan above rather than on anything this function decided.
     """
     seen: set[int] = set()
     top: list[tuple[graph_edges.Node, int]] = []
     for kind in sorted(graph_edges.HUB_KINDS):
-        rows = connection.execute("SELECT DISTINCT src FROM edges WHERE kind = ?", (kind,))
+        rows = connection.execute(
+            "SELECT DISTINCT src FROM edges WHERE kind = ? ORDER BY src", (kind,)
+        )
         for row in rows:
             node_id = int(row[0])
             if node_id in seen:  # pragma: no cover — a node id belongs to exactly one hub kind
@@ -744,7 +752,7 @@ def _edge_hubs(connection: sqlite3.Connection) -> Check:
     if not top:
         return Check("edge hubs", Status.OK, "none")
 
-    top.sort(key=lambda item: item[1], reverse=True)
+    top.sort(key=lambda item: (-item[1], item[0].kind, item[0].key))
     shown = top[:EDGE_HUB_SAMPLE]
     listed = ", ".join(
         f"{_hub_label(connection, node)} (degree {degree})" for node, degree in shown
