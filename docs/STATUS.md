@@ -19,7 +19,7 @@
 | `pnk init` | shipped | one template (`notes`); `--ci` writes the workflow (0.3.0) |
 | `pnk sync` | shipped | `--rebuild`, `--scan-links`, `--sidecars-only`, `--index-only`, `--extract`, `--force`, `--clear-cache[=paid]` |
 | `pnk search` | shipped | BM25 + vector + rerank, metadata filters, `--json` |
-| `pnk doctor` | shipped | environment, coherence, orphans, links, hooks, cache |
+| `pnk doctor` | shipped | environment, coherence, orphans, links, hooks, cache, heading coverage, edge hubs |
 | `pnk install-hooks` | shipped | the three-hook split; all three force `--extract=pypdfium2` (0.3.0) |
 | `pnk serve` | shipped | MCP: `pinakes_search`, `pinakes_get`, `pinakes_links`, `pinakes_list_kbs` |
 | `pnk budget` | shipped 0.3.0 | I6b. Day/month/operation spend, `--resolve` for an unknown outcome |

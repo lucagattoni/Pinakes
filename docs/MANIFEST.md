@@ -116,7 +116,7 @@ Override for one run with `pnk sync --extract=BACKEND`.
 
 | Key | Default | Notes |
 |---|---|---|
-| `strategy` | `structural` | Headings and paragraphs, not blind character windows. The only value |
+| `strategy` | `structural` | Headings and paragraphs, not blind character windows. The only value today. **Heading detection runs for Markdown only** — every other source type takes the plain-text path and records no `heading_path`, so this setting is size-based in substance on a `.txt` or PDF corpus. `pnk doctor`'s heading-coverage check reports it rather than leaving it silent ([CLI](CLI.md#pnk-doctor)) |
 | `max_tokens` | `510` | Counted with **the embedding model's own tokenizer**, and validated against its `max_seq_length` minus special tokens. Asking for more is a hard error, not a silent truncation |
 | `overlap` | `64` | Must be `< max_tokens` |
 
