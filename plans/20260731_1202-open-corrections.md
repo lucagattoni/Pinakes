@@ -14,11 +14,9 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**Four live items as of 20260805 20:20.** Every one came from *building* — the RFC realism
-corpus, the graph release measured against it, or the grammar built on top of both — rather
-than from reading the code. **Three are decided and unbuilt**; one waits on a measurement
-nobody has taken. Two items opened *and closed* on 20260805 alone, both opened by the work
-that closed something else.
+**Two live items as of 20260805 21:56**, both decided and unbuilt — **nothing is waiting on a
+measurement or a decision any more.** Each came from *building*: the RFC realism corpus, the
+graph release measured against it, or the grammar built on top of both.
 
 The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
 finished. Note what is **not** here: **both releases in
@@ -57,87 +55,6 @@ All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so searc
 ---
 
 
-### 3 · The first sync may be using one core of ten, and nobody has measured which
-
-**Raised 20260804 13:10, from the RFC corpus run.** 300 documents took over two hours at ~2.4
-documents/minute. `sync.py:1863` embeds one document at a time — `backend.embed([chunk.text for
-chunk in chunks])` inside a serial loop over documents — so *the loop* is single-threaded whatever
-the backend does underneath.
-
-**Measure before changing anything.** Both backends thread internally: `fastembed` runs ONNX
-Runtime and `sentence-transformers` runs torch, and both default to multiple intra-op threads. So
-there are two very different worlds and the fix is opposite in each:
-
-* **The backend already saturates the machine** → the loop is fine, and the win is a bigger batch
-  (embedding several documents' chunks in one `embed()` call), not processes.
-* **The backend is effectively single-core** → the loop is the bottleneck and a process pool over
-  documents is worth it.
-
-**Required first:** a measurement, recorded in the item — cores actually busy during a sync of ≥50
-documents, per backend. `ps -o %cpu` on macOS reports **per core**, so `98%` on a 10-core box is one
-core; `750%` is seven. Nothing else in this item may be built before that number exists.
-
-**The instrument landed 20260805 17:36 (`1511be4`); the measurement has not been taken.** Run
-`tools/measure_sync_cpu.py --interval 1 -- uv run pnk sync --kb <path> --rebuild` against a corpus of
-≥50 documents — **not** `tests/demo-kb`, whose 30 short documents cannot saturate anything.
-
-**Two things about the number it returns, both measured rather than assumed.** It samples the whole
-**process tree**: the first version watched only the launched pid, so `uv run` — which burns nothing
-while its child does the work — reported **0.0 cores for a one-core load that read 1.0 directly**.
-That wrong answer would not have looked broken; it would have looked like this item's finding. And
-`%cpu` is a **decaying average over up to a minute** (`man ps`), not an instantaneous reading, which
-suits a steady-state multi-minute sync but means a *low* peak is much weaker evidence of an idle
-machine than a high peak is of a busy one.
-
-**Then, only if the measurement says single-core:** parallelise the document loop, sized
-`os.cpu_count()` less one or two. **Do not stack a process pool on top of a threaded backend** — N
-processes each opening an N-thread ONNX session oversubscribe the CPU and typically run *slower*
-than serial; if processes are used, pin the per-process thread count to 1.
-
-**Bounds.** Ordering is not free: document ULIDs, the ledger and `.pinakes/` writes must stay
-deterministic and single-writer, so only the embedding is a candidate — never the store writes.
-
-**Test:** a sync of a fixture corpus produces a byte-identical index under the parallel and serial
-paths, and the parallel path is opt-out (a flag or a manifest key) so a machine that regresses can
-go back without a downgrade.
-
-**Explicitly out of scope: `tools/reachable_ceiling_probe.py`.** It is genuinely single-core (~33
-minutes per variant, pure-Python graph construction and BFS) and it was considered and rejected —
-it runs a handful of times in the project's life, so the complexity would cost more than the
-minutes it returns. Recorded so the analysis is not redone.
-
----
-
-
-### 4 · The heading-coverage check WARNs forever on `code` and `pdf`
-
-**Shipped in 0.12.0 and immediately in need of this correction.** `_heading_coverage` (`doctor.py`)
-returns `Status.WARN` when *any* source type sits at 0%. `code` and `pdf` can never carry a
-`heading_path` today — `chunk.py` runs heading detection for `markdown` only — so **a KB containing
-one `.py` file or one PDF warns on every `pnk doctor` run, forever**, with a remedy that says it is
-a limit of the tool. It did not surface in verification because both committed corpora are pure
-Markdown at 100%.
-
-**DECIDED 20260805 18:25 by the user** ([§6](20260805_1721-metadata-as-retrieval-context.md)).
-
-**Required:** WARN **only** when `markdown` sits at 0%. Every other source type reports OK with a
-note, and **the note names the cause, not just the number** — *"the chunker extracts headings for
-`markdown` only"* — so a reader is not sent to edit documents that are not the problem.
-
-**Why:** an un-actionable warning that cannot be cleared is how doctor output stops being read *at
-all*, which costs the actionable warnings too. `markdown` at 0% is the opposite case: real, fixable,
-and exactly the defect the check was built for.
-
-**The accepted cost, stated:** the zero-heading-paths condition that bounds the graph release's gate
-becomes quieter on `text` and `pdf` corpora. It is still reported — percentage and note are printed
-— just not as a WARN. When `[chunking] headings` (item 4) ships, a `text` corpus becomes fixable and
-this can be re-judged.
-
-**Test:** a corpus with `markdown` at 100% and `code` at 0% is **OK with a note**; a corpus with
-`markdown` at 0% is **WARN**. Both are needed — a test for only the first passes if the check is
-deleted outright.
-
----
 
 
 ---
@@ -146,6 +63,8 @@ deleted outright.
 
 | Was | Closed by |
 |---|---|
+| The heading-coverage check WARNed forever on `code` and `pdf`, which can never carry a heading path — so a KB holding one `.py` file warned on every run with a remedy amounting to *"a limit of the tool"* | 20260805 21:56, as the user decided. **WARN only when `markdown` is at 0%** — the one case a user can fix, where the chunker reads ATX headings and found none, so the corpus is being silently size-sliced. Everything else is reported **OK with a note**, because an un-actionable warning that cannot be cleared is how doctor output stops being read at all, which costs the actionable warnings too. The note now separates three facts that wore the same 0%: `text` **can** carry one (set `[chunking] headings`), `text` with the key **already set** means the grammar was offered those documents and *refused* them, and `code`/`pdf` cannot today. It also corrects a claim 0.13.0 falsified — the old remedy still said non-Markdown types cannot carry a heading path *whatever the document contains* |
+| The first sync might be using one core of ten and nobody had measured which — 300 documents over two hours, with `sync.py` embedding one document at a time in a serial loop | **Measured 20260805 21:45, and the answer is no.** 55 modern RFCs (16 557 chunks) rebuilt under `fastembed`: **peak 5.0 cores, mean 4.8 of 10**, over 1 451 samples and 1 497 s. The loop is serial and the backend underneath it is not — ONNX Runtime is already using half the machine. **So the item's own fork resolves to *do not parallelise*:** *"the backend already saturates the machine → the loop is fine, and the win is a bigger batch, not processes"*. Stacking a pool on top would hit exactly what the item warned against — two workers would consume ~9.6 of 10 cores and anything beyond that oversubscribes. **The measurement also vindicated its own instrument in the field:** in the same process tree `uv run` sat at **0.0%** while its child sustained **~490%**, which is precisely the 0.0-cores answer the pre-fix tool would have reported. **Bounded: `fastembed` only** — `sentence-transformers` needs the 2 GB `[st]` extra and stays unmeasured, so nothing here licenses a claim about it |
 | A `[chunking]` edit was a silent no-op until `--rebuild` — an incremental sync re-chunks a document only when *the document* changed, so a manifest-only edit reported every file `unchanged`, applied nothing, and said nothing | 20260805 20:20. The index records the `[chunking]` settings it was built under; `pnk sync` names the key that moved and points at `--rebuild`, and `pnk doctor` reports it as `chunking coherence`. **Absence reads as unknown, never as drifted**, so upgrading demands no rebuild of any existing KB. The retrospective is the part worth keeping: the first draft wrote the identity at the end of *every* sync, so the warning fired once and the index then claimed a coherence it did not have — `pnk doctor` reporting OK over chunks built the old way. **A warning that clears itself without the fix being applied is worse than no warning.** Found by running the command a second time; no test asserted persistence, because that only fails on the second invocation |
 | Numbered plain-text headings were not detected, so a rigidly sectioned `.txt` corpus was chunked size-based however structural the manifest read — which is what left the 300-RFC corpus with 106 806 chunks and not one `heading_path`, and so bounds the graph release's gate | `[chunking] headings = "numbered"`, 20260805. Opt-in, `text` only, a **new key** so `strategy` stays inert and `structural` gains no retroactive meaning. **The design is that it refuses rather than guesses:** five line-level clauses and then an outline walk over the whole document, and if the walk fails anywhere that document yields **no headings at all** — exactly the pre-grammar behaviour, never a partial labelling. The predicate was written in full *before any corpus was consulted*, and the tests are written against its clauses rather than against a corpus. Golden set unmoved as predicted (`recall@k` 0.9394, MRR 0.8806, both sides). **Still outstanding: the measurement against the RFC corpus**, which is a separate step and needs a corpus that is not in this repo |
 | `pnk doctor` printed the operator's home directory — absolute paths in the one command whose output is the natural thing to paste into an issue | Landed 20260805 (`293bf37`). A `_de_homed` helper strips the KB root's prefix from any message or remedy `doctor.py` forwards. The scope is what makes it right: `store.py`, `sidecar.py` and `ledger.py` all build their text from an absolute path because `manifest.root` is resolved, so the fix sits at the forwarding boundary rather than in each raiser. A path genuinely **outside** the KB — the model cache, a linked KB, a packaged `prices.toml` — is left exactly as printed |

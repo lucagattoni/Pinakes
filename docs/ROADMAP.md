@@ -33,12 +33,12 @@ precision nobody measured.
   (p = 1.0000). `schema_version` 3 means **every existing KB rebuilds once**.
 - ⚠️ **`0.11.0`'s verdict is narrower than it reads** — three of the seven edge kinds derived
   **zero** edges on the corpus it was gated against
-  ([open correction 4](#open-corrections--four-live-items)). **0.12.0 ships the check that reports it**, so a
+  ([open correction 4](#open-corrections--two-live-items)). **0.12.0 ships the check that reports it**, so a
   future corpus cannot repeat it silently.
 - **[The template release](#the-template-release--ready-to-start) is unblocked** — plan written,
   reviewed, four decisions taken. Nobody has started it.
-- **[Four open corrections](#open-corrections--four-live-items)** are live, all small, none
-  blocking. Three are decided and unbuilt; one waits on a measurement nobody has taken.
+- **[Two open corrections](#open-corrections--two-live-items)** are live, both small, both
+  decided and unbuilt. **Nothing is waiting on a measurement or a decision any more.**
 
 ---
 
@@ -73,7 +73,7 @@ number belongs to a release only when it is cut
 | **[0.11.0](#the-graph-release--shipped-0110)** | 20260805 07:14 | The graph release | • Structural edges at `schema_version` 3 — **every existing KB rebuilds once**<br>• `pnk doctor` reports the highest-degree hubs<br>• **The expansion channel ships `off`** — its gate improved 0 and regressed 3 |
 | **[0.12.0](#0120--the-check-that-would-have-caught-it--20260805-1802)** | 20260805 18:02 | The check that would have caught it | • `pnk doctor` reports heading-path coverage<br>• Missing-backend error names an installed alternative<br>• `pnk doctor` stops printing `$HOME`<br>• `tools/measure_sync_cpu.py` |
 | **[0.13.0](#0130--plain-text-can-carry-a-heading-path--20260805-2101)** | 20260805 21:01 | Plain text can carry a heading path | • `[chunking] headings = "numbered"`<br>• Measured on 980 real RFCs, 314/314 modern<br>• A `[chunking]` edit is no longer a silent no-op<br>• `tools/build_rfc_corpus.py` |
-| | | **[Open corrections](#open-corrections--four-live-items)** | • Four live code/tooling items<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
+| | | **[Open corrections](#open-corrections--two-live-items)** | • Two live code/tooling items<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
 | | | **[The template release](#the-template-release--ready-to-start)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• Not started |
@@ -514,7 +514,7 @@ false positive and took genuine documents with it.
 
 # Part 5 · What is not built
 
-## Open corrections — four live items
+## Open corrections — two live items
 
 Small code and tooling items, as of 20260805 18:02. **Every one** came from *building*
 [the RFC realism corpus](#the-corpus-exists--built-20260804-0800) rather than from reading code —
@@ -528,18 +528,16 @@ which is what that corpus was for. The interrupted-sync trio that used to sit he
    add a `pnk doctor` check. The first-line heuristic is **rejected** — an RFC's first line is
    `Internet Engineering Task Force (IETF)`, and a confidently wrong title is harder to notice than
    an obviously wrong one.
-3. **The first sync may be using one core of ten**, and nobody has measured which. The instrument
-   shipped in 0.12.0; **the measurement is still outstanding**, and nothing else in the item may be
-   built before that number exists.
-4. **The heading-coverage check WARNs forever on `code` and `pdf`**, which can never carry a
-   heading path. Decided 20260805: WARN only for `markdown` at 0% — the one fixable case — and
-   report the others as OK with a note naming the cause.
 
 
-Five items closed since 20260804: the `[light]` backend error, `pnk doctor`'s home-directory leak,
+
+Seven items closed since 20260804: the `[light]` backend error, `pnk doctor`'s home-directory leak,
 the heading-coverage *detection* half — all in 0.12.0 — then **numbered plain-text heading detection
-itself** as `[chunking] headings = "numbered"`, and the **silent `[chunking]` no-op** that building
-it exposed. The last of those was opened and closed the same day, by the work that revealed it. The chunking item's original diagnosis
+itself** as `[chunking] headings = "numbered"` and the **silent `[chunking]` no-op** that building it
+exposed, both in 0.13.0. Since then: **the sync-CPU question, answered by measuring** (peak 5.0
+cores, mean 4.8 of 10 under `fastembed` — the loop is serial and the backend beneath it is not, so
+the answer is *do not parallelise*), and the heading-coverage check's **permanent WARN**, narrowed to
+the one case a user can act on. The chunking item's original diagnosis
 was **wrong and is corrected in the plan**: the Markdown grammar did not fail to match, it was never
 run, because `chunk.py` dispatches on source type and a `.txt` file takes `_plain_blocks`, which
 sets `heading_path=None` unconditionally.
@@ -625,7 +623,7 @@ carries a `heading_path`. **The reason is not the one first recorded here.** The
 fail to match RFC section numbering — it was never run: `chunk.py` dispatches on *source type*, and
 every type but `markdown` takes `_plain_blocks`, which sets `heading_path=None` unconditionally.
 Nothing failed to match because nothing was tried, which is why tightening a grammar would have
-fixed nothing ([open correction 4](#open-corrections--four-live-items)). So the verdict is *"the edge kinds
+fixed nothing ([open correction 4](#open-corrections--two-live-items)). So the verdict is *"the edge kinds
 that worked did not help this corpus"*, never *"graph structure does not help"*. The `--drop
 parent-child` arm the arity decision added could say nothing at all here, by construction.
 

@@ -1780,13 +1780,13 @@ def test_a_plain_text_source_type_is_reported_at_zero(kb: Path) -> None:
     sync(load(kb), options=SyncOptions(), now="20260805 07:51")
 
     status, detail = checks(kb)["heading coverage"]
-    assert status is Status.WARN
-    assert "1 source type(s) at 0%" in detail
-    remedy = _remedy(kb, "heading coverage")
-    assert "text (2)" in remedy
-    assert "`in-section`, `parent` and `child` edges derive nothing" in remedy
-    assert "runs for `markdown` only" in remedy
-    assert "not of your files" in remedy
+    assert status is Status.OK, "only `markdown` at 0% warns — decided by the user 20260805"
+    assert "text (2)" in detail
+    assert "`in-section`, `parent` and `child` derive nothing" in detail
+    # `[chunking] headings` is unset on this fixture, so the note must point at it rather than
+    # claiming plain text cannot carry a heading path — which stopped being true in 0.13.0.
+    assert "`[chunking] headings" in detail
+    assert "currently unset" in detail
 
 
 def test_a_markdown_kb_with_no_headings_gets_the_other_remedy(kb: Path) -> None:
@@ -1798,11 +1798,10 @@ def test_a_markdown_kb_with_no_headings_gets_the_other_remedy(kb: Path) -> None:
     sync(load(kb), options=SyncOptions(), now="20260805 07:52")
 
     status, _ = checks(kb)["heading coverage"]
-    assert status is Status.WARN
+    assert status is Status.WARN, "the one fixable case, and the only one that warns"
     remedy = _remedy(kb, "heading coverage")
     assert "ATX headings" in remedy
-    assert "property of your documents" in remedy
-    assert "not of your files" not in remedy
+    assert "chunked by size alone" in remedy
 
 
 def test_a_partial_share_within_a_source_type_is_not_a_warning(kb: Path) -> None:
@@ -1841,7 +1840,9 @@ def test_a_removed_documents_chunks_stop_being_counted(kb: Path) -> None:
     rather than every document that has ever been in it."""
     (kb / "docs" / "rfc.txt").write_text("1.  Introduction\n\nBody.\n", encoding="utf-8")
     sync(load(kb), options=SyncOptions(), now="20260805 07:54")
-    assert checks(kb)["heading coverage"][0] is Status.WARN
+    # The signal is the *note*, not the status: since 20260805 a non-markdown type at 0% is
+    # reported as OK rather than WARN, so status alone can no longer distinguish before from after.
+    assert "text" in checks(kb)["heading coverage"][1]
 
     (kb / "docs" / "rfc.txt").unlink()
     (kb / f"docs/rfc.txt{SIDECAR_SUFFIX}").unlink()
@@ -1908,3 +1909,50 @@ def test_chunking_coherence_stays_ok_when_the_index_recorded_no_identity(kb: Pat
         encoding="utf-8",
     )
     assert checks(kb)["chunking coherence"][0] is Status.OK
+
+
+def test_a_code_file_never_warns_because_nothing_can_clear_it(kb: Path) -> None:
+    """The defect this change fixes: a KB holding one `.py` file warned on **every run, forever**,
+    with a remedy that amounted to "this is a limit of the tool". An un-actionable warning that
+    cannot be cleared is how doctor output stops being read at all — which costs the actionable
+    warnings too, so it is a larger loss than the one signal it gives up."""
+    manifest = kb / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'include = ["**/*.md", "**/*.txt"]', 'include = ["**/*.md", "**/*.txt", "**/*.py"]', 1
+        ),
+        encoding="utf-8",
+    )
+    (kb / "docs" / "thing.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    (kb / "docs" / "titled.md").write_text("# Title\n\nBody.\n", encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260805 21:20")
+
+    status, detail = checks(kb)["heading coverage"]
+    assert "code" in detail, "precondition: the .py file must actually be indexed"
+    assert status is Status.OK
+    assert "code" in detail
+    assert "cannot carry one today" in detail
+
+
+def test_text_at_zero_with_the_grammar_on_says_the_documents_were_refused(kb: Path) -> None:
+    """Two different facts wear the same 0%, and the note must tell them apart. With
+    `[chunking] headings` unset, the user has an action. With it set, the grammar was *offered*
+    these documents and declined them — their numbering does not form an outline it will trust —
+    and telling someone to set a key they already set is worse than saying nothing."""
+    manifest = kb / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            "[chunking]\n", '[chunking]\nheadings = "numbered"\n', 1
+        ),
+        encoding="utf-8",
+    )
+    # Numbered like a list that restarts, so the outline walk refuses it — the safe fallback.
+    (kb / "docs" / "notes.txt").write_text(
+        "Steps:\n\n1. Do this.\n\n2. Do that.\n\n1. Start over.\n", encoding="utf-8"
+    )
+    sync(load(kb), options=SyncOptions(), now="20260805 21:21")
+
+    status, detail = checks(kb)["heading coverage"]
+    assert status is Status.OK
+    assert "refused" in detail
+    assert "currently unset" not in detail
