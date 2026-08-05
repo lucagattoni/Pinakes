@@ -483,6 +483,7 @@ def _index(manifest: Manifest) -> Iterator[Check]:
         yield _calibration(manifest)
         yield _links(connection, manifest, active)
         yield _edge_hubs(connection)
+        yield _heading_coverage(connection)
 
         if counts["chunks"] > LARGE_CORPUS_CHUNKS:
             yield Check(
@@ -767,6 +768,76 @@ def _edge_hubs(connection: sqlite3.Connection) -> Check:
     if more > 0:
         detail += f", and {more} more"
     return Check("edge hubs", Status.OK, detail)
+
+
+def _heading_coverage(connection: sqlite3.Connection) -> Check:
+    """What share of chunks carry a `heading_path` — and which source types carry none at all.
+
+    **This exists because the silence was measured, not imagined.** The RFC realism corpus indexed
+    106 806 chunks and **every one** had an empty `heading_path`, which nothing reported. Two
+    consequences, and the second is why it is not cosmetic: those citations lose their heading
+    component, and `heading_path` is what G3's `in-section`, `parent` and `child` edges derive
+    from — so three of the seven edge kinds derived **zero** edges on the corpus G5's gate was
+    measured against. A graph result on such a corpus reads as "structure does not help" when what
+    it measured is "the structure was never extracted".
+
+    **Zero for a source type is the predicate, not a fitted share.** `chunk.py` runs heading
+    detection for `markdown` only — every other kind goes through `_plain_blocks`, which sets
+    `heading_path=None` unconditionally — so a partial share is an ordinary property of a corpus
+    (a document's chunks before its first heading legitimately have none) while a **total** absence
+    across a whole source type is the failure. Measured on the committed corpora, both sit at
+    **100%** (demo-kb 60/60, partner-kb 55/55) against the RFC corpus's **0%**, so the distribution
+    is bimodal and no threshold has to be fitted between them. That also keeps this check free of a
+    constant nobody has calibrated — the reasoning `_text_yield` uses for its own outliers.
+
+    **Counted over chunks in the index, never by re-chunking a sample.** A check that re-derives
+    its own input is checking a copy: it would report what today's chunker *would* do, not what the
+    index every query actually runs against holds.
+    """
+    rows = connection.execute(
+        "SELECT d.source_type AS source_type, count(*) AS total, "
+        "count(c.heading_path) AS named "
+        "FROM chunks c JOIN documents d ON d.id = c.doc_id "
+        "WHERE d.state = 'active' GROUP BY d.source_type ORDER BY d.source_type"
+    ).fetchall()
+    if not rows:
+        return Check("heading coverage", Status.OK, "no chunks")
+
+    total = sum(int(row["total"]) for row in rows)
+    named = sum(int(row["named"]) for row in rows)
+    detail = f"{named} of {total} chunks carry a heading path ({named / total:.0%})"
+
+    silent = [row for row in rows if int(row["named"]) == 0]
+    if not silent:
+        return Check("heading coverage", Status.OK, detail)
+
+    listed = ", ".join(f"{row['source_type']} ({int(row['total'])})" for row in silent)
+    unsupported = sorted(
+        str(row["source_type"]) for row in silent if str(row["source_type"]) != "markdown"
+    )
+    remedy = (
+        f"No chunk of these source types carries a heading path: {listed}. "
+        "`in-section`, `parent` and `child` edges derive nothing from them and their citations "
+        "have no heading component, so a retrieval or graph measurement over this KB is bounded "
+        "by that rather than by what the graph is worth."
+    )
+    if unsupported:
+        remedy += (
+            f" Heading detection runs for `markdown` only, so {', '.join(unsupported)} cannot "
+            "carry one today whatever the document contains — a limit of `[chunking] strategy`, "
+            "not of your files."
+        )
+    if any(str(row["source_type"]) == "markdown" for row in silent):
+        remedy += (
+            " The `markdown` share is a property of your documents: `structural` chunking reads "
+            "ATX headings (`# Title`), so files using another convention record none."
+        )
+    return Check(
+        "heading coverage",
+        Status.WARN,
+        f"{detail}; {len(silent)} source type(s) at 0%",
+        remedy,
+    )
 
 
 def _links(connection: sqlite3.Connection, manifest: Manifest, active: int) -> Check:
