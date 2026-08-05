@@ -165,7 +165,16 @@ orphaned sidecars, duplicate IDs, dangling links and link coverage, recorded fai
 cache stats, PDF text yield, the completeness audit's below-median pages, the 50k-chunk NumPy
 threshold, held sync locks, hook status, the price table's age,
 unknown-outcome ledger records, whether a paid backend is configured on a KB whose hooks force
-the free one, the highest-degree structural edge hubs, and heading coverage.
+the free one, the highest-degree structural edge hubs, heading coverage, and chunking coherence.
+
+**`chunking coherence` reports whether `[chunking]` has moved since the index was built.** It
+matters because an incremental sync re-chunks a document only when *the document* changed: a
+manifest-only edit reports every file `unchanged` and applies nothing, so the setting appears not to
+work. `pnk sync` prints the same finding at the moment of the edit; this check is for the user who
+made it last week. Remedy is `pnk sync --rebuild`, and **the warning persists until that actually
+happens** rather than clearing once it has been printed. An index built before the identity was
+recorded carries none of it, which reads as *unknown* and never as drifted — so upgrading never
+demands a rebuild.
 
 **`heading coverage` reports what share of indexed chunks carry a `heading_path`, and WARNs when a
 source type carries none at all.** The predicate is **zero for a source type**, never a fitted

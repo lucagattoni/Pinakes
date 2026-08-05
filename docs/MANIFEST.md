@@ -114,12 +114,17 @@ Override for one run with `pnk sync --extract=BACKEND`.
 
 ## `[chunking]`
 
-> ⚠️ **Changing any key here needs `pnk sync --rebuild`.** An incremental sync re-chunks a document
-> only when *the document* changed, so a manifest-only edit reports every file `unchanged` and the
-> new setting silently does nothing. Measured 20260805 on `headings`: flipped to `"numbered"`, a
-> plain `pnk sync` reported `1 unchanged` and left every `heading_path` empty; `--rebuild` produced
-> them. The same mechanism covers `max_tokens` and `overlap`. Nothing warns yet — that is
-> [an open correction](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md).
+> ⚠️ **Changing any key here needs `pnk sync --rebuild`, and the tool now says so.** An incremental
+> sync re-chunks a document only when *the document* changed, so a manifest-only edit reports every
+> file `unchanged` and the new setting does nothing on its own. `pnk sync` prints which key moved
+> and names `--rebuild`; [`pnk doctor`](CLI.md#pnk-doctor) reports the same as `chunking coherence`
+> — the first catches the user who just made the edit, the second the one who made it last week and
+> is now asking why `heading_path` is empty. **The warning persists until the rebuild actually
+> happens**, never merely until it has been printed once.
+>
+> An index built before this identity was recorded carries none of it, and that reads as *unknown*,
+> never as drifted — so upgrading does not demand a rebuild of every KB for a setting that probably
+> never changed.
 
 
 | Key | Default | Notes |

@@ -33,12 +33,12 @@ precision nobody measured.
   (p = 1.0000). `schema_version` 3 means **every existing KB rebuilds once**.
 - ⚠️ **`0.11.0`'s verdict is narrower than it reads** — three of the seven edge kinds derived
   **zero** edges on the corpus it was gated against
-  ([open correction 4](#open-corrections--five-live-items)). **0.12.0 ships the check that reports it**, so a
+  ([open correction 4](#open-corrections--four-live-items)). **0.12.0 ships the check that reports it**, so a
   future corpus cannot repeat it silently.
 - **[The template release](#the-template-release--ready-to-start) is unblocked** — plan written,
   reviewed, four decisions taken. Nobody has started it.
-- **[Five open corrections](#open-corrections--five-live-items)** are live, all small, none blocking.
-  Four are decided and unbuilt; one waits on a measurement nobody has taken.
+- **[Four open corrections](#open-corrections--four-live-items)** are live, all small, none
+  blocking. Three are decided and unbuilt; one waits on a measurement nobody has taken.
 
 ---
 
@@ -72,7 +72,7 @@ number belongs to a release only when it is cut
 | **[0.10.0](#0100--you-can-see-it-working--20260804-1335)** | 20260804 13:35 | You can see it working | • `pnk sync` shows live progress on a terminal<br>• `pnk doctor` no longer tells an interrupted sync to `--rebuild`<br>• Sync timestamps are UTC<br>• ✅ Released and on PyPI |
 | **[0.11.0](#the-graph-release--shipped-0110)** | 20260805 07:14 | The graph release | • Structural edges at `schema_version` 3 — **every existing KB rebuilds once**<br>• `pnk doctor` reports the highest-degree hubs<br>• **The expansion channel ships `off`** — its gate improved 0 and regressed 3 |
 | **[0.12.0](#0120--the-check-that-would-have-caught-it--20260805-1802)** | 20260805 18:02 | The check that would have caught it | • `pnk doctor` reports heading-path coverage<br>• Missing-backend error names an installed alternative<br>• `pnk doctor` stops printing `$HOME`<br>• `tools/measure_sync_cpu.py` |
-| | | **[Open corrections](#open-corrections--five-live-items)** | • Five live code/tooling items<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
+| | | **[Open corrections](#open-corrections--four-live-items)** | • Four live code/tooling items<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
 | | | **[The template release](#the-template-release--ready-to-start)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• Not started |
@@ -484,7 +484,7 @@ locally and on two CI legs, failing only on the third.
 
 # Part 5 · What is not built
 
-## Open corrections — five live items
+## Open corrections — four live items
 
 Small code and tooling items, as of 20260805 18:02. **Every one** came from *building*
 [the RFC realism corpus](#the-corpus-exists--built-20260804-0800) rather than from reading code —
@@ -504,15 +504,12 @@ which is what that corpus was for. The interrupted-sync trio that used to sit he
 4. **The heading-coverage check WARNs forever on `code` and `pdf`**, which can never carry a
    heading path. Decided 20260805: WARN only for `markdown` at 0% — the one fixable case — and
    report the others as OK with a note naming the cause.
-5. **A `[chunking]` edit is a silent no-op until `--rebuild`.** An incremental sync re-chunks a
-   document only when *the document* changed, so a manifest-only edit reports every file
-   `unchanged` and the setting does nothing. Measured, not reasoned. Pre-existing and shared by
-   `max_tokens` and `overlap`; the new `headings` key is what made it visible, being the first one
-   a user has a reason to flip on a KB already indexed.
 
-Four items closed since 20260804: the `[light]` backend error, `pnk doctor`'s home-directory leak,
-the heading-coverage *detection* half — all in 0.12.0 — and **numbered plain-text heading detection
-itself**, which shipped after it as `[chunking] headings = "numbered"`. The chunking item's original diagnosis
+
+Five items closed since 20260804: the `[light]` backend error, `pnk doctor`'s home-directory leak,
+the heading-coverage *detection* half — all in 0.12.0 — then **numbered plain-text heading detection
+itself** as `[chunking] headings = "numbered"`, and the **silent `[chunking]` no-op** that building
+it exposed. The last of those was opened and closed the same day, by the work that revealed it. The chunking item's original diagnosis
 was **wrong and is corrected in the plan**: the Markdown grammar did not fail to match, it was never
 run, because `chunk.py` dispatches on source type and a `.txt` file takes `_plain_blocks`, which
 sets `heading_path=None` unconditionally.
@@ -598,7 +595,7 @@ carries a `heading_path`. **The reason is not the one first recorded here.** The
 fail to match RFC section numbering — it was never run: `chunk.py` dispatches on *source type*, and
 every type but `markdown` takes `_plain_blocks`, which sets `heading_path=None` unconditionally.
 Nothing failed to match because nothing was tried, which is why tightening a grammar would have
-fixed nothing ([open correction 4](#open-corrections--five-live-items)). So the verdict is *"the edge kinds
+fixed nothing ([open correction 4](#open-corrections--four-live-items)). So the verdict is *"the edge kinds
 that worked did not help this corpus"*, never *"graph structure does not help"*. The `--drop
 parent-child` arm the arity decision added could say nothing at all here, by construction.
 

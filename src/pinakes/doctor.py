@@ -516,6 +516,7 @@ def _index(manifest: Manifest) -> Iterator[Check]:
         except ExtractionCoherenceError as exc:
             yield Check("extraction coherence", Status.FAIL, exc.message, exc.remedy)
 
+        yield _chunking_drift(manifest, connection)
         yield _text_yield(manifest, connection)
         yield _calibration(manifest)
         yield _links(connection, manifest, active)
@@ -548,6 +549,39 @@ def _index(manifest: Manifest) -> Iterator[Check]:
             yield Check("failures", Status.OK, "none recorded")
     finally:
         connection.close()
+
+
+def _chunking_drift(manifest: Manifest, connection: sqlite3.Connection) -> Check:
+    """Whether `[chunking]` has moved since the index was built.
+
+    Reported here *as well as* by `pnk sync` — different moments, different readers. Sync catches
+    the user who just made the edit; this catches the one who made it a week ago and is now asking
+    why `heading_path` is empty.
+
+    **Absent is OK, not WARN.** Every index built before the identity existed carries none of these
+    keys, and a check that fired on all of them would be noise on first upgrade — the same
+    unclearable-warning failure the heading-coverage check has to answer for.
+    """
+    drift = store.chunking_drift(
+        store.get_meta(connection),
+        store.chunking_identity(
+            headings=manifest.chunking.headings,
+            max_tokens=manifest.chunking.max_tokens,
+            overlap=manifest.chunking.overlap,
+        ),
+    )
+    if not drift:
+        return Check("chunking coherence", Status.OK, "index matches the configured chunking")
+    moved = ", ".join(f"{key} {was} -> {now}" for key, (was, now) in sorted(drift.items()))
+    return Check(
+        "chunking coherence",
+        Status.WARN,
+        f"[chunking] changed since this index was built: {moved}",
+        "The index still reflects the old settings — an incremental sync re-chunks a document "
+        "only when the document itself changed, so nothing applied the edit. Run "
+        "`pnk sync --rebuild` to apply it, or revert the manifest. Nothing is wrong with the "
+        "index as it stands; it was simply built under different settings.",
+    )
 
 
 def _text_yield(manifest: Manifest, connection: sqlite3.Connection) -> Check:
