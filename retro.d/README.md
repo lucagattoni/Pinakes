@@ -28,3 +28,14 @@ The whole section, including its own `##` heading with the timestamp the file's 
     **HIGH — …**
 
 Fragments are spliced **before** the design-review-passes section, which stays at the foot.
+
+**Never link to another fragment by filename.** Splicing puts every fragment into one
+`docs/RETROSPECTIVES.md`, where a sibling's filename no longer resolves — and `docs/` is published,
+so `mkdocs build --strict` fails the build rather than shipping a dead link. Link to the *heading*
+instead, with the anchor the site will generate:
+
+    ([*measured the launcher, not the work*](#measure_sync_cpupy-measured-the-launcher-not-the-work-20260805-1737))
+
+The same applies to `changelog.d/`. Caught at 0.12.0's cut, by `make docs` and not before: nothing
+in `./check.sh` resolves a link that only becomes wrong at splice time, so the fragment was green on
+its own branch.

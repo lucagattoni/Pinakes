@@ -3839,6 +3839,220 @@ with what a fixture needed. G3's own docstrings warn about exactly this shape fo
 of a symmetric edge kind ("a confident, wrong, smaller answer"); this increment reproduced a milder
 version of it one level up, in the read that reports G3's own structure back to a human.
 
+## The `[light]` backend error — a fixed test that only looked environment-independent (20260805 07:41)
+
+**MEDIUM — the existing `test_a_missing_extra_names_the_install_command` was silently coupled to
+which extras happen to be installed in the checkout running it, and this dev checkout already has
+`fastembed` (a transitive dependency of some other extra) even without `[light]` explicitly
+requested.** Once `BackendMissingError` started naming an installed alternative, that test's
+`monkeypatch.setattr(builtins, "__import__", refuse)` — which only blocks `sentence_transformers` —
+left `fastembed` genuinely importable, so `load_backend` picked it up as the alternative and the
+old assertion (`'uv add "pinakes[st]"' in remedy`) started failing for the *right* reason: the new
+code path executing, not a bug. A version of this test that had merely added the new assertions
+without also forcing "nothing else is installed" would have been true by luck of this machine's
+`site-packages`, not by construction, and would flip on a bare CI leg or a machine with no
+`fastembed` at all. Fixed by monkeypatching `importlib.util.find_spec` directly in both the
+"no alternative" and "alternative present" tests, so each names its precondition instead of
+inheriting whatever the environment happens to have — the same discipline `docs/RETROSPECTIVES.md`
+already names for tests that read like they exercise a real-clock or real-install branch but
+route around it.
+
+Confirmed by the mutation pass: forcing `_installed_alternative`'s `find_spec` check to always
+report "installed" broke `test_a_missing_extra_names_the_install_command` specifically (asserting
+`alternative is None`), and reverting `_import` to drop the detected alternative broke both
+alternative-path tests specifically (asserting `alternative == FASTEMBED`) — each mutation failed
+the test that names the property it broke, not an unrelated one.
+
+## The heading-coverage check — two findings, one of them about my own test
+
+**HIGH — the open correction's diagnosis was approximately right and precisely wrong, and the
+difference decides the fix.** Item 1 read *"the heading grammar is Markdown-shaped; RFC section
+numbering is not, so nothing matches and the strategy quietly becomes size-based"*. That describes a
+regex being tried and failing. What actually happens is `chunk.py:131`:
+
+```python
+blocks = _markdown_blocks(text) if kind == "markdown" else _plain_blocks(text)
+```
+
+`_markdown_blocks` is **never called** for a `.txt` file, and `_plain_blocks` sets
+`heading_path=None` unconditionally. Nothing failed to match because nothing was tried. The
+consequence for the fix is not cosmetic: tightening or extending a regex would have changed nothing,
+and the real change is adding heading detection to a code path that has none. It also bounds the
+blast radius in the useful direction — `tests/demo-kb` is Markdown, so a plain-text grammar cannot
+move the golden set, and *"changing chunking needs eval justification"* becomes a thing you can
+prove rather than argue.
+
+**A measurement replaced a threshold.** Chunking the committed corpora directly — no index, no
+embeddings, `chunk_document` called in a loop — gave demo-kb 60/60 and partner-kb 55/55 at 100%
+against the RFC corpus's 0%. Bimodal, so the predicate can be *"zero for this source type"* and the
+check carries no constant anybody had to calibrate. The alternative, a fitted percentage floor,
+would have needed a corpus to fit against and would have fired on ordinary documents whose opening
+paragraph precedes their first heading.
+
+**MEDIUM — mutation testing refuted one of my own tests within a minute of writing it.** I wrote
+`test_heading_coverage_counts_only_active_documents`, asserting the `state = 'active'` filter. M1
+deleted the filter and the test **stayed green**. The reason is that `SoftDelete` drops a document's
+chunks as well as flipping its state, so a chunk-counting query has nothing to over-count either
+way — unlike `_links`, which counts *documents* and genuinely needs the filter it records having
+shipped without (`2 of 1 documents linked (200%)`).
+
+The test was kept and **renamed to what it proves** (`test_a_removed_documents_chunks_stop_being_counted`),
+with the refutation written into its docstring so nobody re-derives the wrong claim from the old
+name. The filter stays as defensive consistency with `_links`, marked as unreachable by this
+fixture rather than presented as guarded.
+
+This is the file's own recurring failure class caught in the act: **an assertion satisfied by
+something other than the property it names.** Three of the four mutants died as intended (the
+zero-per-type predicate, the two-cause remedy split, the WARN status); the one that survived was the
+one whose name made the strongest claim. Green proved the test ran; only the mutant proved what it
+could detect — and for one of five, the answer was "not the thing in its name".
+
+## Item 5 — doctor never prints the operator's home directory (20260805 08:06)
+
+**LOW — two residual home-directory leaks exist, both correctly out of this increment's scope.**
+An adversarial review confirmed the sweep of `src/pinakes/doctor.py` is exhaustive against every
+`PinakesError` subclass doctor.py forwards, and found no defect in the fix itself (three
+independent mutations — a no-op `_de_homed`, a swapped `_local` tuple order, and a reverted
+`_sidecars` call site — each broke exactly the test that should catch it, and nothing else). Two
+things remain that print an absolute path containing the operator's home directory, both outside
+the item's stated boundary ("paths outside the KB stay as they are"):
+
+1. `_linked_kbs`'s `except OSError as exc: absent.append(f"{linked.name} ({exc.strerror or exc})")`
+   — the `or exc` fallback stringifies a bare `OSError`, whose default `__str__` includes
+   `.filename` when set. The path involved is a *linked* KB's resolved location, not
+   `manifest.root` — legitimately a different KB elsewhere on disk, not this one — so it falls
+   outside "paths outside the KB stay as they are" by the same reasoning that already keeps
+   `hf_cache_dir()` untouched. Rare: only fires when `why_not_a_kb`'s `OSError.strerror` is falsy,
+   an edge case its own docstring already calls out as rare (an unreadable parent directory).
+
+2. `budget.prices.PricesMissingError(reason=str(exc))` — ships a package-relative path
+   (`prices.toml`'s location inside the installed wheel or an editable checkout), not
+   `manifest.root`-derived, so `_de_homed` correctly leaves it alone. In an editable/source
+   install, that path is often literally under the developer's home directory too (e.g.
+   `~/Code/pinakes/src/pinakes/budget/prices.toml`) — the same *shape* of leak as `hf_cache_dir()`,
+   for the same reason (a real filesystem location worth showing, not KB-derived).
+
+**Worth keeping:** if "no home directory in `pnk doctor` output, ever" becomes the actual goal
+rather than "no home directory *via the KB's own location*", both of these are where to look next
+— they were not fixed here because the item's own text draws the boundary at `manifest.root`, and
+extending it is a separate decision.
+
+## `measure_sync_cpu.py` measured the launcher, not the work (20260805 17:37)
+
+**HIGH — the tool answered its one question with a number that was precisely, confidently wrong,
+and every test passed.** `sample_percent` ran `ps -o %cpu= -p <pid>` against the pid it launched.
+The invocation the tool was written for — and prints in its own `--help` and changelog fragment —
+is `-- uv run pnk sync ...`, which makes `uv` the measured process and `pnk` its *child*. `uv` waits
+and burns nothing.
+
+Measured on this repo before the fix, one identical one-core busy loop:
+
+| launched as | reported |
+|---|---|
+| the busy loop directly | **1.0 cores** |
+| the same loop behind `uv run` | **0.0 cores** |
+
+The failure mode is the expensive one: `0.0 cores` for a sync saturating a core does not read as a
+broken tool. It reads as *the finding item 6 went looking for* — "the loop is not CPU-bound, so
+multiprocessing buys nothing" — and it would have been quoted into a design decision.
+
+**Why the tests could not catch it.** All seven ran `sys.executable -c <busy loop>`: a direct child
+that does the work itself. The suite covered the sampler, the units, exit-code propagation, empty
+and non-positive arguments, and the trailing-interval bug — everything except *the one process
+shape the tool exists to be pointed at*. Coverage of the code was complete; coverage of the
+**invocation** was zero. This is the recurring class named in `docs/RETROSPECTIVES.md` — an
+assertion satisfied by something other than the property it names — reached from a new direction:
+not a weak assertion, but a fixture that was never the real subject.
+
+**Fixed** by summing `%cpu` across the root pid and every descendant from a single `ps -A` snapshot
+(one snapshot, so a child starting or exiting mid-walk cannot be double-counted or missed), plus a
+test whose command is a launcher that burns nothing itself.
+
+**The new test's upper bound is load-bearing, and mutation proved it.** With the tree walk
+neutered, the launcher still reported **0.1 cores** of its own interpreter startup — so
+`assert peak > 0` would have passed the mutant. Asserting `> 0.5` fails it. A threshold above
+"anything a waiting process can produce" and below one core is what makes the assertion name the
+property; "non-zero" would not have.
+
+**Also corrected: `%cpu` is a decaying average over up to a minute** (`man ps`), not the
+instantaneous reading the docstring claimed. Right for the steady-state multi-minute loop this
+measures, but it means `peak` is the peak of a *smoothed* series — a low peak is much weaker
+evidence of an idle machine than a high peak is of a busy one, and the docstring now says so.
+
+**Generalisable:** when a tool's purpose is to be run one particular way, one test must run it
+*that* way. A synthetic fixture chosen for speed silently replaced the subject here, and no amount
+of assertion strength on the wrong subject would have helped.
+
+## Fixture copies carried the developer's own `.pinakes/` into the test workspace (20260805 17:49)
+
+**MEDIUM — three tests failed on `main` immediately after two clean merges, on a machine where
+nothing was wrong with the code, and the failure impersonated the exact defect this repo watches
+for.** `CLAUDE.md` says a clean auto-merge is not a correct merge; both branches had been green
+individually; `main` then failed. Every signal pointed at a bad merge. The cause was a
+`tests/demo-kb/.pinakes/index.db` dated 1 Aug — a leftover from a manual `pnk sync` predating the
+graph release's `schema_version` 3 bump — which five `shutil.copytree` calls copied into the test
+workspace along with the documents.
+
+**The tests were coupled to whether the developer had ever run the tool by hand.** CI clones fresh,
+so `.pinakes/` never exists there and the suite is permanently green; a dev box that has exercised
+the fixture once fails until the directory is removed. `.pinakes/` is gitignored, so nothing in the
+diff, the merge or the branch could have shown it.
+
+**The idiom was already in the codebase and applied to four of nine call sites.**
+`ignore=shutil.ignore_patterns(".pinakes")` was used in `test_eval.py`, `test_search_reproducibility.py`
+and twice in `test_partner_kb.py`. The other five simply omitted it. A guard applied at *some* call
+sites is not a guard — it is a coin flip weighted by which test the copy happens to be in, and no
+gate could notice the omission because the states it protects against are gitignored and absent in
+CI.
+
+**Verified in both directions, planting a poisoned fixture rather than reasoning about it.** With a
+deliberately corrupt `tests/*/.pinakes/index.db` in place, all 105 tests across the four affected
+files pass. Removing the guard from one call site fails exactly that site's test
+(`test_edges.py::test_the_stored_edge_set_agrees_with_the_probe_the_decision_was_taken_on`,
+`StoreError`), which is what makes the guard's presence the property under test rather than an
+incidental line.
+
+**Generalisable:** when a test copies a directory the tool also writes into, the copy must name what
+it excludes. And a *loud* environment-coupled failure is not a cheap one — this one cost real time
+precisely because it arrived wearing the costume of a merge defect, right after a merge.
+
+## An exact assertion between two *different* roundings — green locally, red on one CI leg (20260805 17:55)
+
+**MEDIUM — a coin-flip assertion that passed for the wrong reason, and whose failure was earned by
+an unrelated correct change.** `test_reports_cores_the_way_macos_percent_converts_to_them` read the
+two numbers off the `peak:` line and asserted `cores == pytest.approx(percent / 100.0)` — at
+`approx`'s *default relative* tolerance, i.e. effectively exact. But `report()` renders percent at
+0 dp and cores at 1 dp: they are two roundings of one value, not one value printed twice. Exact
+agreement is a coincidence of the input, never a property of the code.
+
+It held only while a single-process sample sat at exactly `100.0`. The tree-sum fix
+([*measured the launcher, not the work*](#measure_sync_cpupy-measured-the-launcher-not-the-work-20260805-1737))
+made a one-core loop
+read `101.4` — parent plus child — and `"101"/100 != 1.0` turned CI red.
+
+**The tell is which legs failed.** `check (light pdf)` failed; `check (light)` and
+`check (light pdf claude)` passed on the same commit, same code, same test. Three legs disagreeing
+about one assertion is not a flaky *environment* — it is an assertion whose truth depends on a
+measured value nobody controls.
+
+**And it failed on merged `main`, not on the branch.** The branch's own `./check.sh` was green,
+twice, because this machine's readings rounded agreeably. A local gate cannot rule out an assertion
+that is only *usually* true.
+
+**Fixed** with `abs=0.06` and the arithmetic written down: 0.5 of display error in the percent is
+0.005 of a core, plus 0.05 from the cores field's own rounding, so 0.055 is the largest honest
+disagreement between the two fields.
+
+**The loosened bound still bites** — verified, not assumed. Dropping the `/100` from
+`CpuTrace.cores` fails exactly this test (1.0 against 101). A tolerance that admits *formatting*
+disagreement while still rejecting *arithmetic* disagreement is the assertion the test always meant
+to make.
+
+**Generalisable:** comparing two rendered numbers is comparing two roundings. Either compare the
+values before formatting, or state a tolerance derived from the display precisions — never an exact
+comparison "because they should be equal". This is the repo's recurring class once more: the
+assertion named "the conversion is right" was actually testing "the two roundings happen to agree".
+
 ## Design review passes 1–7 (pre-implementation)
 
 Seven adversarial passes over [`DESIGN.md`](DESIGN.md) **before any code was written** — 58 findings

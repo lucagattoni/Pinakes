@@ -10,6 +10,76 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.0] — 20260805 18:02
+
+### Added
+
+- **`pnk doctor` reports what share of chunks carry a heading path, and warns when a whole source
+  type carries none.** The RFC realism corpus indexed **106 806 chunks with not one heading path**
+  and nothing said so — which matters because `heading_path` is what G3's `in-section`, `parent`
+  and `child` edges derive from, so three of the seven edge kinds derived **zero** edges on the
+  corpus G5's gate was measured against. A graph result on such a corpus reads as *"structure does
+  not help"* when what it measured is *"the structure was never extracted"*.
+
+  **Total absence across a source type is the predicate, not a fitted share.** A document's chunks
+  before its first heading legitimately have none, so an "any chunk missing one" rule would warn on
+  an ordinary corpus and become noise. Measured before the check was written, the distribution is
+  bimodal and needs no threshold between its modes: `tests/demo-kb` 60/60 and `tests/partner-kb`
+  55/55 at **100%**, the RFC corpus at **0%**.
+
+  **The remedy distinguishes the two causes**, because they need different actions. Heading
+  detection runs for `markdown` only — every other kind goes through `_plain_blocks`, which sets
+  `heading_path=None` unconditionally — so a `.txt` or `.pdf` source **cannot** carry one whatever
+  the file contains, and the remedy says so rather than sending someone to edit documents that are
+  not the problem. A `markdown` corpus at 0% is the opposite case: the chunker reads ATX headings
+  and those files use another convention.
+
+  Counted over chunks in the index, never by re-chunking a sample: a check that re-derives its own
+  input reports what today's chunker *would* do, not what the index every query runs against holds.
+
+- **`tools/measure_sync_cpu.py` measures how many cores a long-running command actually keeps
+  busy.** Built for item 6 of `plans/20260731_1202-open-corrections.md`, which required a real
+  cores-busy measurement of `pnk sync`'s document loop, per backend, before anything about it could
+  change. Not a CI gate — an operator tool, run by hand: `python3 tools/measure_sync_cpu.py
+  --interval 1 -- uv run pnk sync --kb <path> --rebuild`, reporting wall-clock, peak and mean
+  `%cpu` (macOS-per-core), and the same numbers converted to cores.
+
+  **It samples the whole process tree, which is the difference between a right answer and a
+  confident wrong one.** That invocation makes `uv` the measured process and `pnk` its *child*, and
+  `uv` burns nothing: watching the launched pid alone reported **0.0 cores for a one-core load that
+  read 1.0 when launched directly**. A tool answering "how many cores does sync keep busy" with
+  `0.0` would not have read as broken — it would have read as the finding. Note also that `%cpu` is
+  a decaying average over up to a minute (`man ps`), not an instantaneous reading, so a *low* peak
+  is much weaker evidence of an idle machine than a high peak is of a busy one.
+
+### Fixed
+
+- **`the sentence-transformers backend is not installed` now names the free fix on a `[light]`
+  install.** When the configured embedding or rerank provider is missing but a registered
+  alternative is already importable (checked with `find_spec`, never by loading it), the error
+  names it and the two manifest lines to flip — `provider` in `[embedding]` and `[rerank]` — instead
+  of only offering the ~2 GB `sentence-transformers` install the `[light]` extra exists to avoid.
+  The plain install-line remedy is unchanged when no alternative is installed.
+
+- **`pnk doctor` no longer prints the operator's home directory.** Three checks (`sidecars`,
+  `index`, `unknown outcomes`, plus every check under `_backends`) forwarded another module's
+  exception text as-is, and `store.py`'s `StoreError`/`IndexSchemaError`, `sidecar.py`'s
+  `SidecarError` and `budget/ledger.py`'s `LedgerError` all build that text from an absolute path
+  — always inside `.pinakes/` or under a sidecar's own directory, since `manifest.root` is
+  resolved absolute. A new `_de_homed` helper strips the KB root's prefix from any message or
+  remedy doctor.py forwards, so a FAIL line pasted into an issue no longer carries a home
+  directory with it. A path genuinely outside the KB — the model cache, a linked KB, a packaged
+  `prices.toml` — is left exactly as printed; only what sits under the KB root is rewritten
+  (`plans/20260731_1202-open-corrections.md` item 5).
+
+- **Tests that copy a fixture KB no longer copy whatever `.pinakes/` the developer left in it.**
+  Five `shutil.copytree` call sites took the whole `tests/demo-kb` or `tests/partner-kb` directory,
+  generated index included, so a leftover local index from an earlier manual `pnk sync` was carried
+  into the test workspace and used. On a checkout holding one written before the graph release's
+  `schema_version` 3 bump, three tests failed with `IndexSchemaError` — on a machine where nothing
+  was wrong with the code. All five now pass `ignore=shutil.ignore_patterns(".pinakes")`, the guard
+  four other call sites already used.
+
 ## [0.11.0] — 20260805 07:14
 
 ### Added
@@ -2345,7 +2415,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.12.0
 [0.11.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.11.0
 [0.10.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.10.0
 [0.9.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.9.0
