@@ -70,9 +70,16 @@ def render_manifest(name: str, context: dict[str, Any]) -> str:
     return Template(source, undefined=StrictUndefined, keep_trailing_newline=True).render(**context)
 
 
-def copy_extras(name: str, target: Path) -> list[Path]:
-    """Copy everything a KB should own: the template's README and its starter golden set."""
+def copy_extras(name: str, target: Path) -> tuple[list[Path], list[Path]]:
+    """Copy everything a KB should own: the template's README and its starter golden set.
+
+    Returns `(written, adopted)` — the second being files that were **already there and left
+    exactly as they are**. A directory worth adopting usually has a `README.md` already, and it is
+    the user's; replacing it with a template's would be destroying the thing they wrote to make
+    room for boilerplate.
+    """
     written: list[Path] = []
+    adopted: list[Path] = []
     root = _root(name)
 
     for relative in ("README.md", "eval/questions.yaml"):
@@ -82,7 +89,10 @@ def copy_extras(name: str, target: Path) -> list[Path]:
         if not source.is_file():
             continue
         destination = target / relative
+        if destination.exists():
+            adopted.append(destination)
+            continue
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
         written.append(destination)
-    return written
+    return written, adopted

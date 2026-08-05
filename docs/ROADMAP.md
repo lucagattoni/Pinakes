@@ -33,12 +33,12 @@ precision nobody measured.
   (p = 1.0000). `schema_version` 3 means **every existing KB rebuilds once**.
 - ⚠️ **`0.11.0`'s verdict is narrower than it reads** — three of the seven edge kinds derived
   **zero** edges on the corpus it was gated against
-  ([open correction 4](#open-corrections--two-live-items)). **0.12.0 ships the check that reports it**, so a
+  ([open correction 4](#open-corrections--one-live-item)). **0.12.0 ships the check that reports it**, so a
   future corpus cannot repeat it silently.
 - **[The template release](#the-template-release--ready-to-start) is unblocked** — plan written,
   reviewed, four decisions taken. Nobody has started it.
-- **[Two open corrections](#open-corrections--two-live-items)** are live, both small, both
-  decided and unbuilt. **Nothing is waiting on a measurement or a decision any more.**
+- **[One open correction](#open-corrections--one-live-item)** is live, small, decided and
+  unbuilt. **Nothing is waiting on a measurement or a decision any more.**
 
 ---
 
@@ -73,7 +73,7 @@ number belongs to a release only when it is cut
 | **[0.11.0](#the-graph-release--shipped-0110)** | 20260805 07:14 | The graph release | • Structural edges at `schema_version` 3 — **every existing KB rebuilds once**<br>• `pnk doctor` reports the highest-degree hubs<br>• **The expansion channel ships `off`** — its gate improved 0 and regressed 3 |
 | **[0.12.0](#0120--the-check-that-would-have-caught-it--20260805-1802)** | 20260805 18:02 | The check that would have caught it | • `pnk doctor` reports heading-path coverage<br>• Missing-backend error names an installed alternative<br>• `pnk doctor` stops printing `$HOME`<br>• `tools/measure_sync_cpu.py` |
 | **[0.13.0](#0130--plain-text-can-carry-a-heading-path--20260805-2101)** | 20260805 21:01 | Plain text can carry a heading path | • `[chunking] headings = "numbered"`<br>• Measured on 980 real RFCs, 314/314 modern<br>• A `[chunking]` edit is no longer a silent no-op<br>• `tools/build_rfc_corpus.py` |
-| | | **[Open corrections](#open-corrections--two-live-items)** | • Two live code/tooling items<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
+| | | **[Open corrections](#open-corrections--one-live-item)** | • One live code/tooling item<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
 | | | **[The template release](#the-template-release--ready-to-start)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• Not started |
@@ -514,7 +514,7 @@ false positive and took genuine documents with it.
 
 # Part 5 · What is not built
 
-## Open corrections — two live items
+## Open corrections — one live item
 
 Small code and tooling items, as of 20260805 18:02. **Every one** came from *building*
 [the RFC realism corpus](#the-corpus-exists--built-20260804-0800) rather than from reading code —
@@ -522,9 +522,7 @@ which is what that corpus was for. The interrupted-sync trio that used to sit he
 [`0.10.0`](#0100--you-can-see-it-working--20260804-1335). Owned by
 [`plans/20260731_1202-open-corrections.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md).
 
-1. **[`pnk init`](CLI.md#pnk-init) cannot adopt a directory that already has content.** Decided,
-   unbuilt: refuse only what would actually be overwritten.
-2. **Every document is titled by its filename.** Decided, unbuilt: keep the filename fallback and
+1. **Every document is titled by its filename.** Decided, unbuilt: keep the filename fallback and
    add a `pnk doctor` check. The first-line heuristic is **rejected** — an RFC's first line is
    `Internet Engineering Task Force (IETF)`, and a confidently wrong title is harder to notice than
    an obviously wrong one.
@@ -623,7 +621,7 @@ carries a `heading_path`. **The reason is not the one first recorded here.** The
 fail to match RFC section numbering — it was never run: `chunk.py` dispatches on *source type*, and
 every type but `markdown` takes `_plain_blocks`, which sets `heading_path=None` unconditionally.
 Nothing failed to match because nothing was tried, which is why tightening a grammar would have
-fixed nothing ([open correction 4](#open-corrections--two-live-items)). So the verdict is *"the edge kinds
+fixed nothing ([open correction 4](#open-corrections--one-live-item)). So the verdict is *"the edge kinds
 that worked did not help this corpus"*, never *"graph structure does not help"*. The `--drop
 parent-child` arm the arity decision added could say nothing at all here, by construction.
 
