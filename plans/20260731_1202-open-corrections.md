@@ -14,14 +14,18 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**Six live items as of 20260805 08:15.** Every one came from *building* — the RFC realism corpus, or the graph release measured against it — rather than from reading the code.
-**Three are in flight** on branches not yet landed: the `[light]` first-sync error, `pnk doctor`'s absolute paths, and the sync CPU measurement. **Two need a planner decision before anyone builds them** (`pnk init` adoption, and titles), and they say so in their own text.
+**Four live items as of 20260805 18:00.** Every one came from *building* — the RFC realism corpus,
+or the graph release measured against it — rather than from reading the code. **Nothing is in
+flight**: every branch open this morning has landed. Each remaining item is blocked on a decision or
+a measurement rather than on effort, and says which in its own text.
 
 The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
-finished. Note what is **not** here: the links release is complete and the graph release is
-**blocked** at G2's measurement ([`20260729_0256-links-and-graph.md`](20260729_0256-links-and-graph.md)),
-so none of these unblocks it — the corpus does
-([`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md)).
+finished. Note what is **not** here: **both releases in
+[`20260729_0256-links-and-graph.md`](20260729_0256-links-and-graph.md) have shipped** — the links
+release in 0.5.0–0.6.0, the graph release in 0.11.0 — so that plan is closed and nothing here
+unblocks it. What the graph release's own gate established is narrower than it looks, and item 4
+below is why: `expand` ships `off` because it did not earn its default *on a corpus where three of
+the seven edge kinds derived zero edges*.
 
 ---
 
@@ -29,15 +33,8 @@ so none of these unblocks it — the corpus does
 
 
 
-### 1 · The `[light]` first-sync error prescribes the 2 GB install to a user who chose `[light]`
 
-A first sync on a `[light]` install fails naming `sentence-transformers` — the torch dependency the extra exists to avoid — while `fastembed` is installed and visible. The manifest edit (two `provider` lines) is the actual fix and the message does not mention it, though `README.md` and `docs/GUIDE.md` both do.
-
-**Required:** when the configured provider is missing *and* a registered alternative is installed, name the alternative and the two manifest keys to change. Test: `[light]` present, `sentence-transformers` absent → the message contains `fastembed` and `[embedding]`, and does **not** recommend installing torch.
-
----
-
-### 2 · `pnk init` cannot adopt a directory that already has content
+### 1 · `pnk init` cannot adopt a directory that already has content
 
 `_check_target` refuses a non-empty directory, so a KB cannot be initialised inside an existing repository — which is what [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) prescribes and what everyone does: create the repo, clone it, then init. A `.git`, a README and a `pyproject.toml` are already "not empty", and the message *"clear this one first"* is alarming when the directory holds the documents.
 
@@ -48,7 +45,7 @@ A first sync on a `[light]` install fails naming `sentence-transformers` — the
 ---
 
 
-### 3 · Every document is titled by its filename
+### 2 · Every document is titled by its filename
 
 All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so search results are unreadable. `sync` mints the title from the filename when the document has no Markdown H1 — correct for Markdown, useless for anything else.
 
@@ -58,14 +55,8 @@ All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so searc
 
 ---
 
-### 4 · `pnk doctor` prints the operator's home directory
 
-Absolute paths in output that is the natural thing to paste into an issue. **Required:** print paths relative to the KB root where they are inside it. Minor, but it is the one command whose output gets shared.
-
----
-
-
-### 5 · The first sync may be using one core of ten, and nobody has measured which
+### 3 · The first sync may be using one core of ten, and nobody has measured which
 
 **Raised 20260804 13:10, from the RFC corpus run.** 300 documents took over two hours at ~2.4
 documents/minute. `sync.py:1863` embeds one document at a time — `backend.embed([chunk.text for
@@ -84,6 +75,18 @@ there are two very different worlds and the fix is opposite in each:
 **Required first:** a measurement, recorded in the item — cores actually busy during a sync of ≥50
 documents, per backend. `ps -o %cpu` on macOS reports **per core**, so `98%` on a 10-core box is one
 core; `750%` is seven. Nothing else in this item may be built before that number exists.
+
+**The instrument landed 20260805 17:36 (`1511be4`); the measurement has not been taken.** Run
+`tools/measure_sync_cpu.py --interval 1 -- uv run pnk sync --kb <path> --rebuild` against a corpus of
+≥50 documents — **not** `tests/demo-kb`, whose 30 short documents cannot saturate anything.
+
+**Two things about the number it returns, both measured rather than assumed.** It samples the whole
+**process tree**: the first version watched only the launched pid, so `uv run` — which burns nothing
+while its child does the work — reported **0.0 cores for a one-core load that read 1.0 directly**.
+That wrong answer would not have looked broken; it would have looked like this item's finding. And
+`%cpu` is a **decaying average over up to a minute** (`man ps`), not an instantaneous reading, which
+suits a steady-state multi-minute sync but means a *low* peak is much weaker evidence of an idle
+machine than a high peak is of a busy one.
 
 **Then, only if the measurement says single-core:** parallelise the document loop, sized
 `os.cpu_count()` less one or two. **Do not stack a process pool on top of a threaded backend** — N
@@ -104,7 +107,7 @@ minutes it returns. Recorded so the analysis is not redone.
 
 ---
 
-### 6 · Numbered plain-text headings are not detected, and the graph result is bounded by it
+### 4 · Numbered plain-text headings are not detected, and the graph result is bounded by it
 
 **Decided by the user 20260805: detection first (shipped), then an opt-in grammar. This is the
 second half.** `chunk.py` runs heading detection for `markdown` only; every other source type takes
@@ -117,9 +120,17 @@ the expansion channel's gate was measured against. The honest reading of that ga
 kinds that worked did not help this corpus"*, never *"graph structure does not help"*
 ([`20260804_1442-decision-g3-go.md`](20260804_1442-decision-g3-go.md)).
 
-**Required:** numbered-heading detection for plain text behind a **new `[chunking] strategy`
-value**, opt-in — never a change to what `structural` does today. `manifest.py` already has the
-extension point: `CHUNK_STRATEGIES = ("structural",)`, validated by `table.choice(...)`.
+**Required:** numbered-heading detection for plain text, **opt-in** — never a change to what
+`structural` does today.
+
+**How it is switched on is open, and this file no longer answers it.** An earlier draft of this item
+asserted "a new `[chunking] strategy` value" as required. That was written before the analysis in
+[`20260805_1721-metadata-as-retrieval-context.md` § 5.1](20260805_1721-metadata-as-retrieval-context.md),
+which found the choice is a **permanent contract needing the user**: `strategy` is *inert today* —
+validated by `table.choice` and never read at runtime — so adding a second value makes a dead key
+live and gives `structural` a meaning it has never had, retroactively, in every manifest already
+written. The alternative is a separate key. **§5.1 owns that question; nothing here overrides it**,
+and per this file's own header, an item that reads as a question is a defect in the item.
 
 **Two of the four blocking questions are DECIDED 20260805 13:13** ([`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_1313-decisions-init-titles-and-grammar.md)):
 
@@ -159,6 +170,8 @@ reported, never gated.
 
 | Was | Closed by |
 |---|---|
+| `pnk doctor` printed the operator's home directory — absolute paths in the one command whose output is the natural thing to paste into an issue | Landed 20260805 (`293bf37`). A `_de_homed` helper strips the KB root's prefix from any message or remedy `doctor.py` forwards. The scope is what makes it right: `store.py`, `sidecar.py` and `ledger.py` all build their text from an absolute path because `manifest.root` is resolved, so the fix sits at the forwarding boundary rather than in each raiser. A path genuinely **outside** the KB — the model cache, a linked KB, a packaged `prices.toml` — is left exactly as printed |
+| The `[light]` first-sync error prescribed the 2 GB install to a user who chose `[light]` — `sentence-transformers` missing, `fastembed` sitting right there, and the message offered only the torch install the extra exists to avoid | Landed 20260805 17:31 (`43cef55`). `BackendMissingError` takes an `alternative`; `embed.py` finds it with `find_spec` and **never by loading it**, the same reasoning `CLAUDE.md` pins for the paid extractor — a check must not have the side effects of the thing it checks. When an alternative exists the remedy names only the manifest edit, per this item's own test. Its retrospective is the durable part: the pre-existing test looked environment-independent and was not — it blocked only `sentence_transformers`, leaving this checkout's transitively-installed `fastembed` genuinely importable, so both tests now monkeypatch `find_spec` and **name their precondition instead of inheriting `site-packages`** |
 | `strategy = "structural"` degraded to size-based chunking in silence — a 300-RFC corpus indexed **106 806 chunks with every `heading_path` empty**, and nothing said so. Three of the seven edge kinds derive from `heading_path`, so they derived **zero** edges on the corpus the graph release's gate was measured against | Detection shipped 20260805 (`_heading_coverage` in `doctor.py`). **This item's own diagnosis was wrong and is corrected here:** it said the Markdown heading grammar "is Markdown-shaped; RFC section numbering is not, so nothing matches", which describes a regex failing to match. What actually happens is `chunk.py:131` — `blocks = _markdown_blocks(text) if kind == "markdown" else _plain_blocks(text)`. `_markdown_blocks` is **never called** for a `.txt` file, and `_plain_blocks` sets `heading_path=None` unconditionally (`chunk.py:254`). **Nothing failed to match because nothing was tried**, which is why tightening a grammar would have fixed nothing. Its evidence line — *"`grep heading src/pinakes/doctor.py` returns nothing"* — has been false since G6. The remaining half, an opt-in grammar for numbered plain text, is live below |
 | `pnk doctor`'s model-coherence remedy destroyed an interrupted sync's work — a first sync killed mid-run leaves `meta` with no embedding identity, which read as a model *mismatch* and printed `pnk sync --rebuild`, discarding every embedding already written | 20260804 13:21. `search.py` raises a new `IncompleteIndexError` only when **none** of the identity keys are present; `doctor.py` reports it as its own check, `sync completeness`, WARN, remedy `pnk sync`. A *partial* `meta` falls through to `CoherenceError` — a missing key never equals the expected value — so it can never land in the benign branch. Write order deliberately unchanged: moving the identity write earlier would let a half-built index claim coherence with a model it was only partly embedded under |
 | The sync lock's timestamp was UTC while every other stamp was local — identical format, no marker, different clocks, so in summer a lock taken 30 seconds ago read as two hours old | 20260804 13:21. `sync.py`'s `stamp` and `_estimate_only`'s price clock both use `datetime.now(UTC)`, matching `lock.py`. Pinned by tests that run under a non-UTC timezone — the first draft used the file's own `run()` helper, which hardcodes `now=`, and would have passed whichever clock the code used |
