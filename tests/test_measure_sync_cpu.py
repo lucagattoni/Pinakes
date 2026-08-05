@@ -72,14 +72,27 @@ def test_a_launcher_is_measured_by_its_child_not_by_itself() -> None:
 
 def test_reports_cores_the_way_macos_percent_converts_to_them() -> None:
     """98% on a 10-core box is one core; 750% is seven — item 6's own worked examples, exercised
-    through the CLI's own unit conversion rather than a private helper."""
+    through the CLI's own unit conversion rather than a private helper.
+
+    **The tolerance is the point, and an exact comparison here is a bug, not rigour.** The two
+    numbers on the line are rendered at *different* precisions — percent at 0 dp, cores at 1 dp —
+    so they are two roundings of one value, not one value printed twice. `pytest.approx`'s default
+    relative tolerance demanded they agree exactly, which held only while a single-process reading
+    sat at exactly `100.0`; the moment a tree sum read `101.4` CI failed on `"101"/100 != 1.0`
+    (20260805, the `light pdf` leg alone — the other two legs rounded agreeably and passed, which
+    is what a coin-flip assertion looks like).
+
+    0.5 of display error in the percent is 0.005 of a core, plus 0.05 from the cores field's own
+    rounding: 0.055 is the largest honest disagreement, so anything beyond 0.06 is arithmetic
+    rather than formatting. That still fails a missing `/100` (1.0 against 101), a wrong divisor,
+    or a swapped pair — the conversion defects the assertion is here for.
+    """
     result = _run("--interval", "0.05", "--", sys.executable, "-c", _BUSY)
     assert "cores)" in result.stdout
-    # The peak line's own percent and its own /100 conversion must agree with each other.
     peak_line = next(line for line in result.stdout.splitlines() if line.startswith("peak:"))
     percent = float(peak_line.split("%")[0].split(":")[1].strip())
     cores = float(peak_line.split("(")[1].split(" cores")[0])
-    assert cores == pytest.approx(percent / 100.0)
+    assert cores == pytest.approx(percent / 100.0, abs=0.06)
 
 
 def test_propagates_the_measured_commands_exit_code() -> None:
