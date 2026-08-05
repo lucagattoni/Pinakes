@@ -182,7 +182,17 @@ orphaned sidecars, duplicate IDs, dangling links and link coverage, recorded fai
 cache stats, PDF text yield, the completeness audit's below-median pages, the 50k-chunk NumPy
 threshold, held sync locks, hook status, the price table's age,
 unknown-outcome ledger records, whether a paid backend is configured on a KB whose hooks force
-the free one, the highest-degree structural edge hubs, heading coverage, and chunking coherence.
+the free one, the highest-degree structural edge hubs, heading coverage, chunking coherence, and
+titles.
+
+**`titles` counts documents still carrying the title `sync` minted from their filename, and is
+always OK.** A filename-derived title is a legitimate state — the fallback is deliberate — so
+warning would fire on every KB whose titles nobody has curated yet, which is most of them and both
+committed corpora at 100%. It is a nudge: search results read better with a real title, and `title`
+in each `.pnk.yaml` is yours to write. **Nothing infers one for you.** Guessing from a document's
+first line was rejected: an RFC's begins `Internet Engineering Task Force (IETF)`, so inference
+mints confidently wrong titles at scale into sidecars you then commit — and a plausible wrong title
+is far harder to notice than one that is visibly a filename.
 
 **`chunking coherence` reports whether `[chunking]` has moved since the index was built.** It
 matters because an incremental sync re-chunks a document only when *the document* changed: a

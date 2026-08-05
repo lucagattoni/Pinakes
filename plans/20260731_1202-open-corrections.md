@@ -14,9 +14,10 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**One live item as of 20260805 22:11**, decided and unbuilt. It came from *building*, like
-every other item this list has held: the RFC realism corpus, the graph release measured
-against it, or the grammar built on top of both.
+**No live items as of 20260805 22:18 — the list is empty for the first time since it was
+opened on 20260731.** That is not a finish line: the list refills from *use*, and every entry
+it has ever held came from building something rather than from reading code. An empty one
+means nobody has run Pinakes lately, never that it is done.
 
 The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
 finished. Note what is **not** here: **both releases in
@@ -34,18 +35,6 @@ the seven edge kinds derived zero edges*.
 
 
 
-### 1 · Every document is titled by its filename
-
-All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so search results are unreadable. `sync` mints the title from the filename when the document has no Markdown H1 — correct for Markdown, useless for anything else.
-
-**Deliberately not worked around** by the corpus agent: hand-writing 300 titles would have hidden the finding, and editing the RFC text would have broken the licence position (verbatim reproduction is the grant).
-
-**DECIDED 20260805 13:13 — keep the filename fallback, and report it** ([`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_1313-decisions-init-titles-and-grammar.md)). The first-line heuristic is **rejected**: an RFC's first line is `Internet Engineering Task Force (IETF)`, so it would mint confidently wrong titles at scale into sidecars the user then commits, which is worse than a filename that is visibly a filename. **Required:** a `pnk doctor` check reporting documents whose `title` equals the filename stem *as minted* — detection, never guessing, and a nudge rather than a FAIL. `title` stays the user's field.
-
----
-
-
-
 
 ---
 
@@ -53,6 +42,7 @@ All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so searc
 
 | Was | Closed by |
 |---|---|
+| Every document was titled by its filename — all 300 RFC sidecars read `title: rfc9110` rather than *"HTTP Semantics"*, so search results were unreadable, and nothing reported it | 20260805 22:18. `pnk doctor`'s `titles` check counts documents still carrying the minted title, with a sample. **Always OK, never a warning**, and that is the decision rather than timidity: the filename fallback was kept deliberately, so warning would fire on every uncurated KB — most of them, and both committed corpora at **100%**. The first-line heuristic stays **rejected** — an RFC's first line is `Internet Engineering Task Force (IETF)`, so inference mints confidently wrong titles at scale into sidecars the user then commits, and a plausible wrong title is harder to notice than a visibly wrong one. The check and the minter share one `minted_title()`, because a second copy of the rule would fail silently toward reporting nothing |
 | `pnk init` could not adopt a directory that already had content — a `.git`, a `README.md` and a `pyproject.toml` made it *"not empty"*, and *"clear this one first"* is alarming about a directory holding the documents you meant to index. **Hit three times independently** | 20260805 22:11. The blanket emptiness test is gone; what replaces it is narrower and stronger — **`init` never overwrites a file that is already there**, so nothing is left for an emptiness test to protect. Adopted files are left byte-identical and named in the output. **The decision as written said to *refuse* any file `init` would write that already exists; implemented literally that refuses on `README.md` and `.gitignore`, which a real repository always has, so adoption would still have been impossible in the exact case the item exists for.** The intent — do not destroy the user's files — is honoured by never overwriting and reporting instead. Two things are called out rather than silently handled: an adopted `.gitignore` missing `.pinakes/` is flagged with the line to add, and `--ci` is refused (an explicit request, so doing nothing would be worse) **before anything is created** — a gap the removed guard had been holding, found by an existing test |
 | The heading-coverage check WARNed forever on `code` and `pdf`, which can never carry a heading path — so a KB holding one `.py` file warned on every run with a remedy amounting to *"a limit of the tool"* | 20260805 21:56, as the user decided. **WARN only when `markdown` is at 0%** — the one case a user can fix, where the chunker reads ATX headings and found none, so the corpus is being silently size-sliced. Everything else is reported **OK with a note**, because an un-actionable warning that cannot be cleared is how doctor output stops being read at all, which costs the actionable warnings too. The note now separates three facts that wore the same 0%: `text` **can** carry one (set `[chunking] headings`), `text` with the key **already set** means the grammar was offered those documents and *refused* them, and `code`/`pdf` cannot today. It also corrects a claim 0.13.0 falsified — the old remedy still said non-Markdown types cannot carry a heading path *whatever the document contains* |
 | The first sync might be using one core of ten and nobody had measured which — 300 documents over two hours, with `sync.py` embedding one document at a time in a serial loop | **Measured 20260805 21:45, and the answer is no.** 55 modern RFCs (16 557 chunks) rebuilt under `fastembed`: **peak 5.0 cores, mean 4.8 of 10**, over 1 451 samples and 1 497 s. The loop is serial and the backend underneath it is not — ONNX Runtime is already using half the machine. **So the item's own fork resolves to *do not parallelise*:** *"the backend already saturates the machine → the loop is fine, and the win is a bigger batch, not processes"*. Stacking a pool on top would hit exactly what the item warned against — two workers would consume ~9.6 of 10 cores and anything beyond that oversubscribes. **The measurement also vindicated its own instrument in the field:** in the same process tree `uv run` sat at **0.0%** while its child sustained **~490%**, which is precisely the 0.0-cores answer the pre-fix tool would have reported. **Bounded: `fastembed` only** — `sentence-transformers` needs the 2 GB `[st]` extra and stays unmeasured, so nothing here licenses a claim about it |

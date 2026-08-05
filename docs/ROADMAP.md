@@ -33,12 +33,13 @@ precision nobody measured.
   (p = 1.0000). `schema_version` 3 means **every existing KB rebuilds once**.
 - ⚠️ **`0.11.0`'s verdict is narrower than it reads** — three of the seven edge kinds derived
   **zero** edges on the corpus it was gated against
-  ([open correction 4](#open-corrections--one-live-item)). **0.12.0 ships the check that reports it**, so a
+  ([open correction 4](#open-corrections--none-live)). **0.12.0 ships the check that reports it**, so a
   future corpus cannot repeat it silently.
 - **[The template release](#the-template-release--ready-to-start) is unblocked** — plan written,
   reviewed, four decisions taken. Nobody has started it.
-- **[One open correction](#open-corrections--one-live-item)** is live, small, decided and
-  unbuilt. **Nothing is waiting on a measurement or a decision any more.**
+- **[No open corrections](#open-corrections--none-live)** — the list is empty for the first
+  time since it opened on 20260731. It refills from *use*, so that means nobody has run Pinakes
+  lately, never that it is finished.
 
 ---
 
@@ -73,7 +74,7 @@ number belongs to a release only when it is cut
 | **[0.11.0](#the-graph-release--shipped-0110)** | 20260805 07:14 | The graph release | • Structural edges at `schema_version` 3 — **every existing KB rebuilds once**<br>• `pnk doctor` reports the highest-degree hubs<br>• **The expansion channel ships `off`** — its gate improved 0 and regressed 3 |
 | **[0.12.0](#0120--the-check-that-would-have-caught-it--20260805-1802)** | 20260805 18:02 | The check that would have caught it | • `pnk doctor` reports heading-path coverage<br>• Missing-backend error names an installed alternative<br>• `pnk doctor` stops printing `$HOME`<br>• `tools/measure_sync_cpu.py` |
 | **[0.13.0](#0130--plain-text-can-carry-a-heading-path--20260805-2101)** | 20260805 21:01 | Plain text can carry a heading path | • `[chunking] headings = "numbered"`<br>• Measured on 980 real RFCs, 314/314 modern<br>• A `[chunking]` edit is no longer a silent no-op<br>• `tools/build_rfc_corpus.py` |
-| | | **[Open corrections](#open-corrections--one-live-item)** | • One live code/tooling item<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
+| | | **[Open corrections](#open-corrections--none-live)** | • None live — first time since 20260731<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
 | | | **[The template release](#the-template-release--ready-to-start)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• Not started |
@@ -514,31 +515,30 @@ false positive and took genuine documents with it.
 
 # Part 5 · What is not built
 
-## Open corrections — one live item
+## Open corrections — none live
 
-Small code and tooling items, as of 20260805 18:02. **Every one** came from *building*
-[the RFC realism corpus](#the-corpus-exists--built-20260804-0800) rather than from reading code —
-which is what that corpus was for. The interrupted-sync trio that used to sit here closed in
-[`0.10.0`](#0100--you-can-see-it-working--20260804-1335). Owned by
+**Empty as of 20260805 22:18 — the first time since this list opened on 20260731.** Owned by
 [`plans/20260731_1202-open-corrections.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md).
 
-1. **Every document is titled by its filename.** Decided, unbuilt: keep the filename fallback and
-   add a `pnk doctor` check. The first-line heuristic is **rejected** — an RFC's first line is
-   `Internet Engineering Task Force (IETF)`, and a confidently wrong title is harder to notice than
-   an obviously wrong one.
+**That is not a finish line.** The list refills from *use*: every entry it has ever held came from
+**building** something — the RFC realism corpus, or the graph release measured against it — rather
+than from reading code, which is what that corpus was for. An empty list means nobody has run
+Pinakes lately, never that it is done.
 
+**Nine items closed since 20260804**, and the pattern in them is worth more than the count:
 
+| closed in | what |
+|---|---|
+| `0.10.0` | the interrupted-sync trio |
+| `0.12.0` | the `[light]` backend error · `pnk doctor`'s home-directory leak · heading-coverage *detection* |
+| `0.13.0` | **numbered plain-text headings** as `[chunking] headings` · the **silent `[chunking]` no-op** that building it exposed |
+| unreleased | the sync-CPU question **answered by measuring** · heading coverage's **permanent WARN** narrowed · `pnk init` **adopting** a directory with content · the `titles` nudge |
 
-Seven items closed since 20260804: the `[light]` backend error, `pnk doctor`'s home-directory leak,
-the heading-coverage *detection* half — all in 0.12.0 — then **numbered plain-text heading detection
-itself** as `[chunking] headings = "numbered"` and the **silent `[chunking]` no-op** that building it
-exposed, both in 0.13.0. Since then: **the sync-CPU question, answered by measuring** (peak 5.0
-cores, mean 4.8 of 10 under `fastembed` — the loop is serial and the backend beneath it is not, so
-the answer is *do not parallelise*), and the heading-coverage check's **permanent WARN**, narrowed to
-the one case a user can act on. The chunking item's original diagnosis
-was **wrong and is corrected in the plan**: the Markdown grammar did not fail to match, it was never
-run, because `chunk.py` dispatches on source type and a `.txt` file takes `_plain_blocks`, which
-sets `heading_path=None` unconditionally.
+**Four of the nine were opened by the work that closed something else** — and one item's original
+diagnosis turned out to be wrong and was corrected rather than quietly dropped: the Markdown heading
+grammar never failed to match RFC numbering, it was **never run**, because `chunk.py` dispatches on
+source type and a `.txt` file took `_plain_blocks`, which set `heading_path=None` unconditionally.
+Nothing failed to match because nothing was tried.
 
 > The list refills from use. An empty one means nobody has run Pinakes lately, never that it is
 > finished.
@@ -621,7 +621,7 @@ carries a `heading_path`. **The reason is not the one first recorded here.** The
 fail to match RFC section numbering — it was never run: `chunk.py` dispatches on *source type*, and
 every type but `markdown` takes `_plain_blocks`, which sets `heading_path=None` unconditionally.
 Nothing failed to match because nothing was tried, which is why tightening a grammar would have
-fixed nothing ([open correction 4](#open-corrections--one-live-item)). So the verdict is *"the edge kinds
+fixed nothing ([open correction 4](#open-corrections--none-live)). So the verdict is *"the edge kinds
 that worked did not help this corpus"*, never *"graph structure does not help"*. The `--drop
 parent-child` arm the arity decision added could say nothing at all here, by construction.
 
