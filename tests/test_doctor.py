@@ -1657,3 +1657,32 @@ def test_a_degree_tie_breaks_deterministically_and_the_rest_are_counted(kb: Path
         f"a degree tie must break on (kind, key), not on arrival order: {detail!r}"
     )
     assert 'tag "d"' not in detail, f"the fourth tied hub must be counted, not printed: {detail!r}"
+
+
+def test_a_cross_kind_tie_breaks_on_kind_before_key(kb: Path) -> None:
+    """The `kind` half of the tiebreak, which the same-kind fixture above cannot reach.
+
+    `nodes` is `UNIQUE (kind, key)` — **the pair, not the key** — so `key` alone is not a total
+    order over hubs and the `kind` term is doing real work whenever two kinds tie on degree.
+
+    **The fixture makes key order oppose kind order, deliberately.** Two documents in
+    `docs/shared/` carry the tag `aaa`, so a `dir` hub keyed `docs/shared` and a `tag` hub keyed
+    `aaa` both reach degree 2. Correct code sorts `(-degree, kind, key)` and prints the directory
+    first, because `"dir" < "tag"`. Drop the `kind` term and `"aaa" < "docs/shared"` puts the tag
+    first instead.
+
+    A first version of this test gave both hubs the *same* key, and a mutant with `kind` removed
+    **passed it** — Python's sort is stable, and the hubs already arrived directory-first, so the
+    assertion was satisfied by mint order rather than by the property it names. Opposing the two
+    orders is what makes the mutation observable.
+    """
+    for name in ("one", "two"):
+        _write_tagged_doc(kb, f"docs/shared/{name}.md", tags=["aaa"])
+    sync(load(kb), options=SyncOptions(), now="20260805 05:04")
+
+    status, detail = checks(kb)["edge hubs"]
+    assert status is Status.OK
+    shown = detail.partition(": ")[2]
+    assert shown.startswith('directory "docs/shared" (degree 2), tag "aaa" (degree 2)'), (
+        f"a cross-kind tie must break on kind before key: {detail!r}"
+    )
