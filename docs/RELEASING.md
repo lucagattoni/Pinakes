@@ -70,6 +70,7 @@ upload failed.** Measured on 0.9.0 and again on 0.10.0, 20260804:
 | The JSON endpoint | Returns the previous release list; still said `0.8.0` an hour after 0.9.0 uploaded | A query string, then wait — it is the slowest to settle |
 | `https://pypi.org/simple/` | Lists no file for the new version, **even with a cache-buster and `Cache-Control: no-cache`** | Nothing reliable. Do not read its silence as evidence |
 | `uv`'s own index cache | `uvx --refresh` reports the version *unsatisfiable* | `uvx --no-cache --refresh`. **`--refresh` alone is not enough** |
+| PyPI's index itself | Even `--no-cache` cannot resolve a version that uploaded seconds ago | **Wait and retry** — measured ~90 s on 0.11.0. Poll in a loop rather than concluding from one attempt |
 
 So **the order that actually settles it**: read the workflow's `Publish to PyPI` step log — it
 prints `Uploading pinakes-x.y.z-py3-none-any.whl` per file and cannot be cached — then confirm with
