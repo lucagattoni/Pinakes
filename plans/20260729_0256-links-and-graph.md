@@ -634,7 +634,13 @@ rows in [`docs/VERIFICATION.md`](../docs/VERIFICATION.md).
 
 ---
 
-### G5 — The expansion channel, default off, and its gate
+### G5 — The expansion channel, default off, and its gate ✅ built; **gate run 20260804 22:52, did not pass**
+
+**Its deliverable is a measurement, and the measurement is negative.** `expand` ships `off`;
+licensing p = 1.0000; nothing lifted and three questions regressed
+([`docs/STATUS.md`](../STATUS.md#did-the-expansion-channel-earn-its-default--no-measured-20260804-2252)). The pre-commitment held — nothing tuned, no weight moved, no
+threshold revisited after seeing the number. **G6 is what remains.** The spec below is left as
+written: it is what was built against.
 
 **Follows G3.** G2's precondition is met on the RFC realism corpus — the multi-hop class has **12**
 failing questions to move, not one ([`20260804_1442-decision-g3-go.md`](20260804_1442-decision-g3-go.md)).

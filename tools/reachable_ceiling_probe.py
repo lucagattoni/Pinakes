@@ -112,7 +112,7 @@ import tempfile
 import unicodedata
 import zlib
 from collections.abc import Callable, Iterable, Mapping, Sequence, Set
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -1021,7 +1021,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             root = args.kb
         kb_root = str(Path(root).resolve())
 
-        manifest = load(root)
+        # `graph_channel` forced off, whatever the manifest says (G5). This probe measures the
+        # ceiling *from the two-list fused seeds*; on a KB with the channel on, `fused_candidates`
+        # would hand it seeds the channel had already expanded and the ceiling would be measured
+        # against itself. The 12-failing/9-liftable figure the graph release was unblocked on was
+        # produced before the setting existed, so this keeps a re-run comparable with it.
+        manifest = replace(load(root), retrieval=replace(load(root).retrieval, graph_channel="off"))
         questions_path = root / "eval" / "questions.yaml"
         questions = load_questions(questions_path)
         connection = store.connect_ro(manifest.index_path)

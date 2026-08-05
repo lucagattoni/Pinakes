@@ -474,7 +474,15 @@ which is what that corpus was for. The interrupted-sync trio that used to sit he
 
 ## The graph release — building since 20260804
 
-▶ **Building.** Blocked for three days on a corpus, not on code; the corpus cleared it.
+▶ **Built, measured, and its channel ships `off`.** Blocked for three days on a corpus, not on
+code; the corpus cleared the *reachability* precondition — and then the retrieval gate, run
+20260804 22:52, did not pass. `expand` defaults `off` ([the numbers](STATUS.md#did-the-expansion-channel-earn-its-default--no-measured-20260804-2252)). **G6 remains**: hub
+reporting, verification, the cut.
+
+**The finding is worth more than the feature.** The reachability probe found 9 failing multi-hop
+questions reachable within two hops; the retrieval instrument lifted **none** of them, and the
+channel displaced three answers the existing fusion already had. `reachable ≠ retrievable`, by 9
+against 0.
 
 **What it adds:** structural edges derived at sync time (sibling, parent/child, in-section,
 co-located, shared-tag), an expansion channel behind `graph_channel` (default off), and

@@ -17,7 +17,7 @@ Three things here are load-bearing beyond "it returns results":
 
 import re
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -28,6 +28,9 @@ from pinakes.embed import EmbeddingBackend, Reranker
 from pinakes.errors import CoherenceError, ExtractionCoherenceError, IncompleteIndexError
 from pinakes.extract import fingerprint as extraction_fingerprint
 from pinakes.extract import is_paid_backend, registered_extractors
+from pinakes.graph import channel as graph_channel
+from pinakes.graph.channel import GATED_RANKING, Ranking, Reached
+from pinakes.graph.edges import select_kinds
 from pinakes.ids import DocId
 from pinakes.manifest import Manifest
 
@@ -252,7 +255,17 @@ def _vector(
     *,
     dim: int,
     limit: int,
+    similarity: dict[int, float] | None = None,
 ) -> list[int]:
+    """The vector ranking. When `similarity` is given it is **filled** with every chunk's cosine.
+
+    The graph channel ranks its neighbours by cosine, and those neighbours are by construction
+    chunks the candidate cut kept out of the ranking returned here — so it needs scores this
+    function already computed and threw away. Filled rather than recomputed, so the two rankings
+    cannot come from two different embeddings of one query; and only on request, because on a
+    106 806-chunk corpus this dict is the one allocation the channel adds to a query that would
+    otherwise not want it.
+    """
     chunk_ids, matrix = store.load_vectors(connection, dim=dim)
     if not chunk_ids:
         return []
@@ -269,6 +282,9 @@ def _vector(
     # gained nor lost anything — measured 20260801 at 500 of 500 random tie-heavy arrays. A stable
     # sort keeps ties in the array's own order, which the line above makes corpus order.
     order = np.argsort(-similarities, kind="stable")
+
+    if similarity is not None:
+        similarity.update(zip(chunk_ids, (float(value) for value in similarities), strict=True))
 
     ranked: list[int] = []
     for position in order:
@@ -292,10 +308,15 @@ def _normalise(
     return np.divide(matrix, np.where(norms == 0, 1, norms))
 
 
-def _fuse(lexical: Sequence[int], vector: Sequence[int]) -> dict[int, float]:
-    """Reciprocal Rank Fusion. Rank-based, so BM25 and cosine never need a common scale."""
+def _fuse(*rankings: Sequence[int]) -> dict[int, float]:
+    """Reciprocal Rank Fusion. Rank-based, so BM25 and cosine never need a common scale.
+
+    Variadic since G5: the graph channel is a **third** input, and an empty third ranking
+    contributes nothing to any score and no key to the dict — so `graph_channel = "expand"` over an
+    empty edge set is not merely close to today's two-list fusion, it is the same arithmetic.
+    """
     scores: dict[int, float] = {}
-    for ranking in (lexical, vector):
+    for ranking in rankings:
         for position, chunk_id in enumerate(ranking):
             scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (RRF_K + position + 1)
     return scores
@@ -316,6 +337,12 @@ class Fused:
     scores: dict[int, float]
     lexical_rank: dict[int, int]
     vector_rank: dict[int, int]
+    graph: tuple["Reached", ...] = ()
+    """What the expansion channel contributed, best first — empty when `graph_channel = "off"`,
+    and empty when it is `"expand"` over an edge set that reaches nothing. Carried so a caller can
+    tell those two apart from the outside, which `tools/graph_matrix.py` needs to report which edge
+    kind carried a lifting path."""
+
     reason: str | None = None
     """Why `order` is empty, when it is. The two cases are reported differently: nothing survived
     the filters at all, versus neither retriever matched anything."""
@@ -328,6 +355,8 @@ def fused_candidates(
     *,
     backend: EmbeddingBackend,
     filters: Filters | None = None,
+    edge_kinds: Collection[str] | None = None,
+    ranking: Ranking = GATED_RANKING,
 ) -> Fused:
     """Filter, BM25, vectors, RRF — every stage up to the `fusion_top_k` cut.
 
@@ -335,14 +364,21 @@ def fused_candidates(
     entry point: calling it on an index built by a different embedding model compares the query
     against vectors that mean something else and returns confident nonsense (§4.4). Anything
     reaching for it directly runs the gate itself first.
+
+    `edge_kinds` selects what the graph channel may walk, and is ignored when the channel is off.
+    It exists because G5's gate is computed **with and without authored edges** and reports a
+    `--drop sibling` and a `--drop parent-child` arm beside it: all four are one kind selection at
+    read time, never a second derivation and never a rebuild (`edges.select_kinds`).
     """
     filters = filters or Filters()
     settings = manifest.retrieval
+    expanding = settings.graph_channel == "expand"
 
     allowed = _allowed_chunks(connection, filters)
     if not allowed:
         return Fused((), {}, {}, {}, reason="nothing matched the filters")
 
+    similarity: dict[int, float] | None = {} if expanding else None
     lexical = _lexical(connection, query, allowed, settings.candidates_per_source)
     vector = _vector(
         connection,
@@ -351,11 +387,40 @@ def fused_candidates(
         allowed,
         dim=manifest.embedding.dim,
         limit=settings.candidates_per_source,
+        similarity=similarity,
     )
 
     fused = _fuse(lexical, vector)
     if not fused:
         return Fused((), {}, {}, {}, reason="no candidates")
+
+    reached: tuple[Reached, ...] = ()
+    if expanding:
+        # **The roots are the two-list fused top-*k***, cut here rather than read back off the
+        # `Fused` this function is about to return: that one is fused over three rankings, so
+        # seeding from it would make the channel's own contribution decide its own roots.
+        roots = sorted(fused, key=lambda cid: -fused[cid])[: settings.fusion_top_k]
+        reached = tuple(
+            candidate
+            for candidate in graph_channel.expand(
+                connection,
+                roots,
+                similarity=similarity or {},
+                kinds=select_kinds() if edge_kinds is None else edge_kinds,
+                local_kb=str(manifest.kb.id),
+                adjacent_k=settings.adjacent_k,
+                limit=settings.candidates_per_source,
+                ranking=ranking,
+                # The filters are the caller's, and the graph does not know about them. Handed in
+                # rather than applied to the result: a neighbour outside them is a row this search
+                # was told not to return, and one filtered afterwards has already spent a slot of
+                # the fan-out budget. Kept as a second check here because a filter that bounds a
+                # walk and a filter that bounds a result are two claims, and only one is cheap.
+                allowed=allowed,
+            )
+            if candidate.chunk_id in allowed
+        )
+        fused = _fuse(lexical, vector, [candidate.chunk_id for candidate in reached])
 
     # This `sorted` decides which candidates survive the `fusion_top_k` cut, and equal fused scores
     # are common — two chunks found at the same rank by one retriever and by neither the other score
@@ -368,6 +433,7 @@ def fused_candidates(
         scores=fused,
         lexical_rank={chunk_id: rank for rank, chunk_id in enumerate(lexical)},
         vector_rank={chunk_id: rank for rank, chunk_id in enumerate(vector)},
+        graph=reached,
     )
 
 
@@ -395,12 +461,22 @@ def search(
     reranker: Reranker | None = None,
     filters: Filters | None = None,
     limit: int | None = None,
+    edge_kinds: Collection[str] | None = None,
+    ranking: Ranking = GATED_RANKING,
 ) -> SearchResult:
     stale_paid = check_coherence(connection, manifest)
     filters = filters or Filters()
     final_k = limit or manifest.retrieval.final_k
 
-    candidates = fused_candidates(connection, manifest, query, backend=backend, filters=filters)
+    candidates = fused_candidates(
+        connection,
+        manifest,
+        query,
+        backend=backend,
+        filters=filters,
+        edge_kinds=edge_kinds,
+        ranking=ranking,
+    )
     if not candidates.order:
         reason = candidates.reason or "no candidates"
         return SearchResult(query, (), UNKNOWN, reason, 0, filters)

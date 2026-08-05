@@ -33,7 +33,7 @@ stating, because both are load-bearing:
 import json
 import re
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -44,6 +44,8 @@ from ruamel.yaml.constructor import DuplicateKeyError
 from pinakes import store
 from pinakes.embed import EmbeddingBackend, Reranker, load_backend, load_reranker
 from pinakes.errors import EvalError
+from pinakes.graph.channel import GATED_RANKING, Ranking
+from pinakes.graph.edges import ALL_KINDS, select_kinds
 from pinakes.manifest import Manifest
 from pinakes.search import HIGH, LOW, UNKNOWN, Filters, search
 
@@ -350,9 +352,20 @@ def evaluate(
     backend: EmbeddingBackend,
     reranker: Reranker | None,
     k: int = DEFAULT_K,
+    edge_kinds: Collection[str] | None = None,
+    ranking: Ranking = GATED_RANKING,
 ) -> tuple[Metrics, list[Outcome]]:
     outcomes = [
-        _run_question(connection, manifest, question, backend=backend, reranker=reranker, k=k)
+        _run_question(
+            connection,
+            manifest,
+            question,
+            backend=backend,
+            reranker=reranker,
+            k=k,
+            edge_kinds=edge_kinds,
+            ranking=ranking,
+        )
         for question in questions
     ]
     return score_rows([outcome.row() for outcome in outcomes]), outcomes
@@ -366,11 +379,20 @@ def _run_question(
     backend: EmbeddingBackend,
     reranker: Reranker | None,
     k: int,
+    edge_kinds: Collection[str] | None = None,
+    ranking: Ranking = GATED_RANKING,
 ) -> Outcome:
     followed = 0
     for hop in question.hops[:-1]:
         result = search(
-            connection, manifest, hop.query, backend=backend, reranker=reranker, limit=k
+            connection,
+            manifest,
+            hop.query,
+            backend=backend,
+            reranker=reranker,
+            limit=k,
+            edge_kinds=edge_kinds,
+            ranking=ranking,
         )
         if hop.expect in {passage.path for passage in result.passages}:
             followed += 1
@@ -384,6 +406,8 @@ def _run_question(
         reranker=reranker,
         filters=question.filters,
         limit=k,
+        edge_kinds=edge_kinds,
+        ranking=ranking,
     )
 
     retrieved: list[str] = []
@@ -460,7 +484,12 @@ def _ratio(numerator: float, denominator: int) -> float:
 
 
 def run(
-    kb_root: Path, *, questions_path: Path | None = None, k: int = DEFAULT_K
+    kb_root: Path,
+    *,
+    questions_path: Path | None = None,
+    k: int = DEFAULT_K,
+    drop: Collection[str] = (),
+    ranking: Ranking = GATED_RANKING,
 ) -> tuple[Metrics, list[OutcomeRow], dict[str, Any]] | None:
     """Evaluate a KB against its golden set, loading whatever backend its manifest names.
 
@@ -476,19 +505,41 @@ def run(
     if not questions:
         return None
 
+    # Refused here rather than at the walk, so a mistyped `--drop sibbling` cannot produce a green
+    # run of the arm nobody measured (`edges.select_kinds`). Computed even when the channel is off,
+    # because the header records it either way and a typo must not survive to the artifact.
+    edge_kinds = select_kinds(drop=drop)
+
     backend = load_backend(manifest.embedding)
     reranker = load_reranker(manifest.rerank) if manifest.retrieval.rerank == "local" else None
     connection = store.connect_ro(manifest.index_path)
     try:
         metrics, outcomes = evaluate(
-            connection, manifest, questions, backend=backend, reranker=reranker, k=k
+            connection,
+            manifest,
+            questions,
+            backend=backend,
+            reranker=reranker,
+            k=k,
+            edge_kinds=edge_kinds,
+            ranking=ranking,
         )
     finally:
         connection.close()
-    return metrics, [outcome.row() for outcome in outcomes], _header(manifest, k=k)
+    return (
+        metrics,
+        [outcome.row() for outcome in outcomes],
+        header(manifest, k=k, edge_kinds=edge_kinds, ranking=ranking),
+    )
 
 
-def _header(manifest: Manifest, *, k: int) -> dict[str, Any]:
+def header(
+    manifest: Manifest,
+    *,
+    k: int,
+    edge_kinds: Collection[str] = ALL_KINDS,
+    ranking: Ranking = GATED_RANKING,
+) -> dict[str, Any]:
     """What an artifact was produced under — every setting that can move a row.
 
     Two artifacts compared against each other must have been produced by the same pipeline in the
@@ -496,11 +547,27 @@ def _header(manifest: Manifest, *, k: int) -> dict[str, Any]:
     before file and an after file are otherwise indistinguishable on inspection.
 
     Explicit rather than a dump of `manifest.retrieval`, so that adding a retrieval field is a
-    decision about this header rather than a silent change to every artifact's bytes. The
-    expansion channel's setting joins `retrieval` here when it exists.
+    decision about this header rather than a silent change to every artifact's bytes.
+
+    **Public since G5**, so `tools/graph_matrix.py` writes the header this function defines rather
+    than a second one beside it: the gate identifies a leg by its header, and two functions that
+    can drift are two ways to label a leg wrongly.
+
+    **`graph_channel` and `edge_kinds` are the two G5 added, and they are not one field.** The
+    gate's three legs are `off`, `expand` without authored edges and `expand` with them: the first
+    differs from the other two in the channel setting and the last two differ only in the edge-set
+    variant, so an artifact recording one of the pair would leave two of the three legs
+    indistinguishable on inspection — the exact failure this header exists to prevent.
     """
     settings = manifest.retrieval
     return {
+        "graph_channel": settings.graph_channel,
+        "edge_kinds": sorted(edge_kinds),
+        "dropped": sorted(set(ALL_KINDS) - set(edge_kinds)),
+        "ranking": {
+            "link_distance": ranking.link_distance,
+            "in_degree_salience": ranking.in_degree_salience,
+        },
         "schema": OUTCOMES_SCHEMA,
         "k": k,
         "embedding": {
@@ -520,6 +587,7 @@ def _header(manifest: Manifest, *, k: int) -> dict[str, Any]:
             "final_k": settings.final_k,
             "rerank": settings.rerank,
             "vector_tier": settings.vector_tier,
+            "adjacent_k": settings.adjacent_k,
         },
     }
 
@@ -646,9 +714,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--write-baseline", action="store_true")
     parser.add_argument("-k", type=int, default=DEFAULT_K)
+    parser.add_argument(
+        "--drop",
+        action="append",
+        default=[],
+        metavar="KIND",
+        help=(
+            "edge kind the graph channel may not walk, repeatable "
+            f"({', '.join(ALL_KINDS)}). Ignored when graph_channel is off"
+        ),
+    )
     args = parser.parse_args(argv)
 
-    result = run(args.kb, questions_path=args.questions, k=args.k)
+    result = run(args.kb, questions_path=args.questions, k=args.k, drop=args.drop)
     if result is None:
         print(EMPTY_SET_SKIP.format(path=args.questions or (args.kb / "eval" / "questions.yaml")))
         return 0
