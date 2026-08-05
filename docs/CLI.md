@@ -165,7 +165,22 @@ orphaned sidecars, duplicate IDs, dangling links and link coverage, recorded fai
 cache stats, PDF text yield, the completeness audit's below-median pages, the 50k-chunk NumPy
 threshold, held sync locks, hook status, the price table's age,
 unknown-outcome ledger records, whether a paid backend is configured on a KB whose hooks force
-the free one, and the highest-degree structural edge hubs (G6).
+the free one, the highest-degree structural edge hubs, and heading coverage.
+
+**`heading coverage` reports what share of indexed chunks carry a `heading_path`, and WARNs when a
+source type carries none at all.** The predicate is **zero for a source type**, never a fitted
+share: a document's chunks before its first heading legitimately have none, so a partial share is
+ordinary, while a whole source type at zero means the structure was never extracted. Two causes and
+they need different answers — a source type that *cannot* carry one (heading detection runs for
+`markdown` only; everything else goes through the plain-text path), versus a Markdown corpus using
+a convention the grammar does not recognise.
+
+**It matters beyond citations.** `heading_path` is what the `in-section`, `parent` and `child`
+edges derive from, so a corpus at zero derives none of them — and a graph measurement over such a
+corpus reads as *"structure does not help"* when what it measured is *"the structure was never
+extracted"*. That is not hypothetical: it bounded the graph release's own gate
+([STATUS](STATUS.md#did-the-expansion-channel-earn-its-default--no-measured-20260804-2252)).
+Counted over chunks in the index, never by re-chunking a sample.
 
 **`edge hubs` reports G3's derived graph, read rather than re-derived** — the same `hub_degree()`
 the expansion channel damps by, highest first. Always OK: a big hub is not a fault on its own, since

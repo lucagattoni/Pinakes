@@ -14,9 +14,8 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**Six live items as of 20260804 13:21, all unclaimed.** Every one came from *building* the RFC
-realism corpus rather than from reading the code — which is what that corpus was for. The
-interrupted-sync trio that stood here closed with `20260804_1218-interrupted-sync`.
+**Six live items as of 20260805 08:15.** Every one came from *building* — the RFC realism corpus, or the graph release measured against it — rather than from reading the code.
+**Three are in flight** on branches not yet landed: the `[light]` first-sync error, `pnk doctor`'s absolute paths, and the sync CPU measurement. **Two need a planner decision before anyone builds them** (`pnk init` adoption, and titles), and they say so in their own text.
 
 The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
 finished. Note what is **not** here: the links release is complete and the graph release is
@@ -29,17 +28,8 @@ so none of these unblocks it — the corpus does
 ## Live
 
 
-### 1 · `strategy = "structural"` degrades to size-based chunking in silence
 
-**Measured on the RFC corpus:** **106 806 chunks, every one with `heading_path` empty** — over 300 RFCs, the most rigidly sectioned plain text in existence. The heading grammar is Markdown-shaped; RFC section numbering is not, so nothing matches and the strategy quietly becomes size-based. Nothing warns: `grep heading src/pinakes/doctor.py` returns nothing.
-
-**Two consequences, and the second is why this is not cosmetic.** Citations lose their heading component for the whole corpus. And `heading_path` is what `in-section`, `parent` and `child` derive from — **three of G3's seven edge kinds derive zero edges on a corpus whose headings were not recognised**, which a graph measurement would read as "structure does not help".
-
-**Required:** a `pnk doctor` check reporting the share of chunks with an empty `heading_path`, WARN past a threshold, naming `[chunking] strategy` and the corpus's format. Detection, not a new grammar — extending the grammar to RFC numbering is a separate decision. **The check must count over chunks actually in the index**, never re-chunk a sample: a check that re-derives its own input is checking a copy.
-
----
-
-### 2 · The `[light]` first-sync error prescribes the 2 GB install to a user who chose `[light]`
+### 1 · The `[light]` first-sync error prescribes the 2 GB install to a user who chose `[light]`
 
 A first sync on a `[light]` install fails naming `sentence-transformers` — the torch dependency the extra exists to avoid — while `fastembed` is installed and visible. The manifest edit (two `provider` lines) is the actual fix and the message does not mention it, though `README.md` and `docs/GUIDE.md` both do.
 
@@ -47,7 +37,7 @@ A first sync on a `[light]` install fails naming `sentence-transformers` — the
 
 ---
 
-### 3 · `pnk init` cannot adopt a directory that already has content
+### 2 · `pnk init` cannot adopt a directory that already has content
 
 `_check_target` refuses a non-empty directory, so a KB cannot be initialised inside an existing repository — which is what [`20260801_0749-realism-corpus.md`](20260801_0749-realism-corpus.md) prescribes and what everyone does: create the repo, clone it, then init. A `.git`, a README and a `pyproject.toml` are already "not empty", and the message *"clear this one first"* is alarming when the directory holds the documents.
 
@@ -56,7 +46,7 @@ A first sync on a `[light]` install fails naming `sentence-transformers` — the
 ---
 
 
-### 4 · Every document is titled by its filename
+### 3 · Every document is titled by its filename
 
 All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so search results are unreadable. `sync` mints the title from the filename when the document has no Markdown H1 — correct for Markdown, useless for anything else.
 
@@ -64,14 +54,14 @@ All 300 sidecars carry `title: rfc9110` rather than *"HTTP Semantics"*, so searc
 
 ---
 
-### 5 · `pnk doctor` prints the operator's home directory
+### 4 · `pnk doctor` prints the operator's home directory
 
 Absolute paths in output that is the natural thing to paste into an issue. **Required:** print paths relative to the KB root where they are inside it. Minor, but it is the one command whose output gets shared.
 
 ---
 
 
-### 6 · The first sync may be using one core of ten, and nobody has measured which
+### 5 · The first sync may be using one core of ten, and nobody has measured which
 
 **Raised 20260804 13:10, from the RFC corpus run.** 300 documents took over two hours at ~2.4
 documents/minute. `sync.py:1863` embeds one document at a time — `backend.embed([chunk.text for
@@ -110,10 +100,53 @@ minutes it returns. Recorded so the analysis is not redone.
 
 ---
 
+### 6 · Numbered plain-text headings are not detected, and the graph result is bounded by it
+
+**Decided by the user 20260805: detection first (shipped), then an opt-in grammar. This is the
+second half.** `chunk.py` runs heading detection for `markdown` only; every other source type takes
+`_plain_blocks`, which records no `heading_path` at all. So a rigidly sectioned `.txt` corpus is
+chunked size-based however structural the manifest says it is.
+
+**Why it is not cosmetic.** `heading_path` is what `in-section`, `parent` and `child` derive from.
+On the RFC corpus those three of seven edge kinds derived **zero** edges — and that is the corpus
+the expansion channel's gate was measured against. The honest reading of that gate is *"the edge
+kinds that worked did not help this corpus"*, never *"graph structure does not help"*
+([`20260804_1442-decision-g3-go.md`](20260804_1442-decision-g3-go.md)).
+
+**Required:** numbered-heading detection for plain text behind a **new `[chunking] strategy`
+value**, opt-in — never a change to what `structural` does today. `manifest.py` already has the
+extension point: `CHUNK_STRATEGIES = ("structural",)`, validated by `table.choice(...)`.
+
+**Four things must be decided and recorded before it is built — they are the planner's, not the
+implementer's:**
+
+1. **The value's name and scope.**
+2. **Does it cover `pdf` as well as `text`?** Both take `_plain_blocks`. A PDF is the source type
+   least able to verify its own structure.
+3. **`requires_pinakes`.** An older Pinakes meets the new value through `table.choice` and rejects
+   it as an *unknown value* — reading as a typo, which is exactly the confusion G4 exists to
+   prevent. Decide whether shipping it sets a floor.
+4. **False positives, written before the rule is fitted.** `1.` at line start is also an ordered
+   list. The predicate must be stated first and tested against the RFC corpus second, never derived
+   from it.
+
+**The eval risk is unusually well bounded, and that is worth using.** `tests/demo-kb` is Markdown,
+so a plain-text-only grammar **cannot** move the golden set — which makes `CLAUDE.md`'s "changing
+retrieval needs eval justification" provable rather than arguable here. Run it anyway and report
+before/after: **no movement is the expected result, and movement would itself be the finding.**
+
+**Re-running the graph gate afterwards is a separate decision.** It costs ~2 h of CPU embedding plus
+a `schema_version` 3 rebuild, and the anti-circularity discipline is not optional if it happens —
+questions stay frozen, nothing is tuned after seeing a number, and `expand-in-degree` stays
+reported, never gated.
+
+---
+
 ## Closed — recorded so nobody reopens them
 
 | Was | Closed by |
 |---|---|
+| `strategy = "structural"` degraded to size-based chunking in silence — a 300-RFC corpus indexed **106 806 chunks with every `heading_path` empty**, and nothing said so. Three of the seven edge kinds derive from `heading_path`, so they derived **zero** edges on the corpus the graph release's gate was measured against | Detection shipped 20260805 (`_heading_coverage` in `doctor.py`). **This item's own diagnosis was wrong and is corrected here:** it said the Markdown heading grammar "is Markdown-shaped; RFC section numbering is not, so nothing matches", which describes a regex failing to match. What actually happens is `chunk.py:131` — `blocks = _markdown_blocks(text) if kind == "markdown" else _plain_blocks(text)`. `_markdown_blocks` is **never called** for a `.txt` file, and `_plain_blocks` sets `heading_path=None` unconditionally (`chunk.py:254`). **Nothing failed to match because nothing was tried**, which is why tightening a grammar would have fixed nothing. Its evidence line — *"`grep heading src/pinakes/doctor.py` returns nothing"* — has been false since G6. The remaining half, an opt-in grammar for numbered plain text, is live below |
 | `pnk doctor`'s model-coherence remedy destroyed an interrupted sync's work — a first sync killed mid-run leaves `meta` with no embedding identity, which read as a model *mismatch* and printed `pnk sync --rebuild`, discarding every embedding already written | 20260804 13:21. `search.py` raises a new `IncompleteIndexError` only when **none** of the identity keys are present; `doctor.py` reports it as its own check, `sync completeness`, WARN, remedy `pnk sync`. A *partial* `meta` falls through to `CoherenceError` — a missing key never equals the expected value — so it can never land in the benign branch. Write order deliberately unchanged: moving the identity write earlier would let a half-built index claim coherence with a model it was only partly embedded under |
 | The sync lock's timestamp was UTC while every other stamp was local — identical format, no marker, different clocks, so in summer a lock taken 30 seconds ago read as two hours old | 20260804 13:21. `sync.py`'s `stamp` and `_estimate_only`'s price clock both use `datetime.now(UTC)`, matching `lock.py`. Pinned by tests that run under a non-UTC timezone — the first draft used the file's own `run()` helper, which hardcodes `now=`, and would have passed whichever clock the code used |
 | The first sync was multi-hour and completely silent — ~2.4 documents/minute, 300 documents over two hours with no output, so "working" was indistinguishable from "hung" | 20260804 13:21. `SyncOptions.progress` is called `(done, total)` after each document; the CLI wires a throttled, self-overwriting line on a TTY when not `--quiet`. An adversarial review caught the closing newline firing only at `done >= total`, so a `[budget]` cap or any early exit left a `\r`-terminated line for the report to print onto — `finish()` is now called unconditionally in a `finally` |

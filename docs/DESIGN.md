@@ -500,7 +500,11 @@ whether the configured model is present locally, and `--offline` fails fast inst
 ### 4.6 Chunking and tokens
 
 Chunks are paragraphs under a heading, and **the heading line is part of the first chunk beneath
-it** — not consumed as pure structure. The lexical index only sees chunk text, so a word appearing
+it** — not consumed as pure structure. **Heading detection runs for Markdown only.** Every other
+source type takes the plain-text path, which records no `heading_path` at all — so `structural`
+chunking on a `.txt` corpus is size-based in substance, however rigidly that corpus is sectioned.
+Nothing failed to match; nothing was tried. `pnk doctor`'s heading-coverage check exists because
+that was silent until a 106 806-chunk corpus indexed with zero heading paths and no warning. The lexical index only sees chunk text, so a word appearing
 only in a heading would otherwise be unsearchable, and a passage quoted back to the user reads
 better carrying the heading it belongs to. `heading_path` still records the hierarchy separately,
 for filtering and citation.
