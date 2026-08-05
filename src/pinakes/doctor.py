@@ -53,6 +53,7 @@ from pinakes.extract import (
 )
 from pinakes.extract import cache as extract_cache
 from pinakes.extract.floors import load_floors
+from pinakes.graph import edges as graph_edges
 from pinakes.hooks import FREE_BACKEND_FLAG, HOOKS, hooks_dir
 from pinakes.ids import DocId
 from pinakes.linkscan import (
@@ -481,6 +482,7 @@ def _index(manifest: Manifest) -> Iterator[Check]:
         yield _text_yield(manifest, connection)
         yield _calibration(manifest)
         yield _links(connection, manifest, active)
+        yield _edge_hubs(connection)
 
         if counts["chunks"] > LARGE_CORPUS_CHUNKS:
             yield Check(
@@ -678,6 +680,93 @@ def _calibration(manifest: Manifest) -> Check:
             "`unknown` rather than a number it cannot justify.",
         )
     return Check("calibration", Status.OK, f"fitted for {active}")
+
+
+EDGE_HUB_SAMPLE = 3
+"""How many of the highest-degree hubs to print — the same "top 3, and N more" shape every other
+check in this file uses for a list that could be long."""
+
+
+def _hub_label(connection: sqlite3.Connection, hub: graph_edges.Node) -> str:
+    """A name a human can act on — never a bare `nodes.id` (G6).
+
+    `tag` and `dir` keys already are the human-facing value (`derive()` keys a `dir` node on the
+    KB-root-relative directory path, so this never prints anything outside the KB). A `heading`
+    key is the one surrogate-looking id in the node model: `<doc-ulid>:<heading_path>` (G3),
+    scoped per document on purpose so no two documents can ever hub through "Introduction". Pasted
+    raw into an issue it identifies nothing; resolved against `documents.path` here, it names the
+    file and the section, which is the whole point of a report.
+    """
+    if hub.kind == "heading":
+        doc_id, _, heading_path = hub.key.partition(":")
+        row = connection.execute("SELECT path FROM documents WHERE id = ?", (doc_id,)).fetchone()
+        # `row is None` is unreachable — a heading node's doc_id names an active document in the
+        # same read that derived it — but falls back to the raw id rather than crashing, like the
+        # other defensive branches in this function.
+        location = doc_id if row is None else str(row[0])
+        return f'heading "{heading_path}" in {location}'
+    if hub.kind == "dir":
+        return f'directory "{hub.key}"'
+    if hub.kind == "tag":
+        return f'tag "{hub.key}"'
+    raise AssertionError(  # pragma: no cover — HUB_KINDS mints only heading, dir and tag nodes
+        f"{hub.kind} is not a hub node kind"
+    )
+
+
+def _edge_hubs(connection: sqlite3.Connection) -> Check:
+    """The highest-degree structural edge hubs (G6) — read, never re-derived.
+
+    G3 stores no `degree` column on purpose — "derived state inside derived state" — so this reads
+    the same divisor the expansion channel damps by: `hub_degree()`, one indexed `count(*)` per
+    hub. A hub with a very high degree is not, on its own, a problem `pnk doctor` should warn
+    about — G3's weight table damps it at read time precisely so a big hub cannot dominate a
+    query — so this check is report-only and always `Status.OK`; it exists so a hub someone is
+    curious about (or suspicious of) is one `pnk doctor` run away from a name, not a number.
+
+    Enumerating which node ids are hubs is not something G3 exposes a reader for — `hub_degree`,
+    `members`, `hubs`, `census` and `node` all take a node id they assume the caller already has —
+    so this is the one new query in the file: which `src` ids appear under each of `HUB_KINDS`.
+    Everything downstream of that id — its degree, its `(kind, key)` — comes from `hub_degree()`
+    and `node()`, not from re-deriving either. `ORDER BY src` on it, matching every read in
+    `graph.edges` — harmless here since the sort below is what actually decides print order, but
+    consistent with the file whose own docstring argues a reader should never have to ask what
+    order an unordered query happens to return.
+
+    **The sort below breaks a degree tie on `(kind, key)`, explicitly — the property that actually
+    makes the output deterministic**, since `nodes`' `UNIQUE (kind, key)` makes that pair a total
+    order over `top` with no remaining ties for arrival order to decide. Left as "whatever order
+    the rows arrived in", two hubs at equal degree would print in an order nothing here chose.
+    """
+    seen: set[int] = set()
+    top: list[tuple[graph_edges.Node, int]] = []
+    for kind in sorted(graph_edges.HUB_KINDS):
+        rows = connection.execute(
+            "SELECT DISTINCT src FROM edges WHERE kind = ? ORDER BY src", (kind,)
+        )
+        for row in rows:
+            node_id = int(row[0])
+            if node_id in seen:  # pragma: no cover — a node id belongs to exactly one hub kind
+                continue
+            seen.add(node_id)
+            node = graph_edges.node(connection, node_id)
+            if node is None:  # pragma: no cover — an edge's own `src` always names a stored node
+                continue
+            top.append((node, graph_edges.hub_degree(connection, node_id, kind)))
+
+    if not top:
+        return Check("edge hubs", Status.OK, "none")
+
+    top.sort(key=lambda item: (-item[1], item[0].kind, item[0].key))
+    shown = top[:EDGE_HUB_SAMPLE]
+    listed = ", ".join(
+        f"{_hub_label(connection, node)} (degree {degree})" for node, degree in shown
+    )
+    more = len(top) - len(shown)
+    detail = f"{len(top)} hub(s), highest degree first: {listed}"
+    if more > 0:
+        detail += f", and {more} more"
+    return Check("edge hubs", Status.OK, detail)
 
 
 def _links(connection: sqlite3.Connection, manifest: Manifest, active: int) -> Check:

@@ -693,6 +693,17 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | an index with no derived nodes walks empty rather than failing | G5 | `tests/test_graph_channel.py::test_a_kb_synced_before_the_edge_set_existed_walks_empty` |
 | the committed corpora still measure the two-list pipeline | G5 | `tests/test_graph_channel.py::test_the_corpora_are_left_alone`, `tests/test_graph_channel.py::test_the_workspace_helper_copies_rather_than_edits` |
 
+## Edge-hub reporting (G6)
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| `pnk doctor` reports the highest-degree structural edge hubs, highest first | G6 | `tests/test_doctor.py::test_edge_hubs_are_reported_highest_degree_first` |
+| a KB with no hub edges reports `none`, cleanly | G6 | `tests/test_doctor.py::test_a_kb_with_no_edges_reports_none` |
+| a `co-located` (`dir`) hub is named by its KB-root-relative path, not resolved through a lookup | G6 | `tests/test_doctor.py::test_a_directory_hub_is_named_by_its_kb_root_relative_path` |
+| a degree tie between two **different** hub kinds breaks on `kind` before `key` — `nodes` is `UNIQUE (kind, key)`, so `key` alone is not a total order | G6 | `tests/test_doctor.py::test_a_cross_kind_tie_breaks_on_kind_before_key` |
+| a degree tie breaks on `(kind, key)`, and the hubs it pushes out of the sample are still counted | G6 | `tests/test_doctor.py::test_a_degree_tie_breaks_deterministically_and_the_rest_are_counted` |
+| a hub is named for a human — a document path, never a bare `nodes.id` | G6 | `tests/test_doctor.py::test_an_edge_hub_report_names_a_document_path_never_a_bare_node_id` |
+
 ## Release machinery
 
 | What must be true | Increment | Where it is checked |

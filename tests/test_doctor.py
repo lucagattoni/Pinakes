@@ -1535,4 +1535,154 @@ def test_a_cross_kb_link_into_a_kb_not_here_is_counted_but_not_called_unresolved
     assert status is Status.OK
     assert "1 cross-KB" in detail
     assert "unresolved" not in detail
-    assert "unchecked until the links release" not in detail
+
+
+# --- edge-hub reporting (G6) -------------------------------------------------------------------
+
+
+def _write_tagged_doc(kb: Path, path: str, *, tags: Sequence[str] = ()) -> None:
+    """A document with an explicit `tags` sidecar, for building `shared-tag` hub fixtures."""
+    target = kb / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"# {Path(path).stem}\n\nSome text.\n", encoding="utf-8")
+    sidecar: dict[str, object] = {"id": str(mint_doc_id()), "title": Path(path).stem}
+    if tags:
+        sidecar["tags"] = list(tags)
+    (kb / f"{path}{SIDECAR_SUFFIX}").write_text(
+        yaml.safe_dump(sidecar, sort_keys=False), encoding="utf-8"
+    )
+
+
+def test_a_kb_with_no_edges_reports_none(kb: Path) -> None:
+    """The default fixture's one document shares no tag, heading or directory with anything, so
+    G3 derives zero hub edges. The check must say so cleanly — not crash, and not print an empty
+    table with only a header, which would read as a report that forgot to finish."""
+    sync(load(kb), options=SyncOptions(), now="20260805 05:00")
+
+    status, detail = checks(kb)["edge hubs"]
+    assert status is Status.OK
+    assert detail == "none"
+
+
+def test_edge_hubs_are_reported_highest_degree_first(kb: Path) -> None:
+    """A fixture where mint order and degree order disagree, so a missing or reversed sort passes
+    on the "natural" order and is caught here — the failure class this project keeps finding: an
+    assertion satisfied by something other than the property it names.
+
+    `derive()` mints a tag hub the first time its tag is seen, scanning documents **by path**.
+    `low` is first seen on `docs/aa1/x.md`, `high` on `docs/aa2/y.md` — `aa1` sorts before `aa2` —
+    so `low` mints a lower node id than `high`. `low` ends at degree 2 (`x`, `y`), `high` at degree
+    4 (`y`, `z`, `w`, `v`): printing in insertion order would put `low` first, exactly the
+    unsorted-output bug this pins against.
+
+    Each new document lives in its own directory, so no `co-located` hub reaches degree ≥ 2 and
+    neither can the fixture's existing `docs/a.md`, left as the sole, untagged member of `docs/` —
+    both would otherwise compete with the two tag hubs for the top of the list.
+    """
+    _write_tagged_doc(kb, "docs/aa1/x.md", tags=["low"])
+    _write_tagged_doc(kb, "docs/aa2/y.md", tags=["low", "high"])
+    _write_tagged_doc(kb, "docs/zz1/z.md", tags=["high"])
+    _write_tagged_doc(kb, "docs/zz2/w.md", tags=["high"])
+    _write_tagged_doc(kb, "docs/zz3/v.md", tags=["high"])
+    sync(load(kb), options=SyncOptions(), now="20260805 05:01")
+
+    status, detail = checks(kb)["edge hubs"]
+    assert status is Status.OK
+    assert "2 hub(s)" in detail
+    high_at = detail.index('tag "high"')
+    low_at = detail.index('tag "low"')
+    assert high_at < low_at, f"the degree-4 hub must print before the degree-2 hub: {detail!r}"
+    assert "degree 4" in detail
+    assert "degree 2" in detail
+
+
+def test_an_edge_hub_report_names_a_document_path_never_a_bare_node_id(kb: Path) -> None:
+    """A `heading` node's key is `<doc-ulid>:<heading_path>` (G3) — the one node kind whose key is
+    not already the human-facing value. Pasted raw into an issue it identifies nothing; this
+    asserts the check resolves it against `documents.path` instead, and never leaks the ULID.
+    """
+    (kb / "docs" / "a.md").write_text(
+        "# A\n\n## Same\n\nOne.\n\n## Same\n\nTwo.\n", encoding="utf-8"
+    )
+    sync(load(kb), options=SyncOptions(), now="20260805 05:02")
+    doc_id = _document_ids(kb)[0]
+
+    status, detail = checks(kb)["edge hubs"]
+    assert status is Status.OK
+    assert "heading" in detail
+    assert "a.md" in detail
+    assert doc_id not in detail, f"a raw document ULID leaked into the report: {detail!r}"
+
+
+def test_a_directory_hub_is_named_by_its_kb_root_relative_path(kb: Path) -> None:
+    """The one hub kind the first review round left untested: `co-located` mints a `dir` node
+    whose key already *is* the KB-root-relative directory (`derive()`'s `directory_of`), so
+    `_hub_label` prints it verbatim rather than resolving anything — unlike `heading`, it needs no
+    lookup, and this is the test that would catch a label reverting to a bare `nodes.id` here too.
+    """
+    for name in ("one.md", "two.md"):
+        (kb / "docs" / "pair" / name).parent.mkdir(parents=True, exist_ok=True)
+        (kb / "docs" / "pair" / name).write_text(f"# {name}\n\nText.\n", encoding="utf-8")
+    sync(load(kb), options=SyncOptions(), now="20260805 05:03")
+
+    status, detail = checks(kb)["edge hubs"]
+    assert status is Status.OK
+    assert 'directory "docs/pair"' in detail
+    assert "degree 2" in detail
+
+
+def test_a_degree_tie_breaks_deterministically_and_the_rest_are_counted(kb: Path) -> None:
+    """Four tags, each on exactly two documents — every hub tied at degree 2 — so nothing but an
+    explicit tiebreak decides print order, and the review that found this gap showed the *implicit*
+    order (whatever `SELECT DISTINCT src` happens to return) is mint order: `d` first, `a` last,
+    because each document's path sorts in that order and mints its tag the first time it is seen
+    (`derive()`'s `_active_documents` scans by path). The tiebreak sorts on `(kind, key)`, so the
+    printed order is alphabetical — `a`, `b`, `c` — the reverse of mint order, and a tiebreak that
+    quietly fell back to insertion order would print `d`, `c`, `b` here instead.
+
+    `EDGE_HUB_SAMPLE = 3` also gets its only exercise here: four equally-tied hubs is the smallest
+    fixture that forces the "and N more" branch.
+    """
+    for tag, prefix in (("d", "n1"), ("c", "n2"), ("b", "n3"), ("a", "n4")):
+        _write_tagged_doc(kb, f"docs/{prefix}a/x.md", tags=[tag])
+        _write_tagged_doc(kb, f"docs/{prefix}b/y.md", tags=[tag])
+    sync(load(kb), options=SyncOptions(), now="20260805 05:04")
+
+    status, detail = checks(kb)["edge hubs"]
+    assert status is Status.OK
+    assert "4 hub(s)" in detail
+    assert "and 1 more" in detail
+    shown = detail.partition(": ")[2].split(", and")[0]
+    assert shown.startswith('tag "a" (degree 2), tag "b" (degree 2), tag "c" (degree 2)'), (
+        f"a degree tie must break on (kind, key), not on arrival order: {detail!r}"
+    )
+    assert 'tag "d"' not in detail, f"the fourth tied hub must be counted, not printed: {detail!r}"
+
+
+def test_a_cross_kind_tie_breaks_on_kind_before_key(kb: Path) -> None:
+    """The `kind` half of the tiebreak, which the same-kind fixture above cannot reach.
+
+    `nodes` is `UNIQUE (kind, key)` — **the pair, not the key** — so `key` alone is not a total
+    order over hubs and the `kind` term is doing real work whenever two kinds tie on degree.
+
+    **The fixture makes key order oppose kind order, deliberately.** Two documents in
+    `docs/shared/` carry the tag `aaa`, so a `dir` hub keyed `docs/shared` and a `tag` hub keyed
+    `aaa` both reach degree 2. Correct code sorts `(-degree, kind, key)` and prints the directory
+    first, because `"dir" < "tag"`. Drop the `kind` term and `"aaa" < "docs/shared"` puts the tag
+    first instead.
+
+    A first version of this test gave both hubs the *same* key, and a mutant with `kind` removed
+    **passed it** — Python's sort is stable, and the hubs already arrived directory-first, so the
+    assertion was satisfied by mint order rather than by the property it names. Opposing the two
+    orders is what makes the mutation observable.
+    """
+    for name in ("one", "two"):
+        _write_tagged_doc(kb, f"docs/shared/{name}.md", tags=["aaa"])
+    sync(load(kb), options=SyncOptions(), now="20260805 05:04")
+
+    status, detail = checks(kb)["edge hubs"]
+    assert status is Status.OK
+    shown = detail.partition(": ")[2]
+    assert shown.startswith('directory "docs/shared" (degree 2), tag "aaa" (degree 2)'), (
+        f"a cross-kind tie must break on kind before key: {detail!r}"
+    )

@@ -164,8 +164,14 @@ weights, template drift, index/model coherence, extraction coherence, calibratio
 orphaned sidecars, duplicate IDs, dangling links and link coverage, recorded failures, extraction
 cache stats, PDF text yield, the completeness audit's below-median pages, the 50k-chunk NumPy
 threshold, held sync locks, hook status, the price table's age,
-unknown-outcome ledger records, and whether a paid backend is configured on a KB whose hooks force
-the free one.
+unknown-outcome ledger records, whether a paid backend is configured on a KB whose hooks force
+the free one, and the highest-degree structural edge hubs (G6).
+
+**`edge hubs` reports G3's derived graph, read rather than re-derived** — the same `hub_degree()`
+the expansion channel damps by, highest first. Always OK: a big hub is not a fault on its own, since
+G3's weight table damps it at read time. A hub is named for a human — a `tag` or `dir` node's key
+already is the value; a `heading` node's key is `<doc-ulid>:<heading_path>` (scoped per document),
+resolved against the document's path before it prints. A KB deriving no hub edges reports `none`.
 
 **`text yield` reports per page, never per document.** It prints the median non-whitespace
 characters per page over the PDFs it could measure, then the pages falling below the fitted floor —
