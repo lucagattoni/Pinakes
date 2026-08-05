@@ -1,0 +1,176 @@
+# Is document metadata retrieval context? — the investigation, and what it gates
+
+**Audience: the planner and the coder. Goal: executor.** Written 20260805 17:21 against `main` at
+`3a4fa9e`, deliberately before a context compaction, so nothing below has to be rediscovered.
+
+**The question.** Are `title` and `heading_path` *"fundamental context, useful for search and
+retrieval"* (the user's claim, 20260805), or display-and-graph metadata? **Everything expensive
+downstream — PDF layout heuristics, a paid title-inference call — is gated on the answer, and the
+answer is one measurement nobody has run.**
+
+---
+
+## 1 · Facts established, with evidence — do not re-derive these
+
+Each was verified against the code, not inferred. File references are `main` at `3a4fa9e`.
+
+| Fact | Evidence |
+|---|---|
+| **Neither `title` nor `heading_path` affects retrieval today** | FTS5 indexes `chunks.text` only (`store.py:87-92`); embeddings are computed over `chunk.text` only (`sync.py:1940`); the reranker scores `passage.text` (`search.py:512`). No `WHERE`, `ORDER BY` or filter touches either field |
+| **`heading_path`'s only consumers** | Citations (`search.py:79`), the `in-section`/`parent`/`child` edges and the `heading` node key (G3), and the passage payload on CLI (`cli.py:209`) and MCP (`serve.py:421`) |
+| **`title`'s only consumers** | Search-result display (`cli.py:208`, `serve.py:331`), link listings (`cli.py:804` — `label = row.get("title") or row["doc_id"]`), and graph presentation, where it **counts against the traversal token budget** (`present.py:69`, `provider.py:192`) |
+| **Losing `heading_path` costs zero recall** | By design: DESIGN §4.6 puts the heading *line* into the first chunk beneath it, so heading words stay searchable through `text`. This is why a 106 806-chunk corpus with **zero** heading paths passed every eval while bounding the graph release's gate — recall could not see it |
+| **Titles never come from content, for any source type** | `skeleton()` is called without `title=` at both sites (`sync.py:1352`, `sync.py:1388`), so the filename-stem fallback (`sidecar.py:670`) always fires. Verified twice: a document whose H1 is `# Retrieval` synced to `title: retrieval`, and **all 30 `tests/demo-kb` titles equal their filename stem** — not one authored title in either committed corpus |
+| **`[chunking] strategy` is inert** | `CHUNK_STRATEGIES = ("structural",)` (`manifest.py:59`), validated by `table.choice` (`manifest.py:615`), and **never read at runtime** — grep across `src/` finds no consumer. Only `max_tokens` is used from `[chunking]`. What dispatches is `source_type` |
+| **`source_type` is assigned by suffix, and `text` is a fallback** | `chunk.py:78`. `.md/.markdown` → `markdown`; ten code suffixes → `code`; `.pdf` → `pdf`; **everything else** → `text`. So `text` today includes `.rst`, `.adoc`, `.org`, `.tex`, `.csv`, `.json`, `.yaml`, `.log` and extensionless files |
+| **Heading detection is Markdown-only** | `chunk.py:131` — `blocks = _markdown_blocks(text) if kind == "markdown" else _plain_blocks(text)`; `_plain_blocks` sets `heading_path=None` unconditionally (`chunk.py:254`). **Nothing failed to match because nothing was tried** — the superseded diagnosis in the open corrections said a grammar failed to match, which would have sent an implementer to fix a regex that never ran |
+
+---
+
+## 2 · The critical-path measurement — step 2, and the reason the rest exists
+
+**Hypothesis (the user's, stated precisely enough to be falsifiable).** A chunk taken from the
+*middle* of a long section carries none of that section's vocabulary, because only the **first**
+chunk beneath a heading contains the heading line. Injecting `title` and `heading_path` into the
+text that is embedded and indexed should therefore raise recall on questions whose evidence sits in
+continuation chunks.
+
+**This is the strongest form of the claim and it is mechanistic, not aesthetic.** It is also the
+only part that could make metadata "fundamental for retrieval" true rather than aspirational.
+
+### The experiment
+
+1. **Prepend** `title > heading_path` (exact form is the implementer's, recorded in the increment)
+   to the text that is **embedded** and **indexed**, leaving `chunks.text` as returned to the user
+   unchanged if that separation is feasible — **and say explicitly which of the two was done**,
+   because "what is embedded" and "what is displayed" diverging is itself a design change.
+2. **Rebuild** and run the golden-set eval.
+3. **Report `recall@k`, MRR and false-abstain rate, before and after**, in the commit message.
+   `CLAUDE.md` § *Changing retrieval* requires exactly this and forbids justifying it by intuition.
+
+### The corpus problem — read this before planning the run
+
+**Neither committed corpus can measure it, for opposite reasons:**
+
+| Corpus | Why it cannot answer |
+|---|---|
+| `tests/demo-kb` | Documents are ~7 lines (median). **No section spans multiple chunks**, so there are no continuation chunks to rescue. The mechanism has nothing to act on |
+| RFC realism corpus | Has the long sections, but **`heading_path` is zero everywhere** — there is nothing to inject |
+
+**So the experiment is blocked on step 1** (the numbered-heading grammar), which is what gives the
+RFC corpus real heading paths. That dependency is the single most important scheduling fact in this
+plan: **the grammar is not a nice-to-have, it is the enabler of the first promising retrieval
+experiment since the expansion channel failed its gate.**
+
+### What each outcome licenses
+
+* **Movement** → metadata is retrieval context; the claim is proven, and the expensive downstream
+  work (PDF layout heuristics, paid title inference) becomes arguable on evidence.
+* **No movement** → `title` and `heading_path` stay display-and-graph. **The expensive work dies
+  cheaply, which is the point of running this first.**
+
+**Anti-circularity applies in full**, as it did to the graph gate: questions stay frozen, nothing is
+tuned after seeing a number, and a result short of the threshold is reported rather than retried
+with a different injection format.
+
+---
+
+## 3 · The agreed order of work
+
+Decided by the user 20260805 after options with trade-offs. **Do not reorder without a reason
+recorded here.**
+
+| # | Step | Blocked on | Cost |
+|---|---|---|---|
+| 1 | **Numbered-heading grammar for `.txt`** | The two open questions in §5 | Moderate |
+| 2 | **The injection experiment** (§2) | Step 1 | ~2 h rebuild + eval |
+| 3 | **Markdown H1 → title** | Nothing — could start today | Small |
+| 4 | **`pnk doctor` title check** (B3) | Nothing | Small |
+| 5 | PDF layout heuristics + confidence scoring | **Step 2 showing movement** | High |
+| 6 | Paid LLM title inference | **Step 2 showing movement** | High — the full paid-path apparatus |
+
+**Steps 5 and 6 were argued against on current evidence and are not approved.** They are listed so
+the reasoning is not relitigated: a confidence-scored heuristic before anything calibrates it
+repeats the constant-nobody-calibrated defect this project has already learned once
+(`_text_yield`'s reasoning, and the heading check's threshold-free predicate), and opening a paid
+entry point for a field whose retrieval value is unmeasured spends the project's two most expensive
+currencies — permanent maintenance surface and paid-path trust — on an unproven premise.
+
+---
+
+## 4 · Decisions already taken — settled, not to be relitigated
+
+Full records: [`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_1313-decisions-init-titles-and-grammar.md).
+
+| Decision | Verdict |
+|---|---|
+| Grammar scope | **`.txt` only** for now. Not `.csv`/`.json`/`.yaml` — they have no headings and a line beginning `1.` is *data*, so a numbered grammar would manufacture structure from noise. Not `.rst`/`.adoc`/`.org` — they carry their own conventions and a numbered grammar would half-work, which is worse than not working. Not `code` |
+| **PDF** | **Disabled, never dismantled.** Nothing built for PDF is removed, narrowed or weakened — the `[pdf]` extra, both extractors, the cache, `path:page` citations, corpus fixtures and every test stay exactly as they are. The decision declines to extend *one new grammar* to `pdf`. **If implementing appears to require changing existing PDF behaviour, that is a spec defect — stop and report it** |
+| `requires_pinakes` | The new value **sets a floor explicitly**, so an older build says *"this KB requires pinakes >= X"* rather than rejecting the value as a typo — the confusion G4 exists to prevent |
+| `pnk init` (A1) | Refuse only what would actually be overwritten; drop the blanket emptiness test |
+| Titles (B1 + B3) | Keep the filename fallback; add a doctor check. **The first-line heuristic is rejected** — an RFC's first line is `Internet Engineering Task Force (IETF)`, so it would mint confidently wrong titles at scale into sidecars the user then commits, and a wrong title is harder to notice than an obviously-wrong one |
+
+---
+
+## 5 · Open questions — the planner's, and blocking step 1
+
+### 5.1 · A new `strategy` value, or its own key? **(needs the user — a permanent contract)**
+
+`[chunking] strategy` is **inert today** (§1). Adding a second accepted value makes it live for the
+first time, which means `structural` acquires meaning it has never had.
+
+| Option | For | Against |
+|---|---|---|
+| **New `strategy` value** | The extension point already exists (`CHUNK_STRATEGIES`, `table.choice`); one key for "how chunking works" | Makes a dead key live; `structural` must then be defined, and every existing manifest carries it already |
+| **A separate key** (e.g. `[chunking] plain_text_headings`) | Explicit about what it controls; leaves an inert key alone; no retroactive meaning for `structural` | A second key in the same table doing an adjacent job; two things to explain instead of one |
+
+### 5.2 · The value's name — planner's, pending 5.1
+
+### 5.3 · The false-positive predicate — planner's, and **must be written before it is fitted**
+
+`1.` at line start is also an ordered list. **The rule is stated first and tested against the RFC
+corpus second, never derived from it** — otherwise it is fitted to the answer.
+
+---
+
+## 6 · Unresolved, raised and not yet ruled on
+
+**The shipped heading-coverage check WARNs permanently on `code` and `pdf`.** `_heading_coverage`
+returns `Status.WARN` when *any* source type sits at 0%, and those two can never carry a heading
+today. So **a KB containing one `.py` file or one PDF warns on every `pnk doctor` run, forever**,
+with a remedy saying it is a limit of the tool. An un-actionable warning that cannot be cleared is
+how doctor output stops being read. It did not surface in verification because both committed
+corpora are pure Markdown at 100%.
+
+**Proposed** (not applied): WARN only for `markdown` at 0% — a real, fixable condition — and report
+the other types as OK with a note until a grammar exists for them.
+
+---
+
+## 7 · Work in flight — branches pushed, unreviewed, unlanded
+
+| Branch | Commit | Contents |
+|---|---|---|
+| `20260805_0730-i2-light-backend-error` | `4b0347d` | The `[light]` first-sync error prescribing the 2 GB torch install. `errors.py` + `test_embed.py`, 5 files |
+| `20260805_0745-i6-sync-cpu-measurement` | `776ea1d` | `tools/measure_sync_cpu.py` + tests — **the instrument, not the answer.** Item 6 is measurement-first: nothing may be built before the number exists |
+
+Both are on `origin`. Neither has been reviewed by the planner.
+
+---
+
+## 8 · Standing method for all of the above
+
+* **Adversarial review loop until a pass finds nothing** — the user asked for this explicitly.
+  Every increment: green `./check.sh`, then mutate the 3–5 most safety-critical assertions and
+  confirm the *right* test fails for the *right reason*. **"Mutation-verified" is per-assertion,
+  never per-commit.**
+* **The failure class to hunt: an assertion satisfied by something other than the property it
+  names.** It has appeared four times in two days — in a spec sentence, in a five-legs-from-six
+  generalisation, in a `min`-for-`max`, and inside a test written to close it. Each time, mutation
+  caught it and care did not.
+* **A green `./check.sh` only proves the worktree's installed extras are green.** CI is a three-leg
+  matrix over `[light]`, `[light,pdf]`, `[light,pdf,claude]`.
+* **Documentation has one owner — the planner.** Implementers propose `git diff <sha> -- <file>`
+  against a named commit; they write `changelog.d/` and `retro.d/` fragments and only the
+  `docs/VERIFICATION.md` rows their own tests require.
+* **Land with `python3 tools/land.py <branch> --cleanup`**, never `git merge` by hand.
