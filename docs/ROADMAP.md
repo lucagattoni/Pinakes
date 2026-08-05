@@ -474,8 +474,8 @@ which is what that corpus was for. The interrupted-sync trio that used to sit he
 
 ## The graph release — building since 20260804
 
-▶ **Built, measured, and its channel ships `off`.** Blocked for three days on a corpus, not on
-code; the corpus cleared the *reachability* precondition — and then the retrieval gate, run
+✅ **Shipped in 0.11.0** (20260805 07:14), with its channel `off`. Blocked for three days on a
+corpus, not on code; the corpus cleared the *reachability* precondition — and then the retrieval gate, run
 20260804 22:52, did not pass. `expand` defaults `off` ([the numbers](STATUS.md#did-the-expansion-channel-earn-its-default--no-measured-20260804-2252)). **G6 remains**: hub
 reporting, verification, the cut.
 

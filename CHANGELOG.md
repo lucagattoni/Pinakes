@@ -10,6 +10,145 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.0] — 20260805 07:14
+
+### Added
+
+- **`docs/ROADMAP.md` — the whole development story on one page, written for a human.** A table of
+  every release with its date, title and a short bullet summary, then one expanded section per row,
+  then the unbuilt work with what blocks each piece. Unbuilt rows carry no number and no date, per
+  the naming rule. It is published as chapter 4.1 of the site, ahead of `STATUS.md`.
+
+  **It owns no fact, deliberately.** `STATUS.md` stays the only place that says what is built,
+  `CHANGELOG.md` the exact record, `plans/` the build orders — this is a narrative view over the
+  three, and `docs/README.md`'s routing table now says so in both directions: correct STATUS first,
+  then sweep ROADMAP, never the reverse. The alternative — rewriting `STATUS.md` for readability —
+  was rejected because it is machine-load-bearing (`tools/status_header_gate.py` parses its third
+  line, CI reads its tables) and agent-facing reference, and a document cannot be both that and a
+  narrative without serving neither.
+
+- **The structural node model and edge set (`schema_version` 3).** `pnk sync` now derives a
+  heterogeneous graph into two new index tables, `nodes` and `edges`. Five node kinds —
+  **chunk**, **document**, **tag**, **heading-path** (scoped per document) and **directory** — and
+  six derived edge kinds: `membership`, `sibling`, `parent-child`, `in-section`, `co-located` and
+  `shared-tag`. Every shared-value relation goes *through* its hub node, so a tag on 30 documents
+  is 30 spokes rather than 435 pairwise edges, and hub spokes are damped at read time by the hub's
+  own degree (`1/section-size`, `1/dir-size`, `1/tag-degree`) with flow between two members being
+  the product of both spokes. `authored` edges stay in `links` and are resolved to `doc` nodes at
+  read time, so an authored link keeps exactly one home; only a *local* document has a `doc` node,
+  so a cross-KB row never enters the graph in either direction. Weights are frozen (decision 13).
+
+  **`schema_version` goes to 3, so every KB rebuilds once — `pnk sync --rebuild`.** There are no
+  migrations, by design.
+
+  **Nothing on a released surface changes.** `pnk links` and `pinakes_links` still return documents
+  only; the structural graph is read by the expansion channel and nothing else. Their `--json`
+  output on both committed corpora is compared byte-for-byte against a fixture captured before the
+  bump.
+
+  Measured 20260804, since derivation runs on every sync and two of the three git hooks derive.
+  `tests/demo-kb` 192 edges and `tests/partner-kb` 171, each in under 2 ms; a single document of
+  32 000 chunks with a full heading hierarchy in 0.6 s; the 300-document / 106 806-chunk RFC
+  realism corpus in **1.3 s**, adding 31 MB to a 265 MB index. Its census, in full — a kind at
+  zero is a fact about the corpus, and reporting only the non-zero ones is the omission the
+  census exists to prevent:
+
+  | corpus | membership | sibling | parent-child | in-section | co-located | shared-tag | authored |
+  |---|---|---|---|---|---|---|---|
+  | `tests/demo-kb` | 60 | 30 | 0 | 60 | 30 | 0 | 12 |
+  | `tests/partner-kb` | 55 | 34 | 0 | 55 | 21 | 0 | 6 |
+  | RFC realism | 106 806 | 106 506 | 0 | 0 | 262 | 643 | 391 |
+
+  The RFC corpus's `sibling` 106 506, `shared-tag` 643 and `co-located` 262 reproduce the numbers
+  the go decision was taken on exactly. Its `in-section` and `parent-child` zeros are the known
+  structural-chunking degradation — every chunk in it has an empty `heading_path` — and neither
+  committed corpus carries a `tags:` key, so `shared-tag` is exercised by fixtures alone.
+
+- **`tools/land.py` — landing a branch is one command that verifies it landed.** Running
+  `git merge <branch>` from inside that branch's own worktree merges it into itself: git reports
+  *"Already up to date"*, the push reports *"Everything up-to-date"*, and a tag created there points
+  off-`main` — three successful commands and nothing landed. Git cannot catch it, because a branch
+  merged into itself creates no commit and `pre-merge-commit` never fires. `land.py` finds the
+  primary checkout itself whatever directory it was invoked from, **refuses if `main`'s sha did not
+  move**, and re-reads `origin/main` after pushing because a push reporting success is only a claim.
+  `--cleanup` removes the worktree *and* both copies of the branch, since deleting one leaves the
+  other behind. Contributor tooling; nothing in the package changes.
+
+- **`tools/land.py --cleanup-only` removes a branch that landed earlier.** The normal flow is to
+  land, watch CI, then clean up — but by then re-running `--cleanup` correctly refuses, because the
+  default branch cannot move a second time, so the only way to finish was by hand. That is the class
+  of mistake the script exists to remove. It verifies the branch is an ancestor of `origin/main`
+  before destroying anything: *"looks merged"* is not *"landed"*.
+
+- **The graph expansion channel — `[retrieval] graph_channel = "off" | "expand"`, default `off`.**
+  With `"expand"`, the fused top-*k* of the retrieval pipeline become roots, the structural edge
+  set is walked outward to depth ≤ 2 **logical hops**, and what it reaches is ranked and handed to
+  reciprocal rank fusion as a **third** input. Chunk neighbours rank by cosine against the query;
+  a doc, tag, heading or directory node carries no content embedding, so it passes through by edge
+  weight and contributes its member chunks, which are then ranked like any others. `adjacent_k`
+  caps every node's expansion, after ranking, and a hub expands **once globally** — a popular tag
+  is walked once per query rather than once per encounter.
+
+  **Off, nothing runs** — no query reaches `nodes` or `edges`, and a test counts the statements
+  that do. **On over an empty edge set, the result is today's two-list fusion exactly**: RRF sums
+  one reciprocal-rank term per ranking, so an empty third ranking contributes no term to any score
+  and no key to the result. Arithmetic identity, not approximation.
+
+  **Same-document chunks reachable only through their own document's membership edge are
+  excluded** — from the output *and* from the fan-out budget. Intra-document structure is what
+  `sibling`, `parent-child` and `in-section` are for. A same-document chunk that is *also* a
+  sibling, a child or a section-mate is returned: the "only" is load-bearing, and both halves are
+  pinned by tests.
+
+  **A root is dropped before the fan-out cut for the same reason.** It is already in the list the
+  channel is a third input to, so it is expanded and never emitted — and the neighbours of a fused
+  top-*k* chunk are very often other fused top-*k* chunks, so leaving it in the cut spends slots on
+  rows guaranteed to be discarded. `adjacent_k` therefore counts only candidates that can actually
+  reach the output.
+
+  **Nothing on a released surface changes.** `pnk links` and `pinakes_links` return exactly what
+  they returned in the links release — their `--json` output on both committed corpora is compared
+  byte-for-byte, **with the channel on**, against the fixture captured before the schema bump.
+
+  **`graph_channel` is not stamped into the template**, for the same reason as `adjacent_k`: an
+  unknown key is a hard error, so a manifest carrying it cannot be read by any Pinakes released
+  before it existed. `"ppr"` is not an accepted value — a manifest that can name a mode the code
+  does not implement is a setting that silently does nothing.
+
+- **`tools/graph_gate.py` — the golden-set gate that decides the default, computed rather than
+  argued.** It reads three per-question artifacts — `off`, `expand` without authored edges, and
+  `expand` with them, all measured at the same HEAD against one index — and prints the counts, both
+  p-values and a clause-by-clause verdict: an exact one-sided sign test on the discordant questions
+  of the `multi-hop` class, no class regressing beyond `compare()`'s tolerance, `false_abstain`
+  decomposed so that newly-found questions reported at low confidence do not veto the win, and no
+  other regression a re-baseline could absorb. **Both edge-set variants must reach p < 0.05 and the
+  more conservative licenses**; a leg is identified by its artifact header rather than its
+  filename, so a `--before` produced with the channel already on is refused instead of silently
+  comparing a configuration against itself.
+
+- **`tools/graph_matrix.py` — the eval matrix, reported beside the headline.** Seven legs over one
+  index with no re-sync: the three the gate reads, the `--drop sibling` and `--drop parent-child`
+  arms, and APPROACH §4A's two ranking knobs (in-degree salience, the link-distance term). It also
+  reports, per improved question, **which edge kind carried the lifting path** — the only thing in
+  the output that can tell a result carried by `shared-tag` and `co-located` over a vocabulary and
+  a directory layout the corpus author chose from one carried by `sibling` or `in-section`.
+
+- **Per-question eval artifacts now record `graph_channel` and the edge-set variant**, and
+  `python -m pinakes.eval` takes a repeatable `--drop KIND`. Without both in the header, the gate's
+  three legs are indistinguishable on inspection.
+
+- **`pnk doctor` reports the highest-degree structural edge hubs (G6).** Degree is read, never
+  stored — G3 deliberately keeps no `degree` column — so the check reuses `hub_degree()`, the same
+  indexed `count(*)` the expansion channel damps by, over every `in-section`, `co-located` and
+  `shared-tag` hub node. Always `Status.OK`: a big hub is not a problem on its own, since G3's
+  weight table damps it at read time, so this is report-only.
+
+  Report-only means human-readable. A `tag` or `dir` node's key already is the value worth
+  printing; a `heading` node's key is `<doc-ulid>:<heading_path>` (G3), scoped per document, and
+  is resolved here against `documents.path` before it is printed — a bare `nodes.id` or a raw ULID
+  pasted into an issue identifies nothing. A KB deriving no hub edges reports `none`, cleanly,
+  rather than an empty table with only a header.
+
 ## [0.10.0] — 20260804 13:35
 
 ### Added
@@ -2206,7 +2345,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.11.0
 [0.10.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.10.0
 [0.9.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.9.0
 [0.8.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.8.0

@@ -70,7 +70,6 @@ name:
 
 | Name | What it is |
 |---|---|
-| **the graph release** | Structural edges, the expansion channel — each eval-gated |
 | **the deep release** | `pnk ask --deep` |
 | **the template release** | Template ecosystem, `pnk upgrade`, the `sqlite-vec` tier |
 
