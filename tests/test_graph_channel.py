@@ -1481,7 +1481,9 @@ def test_the_workspace_helper_copies_rather_than_edits(tmp_path: Path) -> None:
     other suite would silently start measuring the channel."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    shutil.copytree(REPO / "tests" / "demo-kb", workspace / "demo-kb")
+    shutil.copytree(
+        REPO / "tests" / "demo-kb", workspace / "demo-kb", ignore=shutil.ignore_patterns(".pinakes")
+    )
     _turn_the_channel_on(workspace / "demo-kb")
     assert "graph_channel" not in (REPO / "tests" / "demo-kb" / "pinakes.toml").read_text(
         encoding="utf-8"

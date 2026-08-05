@@ -92,7 +92,9 @@ def capture(workspace: Path, *, mutate: Callable[[Path], None] | None = None) ->
     pipeline.
     """
     for name in CORPORA:
-        shutil.copytree(REPO / "tests" / name, workspace / name)
+        shutil.copytree(
+            REPO / "tests" / name, workspace / name, ignore=shutil.ignore_patterns(".pinakes")
+        )
         if mutate is not None:
             mutate(workspace / name)
 
