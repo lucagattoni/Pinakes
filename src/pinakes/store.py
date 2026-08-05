@@ -267,6 +267,44 @@ def set_meta(connection: sqlite3.Connection, values: dict[str, str]) -> None:
     )
 
 
+def chunking_identity(*, headings: str, max_tokens: int, overlap: int) -> dict[str, str]:
+    """The `[chunking]` settings an index was built under, as `meta` keys.
+
+    Recorded because an incremental sync re-chunks a document only when *the document* changed, so
+    a manifest-only edit leaves every content hash intact, reports `unchanged`, and does nothing —
+    measured 20260805 on `headings`, and true of `max_tokens` and `overlap` since v0.1. Without
+    this, the tool cannot tell the user what it just failed to do.
+
+    Deliberately plain values rather than a hash: the point is to name *which* key moved and to
+    what, and a fingerprint can only say "something".
+    """
+    return {
+        "chunking_headings": headings,
+        "chunking_max_tokens": str(max_tokens),
+        "chunking_overlap": str(overlap),
+    }
+
+
+def chunking_drift(meta: dict[str, str], expected: dict[str, str]) -> dict[str, tuple[str, str]]:
+    """`{key: (built_with, configured_now)}` for every key that is **recorded and different**.
+
+    **A key absent from `meta` is unknown, never drifted, and that is the whole compatibility
+    story.** Every index built before this existed has none of these keys; reading absence as a
+    mismatch would demand a full rebuild of every KB on upgrade — a cost nobody agreed to, for a
+    setting that probably never changed. It also keeps the check forward-compatible: a *future*
+    key is absent from today's indexes for the same reason and must not fire either.
+
+    That is the opposite reading from `search.check_coherence`, and deliberately so. There, a
+    partial `meta` means an interrupted sync and must not be waved through. Here, absence carries
+    no such signal — nothing is being protected from, only reported on.
+    """
+    return {
+        key: (meta[key], value)
+        for key, value in expected.items()
+        if key in meta and meta[key] != value
+    }
+
+
 def get_meta(connection: sqlite3.Connection) -> dict[str, str]:
     return {
         str(row["key"]): str(row["value"])

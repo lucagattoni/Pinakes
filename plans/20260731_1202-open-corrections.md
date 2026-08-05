@@ -14,12 +14,11 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**Five live items as of 20260805 19:15.** Every one came from *building* — the RFC realism
+**Four live items as of 20260805 20:20.** Every one came from *building* — the RFC realism
 corpus, the graph release measured against it, or the grammar built on top of both — rather
 than from reading the code. **Three are decided and unbuilt**; one waits on a measurement
-nobody has taken. Items 4 and 5 are the newest and share a shape worth noticing: **both were
-opened by the work that closed something else**, and both are about a signal the tool fails to
-give.
+nobody has taken. Two items opened *and closed* on 20260805 alone, both opened by the work
+that closed something else.
 
 The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
 finished. Note what is **not** here: **both releases in
@@ -140,43 +139,6 @@ deleted outright.
 
 ---
 
-### 5 · A `[chunking]` edit is a silent no-op until `--rebuild`
-
-**Found 20260805 19:15 while building the numbered-heading grammar, by running the thing rather
-than reading it.** An incremental `pnk sync` re-chunks a document only when *the document* changed.
-A manifest-only edit changes no content hash, so every file reports `unchanged` and the new setting
-does nothing — with no warning, no hint, and a `pnk doctor` that then reports exactly the condition
-the user just tried to fix.
-
-**Measured**, on a two-section `.txt` KB:
-
-| | result |
-|---|---|
-| `headings = "numbered"` added, plain `pnk sync` | `1 unchanged` · every `heading_path` still empty |
-| same manifest, `pnk sync --rebuild` | `1 indexed` · `1. Introduction`, `1. Introduction > 1.1. Scope`, `2. Terminology` |
-
-**The mechanism is shared by every `[chunking]` key** — `max_tokens` and `overlap` too, which is
-why this is a general item rather than a defect in the new grammar. It is **pre-existing and was
-not introduced by the grammar**; the grammar is what made it visible, being the first key a user has
-a reason to flip on a KB that is already indexed. Documented on the key
-([MANIFEST § `[chunking]`](../docs/MANIFEST.md#chunking)) so it is not discovered the hard way, but
-documentation is not the fix.
-
-**Required:** `pnk sync` must **notice** rather than rely on the user having read a warning. The
-shape that fits what is already there: record the chunking identity in `meta` beside the embedding
-identity `sync.py` already writes, and report a mismatch the way `pnk doctor` reports model
-coherence — a named check with `pnk sync --rebuild` as its remedy.
-
-**Two constraints on doing it, both learned here:**
-
-* **A missing `meta` key must not read as a mismatch.** Every KB indexed before this exists has no
-  chunking identity recorded, and a first upgrade that demands a full rebuild of every KB is a cost
-  nobody agreed to. Absent means *unknown*, which is a different thing from *different* — this is
-  the same distinction the interrupted-sync fix already had to make between a *missing* embedding
-  identity and a *wrong* one.
-* **WARN, not FAIL, and never an automatic rebuild.** A rebuild is the user's call: it is free in
-  money and expensive in time, and the interrupted-sync retrospective is the record of what
-  happens when a remedy discards work the user did not offer.
 
 ---
 
@@ -184,6 +146,7 @@ coherence — a named check with `pnk sync --rebuild` as its remedy.
 
 | Was | Closed by |
 |---|---|
+| A `[chunking]` edit was a silent no-op until `--rebuild` — an incremental sync re-chunks a document only when *the document* changed, so a manifest-only edit reported every file `unchanged`, applied nothing, and said nothing | 20260805 20:20. The index records the `[chunking]` settings it was built under; `pnk sync` names the key that moved and points at `--rebuild`, and `pnk doctor` reports it as `chunking coherence`. **Absence reads as unknown, never as drifted**, so upgrading demands no rebuild of any existing KB. The retrospective is the part worth keeping: the first draft wrote the identity at the end of *every* sync, so the warning fired once and the index then claimed a coherence it did not have — `pnk doctor` reporting OK over chunks built the old way. **A warning that clears itself without the fix being applied is worse than no warning.** Found by running the command a second time; no test asserted persistence, because that only fails on the second invocation |
 | Numbered plain-text headings were not detected, so a rigidly sectioned `.txt` corpus was chunked size-based however structural the manifest read — which is what left the 300-RFC corpus with 106 806 chunks and not one `heading_path`, and so bounds the graph release's gate | `[chunking] headings = "numbered"`, 20260805. Opt-in, `text` only, a **new key** so `strategy` stays inert and `structural` gains no retroactive meaning. **The design is that it refuses rather than guesses:** five line-level clauses and then an outline walk over the whole document, and if the walk fails anywhere that document yields **no headings at all** — exactly the pre-grammar behaviour, never a partial labelling. The predicate was written in full *before any corpus was consulted*, and the tests are written against its clauses rather than against a corpus. Golden set unmoved as predicted (`recall@k` 0.9394, MRR 0.8806, both sides). **Still outstanding: the measurement against the RFC corpus**, which is a separate step and needs a corpus that is not in this repo |
 | `pnk doctor` printed the operator's home directory — absolute paths in the one command whose output is the natural thing to paste into an issue | Landed 20260805 (`293bf37`). A `_de_homed` helper strips the KB root's prefix from any message or remedy `doctor.py` forwards. The scope is what makes it right: `store.py`, `sidecar.py` and `ledger.py` all build their text from an absolute path because `manifest.root` is resolved, so the fix sits at the forwarding boundary rather than in each raiser. A path genuinely **outside** the KB — the model cache, a linked KB, a packaged `prices.toml` — is left exactly as printed |
 | The `[light]` first-sync error prescribed the 2 GB install to a user who chose `[light]` — `sentence-transformers` missing, `fastembed` sitting right there, and the message offered only the torch install the extra exists to avoid | Landed 20260805 17:31 (`43cef55`). `BackendMissingError` takes an `alternative`; `embed.py` finds it with `find_spec` and **never by loading it**, the same reasoning `CLAUDE.md` pins for the paid extractor — a check must not have the side effects of the thing it checks. When an alternative exists the remedy names only the manifest edit, per this item's own test. Its retrospective is the durable part: the pre-existing test looked environment-independent and was not — it blocked only `sentence_transformers`, leaving this checkout's transitively-installed `fastembed` genuinely importable, so both tests now monkeypatch `find_spec` and **name their precondition instead of inheriting `site-packages`** |

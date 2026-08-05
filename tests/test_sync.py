@@ -1,6 +1,7 @@
 """`pnk sync` end to end, against a real index and a fake backend."""
 
 import shutil
+import sqlite3
 import subprocess
 import time
 from collections.abc import Iterator, Sequence
@@ -1875,3 +1876,88 @@ def test_a_symlinked_escape_stops_the_walk_rather_than_enumerating_the_tree(kb: 
 
     assert report.escaping_patterns == ("*/*.md",)
     assert pulled < 50, f"the escape enumerated {pulled} of 300 entries before stopping"
+
+
+# --- `[chunking]` drift: a manifest-only edit is a no-op, and must say so -----------------------
+
+
+def _set_chunking(kb: Path, **keys: str) -> None:
+    """Set `[chunking]` keys in the KB's manifest, **leaving the others alone**.
+
+    The first version replaced the whole table, which silently reset the fixture's `max_tokens = 40`
+    to the default and produced drift on keys the test never touched. A helper that edits more than
+    it says is how a test comes to assert something other than what it names.
+    """
+    import re
+
+    manifest = kb / "pinakes.toml"
+    text = manifest.read_text(encoding="utf-8")
+    if "[chunking]" not in text:
+        text += "\n[chunking]\n"
+    for key, value in keys.items():
+        line = f"{key} = {value}"
+        text, count = re.subn(rf"^{key}\s*=.*$", line, text, count=1, flags=re.MULTILINE)
+        if not count:
+            text = text.replace("[chunking]\n", f"[chunking]\n{line}\n", 1)
+    manifest.write_text(text, encoding="utf-8")
+
+
+def test_a_chunking_edit_is_reported_rather_than_silently_ignored(kb: Path) -> None:
+    """The defect this exists for: an incremental sync re-chunks a document only when *the
+    document* changed, so a manifest-only edit reports every file `unchanged` and does nothing.
+    Measured 20260805 before the fix — the user's next move was `pnk doctor`, which then reported
+    exactly the condition they had just tried to fix."""
+    run(kb)
+    _set_chunking(kb, headings='"numbered"')
+    report = run(kb)
+
+    assert report.embedded == 0, "precondition: nothing re-chunked, which is the whole problem"
+    assert report.chunking_drift == (("chunking_headings", "none", "numbered"),)
+    assert any("--rebuild" in line for line in report.lines())
+
+
+def test_the_chunking_warning_persists_until_the_rebuild_actually_happens(kb: Path) -> None:
+    """**Found by running it, after the first draft passed every test.** `set_meta` wrote the
+    current settings at the end of *every* sync, so the warning fired once and the index then
+    claimed a coherence it did not have — `pnk doctor` reported OK over chunks built under the old
+    settings. A warning that clears itself without the fix being applied is worse than none."""
+    run(kb)
+    _set_chunking(kb, headings='"numbered"')
+    run(kb)
+    again = run(kb)
+    assert again.chunking_drift == (("chunking_headings", "none", "numbered"),)
+
+
+def test_a_rebuild_clears_the_drift_because_it_actually_re_chunks(kb: Path) -> None:
+    run(kb)
+    _set_chunking(kb, headings='"numbered"')
+    run(kb, rebuild=True)
+    assert run(kb).chunking_drift == ()
+
+
+def test_an_index_with_no_recorded_chunking_identity_is_never_reported_as_drifted(
+    kb: Path,
+) -> None:
+    """Every KB indexed before this existed. Absence is *unknown*, not *different* — a check that
+    fired on all of them would demand a full rebuild of every KB on first upgrade."""
+    run(kb)
+    index = kb / ".pinakes" / "index.db"
+    connection = sqlite3.connect(index)
+    connection.execute("DELETE FROM meta WHERE key LIKE 'chunking_%'")
+    connection.commit()
+    connection.close()
+
+    _set_chunking(kb, headings='"numbered"')
+    assert run(kb).chunking_drift == ()
+
+
+def test_drift_is_reported_for_max_tokens_and_overlap_too(kb: Path) -> None:
+    """Not a `headings` feature. Both have behaved this way since v0.1; `headings` is only the
+    first `[chunking]` key a user has had reason to flip on an already-indexed KB."""
+    before = load(kb).chunking  # the fixture's own values, not the documented defaults
+    run(kb)
+    _set_chunking(kb, max_tokens="256", overlap="32")
+    assert dict((key, (was, now)) for key, was, now in run(kb).chunking_drift) == {
+        "chunking_max_tokens": (str(before.max_tokens), "256"),
+        "chunking_overlap": (str(before.overlap), "32"),
+    }

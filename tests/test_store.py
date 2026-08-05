@@ -11,6 +11,8 @@ import pytest
 from pinakes.errors import IndexSchemaError, StoreError
 from pinakes.store import (
     SCHEMA_VERSION,
+    chunking_drift,
+    chunking_identity,
     connect_ro,
     connect_rw,
     create,
@@ -377,3 +379,39 @@ def test_meta_upserts_rather_than_duplicating(index_path: Path) -> None:
     set_meta(connection, {"build_id": "one"})
     set_meta(connection, {"build_id": "two"})
     assert get_meta(connection)["build_id"] == "two"
+
+
+# --- Chunking identity: what an index was built under -------------------------------------------
+
+
+def test_chunking_drift_ignores_a_key_the_index_never_recorded() -> None:
+    """**The whole compatibility story.** Every index built before this identity existed carries
+    none of these keys. Reading absence as a mismatch would demand a full rebuild of every KB on
+    upgrade, for a setting that probably never changed — and would fire forever on a KB nobody
+    touched, which is the unclearable-warning failure the heading-coverage check already answers
+    for. It is also what keeps a *future* key from firing on today's indexes."""
+    expected = chunking_identity(headings="numbered", max_tokens=510, overlap=64)
+    assert chunking_drift({}, expected) == {}
+    assert chunking_drift({"embedding_model": "x"}, expected) == {}
+
+
+def test_chunking_drift_reports_only_what_actually_moved() -> None:
+    built = chunking_identity(headings="none", max_tokens=510, overlap=64)
+    now = chunking_identity(headings="numbered", max_tokens=510, overlap=64)
+    assert chunking_drift(built, now) == {"chunking_headings": ("none", "numbered")}
+
+
+def test_chunking_drift_is_empty_when_nothing_moved() -> None:
+    identity = chunking_identity(headings="numbered", max_tokens=256, overlap=32)
+    assert chunking_drift(identity, identity) == {}
+
+
+def test_chunking_drift_sees_every_key_not_just_headings() -> None:
+    """`max_tokens` and `overlap` have had this defect since v0.1 — `headings` is only what made it
+    reachable, being the first `[chunking]` key worth flipping on an already-indexed KB."""
+    built = chunking_identity(headings="none", max_tokens=510, overlap=64)
+    now = chunking_identity(headings="none", max_tokens=256, overlap=32)
+    assert chunking_drift(built, now) == {
+        "chunking_max_tokens": ("510", "256"),
+        "chunking_overlap": ("64", "32"),
+    }

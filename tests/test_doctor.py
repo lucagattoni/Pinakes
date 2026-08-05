@@ -1862,3 +1862,49 @@ def _heading_counts(root: Path) -> tuple[int, int]:
         return int(row["named"]), int(row["total"])
     finally:
         connection.close()
+
+
+def test_chunking_coherence_is_ok_on_a_freshly_synced_kb(kb: Path) -> None:
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    status, detail = checks(kb)["chunking coherence"]
+    assert status is Status.OK
+    assert "matches" in detail
+
+
+def test_chunking_coherence_warns_after_a_manifest_only_edit(kb: Path) -> None:
+    """The other half of the fix. `pnk sync` catches the user who just made the edit; this catches
+    the one who made it last week and is now asking why `heading_path` is empty."""
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    manifest = kb / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            "[chunking]\n", '[chunking]\nheadings = "numbered"\n', 1
+        ),
+        encoding="utf-8",
+    )
+    status, detail = checks(kb)["chunking coherence"]
+    assert status is Status.WARN
+    assert "none -> numbered" in detail
+    assert "--rebuild" in _remedy(kb, "chunking coherence")
+
+
+def test_chunking_coherence_stays_ok_when_the_index_recorded_no_identity(kb: Path) -> None:
+    """Every KB indexed before this existed. **WARN here would fire on all of them at once**, which
+    is the unclearable-warning failure the heading-coverage check already has to answer for — and
+    it would demand a full rebuild of every KB for a setting that probably never changed."""
+    import sqlite3
+
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    connection = sqlite3.connect(kb / ".pinakes" / "index.db")
+    connection.execute("DELETE FROM meta WHERE key LIKE 'chunking_%'")
+    connection.commit()
+    connection.close()
+
+    manifest = kb / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            "[chunking]\n", '[chunking]\nheadings = "numbered"\n', 1
+        ),
+        encoding="utf-8",
+    )
+    assert checks(kb)["chunking coherence"][0] is Status.OK

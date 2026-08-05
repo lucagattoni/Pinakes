@@ -189,6 +189,10 @@ class SyncReport:
     came from. The static check in `manifest._check_include_containment` cannot see these — the
     escape exists only on disk — so the walk stops at the first candidate outside and says so. A
     skip that printed nothing would be a KB quietly indexing less than the user asked for."""
+    chunking_drift: tuple[tuple[str, str, str], ...] = ()
+    """`(key, built_with, configured_now)` per `[chunking]` key that moved since the index was
+    built. Reported here rather than only in `pnk doctor` because this is the command that just
+    said `unchanged` — the moment the wrong impression forms is the moment to correct it."""
     busy: bool = False
     reclaimed_lock: bool = False
     # --clear-cache's own outcome; None on every other run (see `sync()`'s early return for it).
@@ -311,6 +315,13 @@ class SyncReport:
             )
         if self.edges:
             lines.append(self.edge_line())
+        if self.chunking_drift:
+            moved = ", ".join(f"{key} {was} -> {now}" for key, was, now in self.chunking_drift)
+            lines.append(
+                f"[chunking] changed since this index was built ({moved}) — the documents above "
+                "were not re-chunked, because an incremental sync re-chunks a document only when "
+                "the document itself changed. Run `pnk sync --rebuild` to apply it."
+            )
         if self.unmatched:
             lines.append(self.unmatched_line())
         lines.extend(self.escape_lines())
@@ -959,13 +970,27 @@ def _run(
     if options.rebuild:
         target.unlink(missing_ok=True)
 
-    connection = (
-        store.create(target)
-        if options.rebuild or not index_path.exists()
-        else store.connect_rw(index_path)
-    )
+    chunked_from_empty = options.rebuild or not index_path.exists()
+    """Whether *every* chunk in the resulting index was produced by this run's settings — the
+    only condition under which recording a chunking identity is honest."""
+    connection = store.create(target) if chunked_from_empty else store.connect_rw(index_path)
     active_hashes: set[str] | None = None
     try:
+        # Read *before* the run: `set_meta` below overwrites these keys with the current settings,
+        # so after it there is nothing left to compare against. A rebuild re-chunks everything by
+        # definition, so it can never be drifting.
+        if not options.rebuild:
+            report.chunking_drift = tuple(
+                (key, was, now)
+                for key, (was, now) in store.chunking_drift(
+                    store.get_meta(connection),
+                    store.chunking_identity(
+                        headings=manifest.chunking.headings,
+                        max_tokens=manifest.chunking.max_tokens,
+                        overlap=manifest.chunking.overlap,
+                    ),
+                ).items()
+            )
         before = read_index_snapshot(connection)
         result = pair(
             before,
@@ -1025,6 +1050,20 @@ def _run(
                 "embedding_revision": manifest.embedding.revision or "",
                 "embedding_dim": str(manifest.embedding.dim),
                 "vector_tier": "numpy",
+                # Only when this run chunked the whole index. An incremental sync re-chunks just
+                # the documents that changed, so writing the current settings here would claim a
+                # coherence the index does not have — and would *silence the warning it just
+                # printed*, leaving `pnk doctor` reporting OK over chunks built under the old
+                # settings. Found by running it: the first draft wrote this unconditionally.
+                **(
+                    store.chunking_identity(
+                        headings=manifest.chunking.headings,
+                        max_tokens=manifest.chunking.max_tokens,
+                        overlap=manifest.chunking.overlap,
+                    )
+                    if chunked_from_empty
+                    else {}
+                ),
                 "built_at": stamp,
             },
         )
