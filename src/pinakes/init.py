@@ -7,7 +7,7 @@ ledger must never leave the machine (docs/DESIGN.md §4.7).
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pinakes import template
@@ -62,7 +62,7 @@ def init(
     root = root.resolve()
     _check_target(root, ci=ci)
 
-    stamp = now or datetime.now().strftime("%Y%m%d %H:%M")
+    stamp = now or datetime.now(UTC).strftime("%Y%m%d %H:%M")
     kb_id = mint_kb_id()
     provider, model, dim = DEFAULT_EMBEDDING
     rerank_provider, rerank_model = DEFAULT_RERANK

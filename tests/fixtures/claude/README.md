@@ -98,8 +98,9 @@ bug, and the replayer says so rather than returning something plausible.
 
 ```bash
 uv run --frozen --env-file .env python tools/record_claude_fixtures.py \
-    --scenario happy-five-page-slice --at "$(date '+%Y%m%d %H:%M')"
+    --scenario happy-five-page-slice --at "$(date -u '+%Y%m%d %H:%M')"
 ```
 
-`--at` is required and has no default: the timestamp is read off the clock, never composed
-(CLAUDE.md — an invented `HH:MM` lands in the future about half the time).
+`--at` is required and has no default: the timestamp is read off the clock in **UTC** (`date -u`),
+never composed (docs/README.md § Conventions — an invented `HH:MM` lands in the future about half
+the time).

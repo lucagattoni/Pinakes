@@ -1351,7 +1351,7 @@ def _prices(manifest: Manifest) -> Check:
     except PricesMissingError as exc:
         return Check("price table", Status.FAIL, exc.message, exc.remedy)
     try:
-        as_of = datetime.strptime(prices.as_of, PRICE_TIMESTAMP_FORMAT)
+        as_of = datetime.strptime(prices.as_of, PRICE_TIMESTAMP_FORMAT).replace(tzinfo=UTC)
     except ValueError:
         return Check(
             "price table",
@@ -1359,7 +1359,7 @@ def _prices(manifest: Manifest) -> Check:
             f"as_of {prices.as_of!r} is not a {PRICE_TIMESTAMP_FORMAT} timestamp",
             "This is a packaging defect in pinakes itself; report it.",
         )
-    age = (datetime.now() - as_of).days
+    age = (datetime.now(UTC) - as_of).days
     limit = manifest.budget.max_price_age_days
     if age > limit:
         return Check(

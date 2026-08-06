@@ -57,7 +57,7 @@ import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
@@ -715,7 +715,7 @@ def extract_document(
         pages=pages_total,
         model=model,
         prices=prices,
-        now=datetime.now().strftime(TIMESTAMP_FORMAT),
+        now=datetime.now(UTC).strftime(TIMESTAMP_FORMAT),
         max_price_age_days=accountant.manifest.budget.max_price_age_days,
     )
     upfront = accountant.check_document(estimate)

@@ -185,9 +185,9 @@ def main() -> int:
     parser.add_argument(
         "--at",
         required=True,
-        help="local 'YYYYMMDD HH:MM' of this recording — read off the clock, never composed "
-        "(docs/README.md § Conventions: an invented HH:MM lands in the future about half "
-        "the time)",
+        help="UTC 'YYYYMMDD HH:MM' of this recording — read off the clock (`date -u`), never "
+        "composed (docs/README.md § Conventions: an invented HH:MM lands in the future about "
+        "half the time)",
     )
     args = parser.parse_args()
 

@@ -655,7 +655,7 @@ def _with(
 def is_stale(last_scan: str | None, now: str, *, ttl_minutes: int = TTL_MINUTES) -> bool:
     """Whether a partner is due a re-read.
 
-    Both stamps are `%Y%m%d %H:%M` — minute resolution, local time, no zone — because that is what
+    Both stamps are `%Y%m%d %H:%M` — minute resolution, **UTC**, no zone — because that is what
     `sync()` already writes everywhere else and a second time format in one index would be worse
     than the coarseness. So the TTL is whole minutes, and a scan is never *not* due when the answer
     is uncertain:

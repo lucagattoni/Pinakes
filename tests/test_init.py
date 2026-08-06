@@ -1,5 +1,7 @@
 """`pnk init`: a directory that is already correct, and an id that is never minted twice."""
 
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -170,3 +172,29 @@ def test_a_template_variable_that_is_never_supplied_fails_loudly() -> None:
 
     with pytest.raises(UndefinedError):
         template.render_manifest("notes", {"name": "x"})
+
+
+def test_created_is_utc_even_where_the_machine_clock_is_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`created` is the UTC instant, never the machine's wall clock.
+
+    Run under `TZ=Pacific/Kiritimati` (UTC+14), a naive `datetime.now()` reads fourteen hours
+    ahead — so a KB minted on one machine and read on another disagrees about when it was made,
+    and `pnk doctor`'s age checks compare stamps that never shared a zero point. The zone is
+    picked for the size of the gap: at UTC+14 the naive stamp is on a different *date* for ten
+    hours of every day, which is what makes this fail loudly rather than by a rounding minute.
+    """
+    monkeypatch.setenv("TZ", "Pacific/Kiritimati")
+    time.tzset()
+
+    before = datetime.now(UTC)
+    created = load(init(tmp_path / "kb").root).kb.created
+    after = datetime.now(UTC)
+
+    assert created is not None
+    assert before.strftime("%Y%m%d %H:%M") <= created <= after.strftime("%Y%m%d %H:%M"), (
+        f"created {created!r} is not the UTC instant "
+        f"({before:%Y%m%d %H:%M}..{after:%Y%m%d %H:%M}) — a naive clock would read "
+        f"{datetime.now().strftime('%Y%m%d %H:%M')}"
+    )
