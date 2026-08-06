@@ -40,8 +40,8 @@ work — reasoning *and* PDF extraction — is an explicit, budgeted opt-in.
 points** rather than as a convention, because a convention has nothing to check it against. Exactly
 two things may spend: `pnk sync` on a KB whose `[extraction] backend` is `claude-vision` (or a run
 passing `--extract=claude-vision`), and `pnk ask --deep`. Both go through §5's accountant. The list
-lives in `.paid-path-allowlist`; adding to it edits that file, this section and `CLAUDE.md`
-together. Everything else is free *by construction*: no module outside the allowlist may so much as
+lives in `.paid-path-allowlist`; adding to it edits that file, this section and
+[INVARIANTS.md](INVARIANTS.md) together. Everything else is free *by construction*: no module outside the allowlist may so much as
 import a paid client. What proves it is not a grep — a grep only ever knows the spellings someone
 thought of — but a run of the whole free path in a fresh process, asserting on what actually landed
 in `sys.modules`.

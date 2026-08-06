@@ -118,7 +118,8 @@ make help       # all targets
 Every target wraps the command CI actually runs, so green locally means green on the runner. Note
 that `make check` formats Python **inside Markdown fences** too — a docs-only change can fail it.
 
-Conventions and the increment workflow are in [`CLAUDE.md`](CLAUDE.md); how the docs are organised —
+Conventions are in [`CLAUDE.md`](CLAUDE.md), the increment workflow in
+[`docs/BUILDING.md`](docs/BUILDING.md); how the docs are organised —
 and which file to edit when you land a feature — is in [`docs/README.md`](docs/README.md).
 [`docs/VERIFICATION.md`](docs/VERIFICATION.md) maps every promise this project makes to the test
 that holds it, and a test asserts every one of those tests exists.

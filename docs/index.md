@@ -124,6 +124,7 @@ on, so it does not go stale.
 | How do I accomplish a task? | [Guide](GUIDE.md) |
 | Why is it built this way? | [Design](DESIGN.md) |
 | What holds this promise? | [Verification](VERIFICATION.md) — and a test asserts each named test exists |
+| What must never break? | [Invariants](INVARIANTS.md) — the contracts that fail silently |
 | What did we learn? | [Retrospectives](RETROSPECTIVES.md) |
 
 ## Elsewhere in the repo
@@ -135,4 +136,4 @@ on, so it does not go stale.
 - [Docs routing table](https://github.com/lucagattoni/pinakes/blob/main/docs/README.md) —
   which file to edit when an increment lands
 - [`CLAUDE.md`](https://github.com/lucagattoni/pinakes/blob/main/CLAUDE.md) —
-  the conventions and invariants an agent working here must follow
+  the conventions an agent working here must follow, and which plan is live

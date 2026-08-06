@@ -1,8 +1,8 @@
 """The paid-path allowlist gate — gates 1 and 2 of plans/20260727_1543-v0.2.md I7a, in one "
 "implementation.
 
-`CLAUDE.md` calls "the free path stays free" non-negotiable, and v0.1 promised a CI grep enforcing
-it under a heading with no increment number, so nobody owned it and it never shipped
+docs/INVARIANTS.md calls "the free path stays free" non-negotiable, and v0.1 promised a CI grep
+enforcing it under a heading with no increment number, so nobody owned it and it never shipped
 (docs/RETROSPECTIVES.md, 20260727 15:35). This is that gate, owned, with the list of exceptions in
 one file — `.paid-path-allowlist` — that `check.sh`, `.github/workflows/ci.yml` and
 `tests/test_paid_path.py` all read, so three copies cannot drift apart.
@@ -51,7 +51,7 @@ _IMPORT_RE = re.compile(
 
 FAILURE_MESSAGE = (
     "A paid-API client is imported in src/ outside the allowlist. "
-    "CLAUDE.md: paid entry points are an enumerated allowlist; docs/DESIGN.md §1."
+    "docs/INVARIANTS.md: paid entry points are an enumerated allowlist; docs/DESIGN.md §1."
 )
 
 

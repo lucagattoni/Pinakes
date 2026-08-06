@@ -1,18 +1,5 @@
 # Pinakes — project instructions
 
-> ## ▶️ Do this first, before any other work
->
-> **Slim this file: it is 260 lines against its own ~150 guardrail.** Nothing is deleted —
-> relocate and leave pointers, exactly as `docs/RELEASING.md` was extracted on 20260801 for this
-> same reason. Move *Building a release* → `docs/BUILDING.md` and *Invariants that must not be
-> broken* → `docs/INVARIANTS.md`, each with a short pointer; compress *Docs* and *Landing work*,
-> whose detail `docs/README.md` and `docs/RELEASING.md` already own. Keep verbatim: the `land.py`
-> guard, the PUBLIC-repo rules, documentation ownership, naming, and unbuilt-work naming.
->
-> **Show the diff and wait for the user before applying it** — this file governs every session.
-> **Then delete this block.** Deferred by the user 20260805 22:58 after a long session; the
-> misleading content was already fixed in `b9ffe63`, so what remains is size, not accuracy.
-
 Architecture and rationale live in [`docs/DESIGN.md`](docs/DESIGN.md); [`docs/README.md`](docs/README.md)
 indexes the rest (which file owns which fact). This file only carries rules that change how you work.
 
@@ -116,110 +103,49 @@ across the repo 20260804 11:55, history included.
 
 ## Invariants that must not be broken
 
-- **Document and KB ULIDs are permanent.** Never renumber, never regenerate. Every inbound link
-  depends on them, and there is no migration machinery by design.
-- **An unknown key in a sidecar round-trips byte-identically** — stronger and more testable than
-  "untouched", which was true of the dict and false of the file (under YAML 1.1 `country: NO` was
-  read as `False`). Sidecars go through **`ruamel.yaml` round-trip at YAML 1.2** — never `pyyaml`,
-  which is dev-only and gated by an AST scan plus a runtime check. `write()` reconciles known keys
-  *into* the loaded document; it never renders a fresh one. Values must be JSON-encodable, keys
-  strings. The invariant is **bounded**, and **each exclusion is pinned by a test** — the
-  authoritative list, because a bound stated only in prose cannot notice the library moving under
-  it: `docs/VERIFICATION.md` § *The sidecar round-trip*, `docs/MANIFEST.md`'s bounds table.
-- **`docs/` belongs to the user.** Never modify source documents; never delete a sidecar without an
-  explicit `--prune`-style flag plus a printed list. Two exceptions, both narrow: a paid PDF
-  extraction (or `--force` discarding one) additively rewrites that document's own sidecar with
-  `provenance.extraction` (DESIGN §2.2) — no other key, never on a free extraction; and a
-  user-invoked authoring command writes `links[]` to the source document's own sidecar.
-- **`.pinakes/` is disposable except `ledger.jsonl` and any cache entry a paid backend wrote.** A
-  rebuild must preserve spend history, and the ledger is **append-only** — correct a record by
-  appending another (`pnk budget --resolve`), never by editing. A paid cache entry is derived state
-  that cost real money to derive: the automatic sweep spares it, and destroying one takes an
-  explicit `--clear-cache=paid`.
-- **A `void` ledger record needs proof the call never billed** — written only when a
-  `response_received` flag is false, never from a bare `finally`, which would record €0 for money
-  that already left the account. Under-counting is the one direction a budget may never be wrong in.
-- **The free path stays free — paid entry points are an enumerated allowlist.** Exactly these may
-  spend: `pnk sync` with `[extraction] backend = "claude-vision"` or `--extract=claude-vision`;
-  `pnk ask --deep` (the deep release). Each goes through the §5 accountant. Adding one edits this
-  list, `.paid-path-allowlist` and DESIGN §1 in the same commit. Four gates enforce it; the one that
-  matters runs the whole free path in a fresh subprocess and asserts no paid client reached
-  `sys.modules`. **Never probe a backend's availability by loading it** — `is_backend_installed`
-  answers through `find_spec`; `load_extractor` runs the factory, which imports the client.
-- **Money is `Decimal` end to end, quantised only once — at ledger-write time.** Convert a TOML
-  float via `Decimal(str(value))`, never `Decimal(value)`, which reproduces float's binary
-  imprecision instead of the decimal a human wrote: `Decimal(0.05) != Decimal("0.05")`.
-- Index schema changes bump `schema_version` and require a rebuild. Never write a migration.
+**[`docs/INVARIANTS.md`](docs/INVARIANTS.md)** — ULID permanence, the sidecar byte-identity bound and
+its `ruamel`-only rule, `docs/` belonging to the user, `.pinakes/` disposability, the append-only
+ledger and what a `void` record needs, the paid-path allowlist, `Decimal` money, `schema_version`.
+**Read it before touching a sidecar, the ledger, the index schema, or anything that could import a
+paid client.** Each one fails *silently* when broken, which is why it is a list and not a convention.
 
-## Building a release — one increment at a time
+## Building an increment
 
-Read the build order out of `plans/` — **never** "the newest file" there, which also holds shipped
-plans, an iteration log, standalone increments and decision records
-([`docs/README.md`](docs/README.md) tells them apart).
+**The procedure is [`docs/BUILDING.md`](docs/BUILDING.md)** — own worktree, tests in the same
+increment, `./check.sh` green, mutate the assertions, adversarial review, fragments, then
+`tools/land.py`. Never batch increments. Read the build order out of `plans/` — **never** "the newest
+file" there ([`docs/README.md`](docs/README.md) tells them apart).
 
-**[`plans/20260729_0256-links-and-graph.md`](plans/20260729_0256-links-and-graph.md) is closed.** Both
-its releases shipped: the links release in 0.5.0–0.6.0, the graph release in 0.11.0 (G3, G5, G6).
-G5's gate ran, did **not** pass, and `graph_channel` ships `off` — so nothing in that plan is live,
-and the staged channels (PPR, `[ner]`) are **not** licensed by that result
-([`plans/20260804_1016-staged-channel-gates.md`](plans/20260804_1016-staged-channel-gates.md)).
+**What is live right now:**
 
-**The live investigation is [`plans/20260805_1721-metadata-as-retrieval-context.md`](plans/20260805_1721-metadata-as-retrieval-context.md)** — whether `title` and `heading_path` are retrieval context or display metadata. It carries the established facts, the agreed order of work, what is decided, and what is still open. **Read it before touching chunking, titles or `heading_path`.**
-
-**Its steps 1, 3 and 4 shipped in 0.13.0–0.15.0.** What remains is **step 2, the injection
-experiment** — the question the whole investigation was opened to answer, and now unblocked:
-[`tools/build_rfc_corpus.py`](tools/build_rfc_corpus.py) builds a corpus with real `heading_path`s,
-which no committed fixture has. §5.4 records the grammar's measurement against 980 RFCs, including
-**two candidate rules the corpus refused** — read it before proposing a fifth.
-
-**The other live plan is [`plans/20260804_1016-template-release.md`](plans/20260804_1016-template-release.md)**
-— reviewed, its four decisions taken, unstarted; re-run its Baseline block first.
-
-**[`plans/20260731_1202-open-corrections.md`](plans/20260731_1202-open-corrections.md) is empty as
-of 20260805 22:18**, for the first time since it opened. That is not a finish line: **the list
-refills from *use*, and every entry it ever held came from building something rather than from
-reading code.** An empty one means nobody has run Pinakes lately. Add to it when something bites.
-
-Never batch increments; each is a separate, bisectable landing:
-
-1. Own worktree, branch `YYYYMMDD_HHMM-i<N>-<slug>`.
-2. Implement the increment **with its tests** — tests ship in the increment that introduces the
-   behaviour, never deferred.
-3. Green before review: run `./check.sh` (or `make check`) — every gate under `set -e`, so a
-   failure is a non-zero exit rather than a line in a log that a pipe then swallows. It formats
-   Python **inside Markdown fences** too: a docs-only commit can still fail the gate.
-   **Then break the code on purpose.** Mutate the 3–5 most safety-critical assertions, confirm the
-   *right* test fails for the *right reason*, restore. **"Mutation-verified" is a per-assertion
-   claim, never a per-commit one.** Worked cases: `docs/RETROSPECTIVES.md` § *Start here* →
-   "claim a test is mutation-verified".
-4. **Retrospective review** — a fresh adversarial pass over the increment's own diff, repeated
-   until clean. Findings and fixes are their **own commit**. Anything worth keeping gets a
-   [`retro.d/`](retro.d/README.md) fragment; trivia stays in the commit message.
-5. **A `changelog.d/` fragment in the same commit as the code** — never an edit to `CHANGELOG.md`
-   itself ([`changelog.d/README.md`](changelog.d/README.md)).
-6. Land it: `python3 tools/land.py <branch> --cleanup` ([above](#-land-with-toolslandpy--never-git-merge-by-hand)).
+- **[`plans/20260805_1721-metadata-as-retrieval-context.md`](plans/20260805_1721-metadata-as-retrieval-context.md)** — whether `title` and `heading_path` are retrieval context or display metadata. It carries the established facts, the agreed order of work, what is decided and what is still open. **Read it before touching chunking, titles or `heading_path`.** Steps 1, 3 and 4 shipped in 0.13.0–0.15.0; what remains is **step 2, the injection experiment** — the question the investigation was opened to answer, now unblocked by [`tools/build_rfc_corpus.py`](tools/build_rfc_corpus.py), which builds a corpus with real `heading_path`s that no committed fixture has. §5.4 records the grammar's measurement against 980 RFCs, including **two candidate rules the corpus refused** — read it before proposing a fifth.
+- **[`plans/20260804_1016-template-release.md`](plans/20260804_1016-template-release.md)** — reviewed, its four decisions taken, unstarted; re-run its Baseline block first.
+- **[`plans/20260731_1202-open-corrections.md`](plans/20260731_1202-open-corrections.md) is empty as
+  of 20260805 22:18**, for the first time since it opened. Not a finish line: **the list refills
+  from *use***, and every entry it ever
+  held came from building something rather than from reading code. An empty one means nobody has run
+  Pinakes lately. Add to it when something bites.
 
 ## Landing work: always push, always release
 
 **Nothing is done until it is on `origin/main` and, when it completes a unit of work, tagged.** Work
-left local is invisible to every other agent, machine and scheduled run.
-**The procedure is [`docs/RELEASING.md`](docs/RELEASING.md)** — these are the rules it assumes.
+left local is invisible to every other agent, machine and scheduled run. **The procedure — the
+number, the tag, the verification and the documents a release stales — is
+[`docs/RELEASING.md`](docs/RELEASING.md).** These are the rules it assumes:
 
-- **Push every landing** to `origin/main`. Never leave merged work sitting locally.
+- **Push every landing** to `origin/main`, and fast-forward the primary checkout afterwards
+  (`git pull --ff-only`). Never leave merged work sitting locally.
 - **Before merging, run `python3 tools/shared_file_overlap.py --fetch --strict`** — then go and
   *read* the merged state of the files it names. **A clean auto-merge is not a correct merge:** git
   merges edits that do not overlap textually, never edits that *agree*, so two agents can leave one
   document contradicting itself with every command reporting success (20260729). For the two
   documents every change writes to, the cause is removed rather than reported:
   [`changelog.d/`](changelog.d/README.md), [`retro.d/`](retro.d/README.md).
-- **Before assigning a release number, check what has already landed on `main`** — another agent may
-  have cut one since this branch started (20260728).
-- **Cut the release** as soon as the work passes the SemVer table in the global rules (feature =
-  MINOR, fix/docs/deps = PATCH, breaking = MAJOR). Complete work never lingers in `[Unreleased]`.
-- **A tag publishes to PyPI** and PyPI never accepts a version twice. Run `make release-check`
-  **before** pushing the tag, never after.
-- **Verify, never assume, that a release happened**, and sweep the three documents it stales — both
-  in [`docs/RELEASING.md`](docs/RELEASING.md). A CHANGELOG entry and a `__version__` are only claims.
-- After anything lands on `main`, fast-forward the primary checkout (`git pull --ff-only`).
+- **Cut the release** as soon as the work passes the SemVer table (feature = MINOR, fix/docs/deps =
+  PATCH, breaking = MAJOR). Complete work never lingers in `[Unreleased]`.
+- **A tag publishes to PyPI** and PyPI never accepts a version twice: `make release-check` runs
+  **before** the tag, never after. **A CHANGELOG entry and a `__version__` are only claims** —
+  verify the release happened, never assume it.
 
 ## Tooling
 
@@ -240,34 +166,26 @@ and after numbers in the commit message.
 
 ## Docs
 
-**One fact, one home** — [`docs/README.md`](docs/README.md) is the routing table (which file owns
-which fact) and the per-increment landing checklist. `docs/DESIGN.md` is rationale only; it changes
-only when the *reasoning* changes, never for a new flag or field alone.
+**One fact, one home** — [`docs/README.md`](docs/README.md) is the routing table and the
+per-increment landing checklist. `docs/DESIGN.md` is rationale only; it changes when the *reasoning*
+changes, never for a new flag or field alone.
 
-**`docs/` is published** to [lucagattoni.github.io/pinakes](https://lucagattoni.github.io/pinakes/)
-on every push to `main`, so a docs edit now has a second renderer that a PR gates with
-`mkdocs build --strict`. Two rules follow, both in `docs/README.md` § Conventions: a link *out* of
-`docs/` is absolute (`plans/`, `CLAUDE.md`, `changelog.d/` have no page there), and a heading is
-never renamed to fix a site anchor — `mkdocs_hooks.py` makes the site match GitHub, not the
-reverse. Run `make docs` before landing a docs change.
-
-**Five rules live in [`docs/README.md` § Conventions](docs/README.md#conventions), not here** —
-audit the neighbourhood not the diff; name the audience and goal before writing; rewrite to the
-current state, never layer corrections; compact monthly; verify a doc by running the commands it
-shows. That file states each with its measurement. **Read it before any docs change.**
+**Seven rules live in [`docs/README.md` § Conventions](docs/README.md#conventions), each with its
+measurement — read them before any docs change**: audit the neighbourhood not the diff; name the
+audience and goal before writing; rewrite to the current state, never layer corrections; compact
+monthly; verify a doc by running the commands it shows; a link *out* of `docs/` is absolute; never
+rename a heading to fix a site anchor. `docs/` is **published** to
+[lucagattoni.github.io/pinakes](https://lucagattoni.github.io/pinakes/) on every push to `main`, so
+run `make docs` (`mkdocs build --strict`, which a PR also gates) before landing a docs change.
 
 - **README and DESIGN.md are deliberately version-free** — they describe what Pinakes *is*, never
   which release it's on. Never reintroduce a version number or "as of vX" claim into their prose.
-- **Every date carries a time, in UTC** — `YYYYMMDD HH:MM`, `date -u` — in the CHANGELOG, `docs/STATUS.md`,
-  `docs/RETROSPECTIVES.md`, and any "verified on" claim.
+- **Every date carries a time, in UTC** — `YYYYMMDD HH:MM` — in the CHANGELOG, `docs/STATUS.md`,
+  `docs/RETROSPECTIVES.md` and any "verified on" claim. **Read the clock, never compose it**: run
+  `date -u "+%Y%m%d %H:%M"` and paste it, or derive a past stamp from `git log`. **Timestamps written
+  before 20260804 11:32 are local and stay local** — converting a recorded time invents precision
+  nobody measured. Where the two could be confused, say which.
 - **Every new file in `plans/`, `changelog.d/` and `retro.d/` is named `YYYYMMDD_HHMM-<rest>.md`**
-  (UTC, underscore not colon — the branch-name format). `ls` then reads chronologically and a
-  file is dated without opening it. `tools/fragments.py` strips the prefix before reading a
-  fragment's category, so it never becomes part of the slug; a file without one is accepted, since
-  the convention began 20260804 07:00 and refusing older files buys nothing.
-- **UTC everywhere, from 20260804 11:32.** `date -u`. **Timestamps written before that are local and
-  stay local** — converting a recorded time invents precision nobody measured. Where the two could
-  be confused, say which.
-- **Read the clock; never compose a timestamp.** Run `date -u "+%Y%m%d %H:%M"` and paste it — session
-  context carries a date, never a time, and an invented `HH:MM` lands in the future about half the
-  time. Derive a past timestamp from `git log`, never from memory.
+  (UTC, underscore not colon — the branch-name format), so `ls` reads chronologically.
+  `tools/fragments.py` strips the prefix before reading a fragment's category; a file without one is
+  accepted, since the convention began 20260804 07:00.

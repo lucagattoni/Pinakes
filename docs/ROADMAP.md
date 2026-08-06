@@ -718,7 +718,7 @@ personalization vector, not one edge kind of seven.
 writing its discoveries back into sidecars.
 
 - The **only paid entry point still unbuilt**. Adding it edits the allowlist,
-  [DESIGN § 1](DESIGN.md#1-what-this-is) and `CLAUDE.md` in one commit.
+  [DESIGN § 1](DESIGN.md#1-what-this-is) and [INVARIANTS.md](INVARIANTS.md) in one commit.
 - No plan written. It has been described as "planned" since
   [`0.1.2`](#012--the-readme-told-the-truth--20260727-1525) — and correcting the README's claim that
   it *existed* was that release's whole point.
@@ -759,7 +759,8 @@ add: [DESIGN § 3.1](DESIGN.md#31-vector-search-what-the-tiers-actually-buy). Te
 ## How this project builds
 
 Useful context for reading anything above. The rules themselves live in
-[`CLAUDE.md`](https://github.com/lucagattoni/pinakes/blob/main/CLAUDE.md).
+[`CLAUDE.md`](https://github.com/lucagattoni/pinakes/blob/main/CLAUDE.md), the procedures they point
+at in [BUILDING.md](BUILDING.md) and [RELEASING.md](RELEASING.md).
 
 - **One increment at a time.** Own worktree, own branch, tests in the same commit, `./check.sh`
   green, then a **fresh adversarial review** of the diff before it merges. Findings are their own
