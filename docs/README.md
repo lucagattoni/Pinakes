@@ -21,22 +21,27 @@ anyway.
 | [**STATUS.md**](STATUS.md) | *Does this exist yet?* Shipped vs planned, the increment ledger, measured numbers |
 | [**ROADMAP.md**](ROADMAP.md) | *What happened, in what order, and what is left?* Every release with a plain-language expansion, then the unbuilt work and what blocks it. **Human-facing, and it owns no fact** — a narrative view over STATUS, CHANGELOG and `plans/`, which stay authoritative |
 | [**VERIFICATION.md**](VERIFICATION.md) | *What holds this promise?* Every claimed property and the test that checks it — `tests/test_verification.py` asserts each one exists |
+| [**INVARIANTS.md**](INVARIANTS.md) | *What must never break?* The contracts that fail **silently** — ULIDs, the sidecar round-trip, the ledger, the paid-path allowlist. Each names the file owning its detail; only the implementation rules nothing else states are written out there |
+| [**BUILDING.md**](BUILDING.md) | *How do I build one increment?* Worktree, tests, `check.sh`, mutation, adversarial review, fragments, `land.py` — the procedure that runs before [RELEASING.md](RELEASING.md) |
 | [**DESIGN.md**](DESIGN.md) | *Why is it built this way?* Architecture, storage, sync semantics, concurrency, trade-offs |
 | [**RETROSPECTIVES.md**](RETROSPECTIVES.md) | *What did we learn?* Per-increment findings, and the design's own review passes |
 | [**KB-UPDATES.md**](KB-UPDATES.md) | *What happens to a KB somebody already has when Pinakes changes?* Design note — **mostly proposal**; its `requires_pinakes` half is built (G4), the rest is not |
 | [**graph/**](graph/) | Graph-retrieval research shaping the links and graph releases — thirteen investigations plus the synthesis |
 
 Build plans live in [`plans/`](../plans/); the release history is [`CHANGELOG.md`](../CHANGELOG.md).
-`plans/` holds more than one kind of file, and only the first is a build order:
+`plans/` holds more than one kind of file, and most of it is **not** live work —
+[`CLAUDE.md`](../CLAUDE.md) names the two that are. Never take "the newest file here" for the
+build order:
 
 | File | What it is |
 |---|---|
-| [`20260729_0256-links-and-graph.md`](../plans/20260729_0256-links-and-graph.md) | **The current build order** — the links release (L*) and the graph release (G*) |
+| [`20260805_1721-metadata-as-retrieval-context.md`](../plans/20260805_1721-metadata-as-retrieval-context.md) | **The live investigation** — are `title` and `heading_path` retrieval context or display metadata? Steps 1, 3 and 4 shipped in 0.13.0–0.15.0; step 2, the injection experiment, remains. Read it before touching chunking, titles or `heading_path` |
+| [`20260729_0256-links-and-graph.md`](../plans/20260729_0256-links-and-graph.md) | **Closed.** Both its releases shipped — the links release in 0.5.0–0.6.0, the graph release in 0.11.0 (G3, G5, G6). G5's gate ran, did **not** pass, and `graph_channel` ships `off`: nothing in it is live, and the staged channels below are **not** licensed by that result |
 | [`20260801_0102-links-and-graph-log.md`](../plans/20260801_0102-links-and-graph-log.md) | That plan's iteration log: how it was reached, never what to do |
 | [`20260731_2128-source-walk-containment.md`](../plans/20260731_2128-source-walk-containment.md) | A standalone increment, shipped in 0.7.1 — outside both releases above |
 | [`20260731_1202-open-corrections.md`](../plans/20260731_1202-open-corrections.md) | Numbered corrections for the implementing agent; items are closed in place, never deleted |
 | [`20260801_0749-realism-corpus.md`](../plans/20260801_0749-realism-corpus.md) | The RFC corpus and the dogfooding KB — both live **outside** this repo |
-| [`20260804_1016-template-release.md`](../plans/20260804_1016-template-release.md) | The template release — the ecosystem, `pnk upgrade`, the `sqlite-vec` tier. Reviewed (36 findings) and revised; its four decisions taken 20260804 |
+| [`20260804_1016-template-release.md`](../plans/20260804_1016-template-release.md) | **The other live plan** — the template release: the ecosystem, `pnk upgrade`, the `sqlite-vec` tier. Reviewed (36 findings) and revised, its four decisions taken 20260804, unstarted; re-run its Baseline block first |
 | [`20260804_1016-graph-remainder-reentry.md`](../plans/20260804_1016-graph-remainder-reentry.md) | What must be re-verified about G3/G5/G6 **if** the blocking measurement is ever passed — a re-entry checklist, not a plan |
 | [`20260804_1016-staged-channel-gates.md`](../plans/20260804_1016-staged-channel-gates.md) | The **gates** for the PPR channel and the `[ner]` extra — what measurement would justify each, and what would refuse it. Deliberately not implementation plans |
 | [`20260803_2239-corpus-probe-run.md`](../plans/20260803_2239-corpus-probe-run.md) | How the second headroom measurement is run against that corpus, and the conversion contract that keeps its frozen questions frozen |
@@ -63,13 +68,15 @@ When an increment lands, this table says which file to edit — usually exactly 
 | A manifest or sidecar field, its default, its validation | **MANIFEST.md** | DESIGN gives the rationale and links here |
 | How to accomplish a task | **GUIDE.md** | README links to it |
 | Why a design decision was taken, and what it costs | **DESIGN.md** | — |
-| Which code paths are allowed to spend money | **`.paid-path-allowlist`** + CLAUDE.md's invariant | DESIGN §1 gives the rationale; `check.sh`, CI and `tests/test_paid_path.py` read the file itself |
+| Which code paths are allowed to spend money | **`.paid-path-allowlist`** + [INVARIANTS.md](INVARIANTS.md) | DESIGN §1 gives the rationale; `check.sh`, CI and `tests/test_paid_path.py` read the file itself |
 | A measured number (recall, latency, false-confidence) | **STATUS.md** | cited with its date wherever quoted |
 | What changed in a release | **CHANGELOG.md** | written as a `changelog.d/` fragment; spliced at release |
 | What an increment taught us | **RETROSPECTIVES.md** | written as a `retro.d/` fragment; spliced at release |
 | How to run the human-gated paid measurement | **MEASUREMENT-RUN.md** | STATUS carries the numbers it produced, with their date |
 | What is going to be built, and in what order | **`plans/`** | STATUS.md carries the shipped/planned state only |
 | How to cut a release, step by step | **[`RELEASING.md`](RELEASING.md)** | `CLAUDE.md` carries the *rules* about when and the traps; this is the procedure |
+| How to build one increment, step by step | **[`BUILDING.md`](BUILDING.md)** | `CLAUDE.md` names which plan is live; this is the procedure |
+| A contract that fails silently when broken | **[`INVARIANTS.md`](INVARIANTS.md)** | the detail stays with its owner (DESIGN, MANIFEST, VERIFICATION, CLI) — INVARIANTS lists and links, and states only the implementation rules nothing else does |
 | Which test holds a given promise | **VERIFICATION.md** | a plan's own table records what was *predicted*, never what exists |
 
 The README is deliberately **version-free**: it describes what Pinakes *is*, never what release you
@@ -104,7 +111,8 @@ makes it true. **Amendments land with their increment, never in advance** — a 
 unbuilt behaviour is the failure mode the project's README rule exists to prevent. DESIGN sections
 still awaiting an amendment carry a dated note saying so.
 
-**Before assigning a release number, check what has already landed on `main`** ([CLAUDE.md](../CLAUDE.md)).
+**Before assigning a release number, check what has already landed on `main`**
+([RELEASING.md § Before you start](RELEASING.md#before-you-start)).
 Another session or worktree may have cut a release since your branch started, so the number you were
 about to use — or the one a plan assumes — may already be taken. `plans/20260727_1543-v0.2.md` assumed it would cut
 `0.2.0` at I9; `0.2.0` shipped after I5 and `0.2.1` after that.
@@ -133,7 +141,9 @@ is what stops the next plan from assuming a number that a parallel session has a
   bare date loses their order and hides how fresh a "verified" claim is. UTC since 20260804 11:32;
   timestamps written before that are local and stay local, because converting one invents precision
   nobody measured.
-- **Read the clock; never compose a timestamp.** Run `date -u "+%Y%m%d %H:%M"` and paste the result.
+- **Read the clock; never compose a timestamp.** Run `date -u "+%Y%m%d %H:%M"` and paste the result;
+  derive a past one from `git log`, never from memory. Session context carries a date and never a
+  time, so an invented `HH:MM` lands in the future about half the time.
 - **Docs describe what ships.** Anything unbuilt is labelled with the increment or release that will
   bring it. Check by *running the commands a doc shows*, install line included — an audit at 0.1.2
   found four README claims contradicting the code while the CLI and CHANGELOG were correct.

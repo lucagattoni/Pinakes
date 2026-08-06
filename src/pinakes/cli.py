@@ -346,7 +346,7 @@ def run_budget(args: argparse.Namespace) -> int:
     """`pnk budget`. Reads the ledger; `--resolve` appends to it and never edits it.
 
     Money arrives from the command line as a string and is parsed with `Decimal(text)` directly —
-    never through `float` — for the reason CLAUDE.md states: `Decimal(0.05)` is not
+    never through `float` — for the reason docs/INVARIANTS.md states: `Decimal(0.05)` is not
     `Decimal("0.05")`, and a ledger written from the first carries an imprecision nobody can
     explain later.
     """

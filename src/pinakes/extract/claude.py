@@ -17,7 +17,7 @@ outcome no test could tell from a genuine exhaustion.
 
 **Failure classification is about billing, not about HTTP.** Every transport failure declares
 whether the call was billed, and that — never a bare `finally` — is what decides void vs.
-`unknown outcome` (CLAUDE.md, `budget/ledger.py`):
+`unknown outcome` (docs/INVARIANTS.md, `budget/ledger.py`):
 
 * **Never billed** (429, 5xx, a 4xx, a connection error *before* any response byte) → **void**,
   releasing the reservation at zero. Without it a handful of transient failures would permanently

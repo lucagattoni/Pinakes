@@ -10,7 +10,8 @@ One measurement, two consumers, and neither may define it for the other:
 **This module is free, and must stay free.** It lived inside `extract/claude.py` while it had only
 the one caller, which put it inside the single module in `src/` allowed to import `anthropic` — so
 `pnk doctor`, a free command, could not have consumed it without importing the paid path to ask a
-question that has nothing to do with paying (CLAUDE.md: "never probe a backend's availability by
+question that has nothing to do with paying (docs/INVARIANTS.md: "never probe a backend's
+availability by
 loading it"). Moving it here is what lets both callers share one definition, rather than the free
 command growing a second copy of the per-page loop that could disagree with the one that spends.
 

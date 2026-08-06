@@ -2,7 +2,8 @@
 
 **This script spends real money and needs a real key.** It is a developer tool, never a product
 entry point: no `pnk` subcommand reaches it, no test imports it, and CI never runs it. That is why
-it lives under `tools/` rather than `src/` — CLAUDE.md's paid-path allowlist enumerates what a
+it lives under `tools/` rather than `src/` — the paid-path allowlist (docs/INVARIANTS.md,
+`.paid-path-allowlist`) enumerates what a
 *user* running `pnk` can trigger, and gate 2 scans `src/` only. Run it exactly as the measurement
 run is run:
 
@@ -185,7 +186,8 @@ def main() -> int:
         "--at",
         required=True,
         help="local 'YYYYMMDD HH:MM' of this recording — read off the clock, never composed "
-        "(CLAUDE.md: an invented HH:MM lands in the future about half the time)",
+        "(docs/README.md § Conventions: an invented HH:MM lands in the future about half "
+        "the time)",
     )
     args = parser.parse_args()
 

@@ -24,7 +24,8 @@ currency it is or which rate produced it — and the rate is exactly the number 
 `per_operation_eur` bounds. `call_id` is one API call — the unit a reservation/outcome pair keys
 on, and what the extraction cache's entries join against.
 
-**Quantisation happens here and nowhere else** (CLAUDE.md): amounts are `Decimal` end to end and
+**Quantisation happens here and nowhere else** (docs/INVARIANTS.md): amounts are `Decimal` end to
+end and
 are quantised exactly once, when a record is written, to `QUANTUM` — six decimal places of USD,
 not cents. Cents would be the wrong quantum in the unsafe direction: a €0.0043 call rounds to
 €0.00, and a ledger that stores zero for a call that billed under-counts every window it belongs

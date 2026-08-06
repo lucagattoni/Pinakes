@@ -113,6 +113,7 @@ nav:
       - 2.1 CLI: CLI.md
       - 2.2 Manifest and sidecar: MANIFEST.md
       - 2.3 Verification: VERIFICATION.md
+      - 2.4 Invariants: INVARIANTS.md
   - 3. Concepts:
       - 3.1 Design: DESIGN.md
       - 3.2 Updating an existing KB: KB-UPDATES.md
@@ -120,8 +121,9 @@ nav:
       - 4.1 Roadmap — the whole story: ROADMAP.md
       - 4.2 Status — what ships today: STATUS.md
       - 4.3 The measurement run: MEASUREMENT-RUN.md
-      - 4.4 Cutting a release: RELEASING.md
-      - 4.5 Retrospectives: RETROSPECTIVES.md
+      - 4.4 Building an increment: BUILDING.md
+      - 4.5 Cutting a release: RELEASING.md
+      - 4.6 Retrospectives: RETROSPECTIVES.md
   - 5. Graph research:
       - graph/README.md
       - 5.1 The pinakes approach: graph/PINAKES_APPROACH.md
