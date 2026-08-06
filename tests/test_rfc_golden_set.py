@@ -204,3 +204,26 @@ def test_the_verifier_matches_across_the_line_wrapping_rfcs_use(tmp_path: Path) 
         timeout=120,
     )
     assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_the_before_leg_records_the_configuration_the_gate_must_reuse() -> None:
+    """The `before` leg is only comparable against an `after` produced the same way, and these are
+    the settings that decide that. They are pinned as literals because they *are* the frozen
+    experimental configuration: `max_tokens` 414 is the corpus's reserve-bearing value, and a leg
+    chunked at the default 510 would be a different corpus wearing the same filename.
+
+    `k` is here because the improvable pool is defined against it — a question missed at k = 5 may
+    be a hit at rank 7, so a pool measured at one k does not describe another. `rerank` is here
+    because the gate is fixed to `local` in advance, and `graph_channel` because that channel's
+    edge kinds partly duplicate what is under test.
+    """
+    leg = cast(
+        "dict[str, object]", json.loads((RFC_CORPUS / "outcomes.json").read_text(encoding="utf-8"))
+    )
+    chunking = cast("dict[str, object]", leg["chunking"])
+    retrieval = cast("dict[str, object]", leg["retrieval"])
+
+    assert chunking["max_tokens"] == 414
+    assert leg["k"] == 5
+    assert retrieval["rerank"] == "local"
+    assert leg["graph_channel"] == "off"

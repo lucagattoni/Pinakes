@@ -55,3 +55,13 @@ project's most useful finding and died with the machine that held it. The thresh
 into the builder's manifest template rather than pasted into a generated `pinakes.toml`, which also
 makes both legs of the comparison fitted identically by construction: refitting after a change
 would measure the refit.
+
+**A defect found by asking what would protect the artifact this increment produces.** Capturing a
+`before` leg raises the question of what stops it being compared against an `after` produced
+differently — and `graph_gate.check_identity` turned out to guard only the graph channel's own
+settings. Reading `eval.header` for what it *does* record showed the gap was one level lower: the
+function's docstring promises "every setting that can move a row", and `[chunking]` was not in it.
+Every other outcome-deciding setting was. So the leg committed here could not have been shown to
+have been chunked at 414 rather than the default 510 — the precise confusion 2a's reserve and 2b's
+refusal exist to prevent, surviving into the artifact that records their result. Three fields, no
+schema bump, because no *row* changed.
