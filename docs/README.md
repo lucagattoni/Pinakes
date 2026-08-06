@@ -35,7 +35,7 @@ build order:
 
 | File | What it is |
 |---|---|
-| [`20260805_1721-metadata-as-retrieval-context.md`](../plans/20260805_1721-metadata-as-retrieval-context.md) | **The live investigation** — are `title` and `heading_path` retrieval context or display metadata? Steps 1, 3 and 4 shipped in 0.13.0–0.15.0; step 2, the injection experiment, remains. Read it before touching chunking, titles or `heading_path` |
+| [`20260805_1721-metadata-as-retrieval-context.md`](../plans/20260805_1721-metadata-as-retrieval-context.md) | **The live investigation** — are `title` and `heading_path` retrieval context or display metadata? Steps 1, 3 and 4 shipped in 0.13.0–0.15.0; step 2, the injection experiment, remains — **re-scoped 20260806 into six increments (2a–2f) with ten decisions recorded**, so read §2 and §3 before writing anything. Read it before touching chunking, titles or `heading_path` |
 | [`20260729_0256-links-and-graph.md`](../plans/20260729_0256-links-and-graph.md) | **Closed.** Both its releases shipped — the links release in 0.5.0–0.6.0, the graph release in 0.11.0 (G3, G5, G6). G5's gate ran, did **not** pass, and `graph_channel` ships `off`: nothing in it is live, and the staged channels below are **not** licensed by that result |
 | [`20260801_0102-links-and-graph-log.md`](../plans/20260801_0102-links-and-graph-log.md) | That plan's iteration log: how it was reached, never what to do |
 | [`20260731_2128-source-walk-containment.md`](../plans/20260731_2128-source-walk-containment.md) | A standalone increment, shipped in 0.7.1 — outside both releases above |
