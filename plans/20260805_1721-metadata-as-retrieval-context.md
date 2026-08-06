@@ -224,6 +224,21 @@ which makes the form of the injected prefix a decision rather than a detail. Mea
 | Section numbers stripped | 11.9 | 30 | **5.9%** | **DECIDED 20260806 05:05 by the user** |
 | Deepest heading only | 6.1 | 17 | **3.3%** | rejected — at mean depth 2.6 it discards most of the ancestor context the experiment exists to test |
 
+> ⚠️ **Every number in that table is RFC 9110's, and the `Max` column does not generalise —
+> measured 20260806 06:1x while building 2a.** Re-run over **195 documents** (RFCs 8600-8799, 5 of
+> the 200 numbers unpublished), same prefix form, same tokeniser:
+>
+> | Section numbers stripped, corpus-wide | |
+> |---|---|
+> | Largest prefix in the corpus | **68 tokens** |
+> | Per-document largest | median **31**, p95 **51**, p99 **61** |
+> | Longest title alone | **32 tokens** |
+>
+> **RFC 9110 is an unrepresentative sample for one reason: its title is two tokens long.** The
+> *median* document in the band exceeds this table's max of 30. The relative ranking of the three
+> forms is unaffected — the decision stands — but **the `Max` column must not be used to size a
+> reserve**, which is exactly what the first version of §3 did.
+
 **The numbers live in `heading_path` for citation, and injection is an embedding change** — carrying
 them across would inherit a choice made for a different purpose, at 44% of a budget that finding 1
 makes the binding constraint. Stripping keeps every word that carries meaning. **What would reverse
@@ -290,7 +305,7 @@ recorded here.**
 | # | Step | Blocked on | Cost |
 |---|---|---|---|
 | 1 | **Numbered-heading grammar for `.txt`** | ✅ **Shipped 0.13.0.** All of §5 settled: the key and vocabulary (§5.2) and the full predicate, written before any corpus was consulted (§5.3) | Moderate |
-| 2 | **The injection experiment** (§2) | **Steps 2a–2e below.** Re-scoped 20260806 03:55, re-ordered 05:15, screen inserted 05:30 — see the notes | ~2 h rebuild + eval, *after* 2a–2e |
+| 2 | **The injection experiment** (§2) | **Steps 2b–2e below** — 2a shipped 20260806 06:17. Re-scoped 20260806 03:55, re-ordered 05:15, screen inserted 05:30 — see the notes | ~2 h rebuild + eval, *after* 2b–2e |
 | 3 | **Markdown H1 → title** | ✅ **Shipped 0.15.0.** `first_h1()` in `chunk.py`, wired at mint time. Existing sidecars are never rewritten, so no migration | Small |
 | 4 | **`pnk doctor` title check** (B3) | ✅ **Shipped 0.14.0** | Small |
 | 5 | PDF layout heuristics + confidence scoring | **Step 2 showing movement** | High |
@@ -302,8 +317,8 @@ a separate, bisectable landing:
 
 | # | Increment | Why it is its own landing |
 |---|---|---|
-| **2a** | **`tools/build_rfc_corpus.py` writes each document's real title into its sidecar, and stamps the reduced `max_tokens`** | Without titles there is nothing to inject (finding 5); without the reduced `max_tokens` the two legs are chunked differently and the comparison is void (below) |
-| **2b** | **`assert_chunkable` accounts for the injected prefix and refuses rather than truncates** | Converts finding 2's silent truncation into a loud error. Code-only; it changes no existing KB, because the reserve lives in the corpus manifest |
+| **2a** | ✅ **Shipped 20260806 06:17, `86cd403`.** `tools/build_rfc_corpus.py` fetches each document's published title from `rfc<N>.json` and mints its sidecar before the first sync; the manifest stamps `max_tokens = 414`, reserving **96**. Verified by execution: two RFCs built and synced with the real `fastembed` backend index under their published titles, largest `token_count` exactly 414 | Without titles there is nothing to inject (finding 5); without the reduced `max_tokens` the two legs are chunked differently and the comparison is void (below) |
+| **2b** | **`assert_chunkable` accounts for the injected prefix and refuses rather than truncates.** **Read the note below first — the site this names cannot do it** | Converts finding 2's silent truncation into a loud error. Code-only; it changes no existing KB, because the reserve lives in the corpus manifest |
 | **2c** | **Author and freeze the RFC golden set, calibrate it, capture the `before` baseline** | Must be on `main` **before any injection code exists**, or the questions can be influenced by a number. **Ordered after 2a and 2b** because its exit criterion is measured on the chunking the experiment will actually use |
 | **2d** | **The vector-only screen** — **introduces the manifest option, default `off`**, and injects at `sync.py:2005` only. One line of injection, **no schema change** | A **go/no-go on cost**, not a test of the hypothesis. See the pre-registration below. 2b must land first: the option ships here, so a user who turns it on with the default `max_tokens` must meet a refusal rather than silent truncation |
 | **2e** | **The injection: a new `chunks` column, rewritten FTS5 triggers, `schema_version` 4** | Only if 2d says go. A schema bump is breaking for every existing KB and is the landing a bisect must be able to isolate |
@@ -365,9 +380,9 @@ refusal that protects them second, and only then is the baseline captured.
 * **The reserve is a corpus setting, not a per-document computation — corrected 20260806 05:15.**
   An earlier revision of this plan said to reserve the longest prefix *per document*. That is more
   frugal and it is the wrong shape, because it buries the reserve in code where the two legs must
-  agree on it exactly. **The RFC corpus manifest stamps a reduced `max_tokens` (e.g. `480` against
-  the 512 window and a measured max prefix of 30), and both legs use it.** Chunk boundaries are then
-  byte-identical across the legs by construction, and the only difference between them is the
+  agree on it exactly. **The RFC corpus manifest stamps `max_tokens = 414` against the 512-token
+  window, reserving 96 for the prefix, and both legs use it** (shipped in 2a). Chunk boundaries are
+  then byte-identical across the legs by construction, and the only difference between them is the
   injected text — which is the entire requirement.
 
   **Why this is not optional.** Chunking the before leg at 510 and the after leg at 480 makes them
@@ -376,15 +391,30 @@ refusal that protects them second, and only then is the baseline captured.
   question in 41* moved across a rebuild, and its docstring states the standard this would breach:
   *"any per-question movement caused by anything else is not noise, it is a wrong answer."*
 
-  **What 2b owes in code is therefore only a refusal, not a reservation.** `assert_chunkable` must
-  account for the largest prefix the injection can produce when the option is on, and **refuse** a
-  manifest whose `max_tokens + max_prefix` exceeds the window, naming the value to lower
-  `max_tokens` to. That is the project's idiom — refuse rather than guess — and it converts
-  finding 2's silent truncation into a loud error. **Measure the corpus's largest prefix over the
-  whole corpus, not one document:** 30 tokens is RFC 9110's maximum under the chosen prefix form,
-  and 300 RFCs may exceed it.
+  **Where 414 and 96 come from — and what the earlier `e.g. 480 … max prefix of 30` got wrong.**
+  That pair was RFC 9110's maximum, and RFC 9110's title is *two tokens* long. Measured over 195
+  documents while building 2a, the largest prefix is **68 tokens** and the per-document largest has
+  **median 31** (the table in §2 carries the full distribution). Reserving 30 would have truncated
+  roughly half the corpus's longest chunks — silently, biasing the experiment toward **no
+  movement**, a false negative that reads as a clean result. 96 is 41% above the measured maximum,
+  because 200 numbers is under a third of the modern band.
 
-**2a is a fetch, not a heuristic — which is what makes it cheap and what keeps it clear of a
+  **What 2b owes in code is a refusal, not a reservation — and the site the first draft named
+  cannot provide it.** `assert_chunkable` runs at `sync.py:1137`, **before anything is chunked**, so
+  no `heading_path` exists yet and `max_prefix` is not knowable there. It is a property of the
+  corpus, not of the manifest: 30 on RFC 9110, 68 across 195 RFCs of the same era.
+
+  **DECIDED 20260806 07:39 by the user: refuse after chunking and before embedding**, computing the
+  real largest prefix from the chunks in hand. Exact, needing no constant and no new manifest key —
+  the refusal fires on the corpus that actually exceeds the reserve rather than on a prediction
+  about it. Rejected: **a declared `[chunking] prefix_reserve` key**, because it is a third value
+  the two legs must agree on — the shape this very bullet rejects — and a declared reserve smaller
+  than the real one truncates silently again, reinstating the defect it exists to remove; and **a
+  fixed constant in code**, which is an uncalibrated threshold fitted to one corpus, and 30-vs-68
+  across two samples of the *same era* is how far it can miss. The accepted cost: a large corpus is
+  chunked before it fails, which is seconds against a silently invalidated experiment.
+
+**2a was a fetch, not a heuristic — which is what made it cheap and what kept it clear of a
 rejected decision.** `https://www.rfc-editor.org/rfc/rfc<N>.json` returns the RFC's authoritative
 metadata, including `title`, in ~1.5 KB from the host the corpus already downloads from, cacheable
 exactly as the document is. **Measured 20260806 04:1x: `title` present and non-empty in 44 of 44
@@ -404,6 +434,13 @@ so the corpus builder writes the sidecar itself — `sidecar.skeleton(document, 
 title at mint time — **before the first sync**. Sync then adopts it and leaves it alone. A document
 whose JSON cannot be fetched keeps the filename fallback and **is reported**, never silently
 minted: a corpus where an unknown share of titles are filenames measures something nobody can name.
+**Confirmed by execution 20260806 06:14** — the claim above had never been run: two RFCs built and
+synced index under their published titles, and `tests/test_sync.py::test_an_existing_sidecars_title_is_never_rewritten`
+already owned the "leaves it alone" half. Two things 2a met that this paragraph did not anticipate:
+real RFC titles carry **colons** (RFC 8713), which `ruamel` quotes correctly but which no committed
+corpus had ever exercised; and an existing `pinakes.toml` must not be rewritten by a re-run, or the
+`[retrieval.confidence]` thresholds **2c** fits onto this corpus are discarded while every command
+reports success.
 
 **Steps 5 and 6 were argued against on current evidence and are not approved**, and this re-scoping
 does not touch them — they are still gated on step 2 showing movement. They are listed so
@@ -421,6 +458,7 @@ Full records: [`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_13
 
 | Decision | Verdict |
 |---|---|
+| **Where 2b's refusal gets `max_prefix`** | **Refuse after chunking, before embedding, computing the real largest prefix from the chunks in hand** (20260806 07:39). `assert_chunkable` runs before anything is chunked, so the site the first draft named cannot know the value — and `max_prefix` is a property of the *corpus*, not the manifest: 30 on RFC 9110, 68 across 195 RFCs of the same era. Rejected: a declared `[chunking] prefix_reserve` key, and a fixed constant. Full reasoning and the accepted cost: §3, the reserve bullet |
 | **Screen before the schema bump** | **Yes — a vector-only screen at 2d, pre-registered as a go/no-go on cost** (20260806 05:30). The schema bump is the only irreversible step in this plan, and everything else in 2a–2c is needed either way, so evidence goes in front of it. Rejected: **straight to both channels**, which avoids the multiple-testing problem but rebuilds every KB on an unproven premise; **a strict p < 0.05 screen**, which would stop on a real effect that fusion dilution alone suppressed — the very objection that disqualified vector-only as a gate. Full pre-registration and its anti-circularity cost: §3, 2d |
 | **Reranker configuration** | **Gate on `rerank = "local"`; run the `none` leg as a declared diagnostic; and the 2d screen reads `none`** (20260806 04:40, screen setting 05:40) — a screen avoids false negatives, a gate avoids false positives, so they deliberately differ. Argued with measurements in §2 — the reranker moves 13 of 66 demo-kb ranks, and the `none` leg's error rates are a mirage |
 | **Prefix form** | **`title > heading_path` with section numbers stripped** (20260806 05:05). Measured token costs and the rejected alternatives: §2, the prefix-form table |
