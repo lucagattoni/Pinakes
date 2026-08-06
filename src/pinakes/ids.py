@@ -1,7 +1,8 @@
 """Document and KB identity.
 
 Every document and every KB carries a ULID, minted once and **never regenerated** — every inbound
-`pnk://` link depends on it and this design has no migration machinery by choice (CLAUDE.md).
+`pnk://` link depends on it and this design has no migration machinery by choice
+(docs/INVARIANTS.md).
 
 IDs are canonical uppercase Crockford base32, 26 characters. Lowercase is **rejected, not
 normalised**: two spellings of one identity would slip straight past the duplicate-ID check that

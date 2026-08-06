@@ -112,7 +112,7 @@ def hf_cache_dir() -> Path:
 
 # The package each provider's factories import — used only to check, via `find_spec`, whether a
 # *sibling* provider is already installed when the configured one is missing (never to import it:
-# probing availability by loading a backend is exactly what CLAUDE.md's paid-path rule forbids for
+# probing availability by loading a backend is exactly what the paid-path invariant forbids for
 # the paid extractor, and the same reasoning applies here — a check must not have the side effects
 # of the thing it is checking).
 _PROVIDER_PACKAGE: dict[str, str] = {

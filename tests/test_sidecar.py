@@ -581,7 +581,7 @@ def test_a_two_space_indented_sequence_is_reindented(tmp_path: Path, owner: KbId
 
     ruamel emits block sequences at the dumper's indentation, not the source's, so a file written
     with `  - item` comes back as `- item`. Nothing is lost — comments, values and order all
-    survive — but the bytes differ, and the invariant CLAUDE.md gains says so explicitly.
+    survive — but the bytes differ, and the invariant in docs/INVARIANTS.md says so explicitly.
     `docs/GUIDE.md`'s `links:` example is written in the indented style and is the counter-example,
     not a typo.
     """
@@ -1063,7 +1063,7 @@ def test_a_user_key_inside_provenance_extraction_survives_a_re_extraction(
     It is required there — `without_extraction_provenance` must actually remove `extraction`, or
     the `--force` reversal silently leaves a false paid claim behind. Recursing with it strips the
     user's own keys from *inside* `extraction`, because `with_extraction_provenance` builds a plain
-    four-key replacement; CLAUDE.md says that write is additive, "never any other key".
+    four-key replacement; docs/INVARIANTS.md says that write is additive, "never any other key".
     """
     path = tmp_path / f"z.md{SIDECAR_SUFFIX}"
     path.write_text(

@@ -748,7 +748,7 @@ def test_edge_census_reconciles_with_the_graph_it_describes(
 
     # Authored links: two `rel`s between the same pair (`authored`'s dedup case) and a second,
     # distinct pair, written by the real authoring command per the sidecar-ownership invariant
-    # (`CLAUDE.md`).
+    # (`docs/INVARIANTS.md`).
     from pinakes.cli import main as pnk_main
 
     for source, target, rel in (

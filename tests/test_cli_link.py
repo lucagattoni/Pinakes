@@ -761,8 +761,8 @@ def _outside_links(text: str) -> list[str]:
 
 def test_an_indented_links_block_is_reindented_when_a_link_is_added(pair: tuple[Kb, Kb]) -> None:
     """A pinned exclusion, not a defect to fix: ruamel's dumper decides block-sequence indentation
-    from its own settings, never from the source. Stated in DESIGN §2.2 and in CLAUDE.md's
-    invariant, and asserted here so the library moving under it is noticed."""
+    from its own settings, never from the source. Stated in DESIGN §2.2 and in the
+    docs/INVARIANTS.md bound, and asserted here so the library moving under it is noticed."""
     local, _partner = pair
     path = handwrite(
         local,

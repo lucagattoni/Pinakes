@@ -340,9 +340,9 @@ def _merge_mapping(existing: Any, incoming: dict[str, Any], *, delete_missing: b
     provenance with no `extraction`, and a merge that only assigns would leave the stale paid claim
     in place, silently failing the `--force` reversal DESIGN §2.2 treats as an invariant. Recursing
     with it would strip the user's own keys from *inside* `extraction`, because
-    `with_extraction_provenance` builds a plain four-key replacement — and CLAUDE.md says a paid
-    extraction rewrites that block additively, "never any other key". Measured: a `reviewed_by: me`
-    written beside `content_hash` was destroyed by the unbounded version.
+    `with_extraction_provenance` builds a plain four-key replacement — and docs/INVARIANTS.md
+    says a paid extraction rewrites that block additively, "never any other key". Measured: a
+    `reviewed_by: me` written beside `content_hash` was destroyed by the unbounded version.
     """
     if delete_missing:
         for key in [key for key in existing if key not in incoming]:

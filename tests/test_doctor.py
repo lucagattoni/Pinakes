@@ -701,7 +701,7 @@ def test_hooks_are_found_inside_a_git_worktree(kb: Path, tmp_path: Path) -> None
     """In a worktree or submodule `.git` is a *file* pointing elsewhere. Probing
     `root/.git/hooks` directly names a directory that does not exist, so every hook reads as
     absent and both hook checks quietly report the wrong thing on exactly the layout this
-    project's own CLAUDE.md mandates for every change."""
+    project's own docs/BUILDING.md mandates for every change."""
     from pinakes.hooks import install
 
     real_gitdir = tmp_path / "real-gitdir"

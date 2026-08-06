@@ -1,7 +1,7 @@
 """The paid-path allowlist gate (plans/20260727_1543-v0.2.md, I7a) — proved in both directions.
 
-`CLAUDE.md` calls "the free path stays free" non-negotiable. v0.1 promised a CI grep enforcing it
-under a heading with no increment number, nobody owned it, and it never shipped
+`docs/INVARIANTS.md` calls "the free path stays free" non-negotiable. v0.1 promised a CI grep
+enforcing it under a heading with no increment number, nobody owned it, and it never shipped
 (docs/RETROSPECTIVES.md, 20260727 15:35). This increment's whole subject is that gate, so its own
 principle applies to every gate in it: **a gate only ever observed passing is a gate nobody has
 tested.** Each of the three gates below therefore has a test that makes it *fail*.
