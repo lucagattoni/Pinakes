@@ -1,0 +1,814 @@
+{
+  "graph_channel": "off",
+  "edge_kinds": [
+    "authored",
+    "co-located",
+    "in-section",
+    "membership",
+    "parent-child",
+    "shared-tag",
+    "sibling"
+  ],
+  "dropped": [],
+  "ranking": {
+    "link_distance": true,
+    "in_degree_salience": false
+  },
+  "schema": 1,
+  "k": 5,
+  "chunking": {
+    "max_tokens": 414,
+    "overlap": 64,
+    "headings": "numbered"
+  },
+  "embedding": {
+    "provider": "fastembed",
+    "model": "BAAI/bge-small-en-v1.5",
+    "dim": 384
+  },
+  "rerank": {
+    "provider": "fastembed",
+    "model": "Xenova/ms-marco-MiniLM-L-6-v2"
+  },
+  "retrieval": {
+    "candidates_per_source": 50,
+    "fusion": "rrf",
+    "fusion_top_k": 20,
+    "final_k": 8,
+    "rerank": "local",
+    "vector_tier": "auto",
+    "adjacent_k": 8
+  },
+  "questions": [
+    {
+      "id": "lex-arc-seal-integrity-s1",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-bgp-extended-message-size-s2",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-bgpsec-documentation-algorithm-ids-s5",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-caa-accounturi-match-s2",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-caa-property-tag-s2",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-cbor-typed-array-variants-s3",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-cddl-acronym-origin-s5",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 3,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-cwt-cnf-claim-s6",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-dlep-latency-type-value-s6",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-dlep-link-identifier-length-s3",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-ebml-vint-s4",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-epp-fee-balance-negative-s3",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-grease-acronym-s3",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-hash-of-root-key-extension-s1",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-hkdf-algorithm-identifiers-s1",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-hss-mts-hierarchy-s6",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-idunno-emoji-s4",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-implicit-iv-s4",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-iodef-json-name-s6",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-jmap-mail-capability-uris-s5",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-oauth-may-act-claim-s2",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-oscore-unaware-coap-proxies-s5",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-service-desc-link-relation-s5",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-shake128-digest-length-s3",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 2,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-srh-routing-type-s4",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-stamp-mbz-s4",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-stub-as-urpf-s6",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-tls-cert-psk-protect-s6",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-tname-zero-length-s1",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-trip-postal-address-s5",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-turn-permission-lifetime-s2",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "lex-user-code-oauth-device-s1",
+      "kind": "lexical",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-608-call-blocked-s2",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-acme-tlsalpn-port-s3",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-alarm-shelving-behavior-s1",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-bng-subscriber-s4",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-cbor-sequence-end-s6",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-dlv-registry-shutdown-s3",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-dns-push-transport-s4",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-dns-stale-cap-s4",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-dots-keepalive-purpose-s1",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-email-auth-results-header-s1",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-http-live-stream-range-value-s5",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-isup-call-release-location-s5",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-json-canon-purpose-s4",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-kerberos-smartcard-kdf-negotiation-s5",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-mptcp-signaling-s2",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-national-security-system-definition-s5",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 2,
+      "confidence": "high"
+    },
+    {
+      "id": "look-ntp-panic-threshold-value-s1",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-oauth-invalid-target-s6",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-oauth-token-cert-binding-s3",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-pim-type-space-obsoletes-s6",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-pref64-lifetime-units-s6",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-rfc-fiftieth-anniversary-s3",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-rtp-flow-priority-honoring-s5",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 2,
+      "confidence": "high"
+    },
+    {
+      "id": "look-safe-preference-defined-s2",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-scavenger-traffic-dscp-marking-s5",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-sip-digest-md5-s4",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-ssh-arcfour-prohibited-s6",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-ssh-ed25519-encryption-s3",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-tinymt32-basis-s2",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-tls-pin-server-identity-s2",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-ttml-rtp-clock-rate-s6",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "look-well-known-path-prefix-s1",
+      "kind": "simple-lookup",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "none-ble-pairing-procedure-s2",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "high"
+    },
+    {
+      "id": "none-blockchain-proof-of-work-s1",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "low"
+    },
+    {
+      "id": "none-camel-gsm-signaling-s1",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "high"
+    },
+    {
+      "id": "none-can-bus-arbitration-s6",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "low"
+    },
+    {
+      "id": "none-dnp3-rtu-authentication-s5",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "low"
+    },
+    {
+      "id": "none-eigrp-metric-weighting-s2",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "medium"
+    },
+    {
+      "id": "none-fibre-channel-credit-s4",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "low"
+    },
+    {
+      "id": "none-fibre-channel-zoning-s2",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "low"
+    },
+    {
+      "id": "none-lorawan-join-procedure-s3",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "low"
+    },
+    {
+      "id": "none-modbus-frame-s4",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "medium"
+    },
+    {
+      "id": "none-mqtt-qos-levels-s1",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "medium"
+    },
+    {
+      "id": "none-nfc-contactless-pairing-s5",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "medium"
+    },
+    {
+      "id": "none-zigbee-zdp-s4",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "low"
+    },
+    {
+      "id": "none-zwave-mesh-range-s6",
+      "kind": "no-answer",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "medium"
+    },
+    {
+      "id": "para-brainpool-official-backing-s3",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-calendar-attachment-operation-count-s5",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-cdns-compact-capture-s1",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-cloud-function-relocation-reason-s5",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "medium"
+    },
+    {
+      "id": "para-coap-proxy-loop-s4",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-conference-relay-partial-decrypt-s3",
+      "kind": "paraphrase",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "medium"
+    },
+    {
+      "id": "para-dnssec-weakening-signing-algo-s1",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-dual-isp-egress-choice-s2",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "medium"
+    },
+    {
+      "id": "para-fold-oversized-lines-s6",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-guaranteed-low-loss-delay-s2",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 3,
+      "confidence": "high"
+    },
+    {
+      "id": "para-http2-reauth-midstream-s3",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-icn-router-cache-name-s6",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 2,
+      "confidence": "high"
+    },
+    {
+      "id": "para-ipv6-only-reach-ipv4-s2",
+      "kind": "paraphrase",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "medium"
+    },
+    {
+      "id": "para-jmap-minimal-resync-s1",
+      "kind": "paraphrase",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "high"
+    },
+    {
+      "id": "para-jwt-purpose-confusion-s3",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-limited-domain-rules-s4",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-locsrc-emergency-s4",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-lpwan-oversized-packet-split-s3",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 4,
+      "confidence": "medium"
+    },
+    {
+      "id": "para-mdns-proxy-on-demand-s6",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-modem-router-link-status-sharing-s5",
+      "kind": "paraphrase",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "high"
+    },
+    {
+      "id": "para-mpls-last-hop-failover-s2",
+      "kind": "paraphrase",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "medium"
+    },
+    {
+      "id": "para-ospf-nontransit-s4",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-per-app-mobility-preference-granularity-s5",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 4,
+      "confidence": "low"
+    },
+    {
+      "id": "para-pim-shared-forwarding-role-s6",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-rpki-tal-cert-rotation-s1",
+      "kind": "paraphrase",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "medium"
+    },
+    {
+      "id": "para-security-broker-distributes-to-subscribers-s5",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-senml-temp-scale-s6",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-sni-hide-hostname-s6",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-videocall-rate-backoff-s2",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "high"
+    },
+    {
+      "id": "para-visibility-into-bundled-cable-members-s5",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "medium"
+    },
+    {
+      "id": "para-yang-push-tailored-updates-s1",
+      "kind": "paraphrase",
+      "hit": false,
+      "hit_rank": null,
+      "confidence": "medium"
+    },
+    {
+      "id": "para-zero-rtt-name-s4",
+      "kind": "paraphrase",
+      "hit": true,
+      "hit_rank": 1,
+      "confidence": "medium"
+    }
+  ]
+}

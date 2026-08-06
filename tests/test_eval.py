@@ -27,6 +27,7 @@ from pinakes.eval import (
     Question,
     compare,
     evaluate,
+    header,
     load_questions,
     read_baseline,
     read_outcomes,
@@ -1551,3 +1552,22 @@ def test_thresholds_are_fitted_from_the_unanswerable_distribution(demo: Path) ->
 
 def test_confidence_labels_are_the_ones_the_metrics_count() -> None:
     assert (LOW, HIGH) == ("low", "high")
+
+
+def test_the_artifact_header_records_the_chunking_a_leg_was_produced_under(demo: Path) -> None:
+    """`header` promises "every setting that can move a row", and chunking was missing from it.
+
+    It is the setting a before/after comparison is least able to notice going wrong. Two legs
+    chunked under different `max_tokens` are two corpora — measured on one RFC, 63 of 1 858 chunk
+    texts differ between 510 and 480, and `tools/eval_reproducibility_gate.py` exists because *one*
+    question in 41 moved across a rebuild. Every other setting that decides an outcome was already
+    here, so a leg that silently rechunked would attribute the movement to whatever was under test.
+    """
+    manifest = load(demo)
+    written = header(manifest, k=5)
+
+    assert written["chunking"] == {
+        "max_tokens": manifest.chunking.max_tokens,
+        "overlap": manifest.chunking.overlap,
+        "headings": manifest.chunking.headings,
+    }

@@ -1,0 +1,15 @@
+{
+  "questions": 110,
+  "recall_at_k": 0.9271,
+  "mrr": 0.8767,
+  "rerank_precision": 0.8438,
+  "false_abstain": 0.0104,
+  "false_confidence": 0.1429,
+  "confidence_coverage": 1.0,
+  "by_kind": {
+    "lexical": 1.0,
+    "no-answer": 1.0,
+    "paraphrase": 0.7812,
+    "simple-lookup": 1.0
+  }
+}

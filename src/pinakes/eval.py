@@ -570,6 +570,18 @@ def header(
         },
         "schema": OUTCOMES_SCHEMA,
         "k": k,
+        # **Chunking, because two legs chunked differently are two corpora.** Every other setting
+        # that decides an outcome was already recorded here; this one was not, and it is the one a
+        # before/after comparison is least able to notice going wrong. Changing `max_tokens`
+        # between legs moves chunk boundaries — measured on one RFC, 63 of 1 858 chunk texts differ
+        # at 510 versus 480 — so per-question movement would be attributed to whatever was being
+        # tested rather than to the rechunk that actually caused it. No *row* gained a field, so
+        # `OUTCOMES_SCHEMA` does not move; a reader wanting this uses `.get`.
+        "chunking": {
+            "max_tokens": manifest.chunking.max_tokens,
+            "overlap": manifest.chunking.overlap,
+            "headings": manifest.chunking.headings,
+        },
         "embedding": {
             "provider": manifest.embedding.provider,
             "model": manifest.embedding.model,

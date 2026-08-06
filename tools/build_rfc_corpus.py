@@ -241,7 +241,33 @@ max_tokens = {max_tokens}
 # prefix the injection experiment prepends to the embedded and indexed text. Both
 # legs chunk at this value, so their chunk boundaries are identical and the injected
 # text is the only difference between them.
+
+[retrieval.confidence]
+fitted_for = "Xenova/ms-marco-MiniLM-L-6-v2"
+low_below  = {low_below}
+high_above = {high_above}
 """
+
+
+CONFIDENCE_LOW_BELOW = -4.3841
+CONFIDENCE_HIGH_ABOVE = -0.5586
+"""Fitted 20260806 by `python -m pinakes.calibrate` against this corpus and its frozen golden set
+(96 answerable, 14 unanswerable questions), and stamped here rather than left for a human to paste.
+
+**Without them every confidence is `unknown`.** `manifest.load` leaves `confidence` `None` when the
+section is absent, `_confidence` returns `UNKNOWN` on its first check, and the eval then reports
+`false_abstain` and `false_confidence` as a vacuous **0.0** with `confidence_coverage` at 0.0 —
+metrics that read as perfect and measure nothing. Two of the three numbers the injection
+experiment's §2 requires are those two.
+
+**Stamped, so that both legs of a comparison are fitted identically by construction.** Thresholds
+refitted after a change would differ between legs, and every confidence comparison would then be
+measuring the refit rather than the change. A generated corpus whose thresholds lived only in an
+uncommitted `pinakes.toml` would also lose them on any machine but the one that fitted them.
+
+**Carry `calibrate.py`'s own caveat wherever these numbers are reported**: they are fitted on the
+same golden set the eval scores against, so the false-confidence rate is partly a measurement of
+the fit. Treat calibration as a floor on quality, not a measurement of it."""
 
 
 def write_documents(out: Path, documents: dict[int, str]) -> None:
@@ -275,6 +301,8 @@ def write_manifest(out: Path, *, kb_id: str) -> bool:
             window=EMBEDDING_WINDOW_TOKENS,
             special=SPECIAL_TOKENS,
             reserve=PREFIX_RESERVE_TOKENS,
+            low_below=CONFIDENCE_LOW_BELOW,
+            high_above=CONFIDENCE_HIGH_ABOVE,
         ),
         encoding="utf-8",
     )
@@ -380,6 +408,34 @@ def write_provenance(
     )
 
 
+GOLDEN_SET = Path(__file__).resolve().parent / "rfc_corpus" / "questions.yaml"
+"""The frozen golden set, committed because it is authored rather than harvested.
+
+The corpus is regenerated and never committed; the questions are the instrument that reads it, and
+an instrument living on one machine cannot be re-run — which is the whole reason this script
+exists. Its own header records how it was authored and why it must not be edited."""
+
+
+def write_golden_set(out: Path) -> bool:
+    """Copy the committed golden set into `<out>/eval/questions.yaml`.
+
+    Overwritten on every build, unlike `pinakes.toml`: the repository copy is the source of truth,
+    so a corpus carrying an older one would be evaluated against questions nobody could find. The
+    manifest is the opposite case — it holds the KB's permanent id and its fitted confidence
+    thresholds, which a rebuild must not discard.
+
+    `pinakes.eval` defaults to `<kb>/eval/questions.yaml`, so putting it here is what lets the
+    documented run be `python -m pinakes.eval <out>` with no path flag.
+    """
+    if not GOLDEN_SET.exists():  # pragma: no cover — only in a truncated checkout
+        return False
+    (out / "eval").mkdir(parents=True, exist_ok=True)
+    (out / "eval" / "questions.yaml").write_text(
+        GOLDEN_SET.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    return True
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="build_rfc_corpus", description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="KB directory to create")
@@ -431,6 +487,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     wrote_manifest = write_manifest(out, kb_id=str(mint_kb_id()))
     fallback, kept = mint_sidecars(out, titles)
     write_provenance(out, documents, era=args.era, fallback=fallback, kept=kept)
+    wrote_questions = write_golden_set(out)
 
     print(f"\n{len(documents)} documents -> {out}")
     if not wrote_manifest:
@@ -464,7 +521,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"{len(kept)} already had a sidecar from an earlier run and were left untouched: "
             f"{', '.join(str(n) for n in kept)}"
         )
+    if not wrote_questions:  # pragma: no cover — only in a truncated checkout
+        print(f"no golden set at {GOLDEN_SET} — `pinakes.eval` will skip this corpus")
     print(f"next: uv run pnk sync --kb {out} --rebuild")
+    print(f"then: uv run python -m pinakes.eval {out}")
     return 0
 
 
