@@ -143,7 +143,7 @@ def _replay_error(entry: dict[str, Any]) -> TransportError:
 
 def prices() -> Prices:
     return Prices(
-        as_of=datetime.now().strftime("%Y%m%d %H:%M"),
+        as_of=datetime.now(UTC).strftime("%Y%m%d %H:%M"),
         usd_per_eur=Decimal("1.08"),
         models=load_prices().models,
     )
@@ -226,7 +226,7 @@ def test_every_fixture_declares_where_its_bodies_came_from() -> None:
             assert provenance.get("source"), f"{path.name}: recorded but names no source"
             at: object = provenance.get("at", "")
             assert isinstance(at, str) and re.fullmatch(r"\d{8} \d{2}:\d{2}", at), (
-                f"{path.name}: `at` must be local 'YYYYMMDD HH:MM' (CLAUDE.md), got {at!r}"
+                f"{path.name}: `at` must be UTC 'YYYYMMDD HH:MM' (CLAUDE.md), got {at!r}"
             )
         else:
             why: object = provenance.get("why_not_recorded", "")
@@ -755,7 +755,7 @@ def test_a_confirmation_is_owed_once_for_a_document_not_once_per_call(
         pages=12,
         model=MODEL,
         prices=prices(),
-        now=datetime.now().strftime("%Y%m%d %H:%M"),
+        now=datetime.now(UTC).strftime("%Y%m%d %H:%M"),
         max_price_age_days=30,
     )
     decision = accountant.check_document(estimate)

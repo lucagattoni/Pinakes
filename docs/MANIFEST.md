@@ -35,7 +35,7 @@ else in the repo, that copy is the stale one.
 | `name` | ✅ | Local, human-facing. Rename freely; nothing depends on it |
 | `id` | ✅ | ULID. **Permanent.** The authority in every `pnk://` URI. Never edit, never regenerate |
 | `template` | | The blueprint and its own version, e.g. `notes@1.0` — the *template's* version, not the package's |
-| `created` | | `YYYYMMDD HH:MM` |
+| `created` | | `YYYYMMDD HH:MM`, **UTC** — stamped by `pnk init`. Naive by design: a KB carried between machines must not disagree about when it was made |
 | `requires_pinakes` | | The oldest Pinakes that can read this KB, as a **floor only**: `">=0.6"`. Absent means no floor declared, which is not an error — see below |
 
 ### `requires_pinakes` — the compatibility floor
@@ -253,7 +253,7 @@ provenance:
 | `id` | sync, once | ULID. **Permanent.** A hand-broken one errors with "restore the original", never a renumber |
 | `title` | you | Shown in results |
 | `tags` | you | What `pnk search --tag` filters on |
-| `created` | sync | Optional; date filters use the document's mtime instead, since every document has one |
+| `created` | sync | Optional, **UTC**; date filters use the document's mtime instead, since every document has one |
 | `links[].to` | you / [`pnk link`](CLI.md#pnk-link) | A `pnk://` URI, ULIDs only. `self` expands to this KB's own ULID on write. An **alias** here is a hard error at read — `pnk link` resolves `<alias>:<path>` on the command line, before anything reaches disk, so what is stored survives being shared |
 | `links[].rel` | you / [`pnk link`](CLI.md#pnk-link) | Free-form relation, e.g. `cites`, `supersedes` |
 | `provenance.source` | you | Where the document came from |

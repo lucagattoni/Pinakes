@@ -454,8 +454,9 @@ def _kb(root_table: Table, path: Path) -> KbSection:
     created = table.optional_string("created")
     if created is not None:
         try:
-            # A wall-clock stamp by design: the manifest records when the KB was created
-            # in local time, so no timezone is attached or wanted here.
+            # A wall-clock stamp by design: the manifest records when the KB was created,
+            # in UTC, so no zone is attached — every timestamp this project writes is UTC,
+            # and a naive local one would mean a different instant on the next machine.
             datetime.strptime(created, TIMESTAMP_FORMAT)
         except ValueError as exc:
             raise ManifestError(
