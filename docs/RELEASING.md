@@ -44,7 +44,7 @@ was dropped in the move.
 release notes. A CHANGELOG entry and a `__version__` are only claims: v0.1.0 had both for two days
 with no tag, no release and nothing published (`RETROSPECTIVES.md`, 20260727).
 
-## Sweep the four documents a release stales — in the release commit, not later
+## Sweep the three documents a release stales, in five places — in the release commit, not later
 
 | Document | What goes stale |
 |---|---|

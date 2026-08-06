@@ -17,7 +17,7 @@ precision nobody measured.
 
 ---
 
-## Where things stand right now — 20260806 00:51 UTC
+## Where things stand right now — 20260806 20:41 UTC
 
 - **24 releases in 12 days.** [`0.1.0`](#010--the-engine--20260725-1527) on 20260725;
   [`0.15.1`](#0151--one-clock--20260806-0051) on 20260806.
@@ -35,12 +35,15 @@ precision nobody measured.
   take. Its outcome decides whether the expensive downstream work — PDF layout heuristics, paid
   title inference — is arguable at all. **It is six increments, not one** (20260806): eight
   adversarial rounds re-scoped it, recorded every decision with its rejected alternatives, and
-  measured six conditions that fail silently if missed. **2a and 2b shipped 20260806** — the corpus
-  carries real titles and a measured token reserve, and a metadata prefix that would overrun the
-  model's window is now refused instead of silently truncated. **2c is next**: author and freeze
-  the golden set, calibrate it, capture the `before` leg, all before any injection code exists so
-  that no number can influence the questions. A vector-only screen then runs before the
-  `schema_version` 4 bump, because that bump is the only irreversible step in the plan.
+  measured six conditions that fail silently if missed, three of them since closed. **2a, 2b and 2c
+  shipped 20260806, and none of it is released yet.** The corpus carries real titles and a measured
+  token reserve; the code that builds a metadata prefix — and refuses one that would overrun the
+  model's window rather than letting it be truncated in silence — exists but is **dormant**, wired
+  into nothing until 2d; and the golden set is authored, frozen and calibrated, with its `before` leg
+  captured (110 questions, improvable pool 15). It was written by authors who had not read this
+  repository, before any injection code existed, so that no number could influence the questions.
+  **2d is next**: a vector-only screen, run before the `schema_version` 4 bump because that bump is
+  the only irreversible step in the plan.
 - **[The graph release](#the-graph-release--shipped-0110) shipped — and its channel is `off`.**
   Blocked for three days on a *corpus*, not on code; the RFC corpus cleared the reachability
   precondition, and then the retrieval gate improved **0** multi-hop questions and regressed **3**
@@ -675,15 +678,18 @@ precondition of 7 and 7 —
 
 **What has already shipped from it:** G1 (reproducibility) and G4 (`requires_pinakes`) in
 [`0.6.0`](#060--links-you-can-write--20260801-1051); G2 (the evaluation artifact and the measurement
-itself) in [`0.7.0`](#070--the-measurement-that-said-no--20260801-1240). **G3 is the increment being
-built**, then G5 (the channel and its gate) and G6 (hub reporting and the cut).
+itself) in [`0.7.0`](#070--the-measurement-that-said-no--20260801-1240); **G3, G5 and G6 all landed
+in `0.11.0`**, so nothing from this build order is outstanding.
 
-**One caveat carried into the build:** every chunk in the RFC corpus has an empty `heading_path`,
-because RFC section numbering is not Markdown-shaped and structural chunking degraded to size-based
-in silence. So `in-section` and `parent-child` derived **zero** edges and were never exercised, and
-`sibling` derived 106 506 that changed no outcome. All six kinds are built anyway — that zero is a
-question for G5's gate, which carries a `--drop sibling` arm to answer it, not a reason to drop a
-kind on evidence from a corpus whose chunker had failed.
+**One caveat that bounded the build, and its cause was not what was first recorded:** every chunk in
+the 300-RFC corpus had an empty `heading_path`. Not because a grammar failed to match RFC section
+numbering — because none was ever run: `chunk.py` dispatched on *source type*, and every type but
+`markdown` took `_plain_blocks`, which sets `heading_path=None` unconditionally. So `in-section` and
+`parent-child` derived **zero** edges and were never exercised, and `sibling` derived 106 506 that
+changed no outcome. All six kinds were built anyway — that zero was a question for G5's gate, which
+carried a `--drop sibling` arm to answer it, not a reason to drop a kind on evidence from a corpus
+whose chunker had never been asked. `0.13.0` gave plain text a numbered-heading grammar, so a corpus
+built today does carry heading paths; the gate's numbers are the corpus that produced them.
 
 → The design it would implement: [graph/PINAKES_APPROACH.md](graph/PINAKES_APPROACH.md). The build
 order:
@@ -724,13 +730,11 @@ it changes neither reachability nor retrieval.
 
 **Not settled — and this is the honest bound on the headline.** Three of the seven edge kinds
 (`in-section`, `parent`, `child`) derived **zero** edges, because not one of the 106,806 chunks
-carries a `heading_path`. **The reason is not the one first recorded here.** The grammar did not
-fail to match RFC section numbering — it was never run: `chunk.py` dispatches on *source type*, and
-every type but `markdown` takes `_plain_blocks`, which sets `heading_path=None` unconditionally.
-Nothing failed to match because nothing was tried, which is why tightening a grammar would have
-fixed nothing ([open correction 4](#open-corrections--none-live)). So the verdict is *"the edge kinds
-that worked did not help this corpus"*, never *"graph structure does not help"*. The `--drop
-parent-child` arm the arity decision added could say nothing at all here, by construction.
+carried a `heading_path` — the chunker was never asked for one on `.txt`, as the section above
+records. Nothing failed to match because nothing was tried, which is why tightening a grammar would
+have fixed nothing. So the verdict is *"the edge kinds that worked did not help this corpus"*, never
+*"graph structure does not help"*. The `--drop parent-child` arm the arity decision added could say
+nothing at all here, by construction.
 
 **What would change it**, in the order the project would try them:
 
@@ -819,7 +823,7 @@ at in [BUILDING.md](BUILDING.md) and [RELEASING.md](RELEASING.md).
 - **Unbuilt work is named, never numbered.** For months `v0.3` meant the links release; then `0.2.2`
   shipped and the next MINOR *was* `0.3.0`. One number meant two releases, and either reading would
   have renumbered ~60 committed references ([STATUS § Release roadmap](STATUS.md#release-roadmap)).
-- **Complete work never sits in `[Unreleased]`.** Hence 18 releases in 10 days
+- **Complete work never sits in `[Unreleased]`.** Hence the release cadence in the table above
   ([RELEASING.md](RELEASING.md)).
 - **`CHANGELOG.md` and `RETROSPECTIVES.md` are never edited directly** — a change drops a fragment in
   [`changelog.d/`](https://github.com/lucagattoni/pinakes/blob/main/changelog.d/README.md) or

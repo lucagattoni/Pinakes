@@ -24,10 +24,14 @@ Someone must convert, and conversion touches frozen material. These are the rule
 
 ## Conversion rules — mechanical, reviewable, and biased against yourself
 
-1. **The frozen file is never edited.** The conversion writes a NEW file,
-   `eval/questions.yaml`, in the corpus repo, committed with a message naming the freezing sha it
-   was derived from. Both files stay committed; a reviewer must be able to diff intent against
-   translation.
+1. **The frozen file is never edited.** The conversion writes a NEW file in the corpus repo,
+   committed with a message naming the freezing sha it was derived from. Both files stay committed;
+   a reviewer must be able to diff intent against translation. ⚠️ **Not `eval/questions.yaml`, as
+   this rule originally said — that path is taken.** Since 2c (20260806),
+   `tools/build_rfc_corpus.py` writes the repository's own frozen 110-question golden set to
+   `<out>/eval/questions.yaml` on **every** build, unconditionally, so a conversion put there is
+   silently overwritten by the next `build_rfc_corpus.py` run. Pick a distinct name — e.g.
+   `eval/multihop-questions.converted.yaml` — and pass it explicitly.
 2. **`id` carries over unchanged.** One frozen question → one converted question. None dropped,
    none added, none merged — the converted file has exactly as many `multi-hop` entries as the
    frozen file, and the count is stated in the run report.
@@ -62,9 +66,13 @@ uv run python3 tools/reachable_ceiling_probe.py --kb <corpus-path> --drop shared
 ## Before the numbers mean anything: which edge kinds actually exist here
 
 **Measured on the built corpus, 20260804:** 106 806 chunks, **every one with an empty
-`heading_path`**. `strategy = "structural"` uses a Markdown-shaped heading grammar and RFC section
-numbering does not match it, so nothing was recognised
-([`20260731_1202-open-corrections.md`](20260731_1202-open-corrections.md) item 3).
+`heading_path`**. The cause is not a grammar that failed to match RFC section numbering — **no
+grammar was ever run.** `chunk.py` dispatches on *source type*, and until 0.13.0 every type but
+`markdown` took `_plain_blocks`, which sets `heading_path=None` unconditionally
+([DESIGN §4.6](../docs/DESIGN.md)). Tightening a grammar would have fixed nothing. **Fixed since,
+in 0.13.0** by `[chunking] headings = "numbered"`, and the corpus builder stamps it — so the figures
+below describe the corpus as it was on 20260804 and re-running this probe today measures a different
+corpus, not a reproduction.
 
 Consequence for this measurement, stated before it runs:
 

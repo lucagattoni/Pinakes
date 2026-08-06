@@ -1,6 +1,6 @@
 # Status — what ships today
 
-**Latest release: 0.15.1** · last reviewed 20260806 00:51
+**Latest release: 0.15.1** · last reviewed 20260806 20:41
 
 > **This file is the only place in the repo that says what is built.** Every other doc describes
 > *how* something works or *why* it was designed that way, and links here for whether you can use it
@@ -41,6 +41,23 @@
 | Cross-KB links (`pnk link`, `pnk links`, `pinakes_links`) | **shipped 0.6.0** — `pnk sync` records what other KBs link into this one (`--scan-links`), `pnk links` and `pinakes_links` traverse (0.5.0), `pnk link` authors, and `pnk doctor` reports link coverage as a ratio and resolves cross-KB targets (0.6.0) | 0.5.0 · 0.6.0 |
 | Sidecar round-trip | **shipped 0.5.0** — `ruamel.yaml` in round-trip mode at YAML 1.2: comments, quoting, block scalars and blank lines survive a rewrite, and an unknown key's value is no longer reinterpreted | 0.5.0 |
 | `sqlite-vec` tier, template ecosystem | **not built** | the template release |
+
+### On `main`, unreleased — 20260806
+
+Three increments of the metadata-injection experiment have landed since `0.15.1` and **nothing above
+moves because of them**: no command, flag or manifest key reaches a user yet, and `pip install
+pinakes` still gets `0.15.1`. Recorded here because this file is the only place that says what is
+built, and "merged" and "released" are different answers.
+
+| | Landed | What it is |
+|---|---|---|
+| **2a** | 20260806 06:17, `86cd403` | `tools/build_rfc_corpus.py` mints each RFC sidecar with the title published at `rfc<N>.json` and stamps `max_tokens = 414`, reserving 96 tokens of the model's 512-token window. A build tool; no shipped code path changed |
+| **2b** | 20260806 08:33, `fcabc02` | `chunk.metadata_prefix`, `chunk.embedding_text` and `chunk.assert_prefix_fits` — the prefix, the text that would be embedded, and a refusal for a prefix that would not fit. **Dormant**: nothing on the indexing path calls it, so no KB changes behaviour |
+| **2c** | 20260806 11:56, `36f32ce` | A frozen 110-question golden set for the RFC corpus, calibrated, with its `before` leg committed (numbers below). Also user-visible when it releases: `eval/outcomes.json` now records the `[chunking]` settings its run was produced under |
+
+The experiment they serve is
+[`plans/20260805_1721-metadata-as-retrieval-context.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260805_1721-metadata-as-retrieval-context.md);
+2d is next.
 
 ⚠️ **0.3.0 is the first release that can spend money — and it will not, unless you ask it to.**
 Every earlier version had no paid code path at all. The only one now is the `claude-vision`
@@ -316,6 +333,37 @@ identical), so treat it as a floor rather than an estimate. Publishing it is the
 [DESIGN §4.2](DESIGN.md#42-escalation--free-path-first) commits to measuring the heuristic's cost
 rather than assuming it away.
 
+### A second golden set, on a corpus that can license a result — frozen 20260806 11:56
+
+Every number above is `tests/demo-kb`'s, and the paragraph above says why nothing should be tuned
+against it. **The measurement it cannot carry now has an instrument.** 110 questions over the RFC
+band `build_rfc_corpus.py --era modern --count 200` (RFCs 8600-8799, 195 published, ~43 350 chunks),
+frozen at
+[`tools/rfc_corpus/questions.yaml`](https://github.com/lucagattoni/pinakes/blob/main/tools/rfc_corpus/questions.yaml)
+with its `before` leg beside it. **On `main`, unreleased.**
+
+| Metric | Value | |
+|---|---|---|
+| questions | 110 | 32 lexical, 32 simple-lookup, 32 paraphrase, 14 no-answer, over 96 of the 195 documents |
+| recall@5 | 0.9271 | |
+| MRR | 0.8767 | |
+| rerank precision | 0.8438 | |
+| false-abstain | 0.0104 | |
+| false-confidence | 0.1429 | fitted on this same set — a floor, see below |
+| confidence coverage | 1.0 | |
+| **improvable pool** | **15** | 11 paraphrase, 2 lexical, 2 simple-lookup — the number that decides whether a sign test at p < 0.05 is reachable at all |
+
+Per class: `lexical` 1.00, `simple-lookup` 1.00, `no-answer` 1.00, `paraphrase` 0.7812. Measured at
+`max_tokens = 414`, `k = 5`, `rerank = "local"`, `graph_channel = "off"` — the artifact records all
+four, so a leg produced under different settings is identifiable rather than merely suspect.
+
+**Two things this set is for, and one it is not.** It exists to make the injection experiment
+falsifiable, and its questions were written by authors who had not read this repository, before any
+injection code existed — fitting a question set to the mechanism it will judge is undetectable
+afterwards. It is **not** a claim that retrieval improved: 0.9271 against demo-kb's 0.939 is two
+different corpora, not a regression. The false-confidence caveat above applies here in the same
+form, for the same reason — the thresholds are fitted on the set that scores them.
+
 ### Is the evaluation reproducible? — measured 20260801 00:35
 
 The graph release gates on an exact per-question sign test, so it was worth knowing whether a
@@ -458,12 +506,14 @@ removing `co-located` costs 3 questions, removing `shared-tag` costs 6, and the 
 ever raised the count. Artifacts:
 [`pinakes-corpus-rfc/eval/probe`](https://github.com/lucagattoni/pinakes-corpus-rfc/tree/main/eval/probe).
 
-**The bound on all of it: every chunk in that corpus has an empty `heading_path`.** RFC section
-numbering is not Markdown-shaped, so `strategy = "structural"` degraded to size-based chunking in
-silence — `in-section` and `parent-child` derived **zero** edges and were never exercised, and a
-"sibling" there is an adjacent arbitrary size-slice rather than an adjacent section. The 9 is
-therefore a **floor** for a corpus whose chunker works, and `sibling`'s zero is a question for G5's
-gate, not a design decision. Fixing the silent degradation is a live correction.
+**The bound on all of it: every chunk in the corpus that measurement ran on had an empty
+`heading_path`.** The chunker was never asked for one — `chunk.py` dispatched on source type and
+every type but `markdown` took the plain-block path — so `in-section` and `parent-child` derived
+**zero** edges and were never exercised, and a "sibling" there is an adjacent arbitrary size-slice
+rather than an adjacent section. The 9 is therefore a **floor** for a corpus whose chunker works,
+and `sibling`'s zero is a question for G5's gate, not a design decision. **Fixed in 0.13.0**
+(`[chunking] headings = "numbered"`): a corpus built today carries heading paths, so re-running this
+probe would measure a different corpus rather than reproduce these figures.
 
 **Why the synthetic corpus could never answer this**, which is the finding that outlived the
 negative result:
