@@ -11,7 +11,9 @@ shape this module (docs/DESIGN.md §4.6):
   rather than silently truncating later.
 
 Every chunk records the character span it came from, so a passage can be shown in its source
-context, and the heading path it sat under, which is both a filter and a citation.
+context, and the heading path it sat under, which is both a filter and a citation. It also records
+that path **without its section numbers** — the form the metadata prefix is built from, kept
+separate because the numbered form was chosen for citation and this one for embedding.
 
 The invariant the tests hold this module to: **every character of the source lands in at least one
 chunk.** Overlap may repeat text; nothing may drop it.
@@ -19,7 +21,7 @@ chunk.** Overlap may repeat text; nothing may drop it.
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import pairwise
 from typing import Protocol
 
@@ -60,6 +62,21 @@ class Chunk:
     char_end: int
     token_count: int
     heading_path: str | None
+    unnumbered_heading_path: str | None
+    """`heading_path` with each label's own section number removed — `Routing HTTP Messages` where
+    `heading_path` says `7.  Routing HTTP Messages`. It has **no default on purpose**: a chunk
+    carrying a heading path and a `None` here would build a shorter prefix than the document
+    deserves, silently, which is the class of failure this field exists to serve.
+
+    Deliberately **not** persisted by `as_row`. The stored form is the citation form, and a second
+    column would be a second thing to keep in step with it. Numbers are dropped **by construction**
+    — `_numbered_blocks` already holds the parsed `(number, label)` pair — never by a second regex
+    over the joined string, which would be a copy of the grammar's rule that can drift and would
+    mis-fire on a heading whose text legitimately begins with a digit.
+
+    For Markdown and for unstructured text this equals `heading_path`: `#` is syntax and is already
+    gone, so a Markdown heading reading `## 1. Introduction` keeps its `1.` in both. That is the
+    same rule, not an exception to it — nothing parsed a number there, so nothing may remove one."""
     page_start: int | None = None
     page_end: int | None = None
     """1-indexed, `None` for a non-paged source. A chunk may legitimately span two pages — e.g. a
@@ -88,6 +105,7 @@ class Block:
     start: int
     end: int
     heading_path: str | None
+    unnumbered_heading_path: str | None
 
 
 def source_type(filename: str) -> str:
@@ -117,6 +135,119 @@ def assert_chunkable(max_tokens: int, *, model_max_tokens: int, special_tokens: 
                 f"Lower max_tokens to {budget} or less, or configure a model with a longer window."
             ),
         )
+
+
+HEADING_JOIN = " > "
+"""What joins one heading label to the next, and `title` onto the front of them.
+
+Named because this module builds the string at three sites and `metadata_prefix` extends it at a
+fourth; a literal at each is four chances to disagree about a format that is *persisted* in
+`chunks.heading_path` and parsed back out by `graph/edges.py` (whose `HEADING_SEPARATOR` is the
+consuming copy — changing one without the other silently empties three edge kinds)."""
+
+PREFIX_SEPARATOR = "\n\n"
+"""What separates the prefix from the chunk's own text: a blank line, the same boundary the source
+document uses between blocks, so the prefix reads as its own paragraph rather than as a run-on
+first sentence. It is measured **with the prefix**, never with the text, so that whatever it costs
+a given tokenizer is always inside the reserve."""
+
+
+def metadata_prefix(chunk: Chunk, *, title: str | None) -> str | None:
+    """`title > heading path`, section numbers stripped — the string injection prepends.
+
+    `None` when there is nothing to say: an untitled document whose chunk sits under no heading.
+    Either part alone is a legitimate prefix. A title that is empty or only whitespace is no title
+    — `title` is the user's field in a hand-edited sidecar and can be both — and either would
+    otherwise inject a separator with nothing in front of it.
+
+    It takes the **chunk**, not a path string, so that no caller has to choose between
+    `heading_path` and `unnumbered_heading_path` — the numbered form is for citation, and passing
+    it here would inject `7.  Routing HTTP Messages`, which is the form the plan measured at 44%
+    numbers and rejected (`plans/20260805_1721-metadata-as-retrieval-context.md` §2).
+    """
+    written = (title, chunk.unnumbered_heading_path)
+    parts = [part.strip() for part in written if part is not None and part.strip()]
+    return HEADING_JOIN.join(parts) if parts else None
+
+
+def embedding_text(chunk: Chunk, *, title: str | None) -> str:
+    """What gets embedded when metadata injection is on: the prefix, a blank line, then the text.
+
+    Falls back to the chunk's own text when there is no prefix, so a document with neither a title
+    nor headings is embedded exactly as it is today — an injection that changes untitled documents
+    would make the two legs of the experiment differ where the mechanism does not apply.
+    """
+    prefix = metadata_prefix(chunk, title=title)
+    return f"{prefix}{PREFIX_SEPARATOR}{chunk.text}" if prefix is not None else chunk.text
+
+
+def assert_prefix_fits(
+    chunks: Sequence[Chunk],
+    *,
+    title: str | None,
+    path: str,
+    counter: TokenCounter,
+    max_tokens: int,
+    model_max_tokens: int,
+    special_tokens: int = 2,
+) -> None:
+    """Refuse a corpus whose metadata prefix does not fit the reserve `max_tokens` left for it.
+
+    `assert_chunkable`'s sibling, and deliberately at a different point in the run. That one
+    validates a *setting* before anything is read; this one validates a *corpus*, after its chunks
+    exist and before they are embedded — because the prefix is built from `heading_path`, so its
+    length is not knowable until the document has been chunked. It is a property of the documents,
+    not of the manifest: measured 20260806, the longest prefix is 30 tokens on RFC 9110 and **68**
+    across 195 RFCs of the same era, so no constant in this file could have predicted it.
+
+    **Why a refusal and not a truncation.** An embedding input longer than the model's window is
+    silently cut: measured 20260806, a 512-token string embedded with an empty `warnings` list.
+    What it cuts is the tail of the *longest* chunks — exactly the ones a metadata prefix is
+    supposed to help — so the loss reads as "the change did nothing" rather than as a failure.
+
+    **The reserve is checked, not the individual chunk.** `budget - max_tokens` is what the manifest
+    set aside; a prefix larger than it is unsafe for this corpus whether or not today's text happens
+    to reach the cap, and the two legs of an A/B comparison must chunk under the same `max_tokens`
+    or they are different corpora. Refusing the setting is therefore stable across documents and
+    across edits to them, which refusing the worst chunk in hand would not be.
+
+    Each distinct prefix is measured once — a document has orders of magnitude fewer heading paths
+    than chunks — with `PREFIX_SEPARATOR` attached, so the separator's own cost is inside the
+    number. `count_tokens(prefix + sep) + count_tokens(text)` is an upper bound on
+    `count_tokens(prefix + sep + text)` for any tokenizer that splits on whitespace before merging,
+    and measured 20260806 against this corpus's own `BAAI/bge-small-en-v1.5` it was **exact** —
+    equal, never merely bounding — for all 43 503 chunk/prefix pairs of 195 RFCs, so the check
+    errs, if at all, toward refusing.
+    """
+    budget = model_max_tokens - special_tokens
+    reserve = budget - max_tokens
+
+    measured: dict[str, int] = {}
+    for chunk in chunks:
+        prefix = metadata_prefix(chunk, title=title)
+        if prefix is not None and prefix not in measured:
+            measured[prefix] = counter.count_tokens(prefix + PREFIX_SEPARATOR)
+    if not measured:
+        return
+
+    longest, tokens = max(measured.items(), key=lambda item: (item[1], item[0]))
+    if tokens <= reserve:
+        return
+
+    safe = budget - tokens
+    raise ChunkingError(
+        f"{path}: the metadata prefix does not fit. [chunking] max_tokens = {max_tokens} leaves "
+        f"{reserve} tokens of the {budget} the model can encode ({model_max_tokens} minus "
+        f"{special_tokens} special tokens), and this document's longest prefix needs {tokens}: "
+        f"{longest!r}.",
+        remedy=(
+            f"Lower [chunking] max_tokens to {safe} or less and re-sync, or turn metadata "
+            f"injection off."
+            if safe >= 1
+            else "This document's prefix alone fills the model's window: shorten its title, or "
+            "configure a model with a longer window."
+        ),
+    )
 
 
 def chunk_document(
@@ -166,12 +297,10 @@ def chunk_document(
 
 
 def _with_pages(chunk: Chunk, page_spans: Sequence[tuple[int, int]]) -> Chunk:
-    return Chunk(
-        text=chunk.text,
-        char_start=chunk.char_start,
-        char_end=chunk.char_end,
-        token_count=chunk.token_count,
-        heading_path=chunk.heading_path,
+    """`replace`, not a field-by-field rebuild: this only *labels* pages, so every other field must
+    survive untouched, and a hand-copied constructor drops whatever field was added last."""
+    return replace(
+        chunk,
         page_start=_page_for(chunk.char_start, page_spans),
         page_end=_page_for(max(chunk.char_start, chunk.char_end - 1), page_spans),
     )
@@ -248,12 +377,17 @@ def _markdown_blocks(text: str) -> list[Block]:
             return
         body = text[block_start:block_end].rstrip("\n")
         if body.strip():
+            path = HEADING_JOIN.join(headings) if headings else None
             blocks.append(
                 Block(
                     text=body,
                     start=block_start,
                     end=block_start + len(body),
-                    heading_path=" > ".join(headings) if headings else None,
+                    heading_path=path,
+                    # Markdown's `#` is syntax and `_ATX_HEADING` has already dropped it. Whatever
+                    # remains is the author's own text, numbers included, so there is nothing here
+                    # to strip and the two paths are the same string.
+                    unnumbered_heading_path=path,
                 )
             )
         block_start = None
@@ -295,13 +429,18 @@ def _markdown_blocks(text: str) -> list[Block]:
     return blocks
 
 
-def _numbered_candidates(text: str) -> list[tuple[int, tuple[int, ...], str]]:
-    """Every line passing clauses 1-5, as `(line_start, number, full_heading_text)`.
+def _numbered_candidates(text: str) -> list[tuple[int, tuple[int, ...], str, str]]:
+    """Every line passing clauses 1-5, as `(line_start, number, heading_text, label_only)`.
 
     Clause 5 — preceded by a blank line, or the first line — is why this walks the document rather
     than filtering lines independently.
+
+    The last two are the same heading with and without its section number: `7.  Routing HTTP
+    Messages` and `Routing HTTP Messages`. Both come out of the *same* match — the grammar parsed
+    the number here, so this is the one place that knows where it ends, and the only place entitled
+    to remove it.
     """
-    found: list[tuple[int, tuple[int, ...], str]] = []
+    found: list[tuple[int, tuple[int, ...], str, str]] = []
     offset = 0
     previous_blank = True  # start of document satisfies clause 5
 
@@ -326,7 +465,7 @@ def _numbered_candidates(text: str) -> list[tuple[int, tuple[int, ...], str]]:
             continue
 
         number = tuple(int(part) for part in match.group("num").split("."))
-        found.append((line_start, number, stripped.strip()))
+        found.append((line_start, number, stripped.strip(), title))
 
     return found
 
@@ -406,14 +545,16 @@ def _numbered_blocks(text: str) -> list[Block]:
     syntax, `1.2` is content you would cite.
     """
     candidates = _numbered_candidates(text)
-    if not _outline_ok([number for _, number, _ in candidates]):
+    if not _outline_ok([number for _, number, _, _ in candidates]):
         return _plain_blocks(text)
 
-    at_line: dict[int, tuple[tuple[int, ...], str]] = {
-        line_start: (number, label) for line_start, number, label in candidates
+    at_line: dict[int, tuple[tuple[int, ...], str, str]] = {
+        line_start: (number, label, label_only)
+        for line_start, number, label, label_only in candidates
     }
     blocks: list[Block] = []
     headings: list[str] = []
+    labels: list[str] = []  # the same stack without the section numbers, kept in step with it
     block_start: int | None = None
     block_end = 0
     pending_start: int | None = None
@@ -430,7 +571,8 @@ def _numbered_blocks(text: str) -> list[Block]:
                     text=body,
                     start=block_start,
                     end=block_start + len(body),
-                    heading_path=" > ".join(headings) if headings else None,
+                    heading_path=HEADING_JOIN.join(headings) if headings else None,
+                    unnumbered_heading_path=HEADING_JOIN.join(labels) if labels else None,
                 )
             )
         block_start = None
@@ -442,13 +584,15 @@ def _numbered_blocks(text: str) -> list[Block]:
         heading = at_line.get(line_start)
         if heading is not None:
             flush()
-            number, label = heading
+            number, label, label_only = heading
             # The *normalised* depth, matching the walk. `2.0` is a top-level section, so reading
             # its raw length would nest it under `1.0` instead of making it a sibling — the walk
             # would accept the document and the hierarchy would still come out wrong.
             depth = len(_normalise(number))
             del headings[depth - 1 :]
+            del labels[depth - 1 :]
             headings.append(label)
+            labels.append(label_only)
             if pending_start is None:
                 pending_start = line_start
             continue
@@ -480,7 +624,13 @@ def _plain_blocks(text: str) -> list[Block]:
         body = text[block_start:block_end].rstrip("\n")
         if body.strip():
             blocks.append(
-                Block(text=body, start=block_start, end=block_start + len(body), heading_path=None)
+                Block(
+                    text=body,
+                    start=block_start,
+                    end=block_start + len(body),
+                    heading_path=None,
+                    unnumbered_heading_path=None,
+                )
             )
         block_start = None
 
@@ -509,6 +659,7 @@ def _fit(block: Block, *, counter: TokenCounter, max_tokens: int, overlap: int) 
                 char_end=block.end,
                 token_count=tokens,
                 heading_path=block.heading_path,
+                unnumbered_heading_path=block.unnumbered_heading_path,
             )
         ]
 
@@ -528,6 +679,7 @@ def _fit(block: Block, *, counter: TokenCounter, max_tokens: int, overlap: int) 
                 char_end=start + len(body),
                 token_count=counter.count_tokens(body),
                 heading_path=block.heading_path,
+                unnumbered_heading_path=block.unnumbered_heading_path,
             )
         )
 
@@ -558,6 +710,7 @@ def _fit(block: Block, *, counter: TokenCounter, max_tokens: int, overlap: int) 
             char_end=block.end,
             token_count=tokens,
             heading_path=block.heading_path,
+            unnumbered_heading_path=block.unnumbered_heading_path,
         )
     ]
 
