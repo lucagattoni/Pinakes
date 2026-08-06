@@ -41,3 +41,14 @@ parsed a number there — `#` is syntax and is already gone, and the text after 
 Only the grammar that parsed a number is entitled to remove one. A regex over the joined string
 would have been shorter, would have drifted from the grammar's own rule, and would have eaten the
 `404` from `# 404 Not Found`.
+
+**Two findings from the increment's own adversarial pass, both about a value with more than one
+home.** The first: the prefix's join was introduced as a *new* constant, which would have made four
+literal `" > "`s in this module plus `graph/edges.HEADING_SEPARATOR` reading them back — for a
+format that is **persisted** in `chunks.heading_path`, where a disagreement empties three edge
+kinds and reports nothing. It is now one `HEADING_JOIN` used at every site that builds a heading
+path, with the consuming copy named in its docstring. The second: `title` is the user's field in a
+hand-edited sidecar, so it can be `""` or `"   "`, and the first draft treated whitespace as
+content — injecting a separator with nothing in front of it into every chunk of that document.
+Neither would have failed a test or a run; both are the shape this project keeps meeting, a value
+that is wrong in a way nothing reports.

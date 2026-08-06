@@ -137,9 +137,13 @@ def assert_chunkable(max_tokens: int, *, model_max_tokens: int, special_tokens: 
         )
 
 
-PREFIX_JOIN = " > "
-"""What joins `title` to the heading path, and the heading labels to each other — `heading_path`'s
-own separator, so the injected string reads as one path rather than two conventions spliced."""
+HEADING_JOIN = " > "
+"""What joins one heading label to the next, and `title` onto the front of them.
+
+Named because this module builds the string at three sites and `metadata_prefix` extends it at a
+fourth; a literal at each is four chances to disagree about a format that is *persisted* in
+`chunks.heading_path` and parsed back out by `graph/edges.py` (whose `HEADING_SEPARATOR` is the
+consuming copy — changing one without the other silently empties three edge kinds)."""
 
 PREFIX_SEPARATOR = "\n\n"
 """What separates the prefix from the chunk's own text: a blank line, the same boundary the source
@@ -152,15 +156,18 @@ def metadata_prefix(chunk: Chunk, *, title: str | None) -> str | None:
     """`title > heading path`, section numbers stripped — the string injection prepends.
 
     `None` when there is nothing to say: an untitled document whose chunk sits under no heading.
-    Either part alone is a legitimate prefix.
+    Either part alone is a legitimate prefix. A title that is empty or only whitespace is no title
+    — `title` is the user's field in a hand-edited sidecar and can be both — and either would
+    otherwise inject a separator with nothing in front of it.
 
     It takes the **chunk**, not a path string, so that no caller has to choose between
     `heading_path` and `unnumbered_heading_path` — the numbered form is for citation, and passing
     it here would inject `7.  Routing HTTP Messages`, which is the form the plan measured at 44%
     numbers and rejected (`plans/20260805_1721-metadata-as-retrieval-context.md` §2).
     """
-    parts = [part for part in (title, chunk.unnumbered_heading_path) if part]
-    return PREFIX_JOIN.join(parts) if parts else None
+    written = (title, chunk.unnumbered_heading_path)
+    parts = [part.strip() for part in written if part is not None and part.strip()]
+    return HEADING_JOIN.join(parts) if parts else None
 
 
 def embedding_text(chunk: Chunk, *, title: str | None) -> str:
@@ -370,7 +377,7 @@ def _markdown_blocks(text: str) -> list[Block]:
             return
         body = text[block_start:block_end].rstrip("\n")
         if body.strip():
-            path = " > ".join(headings) if headings else None
+            path = HEADING_JOIN.join(headings) if headings else None
             blocks.append(
                 Block(
                     text=body,
@@ -564,8 +571,8 @@ def _numbered_blocks(text: str) -> list[Block]:
                     text=body,
                     start=block_start,
                     end=block_start + len(body),
-                    heading_path=" > ".join(headings) if headings else None,
-                    unnumbered_heading_path=" > ".join(labels) if labels else None,
+                    heading_path=HEADING_JOIN.join(headings) if headings else None,
+                    unnumbered_heading_path=HEADING_JOIN.join(labels) if labels else None,
                 )
             )
         block_start = None

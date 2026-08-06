@@ -1,5 +1,7 @@
 """Chunking: structure is respected, limits are honoured, and no character is ever dropped."""
 
+import re
+
 import pytest
 
 from pinakes.chunk import (
@@ -427,12 +429,12 @@ def test_a_genuine_subsection_is_not_confused_with_a_trailing_zero(counter: Toke
 
 
 class NewlineCounter:
-    """One token per whitespace-separated word, **plus one per newline**.
+    r"""One token per whitespace-separated word, **plus one per newline**.
 
-    `WordCounter` says `"a\n\nb".split()` is two tokens, so a separator costs nothing and a check
-    that forgot to measure it would pass. Real tokenizers vary: BERT's WordPiece drops newlines
-    entirely, byte-level BPEs give them tokens of their own. This is the one that would catch a
-    separator measured with the text instead of with the prefix.
+    `WordCounter` splits on whitespace, so `PREFIX_SEPARATOR` costs it nothing and a check that
+    forgot to measure the separator would pass. Real tokenizers vary: BERT's WordPiece drops
+    newlines entirely, byte-level BPEs give them tokens of their own. This is the counter that
+    catches a separator measured with the text instead of with the prefix.
     """
 
     def count_tokens(self, text: str) -> int:
@@ -542,6 +544,12 @@ def test_either_half_of_the_prefix_stands_alone(counter: TokenCounter) -> None:
     assert metadata_prefix(unstructured, title=None) is None
     assert metadata_prefix(titled, title=None) == "Introduction"
 
+    # `title` is the user's field in a hand-edited sidecar, so it can be blank or only whitespace.
+    # Neither is a title, and neither may inject a separator with nothing in front of it.
+    assert metadata_prefix(unstructured, title="") is None
+    assert metadata_prefix(unstructured, title="   ") is None
+    assert metadata_prefix(titled, title="  A Title  ") == "A Title > Introduction"
+
 
 def test_a_chunk_with_no_prefix_is_embedded_exactly_as_it_is_today(
     counter: TokenCounter,
@@ -611,7 +619,7 @@ def test_a_prefix_larger_than_the_window_does_not_suggest_a_negative_limit(
             max_tokens=100,
             title=" ".join(f"word{n}" for n in range(600)),
         )
-    assert "-" not in exc_info.value.remedy
+    assert not re.search(r"-\d", exc_info.value.remedy)
     assert "shorten its title" in exc_info.value.remedy
 
 
