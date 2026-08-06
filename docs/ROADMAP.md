@@ -34,9 +34,13 @@ precision nobody measured.
   **what remains is the injection experiment**, the measurement the investigation was opened to
   take. Its outcome decides whether the expensive downstream work — PDF layout heuristics, paid
   title inference — is arguable at all. **It is six increments, not one** (20260806): eight
-  adversarial rounds re-scoped it, took ten decisions and measured four conditions that fail
-  silently if missed. A vector-only screen now runs before the `schema_version` 4 bump, because
-  that bump is the only irreversible step in the plan.
+  adversarial rounds re-scoped it, recorded every decision with its rejected alternatives, and
+  measured six conditions that fail silently if missed. **2a and 2b shipped 20260806** — the corpus
+  carries real titles and a measured token reserve, and a metadata prefix that would overrun the
+  model's window is now refused instead of silently truncated. **2c is next**: author and freeze
+  the golden set, calibrate it, capture the `before` leg, all before any injection code exists so
+  that no number can influence the questions. A vector-only screen then runs before the
+  `schema_version` 4 bump, because that bump is the only irreversible step in the plan.
 - **[The graph release](#the-graph-release--shipped-0110) shipped — and its channel is `off`.**
   Blocked for three days on a *corpus*, not on code; the RFC corpus cleared the reachability
   precondition, and then the retrieval gate improved **0** multi-hop questions and regressed **3**
