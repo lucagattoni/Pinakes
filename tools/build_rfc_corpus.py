@@ -135,7 +135,9 @@ def fetch_title(number: int, cache: Path, *, timeout: float) -> str | None:
 
     **A 404 is cached as `{}`** — a valid metadata document with no `title` — so the absence is
     recorded in the same format as a presence and a 300-document re-run does not re-ask for it.
-    That is also the only reason this whole path is exercisable offline.
+    That is also the only reason this whole path is exercisable offline. The cost is that a
+    *transient* 404 is cached permanently: the run names the document as a fallback once, and every
+    later run reports it as `kept`. Deleting the cached `.json` is the remedy.
 
     **An unparseable cache entry is a miss, never a fallback title.** A truncated write would
     otherwise demote a document to its filename stem quietly, and quiet is the failure mode: the
@@ -308,7 +310,13 @@ def mint_sidecars(out: Path, titles: Mapping[int, str | None]) -> tuple[list[int
     nothing can recompute, so `sidecar.create` refuses to write over one — and that refusal is
     right. But it means a re-run cannot repair a title an earlier run could not fetch, which is why
     `kept` is returned rather than skipped silently: the titles in a corpus with a non-empty `kept`
-    are the titles of whichever run first minted them.
+    are the titles of whichever run first minted them. To re-fetch one, delete its `.json` from the
+    cache *and* its sidecar — accepting that the document is issued a new ULID.
+
+    **No `created`, unlike `sync`'s own mint.** Nothing in the product reads the field — only
+    `[kb] created` in the manifest is validated — and a wall-clock stamp would differ between two
+    builds of the same corpus, against a script whose whole point is that a later run can be
+    *compared* with an earlier one. Stated because it is a divergence, not an oversight.
     """
     # Imported here rather than at module scope, following `main`'s `mint_kb_id`: this script is
     # run as `python3 tools/...` and its `--help` should not depend on an installed `pinakes`.
