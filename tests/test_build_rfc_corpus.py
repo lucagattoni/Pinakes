@@ -364,3 +364,57 @@ def test_it_refuses_to_build_inside_this_repository(tmp_path: Path) -> None:
     assert proc.returncode != 0
     assert "refusing to build a KB inside this repository" in proc.stderr
     assert not (repo / "tests" / "rfc-kb").exists()
+
+
+def test_the_build_copies_the_committed_golden_set_into_the_corpus(tmp_path: Path) -> None:
+    """`pinakes.eval` defaults to `<kb>/eval/questions.yaml`, so the documented run works without a
+    path flag only if the build puts it there.
+
+    Unlike `pinakes.toml`, this file is overwritten every build: the repository copy is the source
+    of truth, and a corpus evaluated against a stale one is answering questions nobody can find.
+    The manifest is the opposite case — it holds the KB's permanent id and its fitted confidence
+    thresholds, which a rebuild must not discard.
+    """
+    cache = tmp_path / "cache"
+    cache_entry(cache, 99991, title="HTTP Semantics")
+    out = tmp_path / "kb"
+
+    build(out, cache, [99991])
+
+    committed = Path(__file__).resolve().parent.parent / "tools" / "rfc_corpus" / "questions.yaml"
+    copied = out / "eval" / "questions.yaml"
+    assert copied.read_text(encoding="utf-8") == committed.read_text(encoding="utf-8")
+
+    stale = "questions: []\n"
+    copied.write_text(stale, encoding="utf-8")
+    build(out, cache, [99991])
+    assert copied.read_text(encoding="utf-8") != stale
+
+
+def test_the_manifest_stamps_confidence_thresholds_fitted_for_its_own_reranker(
+    tmp_path: Path,
+) -> None:
+    """Without `[retrieval.confidence]`, `manifest.load` leaves `confidence` `None`, `_confidence`
+    returns `UNKNOWN` on its first check, and the eval reports `false_abstain` and
+    `false_confidence` as a vacuous **0.0** with `confidence_coverage` at 0.0 — metrics that read
+    as perfect while measuring nothing. Measured on this corpus 20260806: stamping the fitted block
+    moved `confidence_coverage` from 0.0 to 1.0 and the two error rates from 0.0 to 0.0104 and
+    0.1429.
+
+    `fitted_for` is asserted against the manifest's *own* reranker because cross-encoder scores are
+    raw logits on no common scale: thresholds fitted for one model are meaningless under another,
+    and nothing at runtime would say so.
+    """
+    cache = tmp_path / "cache"
+    cache_entry(cache, 99991, title="HTTP Semantics")
+    out = tmp_path / "kb"
+
+    build(out, cache, [99991])
+
+    manifest = dict(tomllib.loads((out / "pinakes.toml").read_text(encoding="utf-8")))
+    confidence = section(section(manifest, "retrieval"), "confidence")
+    assert confidence["fitted_for"] == section(manifest, "rerank")["model"]
+    assert float(cast(float, confidence["low_below"])) < float(
+        cast(float, confidence["high_above"])
+    )
+    assert load_manifest(out).retrieval.confidence is not None

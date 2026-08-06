@@ -241,7 +241,33 @@ max_tokens = {max_tokens}
 # prefix the injection experiment prepends to the embedded and indexed text. Both
 # legs chunk at this value, so their chunk boundaries are identical and the injected
 # text is the only difference between them.
+
+[retrieval.confidence]
+fitted_for = "Xenova/ms-marco-MiniLM-L-6-v2"
+low_below  = {low_below}
+high_above = {high_above}
 """
+
+
+CONFIDENCE_LOW_BELOW = -4.3841
+CONFIDENCE_HIGH_ABOVE = -0.5586
+"""Fitted 20260806 by `python -m pinakes.calibrate` against this corpus and its frozen golden set
+(96 answerable, 14 unanswerable questions), and stamped here rather than left for a human to paste.
+
+**Without them every confidence is `unknown`.** `manifest.load` leaves `confidence` `None` when the
+section is absent, `_confidence` returns `UNKNOWN` on its first check, and the eval then reports
+`false_abstain` and `false_confidence` as a vacuous **0.0** with `confidence_coverage` at 0.0 —
+metrics that read as perfect and measure nothing. Two of the three numbers the injection
+experiment's §2 requires are those two.
+
+**Stamped, so that both legs of a comparison are fitted identically by construction.** Thresholds
+refitted after a change would differ between legs, and every confidence comparison would then be
+measuring the refit rather than the change. A generated corpus whose thresholds lived only in an
+uncommitted `pinakes.toml` would also lose them on any machine but the one that fitted them.
+
+**Carry `calibrate.py`'s own caveat wherever these numbers are reported**: they are fitted on the
+same golden set the eval scores against, so the false-confidence rate is partly a measurement of
+the fit. Treat calibration as a floor on quality, not a measurement of it."""
 
 
 def write_documents(out: Path, documents: dict[int, str]) -> None:
@@ -275,6 +301,8 @@ def write_manifest(out: Path, *, kb_id: str) -> bool:
             window=EMBEDDING_WINDOW_TOKENS,
             special=SPECIAL_TOKENS,
             reserve=PREFIX_RESERVE_TOKENS,
+            low_below=CONFIDENCE_LOW_BELOW,
+            high_above=CONFIDENCE_HIGH_ABOVE,
         ),
         encoding="utf-8",
     )

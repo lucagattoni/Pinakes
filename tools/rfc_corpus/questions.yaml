@@ -25,6 +25,21 @@
 # question is silently a different question. Adding questions later is legitimate and must be
 # recorded with its date and reason; editing one is not.
 #
+# **Grown once, 20260806, from 70 questions to 110 — and the reason matters more than the fact.**
+# The first 70 produced an improvable pool of **9** at baseline: 51 of 60 answerable questions were
+# already at rank 1, and the plan requires at least 10 to reach `sign_test` at p < 0.05. The pool
+# was 8 paraphrase and 1 lexical, because lexical and simple-lookup both scored **1.00** — on a
+# corpus of distinctive technical vocabulary, BM25 with a reranker essentially solves them.
+#
+# The fast way to a pool of 10 was therefore to author more paraphrase questions, and that is
+# exactly what was not done. Low-word-overlap questions are the ones a change to the *embedded*
+# text is most likely to move, so enriching the set with them would fit the instrument to the
+# hypothesis one step removed — passing the criterion while destroying the meaning of the result.
+# The two new slices carry the **same proportional mix** as the first four (6 lexical, 6
+# simple-lookup, 6 paraphrase, 2 no-answer each), over 135 documents no question had touched, and
+# were authored by agents who did not know a pool had fallen short, which class was short, or that
+# any hypothesis existed.
+#
 # ## `evidence` — the field that makes `expect` checkable
 #
 # Every answerable question carries the sentence from its expected document that answers it,
@@ -69,6 +84,11 @@ questions:
     kind: lexical
     expect: [docs/rfc8654.txt]
     evidence: "BGP Extended Messages have a maximum message size of 65,535 octets."
+  - id: lex-bgpsec-documentation-algorithm-ids-s5
+    question: "What numeric range is reserved for BGPsec Documentation algorithm IDs?"
+    kind: lexical
+    expect: [docs/rfc8608.txt]
+    evidence: "Documentation algorithm IDs span from 0xFB (251) to 0xFE (254)."
   - id: lex-caa-accounturi-match-s2
     question: "What does a CAA Property match when it has no accounturi parameter?"
     kind: lexical
@@ -84,6 +104,21 @@ questions:
     kind: lexical
     expect: [docs/rfc8746.txt]
     evidence: "In total, this leads to 24 variants.  In the tag, we need to express"
+  - id: lex-cddl-acronym-origin-s5
+    question: "What does the CDDL acronym stand for?"
+    kind: lexical
+    expect: [docs/rfc8610.txt]
+    evidence: "convention \"Concise Data Definition Language\", or CDDL."
+  - id: lex-cwt-cnf-claim-s6
+    question: "What is the \"cnf\" claim in a CWT used for?"
+    kind: lexical
+    expect: [docs/rfc8747.txt]
+    evidence: "The \"cnf\" claim in the CWT is used to carry confirmation methods."
+  - id: lex-dlep-latency-type-value-s6
+    question: "What is the DLEP Latency Range Extension Type Value?"
+    kind: lexical
+    expect: [docs/rfc8757.txt]
+    evidence: "The Latency Range Extension Type Value is 4; see Section 5."
   - id: lex-dlep-link-identifier-length-s3
     question: "How many octets long is a DLEP Link Identifier by default?"
     kind: lexical
@@ -114,6 +149,11 @@ questions:
     kind: lexical
     expect: [docs/rfc8619.txt]
     evidence: "This section assigns three algorithm identifiers to HKDF [RFC5869]"
+  - id: lex-hss-mts-hierarchy-s6
+    question: "What structure does the MTS system specified in HASHSIG use for HSS signatures?"
+    kind: lexical
+    expect: [docs/rfc8708.txt]
+    evidence: "The MTS system specified in [HASHSIG] uses a hierarchy of trees."
   - id: lex-idunno-emoji-s4
     question: "What is one of the requirements for an I-DUNNO notation to reach the Delightful Confusion Level?"
     kind: lexical
@@ -124,11 +164,31 @@ questions:
     kind: lexical
     expect: [docs/rfc8750.txt]
     evidence: "the IV is designated in this document as \"implicit IV\"."
+  - id: lex-iodef-json-name-s6
+    question: "What is the JSON data model for exchanging incident information referred to as in this document?"
+    kind: lexical
+    expect: [docs/rfc8727.txt]
+    evidence: "This JSON data model is referred to as IODEF JSON in this document."
+  - id: lex-jmap-mail-capability-uris-s5
+    question: "How many additional capability URIs does the JMAP mail data model define?"
+    kind: lexical
+    expect: [docs/rfc8621.txt]
+    evidence: "This document defines three additional capability URIs."
   - id: lex-oauth-may-act-claim-s2
     question: "What does the \"may_act\" claim in an OAuth token assert?"
     kind: lexical
     expect: [docs/rfc8693.txt]
     evidence: "The \"may_act\" claim makes a statement that one party is authorized to"
+  - id: lex-oscore-unaware-coap-proxies-s5
+    question: "Is OSCORE designed to work with CoAP proxies that are unaware of OSCORE?"
+    kind: lexical
+    expect: [docs/rfc8613.txt]
+    evidence: "OSCORE is designed to work with OSCORE-unaware CoAP proxies."
+  - id: lex-service-desc-link-relation-s5
+    question: "What does the service-desc link relation identify?"
+    kind: lexical
+    expect: [docs/rfc8631.txt]
+    evidence: "Identifies service description for the context that is"
   - id: lex-shake128-digest-length-s3
     question: "What output digest length in bits does this specification use for SHAKE128 when it is used as a hash function in CMS?"
     kind: lexical
@@ -144,11 +204,26 @@ questions:
     kind: lexical
     expect: [docs/rfc8762.txt]
     evidence: "MBZ:        Must be Zero"
+  - id: lex-stub-as-urpf-s6
+    question: "What is a stub AS?"
+    kind: lexical
+    expect: [docs/rfc8704.txt]
+    evidence: "A stub AS is an AS that does not have any customers or lateral peers."
+  - id: lex-tls-cert-psk-protect-s6
+    question: "What must implementations do with the external pre-shared key used by this TLS 1.3 certificate-based authentication extension?"
+    kind: lexical
+    expect: [docs/rfc8773.txt]
+    evidence: "Implementations must protect the external pre-shared key (PSK)."
   - id: lex-tname-zero-length-s1
     question: "In CCNx TLV encoding, what does a T_NAME field with zero length represent?"
     kind: lexical
     expect: [docs/rfc8609.txt]
     evidence: "TLV encoding, \"ccnx:/\" corresponds to T_NAME with zero length."
+  - id: lex-trip-postal-address-s5
+    question: "Does IANA still require postal address details when adding new entries to the TRIP registry?"
+    kind: lexical
+    expect: [docs/rfc8602.txt]
+    evidence: "The IETF no longer requires IANA to collect postal address"
   - id: lex-turn-permission-lifetime-s2
     question: "How long must a TURN Permission Lifetime be?"
     kind: lexical
@@ -180,6 +255,11 @@ questions:
     kind: simple-lookup
     expect: [docs/rfc8772.txt]
     evidence: "Subscriber:  The remote user gaining network accesses via a BNG."
+  - id: look-cbor-sequence-end-s6
+    question: "How does a reader know where a CBOR sequence ends?"
+    kind: simple-lookup
+    expect: [docs/rfc8742.txt]
+    evidence: "There is no end-of-sequence indicator."
   - id: look-dlv-registry-shutdown-s3
     question: "What happened to the well-known public DNSSEC lookaside validation registry that used to be run for the internet?"
     kind: simple-lookup
@@ -205,41 +285,91 @@ questions:
     kind: simple-lookup
     expect: [docs/rfc8601.txt]
     evidence: "\"Authentication-Results\" for use with electronic mail messages to"
+  - id: look-http-live-stream-range-value-s5
+    question: "What large end-of-range number should a client use when requesting an HTTP byte range from a stream that keeps growing?"
+    kind: simple-lookup
+    expect: [docs/rfc8673.txt]
+    evidence: "So 2^^53-1 (9007199254740991) is"
+  - id: look-isup-call-release-location-s5
+    question: "How does a phone network indicate which part of the network a call was released from?"
+    kind: simple-lookup
+    expect: [docs/rfc8606.txt]
+    evidence: "The location shows the network part where the call was released."
   - id: look-json-canon-purpose-s4
     question: "Why would you want to put JSON data into one canonical, deterministic form before hashing or signing it?"
     kind: simple-lookup
     expect: [docs/rfc8785.txt]
     evidence: "This is the core rationale behind JCS."
+  - id: look-kerberos-smartcard-kdf-negotiation-s5
+    question: "In updated Kerberos smart-card logon, who decides which key-derivation method gets used, the client or the server?"
+    kind: simple-lookup
+    expect: [docs/rfc8636.txt]
+    evidence: "The KDF is negotiated between the client and the KDC."
   - id: look-mptcp-signaling-s2
     question: "How does Multipath TCP carry its extra signaling inside an ordinary TCP connection?"
     kind: simple-lookup
     expect: [docs/rfc8684.txt]
     evidence: "All MPTCP operations are signaled using optional TCP header fields."
+  - id: look-national-security-system-definition-s5
+    question: "What government publication defines which computer systems count as US National Security Systems?"
+    kind: simple-lookup
+    expect: [docs/rfc8603.txt]
+    evidence: "Security Systems are described in NIST Special Publication 800-59."
   - id: look-ntp-panic-threshold-value-s1
     question: "How large a time jump will an NTP client tolerate before it gives up and exits instead of applying the change?"
     kind: simple-lookup
     expect: [docs/rfc8633.txt]
     evidence: "offset is greater than the panic threshold PANICT (1000 s) and SHOULD"
+  - id: look-oauth-invalid-target-s6
+    question: "What does it mean when an OAuth 2.0 authorization server returns an invalid_target error?"
+    kind: simple-lookup
+    expect: [docs/rfc8707.txt]
+    evidence: "The requested resource is invalid, missing, unknown, or malformed."
   - id: look-oauth-token-cert-binding-s3
     question: "How is an OAuth access token tied to the specific client that requested it under mutual TLS?"
     kind: simple-lookup
     expect: [docs/rfc8705.txt]
     evidence: "The access token is then bound to the certificate and can only be"
+  - id: look-pim-type-space-obsoletes-s6
+    question: "Which older RFC does this update to PIM's reserved header bits make obsolete?"
+    kind: simple-lookup
+    expect: [docs/rfc8736.txt]
+    evidence: "This document obsoletes RFC 6166."
+  - id: look-pref64-lifetime-units-s6
+    question: "In what units is the NAT64 prefix lifetime expressed in a router advertisement option?"
+    kind: simple-lookup
+    expect: [docs/rfc8781.txt]
+    evidence: "Lifetime encodes the NAT64 prefix lifetime in units of 8 seconds."
   - id: look-rfc-fiftieth-anniversary-s3
     question: "What milestone in the history of the RFC series does this document commemorate?"
     kind: simple-lookup
     expect: [docs/rfc8700.txt]
     evidence: "This RFC marks the fiftieth anniversary for the RFC Series.  It"
+  - id: look-rtp-flow-priority-honoring-s5
+    question: "Can an application tell a coupled congestion control mechanism that one media stream deserves more bandwidth priority than another?"
+    kind: simple-lookup
+    expect: [docs/rfc8699.txt]
+    evidence: "It is able to honor user-specified priorities, which is"
   - id: look-safe-preference-defined-s2
     question: "When a browser asks a site for \"safe\" content, does the standard say exactly what content that excludes?"
     kind: simple-lookup
     expect: [docs/rfc8674.txt]
     evidence: "This specification does not define a precise semantic for \"safe\"."
+  - id: look-scavenger-traffic-dscp-marking-s5
+    question: "What DSCP value should be used to mark traffic that should only consume otherwise-unused bandwidth?"
+    kind: simple-lookup
+    expect: [docs/rfc8622.txt]
+    evidence: "The RECOMMENDED codepoint for the LE PHB is '000001'."
   - id: look-sip-digest-md5-s4
     question: "Which hash algorithm did SIP's challenge-response login scheme use by default before stronger options were added?"
     kind: simple-lookup
     expect: [docs/rfc8760.txt]
     evidence: "The default hash algorithm for Digest Access Authentication is MD5."
+  - id: look-ssh-arcfour-prohibited-s6
+    question: "Is the arcfour cipher still allowed for use in SSH?"
+    kind: simple-lookup
+    expect: [docs/rfc8758.txt]
+    evidence: "[RFC4253] is updated to prohibit arcfour's use in SSH."
   - id: look-ssh-ed25519-encryption-s3
     question: "Can the new SSH signature algorithm based on Ed25519 also be used for encrypting data?"
     kind: simple-lookup
@@ -255,6 +385,11 @@ questions:
     kind: simple-lookup
     expect: [docs/rfc8672.txt]
     evidence: "pinning tickets as a way to pin the server's identity."
+  - id: look-ttml-rtp-clock-rate-s6
+    question: "What clock rate is used by default for sending timed text over RTP?"
+    kind: simple-lookup
+    expect: [docs/rfc8759.txt]
+    evidence: "The default clock rate for TTML over RTP is 1000 Hz."
   - id: look-well-known-path-prefix-s1
     question: "What URL path prefix do web servers use to publish fixed, standardized metadata like site-wide configuration files?"
     kind: simple-lookup
@@ -266,11 +401,21 @@ questions:
     kind: paraphrase
     expect: [docs/rfc8734.txt]
     evidence: "This approach is not endorsed by the IETF.  Implementers and"
+  - id: para-calendar-attachment-operation-count-s5
+    question: "How many distinct actions can a calendaring client take on files attached to an event stored on the server?"
+    kind: paraphrase
+    expect: [docs/rfc8607.txt]
+    evidence: "There are four main operations a client needs to perform with"
   - id: para-cdns-compact-capture-s1
     question: "What kind of file format keeps a long history of DNS traffic on disk without ballooning to the size of a raw packet dump?"
     kind: paraphrase
     expect: [docs/rfc8618.txt]
     evidence: "minimize the size of such packet capture files but retain the full"
+  - id: para-cloud-function-relocation-reason-s5
+    question: "What might cause a provider to shift a running cloud-hosted network function to a different physical location?"
+    kind: paraphrase
+    expect: [docs/rfc8677.txt]
+    evidence: "operator to move a service instance in response to user mobility or"
   - id: para-coap-proxy-loop-s4
     question: "What problem can occur when a chain of constrained web-transfer proxies keeps forwarding the same request among themselves?"
     kind: paraphrase
@@ -291,6 +436,11 @@ questions:
     kind: paraphrase
     expect: [docs/rfc8678.txt]
     evidence: "addresses from each ISP and to select the egress ISP by selecting a"
+  - id: para-fold-oversized-lines-s6
+    question: "Can an extremely long line of text be broken across several shorter lines more than once if one split isn't enough?"
+    kind: paraphrase
+    expect: [docs/rfc8792.txt]
+    evidence: "Exceptionally long lines MAY be folded multiple times."
   - id: para-guaranteed-low-loss-delay-s2
     question: "What kind of network is engineered to promise almost no dropped packets and a predictable, bounded delay for time-critical traffic?"
     kind: paraphrase
@@ -301,6 +451,11 @@ questions:
     kind: paraphrase
     expect: [docs/rfc8740.txt]
     evidence: "HTTP/2 servers MUST NOT send post-handshake TLS 1.3"
+  - id: para-icn-router-cache-name-s6
+    question: "In an information-centric network, what is the name for the part of a router that keeps copies of data it has seen so it can answer future requests locally?"
+    kind: paraphrase
+    expect: [docs/rfc8793.txt]
+    evidence: "A database in an ICN router that provides caching."
   - id: para-ipv6-only-reach-ipv4-s2
     question: "How can a device that has only been given a newer-style IP address still reach servers that only understand the older addressing scheme?"
     kind: paraphrase
@@ -331,6 +486,16 @@ questions:
     kind: paraphrase
     expect: [docs/rfc8724.txt]
     evidence: "the LPWAN technologies.  Fragmentation is needed for IPv6 datagrams"
+  - id: para-mdns-proxy-on-demand-s6
+    question: "Does a bridge between a local wireless network's device-discovery traffic and remote clients keep announcing changes on its own, or does it only respond when a remote client actually asks?"
+    kind: paraphrase
+    expect: [docs/rfc8766.txt]
+    evidence: "Note that the Discovery Proxy uses a \"pull\" model."
+  - id: para-modem-router-link-status-sharing-s5
+    question: "How does a wireless modem share information about the state of its radio link with the router connected to it?"
+    kind: paraphrase
+    expect: [docs/rfc8629.txt]
+    evidence: "It provides the exchange of link-related control information between"
   - id: para-mpls-last-hop-failover-s2
     question: "How can a network keep delivering traffic to a service if the very last router in front of it goes down?"
     kind: paraphrase
@@ -341,16 +506,46 @@ questions:
     kind: paraphrase
     expect: [docs/rfc8770.txt]
     evidence: "router and is incapable of forwarding transit traffic.  In this mode,"
+  - id: para-per-app-mobility-preference-granularity-s5
+    question: "Might two separate features within one program want different handling of network address changes for their own connections?"
+    kind: paraphrase
+    expect: [docs/rfc8653.txt]
+    evidence: "Different parts of the same application may have different needs."
+  - id: para-pim-shared-forwarding-role-s6
+    question: "What new idea does this specification introduce to let multicast forwarding duties on a shared network be split among several routers instead of just one?"
+    kind: paraphrase
+    expect: [docs/rfc8775.txt]
+    evidence: "GDR is the new concept introduced by this specification."
   - id: para-rpki-tal-cert-rotation-s1
     question: "How can the operator of an Internet routing security root update what's inside its root certificate without every relying party needing new configuration?"
     kind: paraphrase
     expect: [docs/rfc8630.txt]
     evidence: "these TAs to change the content of their CA certificate.  In"
+  - id: para-security-broker-distributes-to-subscribers-s5
+    question: "Once an incident report is posted to a shared channel in this security-alert messaging system, how do interested parties end up receiving it?"
+    kind: paraphrase
+    expect: [docs/rfc8600.txt]
+    evidence: "Topic, which the Broker then distributes to all subscribed Consumers."
+  - id: para-senml-temp-scale-s6
+    question: "What everyday temperature scale is permitted as a substitute for the SI base unit of temperature in sensor measurement data?"
+    kind: paraphrase
+    expect: [docs/rfc8798.txt]
+    evidence: "Celsius (as Cel) is allowed as an alternative to the K (Kelvin)."
+  - id: para-sni-hide-hostname-s6
+    question: "Why would someone want to hide, from an eavesdropper watching a TLS handshake, which website a browser is connecting to?"
+    kind: paraphrase
+    expect: [docs/rfc8744.txt]
+    evidence: "The purpose of SNI encryption is to prevent that and aid privacy."
   - id: para-videocall-rate-backoff-s2
     question: "In a live video call, how does the sending side decide to ease off its transmission speed before the network gets congested?"
     kind: paraphrase
     expect: [docs/rfc8698.txt]
     evidence: "sender regulates its sending rate, based on either implicit or"
+  - id: para-visibility-into-bundled-cable-members-s5
+    question: "Why would something outside the routing protocol need visibility into the individual physical cables that make up a bundled network link?"
+    kind: paraphrase
+    expect: [docs/rfc8668.txt]
+    evidence: "flows on the individual physical links that comprise the Layer 2"
   - id: para-yang-push-tailored-updates-s1
     question: "How can a network management client get pushed a tailored stream of updates from a device instead of repeatedly polling for its current state?"
     kind: paraphrase
@@ -374,6 +569,16 @@ questions:
     evidence: ""
   - id: none-camel-gsm-signaling-s1
     question: "What congestion control mechanism does the CAMEL protocol use to manage signaling load in GSM mobile networks?"
+    kind: no-answer
+    expect: []
+    evidence: ""
+  - id: none-can-bus-arbitration-s6
+    question: "How does arbitration on an automotive Controller Area Network (CAN) bus resolve two electronic control units transmitting at the same time?"
+    kind: no-answer
+    expect: []
+    evidence: ""
+  - id: none-dnp3-rtu-authentication-s5
+    question: "How does the DNP3 protocol authenticate control commands sent to a substation remote terminal unit?"
     kind: no-answer
     expect: []
     evidence: ""
@@ -407,8 +612,18 @@ questions:
     kind: no-answer
     expect: []
     evidence: ""
+  - id: none-nfc-contactless-pairing-s5
+    question: "What handshake do two phones perform to pair over Near Field Communication for a contactless payment?"
+    kind: no-answer
+    expect: []
+    evidence: ""
   - id: none-zigbee-zdp-s4
     question: "How does the Zigbee Device Profile let a new node discover which services are offered by other nodes already on the mesh?"
+    kind: no-answer
+    expect: []
+    evidence: ""
+  - id: none-zwave-mesh-range-s6
+    question: "What is the maximum mesh-network range for a Z-Wave device transmitting at its lowest data rate?"
     kind: no-answer
     expect: []
     evidence: ""

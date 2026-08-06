@@ -30,6 +30,7 @@ import argparse
 import re
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from pinakes.eval import KINDS, NO_ANSWER, load_questions
 
@@ -43,13 +44,16 @@ def normalise(text: str) -> str:
 def evidence_of(path: Path) -> dict[str, str]:
     """The raw `evidence` strings by question id — `load_questions` drops the key it does not know.
 
-    Read with the same YAML loader the eval uses, so a file that loads there loads here.
+    Read with the same YAML loader the eval uses, so a file that loads there loads here. Typed
+    through `cast` rather than `isinstance`, which narrows a parsed mapping only to
+    `dict[Unknown, Unknown]` and leaves every index unchecked.
     """
     from ruamel.yaml import YAML
 
-    yaml = YAML(typ="safe")
-    document = yaml.load(path.read_text(encoding="utf-8")) or {}
-    entries = document.get("questions") or []
+    loaded: object = YAML(typ="safe").load(path.read_text(encoding="utf-8"))
+    document = cast("dict[str, object]", loaded) if isinstance(loaded, dict) else {}
+    raw: object = document.get("questions") or []
+    entries = cast("list[dict[str, object]]", raw) if isinstance(raw, list) else []
     return {str(entry.get("id", "")): str(entry.get("evidence") or "") for entry in entries}
 
 
