@@ -6,7 +6,10 @@ from pinakes.chunk import (
     Chunk,
     TokenCounter,
     assert_chunkable,
+    assert_prefix_fits,
     chunk_document,
+    embedding_text,
+    metadata_prefix,
     source_type,
 )
 from pinakes.errors import ChunkingError
@@ -412,4 +415,223 @@ def test_a_genuine_subsection_is_not_confused_with_a_trailing_zero(counter: Toke
     assert _paths("1.  Intro\n\nA.\n\n1.1.  Sub\n\nB.\n", counter) == [
         "1.  Intro",
         "1.  Intro > 1.1.  Sub",
+    ]
+
+
+# --- The metadata prefix, and the refusal that keeps it out of the model's window ----------------
+#
+# `plans/20260805_1721-metadata-as-retrieval-context.md` § 3, the reserve bullet. Nothing calls
+# `assert_prefix_fits` on the indexing path yet — the manifest option that turns injection on
+# arrives in 2d — so these tests are the only thing exercising it, deliberately: a refusal shipped
+# without a caller and without tests would be a refusal nobody had ever seen fire.
+
+
+class NewlineCounter:
+    """One token per whitespace-separated word, **plus one per newline**.
+
+    `WordCounter` says `"a\n\nb".split()` is two tokens, so a separator costs nothing and a check
+    that forgot to measure it would pass. Real tokenizers vary: BERT's WordPiece drops newlines
+    entirely, byte-level BPEs give them tokens of their own. This is the one that would catch a
+    separator measured with the text instead of with the prefix.
+    """
+
+    def count_tokens(self, text: str) -> int:
+        return len(text.split()) + text.count("\n")
+
+
+def _chunk(text: str, counter: TokenCounter, *, headings: str = "numbered") -> list[Chunk]:
+    return chunk_document(
+        text, counter=counter, max_tokens=100, overlap=10, kind="text", headings=headings
+    )
+
+
+def _fits(
+    chunks: list[Chunk],
+    counter: TokenCounter,
+    *,
+    max_tokens: int,
+    title: str | None = "HTTP Semantics",
+) -> None:
+    """`assert_prefix_fits` against a 512-token window, so a test names only what it varies."""
+    assert_prefix_fits(
+        chunks,
+        title=title,
+        path="docs/rfc.txt",
+        counter=counter,
+        max_tokens=max_tokens,
+        model_max_tokens=512,
+    )
+
+
+def test_the_prefix_strips_the_section_numbers_the_heading_path_keeps(
+    counter: TokenCounter,
+) -> None:
+    """The decision of 20260806 05:05: `title > heading_path` with section numbers stripped.
+
+    Both halves are asserted together because they are the point — `heading_path` keeps its numbers
+    for citation, the prefix drops them for embedding, and a change that quietly unified the two
+    forms would satisfy either assertion alone.
+    """
+    chunks = _chunk(_OUTLINE, counter)
+
+    assert [chunk.heading_path for chunk in chunks] == [
+        "1. Introduction",
+        "1. Introduction > 1.1. Scope",
+        "2. Terminology",
+    ]
+    assert [chunk.unnumbered_heading_path for chunk in chunks] == [
+        "Introduction",
+        "Introduction > Scope",
+        "Terminology",
+    ]
+    assert [metadata_prefix(chunk, title="HTTP Semantics") for chunk in chunks] == [
+        "HTTP Semantics > Introduction",
+        "HTTP Semantics > Introduction > Scope",
+        "HTTP Semantics > Terminology",
+    ]
+
+
+def test_the_unnumbered_stack_pops_with_the_numbered_one(counter: TokenCounter) -> None:
+    """The two paths are built from one walk and must stay in step through a *shallower* heading.
+
+    `1.1` pushes a second label; `2` must pop it from both stacks. If only the numbered stack were
+    truncated, section 2's prefix would still read `Introduction > Scope > Terminology` — a
+    hierarchy the document does not have, injected into the embedding as if it did.
+    """
+    deep = (
+        "1. Alpha\n\nA.\n\n"
+        "1.1. Beta\n\nB.\n\n"
+        "1.1.1. Gamma\n\nC.\n\n"
+        "2. Delta\n\nD.\n\n"
+        "2.1. Epsilon\n\nE.\n"
+    )
+    assert [chunk.unnumbered_heading_path for chunk in _chunk(deep, counter)] == [
+        "Alpha",
+        "Alpha > Beta",
+        "Alpha > Beta > Gamma",
+        "Delta",
+        "Delta > Epsilon",
+    ]
+
+
+def test_a_markdown_heading_keeps_whatever_number_its_author_wrote(
+    counter: TokenCounter,
+) -> None:
+    """Numbers are stripped **by construction, never by re-parsing** — so only the grammar that
+    parsed one may remove it. Markdown's `#` is syntax and is already gone; a `1.` an author typed
+    into the heading text is content, and a second regex over the joined string would eat it. It
+    would also mis-fire on a heading that legitimately begins with a digit, like this one's `404`.
+    """
+    text = "# 1. Introduction\n\nBody.\n\n# 404 Not Found\n\nMore body.\n"
+    chunks = chunk_document(text, counter=counter, max_tokens=100, overlap=10, kind="markdown")
+
+    assert [chunk.heading_path for chunk in chunks] == ["1. Introduction", "404 Not Found"]
+    assert [chunk.unnumbered_heading_path for chunk in chunks] == [
+        "1. Introduction",
+        "404 Not Found",
+    ]
+
+
+def test_either_half_of_the_prefix_stands_alone(counter: TokenCounter) -> None:
+    """A document may have a title and no headings, or headings and no title. Both are prefixes;
+    only the absence of both is not."""
+    unstructured = _chunk("Just a paragraph.\n", counter, headings="none")[0]
+    titled = _chunk(_OUTLINE, counter)[0]
+
+    assert metadata_prefix(unstructured, title="A Title") == "A Title"
+    assert metadata_prefix(unstructured, title=None) is None
+    assert metadata_prefix(titled, title=None) == "Introduction"
+
+
+def test_a_chunk_with_no_prefix_is_embedded_exactly_as_it_is_today(
+    counter: TokenCounter,
+) -> None:
+    """The two legs of the experiment must differ *only* where the mechanism applies. A document
+    with neither a title nor a heading path has no metadata to inject, so its embedded text has to
+    be byte-identical to the unprefixed leg's — not `"" + separator + text`, which would change
+    every untitled document for nothing."""
+    chunk = _chunk("Just a paragraph.\n", counter, headings="none")[0]
+
+    assert embedding_text(chunk, title=None) == chunk.text
+    assert embedding_text(chunk, title="A Title") == "A Title\n\nJust a paragraph."
+
+
+def test_the_reserve_is_measured_against_the_longest_prefix_in_the_document(
+    counter: TokenCounter,
+) -> None:
+    """The boundary from both sides, which is what pins the check to the reserve rather than to
+    some smaller number that merely happens to fit.
+
+    `HTTP Semantics > Introduction > Scope` is 6 tokens to `WordCounter` (the `>` are words too),
+    and the separator costs it nothing. A `max_tokens` leaving exactly 6 must pass; one leaving 5
+    must refuse.
+    """
+    chunks = _chunk(_OUTLINE, counter)
+
+    _fits(chunks, counter, max_tokens=504)
+    with pytest.raises(ChunkingError) as exc_info:
+        _fits(chunks, counter, max_tokens=505)
+    assert "HTTP Semantics > Introduction > Scope" in exc_info.value.message
+    assert "docs/rfc.txt" in exc_info.value.message
+    assert "504" in exc_info.value.remedy
+
+
+def test_the_separator_is_counted_with_the_prefix_not_with_the_text() -> None:
+    """Whatever the separator costs has to be inside the reserve. Measured on the text side it
+    would be free here and charged at embedding time — the tail of every full chunk truncated by
+    exactly the tokens nobody counted."""
+    counter = NewlineCounter()
+    chunks = _chunk(_OUTLINE, counter)
+
+    # Two newlines on top of the 6-token prefix: the boundary moves by exactly what they cost.
+    _fits(chunks, counter, max_tokens=502)
+    with pytest.raises(ChunkingError):
+        _fits(chunks, counter, max_tokens=503)
+
+
+def test_a_document_with_nothing_to_inject_is_never_refused(counter: TokenCounter) -> None:
+    """No title and no headings means no prefix, so no reserve is needed — the zero-headroom
+    default that every existing KB uses must stay usable for such a document."""
+    chunks = _chunk("Just a paragraph.\n", counter, headings="none")
+
+    _fits(chunks, counter, max_tokens=510, title=None)
+
+
+def test_a_prefix_larger_than_the_window_does_not_suggest_a_negative_limit(
+    counter: TokenCounter,
+) -> None:
+    """`budget - longest` is the number to lower `max_tokens` to, and it is only advice while it is
+    positive. A title longer than the model's whole window is a different problem and the remedy
+    has to say so rather than print `max_tokens = -3`."""
+    chunks = _chunk(_OUTLINE, counter)
+    with pytest.raises(ChunkingError) as exc_info:
+        _fits(
+            chunks,
+            counter,
+            max_tokens=100,
+            title=" ".join(f"word{n}" for n in range(600)),
+        )
+    assert "-" not in exc_info.value.remedy
+    assert "shorten its title" in exc_info.value.remedy
+
+
+def test_page_labelling_preserves_the_unnumbered_path(counter: TokenCounter) -> None:
+    """The PDF path rebuilds every chunk to attach page numbers. A field-by-field rebuild there
+    would drop whichever field was added last — silently, and only for PDFs, which is the kind of
+    gap that survives a green suite."""
+    chunks = chunk_document(
+        _OUTLINE,
+        counter=counter,
+        max_tokens=100,
+        overlap=10,
+        kind="text",
+        headings="numbered",
+        page_spans=[(0, len(_OUTLINE))],
+    )
+
+    assert [chunk.page_start for chunk in chunks] == [1, 1, 1]
+    assert [chunk.unnumbered_heading_path for chunk in chunks] == [
+        "Introduction",
+        "Introduction > Scope",
+        "Terminology",
     ]
