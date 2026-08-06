@@ -32,8 +32,11 @@ precision nobody measured.
   Three of its four scheduled steps have shipped in
   [`0.13.0`](#0130--plain-text-can-carry-a-heading-path--20260805-2101)–[`0.15.0`](#0150--a-document-says-what-it-is-called--20260805-2248);
   **what remains is the injection experiment**, the measurement the investigation was opened to
-  take, unblocked now that `.txt` carries real heading paths. Its outcome decides whether the
-  expensive downstream work — PDF layout heuristics, paid title inference — is arguable at all.
+  take. Its outcome decides whether the expensive downstream work — PDF layout heuristics, paid
+  title inference — is arguable at all. **It is six increments, not one** (20260806): eight
+  adversarial rounds re-scoped it, took ten decisions and measured four conditions that fail
+  silently if missed. A vector-only screen now runs before the `schema_version` 4 bump, because
+  that bump is the only irreversible step in the plan.
 - **[The graph release](#the-graph-release--shipped-0110) shipped — and its channel is `off`.**
   Blocked for three days on a *corpus*, not on code; the RFC corpus cleared the reachability
   precondition, and then the retrieval gate improved **0** multi-hop questions and regressed **3**
