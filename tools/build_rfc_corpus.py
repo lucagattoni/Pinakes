@@ -380,6 +380,34 @@ def write_provenance(
     )
 
 
+GOLDEN_SET = Path(__file__).resolve().parent / "rfc_corpus" / "questions.yaml"
+"""The frozen golden set, committed because it is authored rather than harvested.
+
+The corpus is regenerated and never committed; the questions are the instrument that reads it, and
+an instrument living on one machine cannot be re-run — which is the whole reason this script
+exists. Its own header records how it was authored and why it must not be edited."""
+
+
+def write_golden_set(out: Path) -> bool:
+    """Copy the committed golden set into `<out>/eval/questions.yaml`.
+
+    Overwritten on every build, unlike `pinakes.toml`: the repository copy is the source of truth,
+    so a corpus carrying an older one would be evaluated against questions nobody could find. The
+    manifest is the opposite case — it holds the KB's permanent id and its fitted confidence
+    thresholds, which a rebuild must not discard.
+
+    `pinakes.eval` defaults to `<kb>/eval/questions.yaml`, so putting it here is what lets the
+    documented run be `python -m pinakes.eval <out>` with no path flag.
+    """
+    if not GOLDEN_SET.exists():  # pragma: no cover — only in a truncated checkout
+        return False
+    (out / "eval").mkdir(parents=True, exist_ok=True)
+    (out / "eval" / "questions.yaml").write_text(
+        GOLDEN_SET.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    return True
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="build_rfc_corpus", description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="KB directory to create")
@@ -431,6 +459,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     wrote_manifest = write_manifest(out, kb_id=str(mint_kb_id()))
     fallback, kept = mint_sidecars(out, titles)
     write_provenance(out, documents, era=args.era, fallback=fallback, kept=kept)
+    wrote_questions = write_golden_set(out)
 
     print(f"\n{len(documents)} documents -> {out}")
     if not wrote_manifest:
@@ -464,7 +493,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"{len(kept)} already had a sidecar from an earlier run and were left untouched: "
             f"{', '.join(str(n) for n in kept)}"
         )
+    if not wrote_questions:  # pragma: no cover — only in a truncated checkout
+        print(f"no golden set at {GOLDEN_SET} — `pinakes.eval` will skip this corpus")
     print(f"next: uv run pnk sync --kb {out} --rebuild")
+    print(f"then: uv run python -m pinakes.eval {out}")
     return 0
 
 
