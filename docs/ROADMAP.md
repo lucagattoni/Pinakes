@@ -17,26 +17,33 @@ precision nobody measured.
 
 ---
 
-## Where things stand right now — 20260805 07:36 UTC
+## Where things stand right now — 20260806 00:51 UTC
 
-- **19 releases in 11 days.** [`0.1.0`](#010--the-engine--20260725-1527) on 20260725;
-  [`0.11.0`](#the-graph-release--shipped-0110) on 20260805.
-- **Latest on PyPI: `0.11.0`**, uploaded 20260805 07:18 UTC. Every release from `0.2.2` on is
-  published ([STATUS § Published on PyPI](STATUS.md#published-on-pypi)).
+- **24 releases in 12 days.** [`0.1.0`](#010--the-engine--20260725-1527) on 20260725;
+  [`0.15.1`](#0151--one-clock--20260806-0051) on 20260806.
+- **Latest on PyPI: `0.15.1`.** Every release from `0.2.2` on is published
+  ([STATUS § Published on PyPI](STATUS.md#published-on-pypi)).
 - **Two of the four named releases have shipped** — the links release across
   [`0.5.0`](#050--links-you-can-walk--20260731-1127)–[`0.6.0`](#060--links-you-can-write--20260801-1051),
   the graph release in [`0.11.0`](#the-graph-release--shipped-0110). The deep and template releases
   are unbuilt.
+- **The live question is whether document metadata is retrieval context**
+  ([`plans/20260805_1721-metadata-as-retrieval-context.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260805_1721-metadata-as-retrieval-context.md)).
+  Three of its four scheduled steps have shipped in
+  [`0.13.0`](#0130--plain-text-can-carry-a-heading-path--20260805-2101)–[`0.15.0`](#0150--a-document-says-what-it-is-called--20260805-2248);
+  **what remains is the injection experiment**, the measurement the investigation was opened to
+  take, unblocked now that `.txt` carries real heading paths. Its outcome decides whether the
+  expensive downstream work — PDF layout heuristics, paid title inference — is arguable at all.
 - **[The graph release](#the-graph-release--shipped-0110) shipped — and its channel is `off`.**
   Blocked for three days on a *corpus*, not on code; the RFC corpus cleared the reachability
   precondition, and then the retrieval gate improved **0** multi-hop questions and regressed **3**
   (p = 1.0000). `schema_version` 3 means **every existing KB rebuilds once**.
 - ⚠️ **`0.11.0`'s verdict is narrower than it reads** — three of the seven edge kinds derived
-  **zero** edges on the corpus it was gated against
-  ([open correction 4](#open-corrections--none-live)). **0.12.0 ships the check that reports it**, so a
+  **zero** edges on the corpus it was gated against. **0.12.0 ships the check that reports it**, so a
   future corpus cannot repeat it silently.
 - **[The template release](#the-template-release--ready-to-start) is unblocked** — plan written,
-  reviewed, four decisions taken. Nobody has started it.
+  reviewed, four decisions taken. Nobody has started it; `main` has moved far enough that its
+  Baseline block must be re-run before any `file:line` in it is trusted.
 - **[No open corrections](#open-corrections--none-live)** — the list is empty for the first
   time since it opened on 20260731. It refills from *use*, so that means nobody has run Pinakes
   lately, never that it is finished.
@@ -76,6 +83,7 @@ number belongs to a release only when it is cut
 | **[0.13.0](#0130--plain-text-can-carry-a-heading-path--20260805-2101)** | 20260805 21:01 | Plain text can carry a heading path | • `[chunking] headings = "numbered"`<br>• Measured on 980 real RFCs, 314/314 modern<br>• A `[chunking]` edit is no longer a silent no-op<br>• `tools/build_rfc_corpus.py` |
 | **[0.14.0](#0140--the-tool-stops-crying-wolf--20260805-2222)** | 20260805 22:22 | The tool stops crying wolf | • Heading coverage WARNs only for `markdown` at 0%<br>• `pnk init` adopts a directory with content<br>• A `titles` nudge, never a warning<br>• The sync loop stays serial — measured |
 | **[0.15.0](#0150--a-document-says-what-it-is-called--20260805-2248)** | 20260805 22:48 | A document says what it is called | • A Markdown `# ` heading becomes the title<br>• Fence-aware, `##` excluded, Markdown only<br>• No migration — existing titles are never rewritten |
+| **[0.15.1](#0151--one-clock--20260806-0051)** | 20260806 00:51 | One clock | • The last three naive-local timestamps are UTC<br>• `pnk init`'s `created`, the paid extractor's pricing, `doctor`'s price age<br>• Pinned by a test running at UTC+14<br>• `CLAUDE.md` 273 → 191 lines, into two new documents |
 | | | **[Open corrections](#open-corrections--none-live)** | • None live — first time since 20260731<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
@@ -572,6 +580,39 @@ is created, so every existing KB keeps what it has, and `title` stays the user's
 
 ---
 
+## 0.15.1 — One clock · 20260806 00:51
+
+- **Every timestamp Pinakes writes is UTC.** The last three naive-local sites are gone: `pnk init`
+  stamped `[kb] created` from the machine's wall clock, the paid extractor priced a document against
+  a local `now`, and `pnk doctor`'s price-age check subtracted a naive local clock from a price
+  table whose `as_of` is authored in UTC.
+
+**A mixed scheme is worse than a consistent local one**, which is why this is a fix and not a
+tidy-up. `sync`, `lock`, the ledger and the accountant were already UTC, so the three remaining
+sites meant two stamps written into the same index no longer shared a zero point. None of them
+failed loudly: a KB minted in Europe and read in California simply disagreed about when it was made.
+`is_stale()` was the same defect one layer up — the code compared a UTC value correctly while its
+docstring said local, a mismatch invisible on a UTC machine and silent everywhere else.
+
+**Pinned by a test that fails on a naive clock, not merely on a wrong one.** It runs under
+`TZ=Pacific/Kiritimati` — UTC+14, chosen because the naive stamp lands on a *different date* for ten
+hours of every day, so the failure is loud rather than a rounding minute.
+
+**`[budget] timezone` is untouched and is not an exception.** It decides where a *daily* or
+*monthly* window starts for a user who wants their cap to reset at local midnight; the ledger still
+stores UTC and converts at read time, so no local time is ever written to disk.
+
+Also documentation, in the same release: `CLAUDE.md` went from 273 lines to 191, with the increment
+procedure moving to [`BUILDING.md`](BUILDING.md) and the silently-failing contracts to
+[`INVARIANTS.md`](INVARIANTS.md). **INVARIANTS is an index, not a copy** — eight of its nine facts
+already had owners, so each row links its owner and only the five rules nothing else states are
+written out. The relocation's real cost was its **pointers**: 21 references across the tree named
+`CLAUDE.md` for content that had moved, and 13 of them sat in `src/` and `tests/`, which a
+docs-only change does not look like it touches. A grep for the moved *wording* finds none of them —
+the sweep has to run on the source file's own name.
+
+---
+
 # Part 5 · What is not built
 
 ## Open corrections — none live
@@ -591,7 +632,7 @@ Pinakes lately, never that it is done.
 | `0.10.0` | the interrupted-sync trio |
 | `0.12.0` | the `[light]` backend error · `pnk doctor`'s home-directory leak · heading-coverage *detection* |
 | `0.13.0` | **numbered plain-text headings** as `[chunking] headings` · the **silent `[chunking]` no-op** that building it exposed |
-| unreleased | the sync-CPU question **answered by measuring** · heading coverage's **permanent WARN** narrowed · `pnk init` **adopting** a directory with content · the `titles` nudge |
+| `0.14.0` | the sync-CPU question **answered by measuring** · heading coverage's **permanent WARN** narrowed · `pnk init` **adopting** a directory with content · the `titles` nudge |
 
 **Four of the nine were opened by the work that closed something else** — and one item's original
 diagnosis turned out to be wrong and was corrected rather than quietly dropped: the Markdown heading

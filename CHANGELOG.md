@@ -10,6 +10,60 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.1] — 20260806 00:51
+
+### Changed
+
+- **`CLAUDE.md` is 273 lines down to 191, and two new documents own what left it.** That is still
+  above the ~150 guardrail that triggered the extraction: the five sections the deferred note marked
+  keep-verbatim (the `land.py` guard, the PUBLIC-repo rules, documentation ownership, naming and
+  unbuilt-work naming) are 98 lines on their own, so 150 is unreachable without reopening them. [`docs/BUILDING.md`](docs/BUILDING.md) is the increment procedure (worktree, tests
+  in the same increment, `check.sh`, mutation, adversarial review, fragments, `land.py`), the
+  executor sibling of `docs/RELEASING.md`; [`docs/INVARIANTS.md`](docs/INVARIANTS.md) is the list of
+  contracts that fail *silently* when broken. **INVARIANTS is an index, not a copy:** measured before
+  the move, eight of the nine invariants were already owned by `DESIGN.md`, `MANIFEST.md`,
+  `VERIFICATION.md` or `CLI.md`, so each row links its owner and only the five implementation rules
+  nothing else states — the `ruamel`-not-`pyyaml` rule, the two `docs/` exceptions, what a `void`
+  record needs, never probing a backend by loading it, and `Decimal(str(value))` — are written out.
+  A verbatim move would have created a second copy of eight facts inside the file set whose rule is
+  *one fact, one home*.
+- **Eight references that named `CLAUDE.md` for content that moved now name its new home** — so no
+  pointer outlives what it pointed at. To `docs/INVARIANTS.md`: `docs/DESIGN.md` §1,
+  `docs/ROADMAP.md`'s deep-release entry, and `tools/paid_path_gate.py`'s failure message and module
+  docstring. To `docs/BUILDING.md`: `README.md`, `docs/ROADMAP.md` § *How this project builds*, and
+  `tools/fragments.py`'s docstring. To `docs/README.md` § Conventions:
+  `tools/record_claude_fixtures.py`'s `--at` help text, which cited a sentence CLAUDE.md no longer
+  carries. **Five of the eight name the file rather than the moved text**, so a grep for the moved
+  wording finds none of them — the sweep has to run on the source file's own name.
+- **`docs/README.md`'s `plans/` table said the closed links-and-graph plan was "the current build
+  order", and never listed the live investigation at all.** Both fixed: the metadata-as-retrieval-
+  context plan leads the table, links-and-graph is marked closed with what its G5 gate did and did
+  not license, and the table now says outright that most of `plans/` is not live work and that
+  `CLAUDE.md` names the two that are.
+
+### Fixed
+
+- **Every timestamp Pinakes writes is UTC — the last three naive-local sites are gone.** `pnk init`
+  stamped `[kb] created` from the machine's wall clock, the paid extractor priced a document against
+  a local `now`, and `pnk doctor`'s price-age check subtracted a naive local clock from a price
+  table whose `as_of` is authored in UTC. Each was a different instant on a different machine, and
+  none of them failed loudly: a KB minted in Europe and read in California simply disagreed about
+  when it was made. `sync`, `lock`, the ledger and the accountant were already UTC, which is what
+  made the remainder a **mixed** scheme rather than a consistent local one — the worse of the two,
+  because two stamps in the same index no longer shared a zero point.
+- **`is_stale()` compared a stamp it documented as local against a value `sync` had been writing in
+  UTC.** The code was right and its docstring was wrong; the docstring now says UTC. Worth stating
+  because the mismatch is invisible on a UTC machine and silent everywhere else.
+- **Pinned by a test that fails on a naive clock, not merely on a wrong one**
+  (`tests/test_init.py::test_created_is_utc_even_where_the_machine_clock_is_not`). It runs under
+  `TZ=Pacific/Kiritimati` — UTC+14, chosen because the naive stamp lands on a *different date* for
+  ten hours of every day, so the failure is loud rather than a rounding minute. Mutation-verified:
+  reverting `init.py` to `datetime.now()` fails it with `created '20260806 14:41' is not the UTC
+  instant (20260806 00:41..)`.
+- **`[budget] timezone` is untouched and is not an exception.** It decides where a *daily* or
+  *monthly* window starts for a user who wants their cap to reset at local midnight; the ledger
+  still stores UTC and converts at read time, so no local time is ever written to disk.
+
 ## [0.15.0] — 20260805 22:48
 
 ### Added
@@ -2594,7 +2648,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.15.1...HEAD
+[0.15.1]: https://github.com/lucagattoni/pinakes/releases/tag/v0.15.1
 [0.15.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.15.0
 [0.14.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.14.0
 [0.13.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.13.0
