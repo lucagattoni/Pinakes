@@ -70,6 +70,24 @@ reranker is the condition under which this is worth asking again, and §3's crit
 pool of at least 10, measured before any injection code exists) is what such a corpus must meet
 first.
 
+**Where the two legs are.** §3's budget note already sets the rule — *do not delete an index you
+might want a second reading of* — and records why: an eval pass is 80 seconds against a 44 min 45 s
+rebuild. What it does not give is the paths, so they are here, where anyone re-reading this lands.
+**None of it is committed**: 145 MB apiece, and `.pinakes/` state is gitignored on purpose. Hashed
+20260807 13:06.
+
+| Path, under `~` | sha256 | What it is |
+|---|---|---|
+| `pinakes-rfc-corpus/` | — | The built corpus. Rebuilt by `tools/build_rfc_corpus.py`, checked by `tools/verify_rfc_golden_set.py --kb ~/pinakes-rfc-corpus` — the one of these paths already named in the repo |
+| `pinakes-rfc-corpus.manifest-2c-backup.toml` | `497b59a9…` | The manifest both legs chunked under: `max_tokens = 414`, deliberately not the default 510. Byte-identical to the corpus's live `pinakes.toml` |
+| `pinakes-rfc-corpus-index-uninjected.db` | `e6ccbc89…` | The **before** leg — the index reproducing 2c's committed baseline |
+| `pinakes-rfc-corpus-index-injected.db` | `9f49892a…` | The **after** leg |
+
+**The corpus sits in its uninjected state right now** — `~/pinakes-rfc-corpus/.pinakes/index.db`
+hashes to `e6ccbc89…`, the *before* leg exactly. So a second reading copies the **injected** file in,
+never the reverse: copying the wrong one yields a flat result indistinguishable from the null this
+section reports, which is the same self-concealing failure the four controls above exist to catch.
+
 ---
 
 ## 1 · Facts established, with evidence — do not re-derive these
