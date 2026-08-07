@@ -1764,11 +1764,13 @@ def test_heading_coverage_is_full_on_an_all_markdown_kb(kb: Path) -> None:
 def test_a_plain_text_source_type_is_reported_at_zero(kb: Path) -> None:
     """The RFC case, in miniature — and the reason this check exists.
 
-    `chunk.py` routes anything that is not `markdown` to `_plain_blocks`, which sets
-    `heading_path=None` unconditionally, so a `.txt` file cannot carry one **whatever it
-    contains**. This one is written with a heading that looks exactly like an RFC's, to pin that
-    the absence is the code path and not the document: if a future change makes plain text carry
-    heading paths, this test fails and has to be re-decided rather than silently passing.
+    `chunk.py` routes `text` to `_plain_blocks` — which sets `heading_path=None` unconditionally —
+    **unless `[chunking] headings = "numbered"` is set**, which this fixture does not set. So the
+    absence here is the *grammar not being offered*, not a `.txt` file being unable to carry a
+    heading path: that stopped being true in 0.13.0, and the assertions below turn on the
+    difference, since the note has to point at the unset key rather than declare a limit of the
+    tool. This document is written with a heading that looks exactly like an RFC's, so the
+    distinction is load-bearing: the same bytes under `headings = "numbered"` do carry one.
 
     **Two chunks, not one**, and the count is the point: `_plain_blocks` splits on blank lines, so
     the `1.  Introduction` line becomes a chunk *of its own* with no heading path and no body —
