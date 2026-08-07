@@ -53,3 +53,55 @@ page and only one is.
 specified fails on its own landing commit, because `./check.sh` runs *before* the archive is
 committed and `git log` returns zero. It is *at most* one: zero means not yet committed, one means
 added and never touched, two or more is the violation.
+
+**HIGH — the gate reproduced, inside itself, the exact defect it was built to catch.** Given
+`--templates` as a *relative* path, leg (vii) built its `git log` pathspec against the process
+working directory while git resolved it against the templates directory. It matched nothing, `git
+log` returned empty, zero commits read as "not committed yet", and the gate printed
+`history leg (vii) ran … none edited` **and `all legs green`** over a tree carrying the coordinated
+three-file edit. That is the strong mode claimed while nothing was checked — the thing this
+increment exists to stop `pnk doctor` doing. Every leg-(vii) test passed `--repo` explicitly, so
+nothing covered it. **A flag that changes where a tool looks needs a test that runs it from
+somewhere else**; resolving paths once at the argument boundary is the fix, and the general rule is
+that a relative path and a `cwd` argument must never be chosen independently.
+
+**HIGH — leg (vii)'s first design blocked the project's own procedure, and no single mechanism
+fixes it.** Counting every commit that touched an archived directory fails a branch that adds one
+and then corrects it during review — which is exactly what `docs/BUILDING.md` requires (green
+`./check.sh` *before* review, review fixes in *their own commit*). The failure text said the archive
+*"still says what the version said when it shipped"* about a version that had never shipped, and the
+only escape — amend or rebase — is the operation that also defeats the leg. Two candidate fixes each
+looked sufficient and each was blind: counting only commits already on `origin/main` stops catching
+the coordinated edit *before* it merges; comparing content against `origin/main` stops catching an
+edit that has *already* merged. **The leg needs both halves, and the way to see that was a table of
+three scenarios against two candidate rules**, not a closer reading of either candidate.
+
+**MEDIUM — a test asserting on a configuration was satisfied by the prose describing it.** The test
+pinning `fetch-depth: 0` onto the gate's CI job grepped the workflow file for the string. The job's
+own comment explains *why* the setting is there and contains it, so deleting the setting left the
+test green. Caught only by mutating it. **Grep a config file and you assert about a document; parse
+it and you assert about the configuration** — the test now loads the YAML and reads
+`jobs.template-drift.steps[checkout].with.fetch-depth`.
+
+**MEDIUM — nothing pinned that the gate was wired in at all.** Deleting the `check.sh` line and the
+entire CI job left all forty-odd tests in `tests/test_template_drift.py` green, because every one of
+them drives the tool directly. A test suite for a gate proves the gate *works*; it says nothing
+about whether anything *runs* it, and those are different claims. Two assertions now cover the
+second one.
+
+**MEDIUM — the hash covered bytes that do not ship, and could bake them into the ledger.** It walked
+the working tree, so a gitignored `.DS_Store` in the template directory turned `./check.sh` red on a
+clean checkout with the remedy *"bump the version and archive the new files"*. The worse direction:
+present while `--print-hash` generated a ledger row, it was folded into the committed sha — leaving
+the author green and failing only on a clean CI checkout, pointing at an archive nobody had touched.
+The fix is *ignored*, not *untracked*, and the distinction is load-bearing: measured against a real
+hatchling build, a gitignored file does **not** reach the wheel while an untracked-but-un-ignored
+`.orig` **does**. Hashing git's tracked set would have hashed away a stray file that really
+publishes, and given a brand-new archive the digest of the empty string.
+
+**Process note — two independent skeptics disagreed, and the disagreement was the useful output.**
+One confirmed the stray-file finding; another refuted it, having implemented and measured a
+*tracked-set* fix and shown it strictly worse. Both were right about what they tested, and neither
+had tested the rule that was actually adopted. **A refutation kills a proposed fix, not necessarily
+the finding** — the two have to be judged separately, and the second reviewer's evidence is what
+made the third option obviously correct.

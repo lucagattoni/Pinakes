@@ -337,23 +337,32 @@ def git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
 
 
-def coordinated_edit_repo(tmp_path: Path) -> Path:
-    """A real git repository in which the three-file edit has been committed.
+def published_repo(tmp_path: Path) -> Path:
+    """A git repository whose archive has **shipped** — committed and on `origin/main`.
 
-    Edit the live `.j2`, copy it over the archived copy, update the ledger row, commit. Every
-    content leg passes: the live files match the archive, the archive matches the ledger, the
-    version is unchanged and still archived. The property is violated and only history can see it.
+    Leg (vii) asks whether a version that already shipped has been edited, so every test below
+    needs a notion of *published*. `update-ref` fakes the remote-tracking ref directly rather than
+    cloning: what the gate reads is `origin/main`, and how it came to exist is not its business.
     """
     repo = tmp_path / "repo"
     repo.mkdir()
     git(repo, "init", "-q")
     git(repo, "config", "user.email", "t@example.invalid")
     git(repo, "config", "user.name", "T")
-    templates = repo / "templates"
-    shutil.copytree(REAL_TEMPLATES, templates)
+    shutil.copytree(REAL_TEMPLATES, repo / "templates")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "the archive as published")
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    return repo
 
+
+def coordinated_edit(repo: Path) -> None:
+    """The three-file edit: live `.j2`, its archived copy, and the ledger row — in one commit.
+
+    Every content leg passes afterwards: the live files match the archive, the archive matches the
+    ledger, the version is unchanged and still archived. Only history can see it.
+    """
+    templates = repo / "templates"
     live = templates / "notes" / "pinakes.toml.j2"
     edited = live.read_text(encoding="utf-8").replace(
         "confirm_above_eur = 0.01", "confirm_above_eur = 0.02"
@@ -365,11 +374,16 @@ def coordinated_edit_repo(tmp_path: Path) -> Path:
     repoint(templates, "notes", "1.1")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "three files, one commit, version untouched")
+
+
+def coordinated_edit_repo(tmp_path: Path) -> Path:
+    repo = published_repo(tmp_path)
+    coordinated_edit(repo)
     return repo
 
 
 def test_a_three_file_edit_is_caught_by_the_history_leg(tmp_path: Path) -> None:
-    """Leg (vii), and the reason it exists.
+    """Leg (vii), and the reason it exists — caught **before** it merges.
 
     Asserts **which** leg reported: a test satisfied by any non-zero exit would be satisfied by
     the other six legs too, and every one of them passes on this tree — which is checked here, not
@@ -377,11 +391,101 @@ def test_a_three_file_edit_is_caught_by_the_history_leg(tmp_path: Path) -> None:
     repo = coordinated_edit_repo(tmp_path)
     result = run(repo / "templates", "--repo", str(repo))
     assert result.returncode == 1
-    assert "edited after it was added" in result.stderr
+    assert "edited after it shipped" in result.stderr
     assert "notes/_versions/1.1" in result.stderr
-    assert "2 commits" in result.stderr
+    assert "differs from origin/main" in result.stderr
     assert "differ from archived" not in result.stderr
     assert "does not match its `_versions.toml` row" not in result.stderr
+
+
+def test_an_archive_edited_after_it_shipped_is_caught_once_both_commits_have_landed(
+    tmp_path: Path,
+) -> None:
+    """The other half of leg (vii). The in-flight check above compares the working tree against
+    `origin/main`; once the offending commit *is* on `origin/main` that comparison is clean, and
+    only the landed-commit count can still see it."""
+    repo = coordinated_edit_repo(tmp_path)
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    result = run(repo / "templates", "--repo", str(repo))
+    assert result.returncode == 1
+    assert "edited after it shipped" in result.stderr
+    assert "2 commits on origin/main" in result.stderr
+
+
+def test_adding_an_archive_then_correcting_it_before_landing_is_not_an_edit(
+    tmp_path: Path,
+) -> None:
+    """The false positive that the first version of this leg had, and it blocked the project's own
+    procedure. `docs/BUILDING.md` requires a green `./check.sh` **before** review and review fixes
+    in **their own commit**, so a branch that adds an archived version and then corrects it during
+    review has two commits touching it — on a version that has never shipped. Counting every commit
+    failed that branch and told its author the archive *"still says what the version said when it
+    shipped"*, about something that had not shipped. The escape — amend or rebase — is exactly the
+    operation that also defeats the leg."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    git(repo, "config", "user.email", "t@example.invalid")
+    git(repo, "config", "user.name", "T")
+    (repo / "unrelated.txt").write_text(
+        "a repository that predates the archive\n", encoding="utf-8"
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "before any template")
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    templates = repo / "templates"
+    shutil.copytree(REAL_TEMPLATES, templates)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "add the archive")
+
+    readme = templates / "notes" / "README.md"
+    readme.write_text(readme.read_text(encoding="utf-8") + "\nA review fix.\n", encoding="utf-8")
+    (templates / "notes" / "_versions" / "1.1" / "README.md").write_text(
+        readme.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    repoint(templates, "notes", "1.1")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "review fix, its own commit as BUILDING.md requires")
+
+    result = run(templates, "--repo", str(repo))
+    assert result.returncode == 0, result.stderr
+    assert "history leg (vii) ran" in result.stdout
+    assert "new" in result.stdout
+
+
+def test_the_history_leg_skips_when_there_is_no_published_branch(tmp_path: Path) -> None:
+    """A repository with history but nothing to call published cannot answer leg (vii)'s question,
+    and says so rather than guessing. Falling back to counting every commit is what produced the
+    false positive above."""
+    repo = coordinated_edit_repo(tmp_path)
+    git(repo, "update-ref", "-d", "refs/remotes/origin/main")
+    git(repo, "branch", "-m", "not-main")
+
+    result = run(repo / "templates", "--repo", str(repo))
+    assert result.returncode == 0, result.stderr
+    assert "leg (vii) skipped: no published branch here" in result.stdout
+
+
+def test_a_relative_templates_path_does_not_let_the_history_leg_claim_it_ran(
+    tmp_path: Path,
+) -> None:
+    """The pathspec bug, pinned. `--templates` given a relative path used to leave leg (vii)
+    building a pathspec relative to the *process* cwd while git resolved it against the templates
+    directory: it matched nothing, `git log` returned empty, and the gate printed
+    `history leg (vii) ran` over the coordinated edit below — reporting the strong mode having
+    checked nothing, which is the one outcome the module docstring forbids."""
+    repo = coordinated_edit_repo(tmp_path)
+    result = subprocess.run(
+        [sys.executable, str(TOOL), "--templates", "templates", "--repo", "."],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1, result.stdout
+    assert "edited after it shipped" in result.stderr
 
 
 def test_the_gate_names_its_reason_when_it_cannot_run(tmp_path: Path) -> None:
@@ -429,10 +533,9 @@ def test_a_shallow_clone_skips_the_history_leg_rather_than_passing_it(tmp_path: 
     assert "leg (vii) skipped" in result.stdout
 
 
-def test_an_uncommitted_archive_is_not_a_second_commit(tmp_path: Path) -> None:
-    """Zero commits is allowed, and it is not a hole. The increment that *adds* an archive runs
-    `./check.sh` before committing it, so the directory is untracked the first time the gate sees
-    it. What leg (vii) forbids is a **second** commit — added, then edited."""
+def test_an_uncommitted_archive_is_not_an_edit(tmp_path: Path) -> None:
+    """An archive that is not committed at all is new, not frozen. The increment that *adds* one
+    runs `./check.sh` before committing it, so this is the state the gate first sees."""
     repo = tmp_path / "repo"
     repo.mkdir()
     git(repo, "init", "-q")
@@ -443,6 +546,7 @@ def test_an_uncommitted_archive_is_not_a_second_commit(tmp_path: Path) -> None:
     (repo / "unrelated.txt").write_text("so the repository has a commit\n", encoding="utf-8")
     git(repo, "add", "unrelated.txt")
     git(repo, "commit", "-qm", "unrelated")
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
 
     result = run(templates, "--repo", str(repo))
     assert result.returncode == 0, result.stderr
@@ -582,3 +686,128 @@ def test_the_hash_covers_the_path_as_well_as_the_bytes(tmp_path: Path) -> None:
     before = content_hash(notes)
     (notes / "README.md").rename(notes / "READ-ME.md")
     assert content_hash(notes) != before
+
+
+# --------------------------------------------------------------------------------------------
+# The gate is wired in — the omission that makes every test above worthless
+# --------------------------------------------------------------------------------------------
+
+
+def test_the_gate_is_invoked_by_check_sh() -> None:
+    """A gate nothing runs is a gate that does not exist, and nothing else here would notice.
+
+    Deleting the `check.sh` line and the whole CI job leaves all thirty-odd tests in this file
+    green: they drive the tool directly, so they pin its behaviour and say nothing about whether
+    anything calls it."""
+    body = (REPO / "check.sh").read_text(encoding="utf-8")
+    assert "tools/template_drift_gate.py" in body
+
+
+def test_the_gate_has_its_own_ci_job_with_full_history() -> None:
+    """`ci.yml` never invokes `check.sh`, so a gate in one and not the other runs on nobody's
+    machine but the author's. And leg (vii) needs history: GitHub's default checkout is depth 1,
+    where the gate skips the leg — so the job carrying this gate is the one checkout in the file
+    that must set `fetch-depth: 0`.
+
+    **Parsed, not grepped.** The first version of this test asserted `"fetch-depth: 0" in body`
+    and could not fail: the job's own comment explains why the setting is there, so deleting the
+    setting left the string behind and the test green. An assertion satisfied by the prose
+    describing a configuration is the defect class this repository hunts, reproduced in the test
+    written to prevent it.
+    """
+    import yaml
+
+    workflow = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text("utf-8"))
+    job = workflow["jobs"]["template-drift"]
+    steps = job["steps"]
+
+    checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout"))
+    assert checkout.get("with", {}).get("fetch-depth") == 0, (
+        "the template-drift job's checkout must set fetch-depth: 0, or leg (vii) silently skips"
+    )
+    assert any("tools/template_drift_gate.py" in str(s.get("run", "")) for s in steps)
+
+
+# --------------------------------------------------------------------------------------------
+# What the hash covers, and what it must not
+# --------------------------------------------------------------------------------------------
+
+
+def test_a_file_git_ignores_is_not_part_of_the_template(tmp_path: Path) -> None:
+    """Finder and editors drop files into directories. `.DS_Store` is gitignored, does not reach
+    the wheel (measured against a real hatchling build), and used to turn the whole of `check.sh`
+    red on a clean checkout — telling the reader to bump the template version and archive it.
+
+    Worse than the noise: the same stray file present while `--print-hash` generated a ledger row
+    was folded into the committed sha, leaving the author's tree green and failing only on a clean
+    CI checkout, with a remedy pointing at an archive nobody had touched."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    (repo / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
+    templates = repo / "templates"
+    shutil.copytree(REAL_TEMPLATES, templates)
+
+    before = content_hash(templates / "notes")
+    (templates / "notes" / ".DS_Store").write_bytes(b"\x00junk")
+    assert content_hash(templates / "notes") == before
+
+    result = run(templates, "--repo", str(repo))
+    assert result.returncode == 0, result.stderr
+
+
+def test_an_untracked_file_git_does_not_ignore_is_still_part_of_the_template(
+    tmp_path: Path,
+) -> None:
+    """The other direction, and why the rule is *ignored* rather than *tracked*.
+
+    Hatchling packages the working tree (`artifacts = ["src/pinakes/templates/**"]`), so an
+    untracked but un-ignored file really does publish inside the wheel. Hashing git's tracked set
+    instead would hash it away and let it ship — and would give a brand-new archive the digest of
+    the empty string, because the increment that adds one runs `./check.sh` before committing."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    (repo / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
+    templates = repo / "templates"
+    shutil.copytree(REAL_TEMPLATES, templates)
+
+    before = content_hash(templates / "notes")
+    (templates / "notes" / "pinakes.toml.j2.orig").write_text("a stray copy\n", encoding="utf-8")
+    assert content_hash(templates / "notes") != before
+
+    result = run(templates, "--repo", str(repo))
+    assert result.returncode == 1
+    assert "pinakes.toml.j2.orig is live-only" in result.stderr
+
+
+def test_the_hash_is_the_same_where_git_cannot_answer(tmp_path: Path) -> None:
+    """An sdist and a vendored copy have no git, and the ledger row still has to match. It does,
+    because a file git ignores is never committed and so is not there to be skipped."""
+    outside_a_repo = copy_real(tmp_path)
+    assert content_hash(outside_a_repo / "notes") == content_hash(REAL_TEMPLATES / "notes")
+
+
+def test_an_archived_version_without_its_declaration_fails(tmp_path: Path) -> None:
+    """The module docstring's limit (b) says an archived `template.toml` has "its presence and its
+    directory name checked". It said so while checking neither: an archive missing the file passed
+    all seven legs."""
+    templates = copy_real(tmp_path)
+    (templates / "notes" / "_versions" / "1.1" / "template.toml").unlink()
+    result = run(templates)
+    assert result.returncode == 1
+    assert "archived without a template.toml" in result.stderr
+
+
+def test_an_archived_version_declaring_a_different_version_fails(tmp_path: Path) -> None:
+    """The directory name and the declaration inside it must agree, or `pnk upgrade` reads back a
+    version nobody archived."""
+    templates = copy_real(tmp_path)
+    declaration = templates / "notes" / "_versions" / "1.1" / "template.toml"
+    declaration.write_text(
+        declaration.read_text(encoding="utf-8").replace('version = "1.1"', 'version = "9.9"'),
+        encoding="utf-8",
+    )
+    result = run(templates)
+    assert result.returncode == 1
+    assert "declares 9.9" in result.stderr

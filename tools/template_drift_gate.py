@@ -22,7 +22,7 @@ The seven legs, per template:
     (iv)  `_versions.toml` and the archive directories agree, in both directions
     (v)   the live version is archived at all
     (vi)  every archived version still renders
-    (vii) no archived directory has been touched by a second commit
+    (vii) no archived version has changed since it was published
 
 **`template.toml` is excluded from the content hash, and that exclusion is what makes leg (ii)
 able to fail.** Hashing the file that declares the version would make every bump change the hash
@@ -33,14 +33,20 @@ by construction, so "a version bumped with no content change" could never be det
 (a) Leg (vii) is the only leg that can see a *coordinated* edit — an author who changes
     `pinakes.toml.j2`, copies it over the archived copy and updates the ledger row passes (i)-(iv)
     with the version untouched. Without git history — a shallow CI clone, an sdist, a vendored
-    copy — the gate degrades to (i)-(vi), which that three-file edit passes. The gate prints which
-    mode it ran in every time; it never claims the stronger one silently.
-(b) An archived `template.toml` is outside the content hash, so its declared version could be
-    edited without (i)-(iv) noticing. Only its presence and its directory name are checked. Leg
-    (vii) covers this when history is available.
-(c) Leg (vii) has a false-positive mode: a tree-wide move, a licence-header sweep or a
-    `git filter-repo` adds a second commit to an untouched archive directory. The remedy is that
-    the failure names the directory and every commit, so a human can see it was not a content
+    copy — or without a published branch to compare against, the gate degrades to (i)-(vi), which
+    that three-file edit passes. The gate prints which mode it ran in every time; it never claims
+    the stronger one silently.
+(b) An archived `template.toml` is outside the content hash, so its *description* could be edited
+    without (i)-(iv) noticing. Its presence and its declared version are checked against the
+    directory name; nothing else in it is. Leg (vii) covers the rest once the version is published.
+(c) **Leg (vii) reads history, and history can be rewritten.** Squashing or amending the commits
+    that added an archived version, then editing it, leaves one commit and content identical to
+    the published ref — and passes. That is unavoidable for anything that reasons about git, and it
+    is why the ledger exists alongside: rewriting history to hide an archive edit is a much louder
+    act than making one.
+(d) Leg (vii) has a false-positive mode: a tree-wide move, a licence-header sweep or a
+    `git filter-repo` adds a second landed commit to an untouched archive directory. The remedy is
+    that the failure names the directory and every commit, so a human can see it was not a content
     edit — not to weaken the leg.
 """
 
@@ -101,17 +107,64 @@ class GateFailureError(Exception):
         self.lines: tuple[str, ...] = lines
 
 
+def _git_ignored(directory: Path, candidates: list[Path]) -> set[Path]:
+    """The subset of `candidates` git ignores. Empty whenever git cannot answer.
+
+    **Ignored, not untracked, and the difference is the whole design.** The hash must cover what
+    *ships*, and hatchling packages the working tree (`pyproject.toml`'s
+    `artifacts = ["src/pinakes/templates/**"]`). Measured, both directions: a gitignored
+    `.DS_Store` under the template directory does **not** reach the wheel, while an untracked but
+    un-ignored `pinakes.toml.j2.orig` **does**. So hashing git's *tracked* set would be wrong twice
+    over — it would hash away a stray file that really publishes, and it would give a brand-new
+    archive the digest of the empty string, because the increment that adds one runs `./check.sh`
+    before committing it. Ignoring what git ignores is the only rule that matches what travels.
+
+    **This does not make the hash environment-dependent.** A file git ignores is never committed,
+    so it is absent from CI, from a fresh clone and from the sdist: on every tree a ledger row is
+    computed or checked against, "skip what git ignores" and "hash everything" agree. What it
+    removes is the one case where they differed — a working copy with editor or Finder droppings in
+    the template directory, which turned `./check.sh` red on a clean checkout and, worse, could be
+    folded into a `--print-hash` value and committed as a ledger row that only CI rejects.
+
+    The residual risk, stated rather than hidden: a *global* `core.excludesFile` ignoring a
+    genuinely consumed file would make one machine disagree with CI. That surfaces as a ledger
+    mismatch, which is the right way round.
+    """
+    if not candidates:
+        return set()
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "-z", "--stdin"],
+            cwd=directory,
+            input="\0".join(str(path) for path in candidates),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:  # pragma: no cover — git absent from the machine
+        return set()
+    # 0 = at least one path is ignored, 1 = none is. Anything else (128 outside a repository) means
+    # git could not answer, and an unanswered question must never drop a file from the hash.
+    if result.returncode not in (0, 1):
+        return set()
+    return {Path(line) for line in result.stdout.split("\0") if line}
+
+
 def _hashed_files(directory: Path) -> Iterator[tuple[str, Path]]:
     """Every file a version's content hash covers, as `(relative POSIX path, path)`.
 
     An **exclude**-list, so a template that gains a new consumed file is covered without editing
-    this gate. Two exclusions, and both are load-bearing:
+    this gate. Three exclusions, each load-bearing:
 
     * anything under a `_versions/` component — the archive is not part of the live content, and
       hashing it would make the live hash depend on its own history;
     * `template.toml` at the top of the hashed directory — see the module docstring: this is the
-      exclusion leg (ii) exists on top of.
+      exclusion leg (ii) exists on top of;
+    * anything git ignores — see `_git_ignored`. Asked of git rather than kept as a list of junk
+      filenames, because that list is never finished: `check.sh`'s NUL scan records the same lesson
+      about binary suffixes, and answers it the same way.
     """
+    candidates: list[Path] = []
     for path in sorted(directory.rglob("*")):
         if not path.is_file():
             continue
@@ -120,25 +173,35 @@ def _hashed_files(directory: Path) -> Iterator[tuple[str, Path]]:
             continue
         if relative.as_posix() == DECLARATION:
             continue
-        yield relative.as_posix(), path
+        candidates.append(path)
+
+    ignored = _git_ignored(directory, candidates)
+    for path in candidates:
+        if path not in ignored:
+            yield path.relative_to(directory).as_posix(), path
 
 
 def content_hash(directory: Path) -> str:
-    """SHA-256 over a version's consumed files: each entry `path\\0bytes`, sorted by path.
+    """SHA-256 over a version's consumed files: `path\\0length\\0bytes` each, sorted by path.
 
     **The one definition.** Fixtures in later increments build synthetic archives and write
     ledger rows the gate must accept; a fixture that re-implemented this would drift from the gate
     and the gate would win, surfacing as an unrelated red test in an unrelated increment.
 
     The path is hashed as well as the bytes, so moving a file between two names — same bytes,
-    different layout — is a change.
+    different layout — is a change. **The length is hashed because `path\\0bytes\\0` alone was
+    ambiguous**: a path cannot hold a NUL but file content can, so one file containing `y\\0z\\0`
+    and the two files `y` and `z` containing nothing produced the same digest. Length-framing
+    removes the collision instead of resting on template files never holding a NUL byte.
     """
     digest = hashlib.sha256()
     for relative, path in _hashed_files(directory):
+        data = path.read_bytes()
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        digest.update(str(len(data)).encode("ascii"))
         digest.update(b"\0")
+        digest.update(data)
     return digest.hexdigest()
 
 
@@ -221,9 +284,60 @@ def git_history_reason(repo: Path) -> str | None:
     return None
 
 
-def commits_touching(repo: Path, path: Path) -> list[str]:
+def published_ref(repo: Path) -> str | None:
+    """The ref an archived version counts as **published** against, or `None`.
+
+    Leg (vii) asks whether a version that already shipped has been edited, and "already shipped"
+    means *landed*, never *committed*. Counting every commit that touched the directory conflates
+    the two, and the project's own procedure produces the difference: `docs/BUILDING.md` requires a
+    green `./check.sh` before review **and** review fixes in their own commit, so a branch that adds
+    an archive and then corrects it has two commits on a version that has never shipped.
+    """
+    for ref in ("origin/main", "origin/HEAD", "main"):
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", ref],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return ref
+    return None
+
+
+def is_published(repo: Path, ref: str, path: Path) -> bool:
+    """Does `ref` carry this archived directory at all? If not, the version is new."""
     result = subprocess.run(
-        ["git", "log", "--format=%H", "--", str(path)],
+        ["git", "ls-tree", "-d", "--name-only", ref, "--", str(path)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0 and bool(result.stdout.strip())
+
+
+def differs_from(repo: Path, ref: str, path: Path) -> bool:
+    """Has this archived directory changed since `ref`? The in-flight half of leg (vii)."""
+    result = subprocess.run(
+        ["git", "diff", "--quiet", ref, "--", str(path)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode != 0
+
+
+def commits_touching(repo: Path, path: Path, ref: str) -> list[str]:
+    """Commits reachable from `ref` that touched `path`. Absolute `path`, always.
+
+    A relative pathspec is resolved against `cwd`, not against the caller's working directory, so
+    passing one here matched nothing and the leg reported the strong mode having checked nothing.
+    """
+    result = subprocess.run(
+        ["git", "log", "--format=%H", ref, "--", str(path)],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -304,6 +418,23 @@ def check(templates: Path, *, repo: Path | None = None) -> list[str]:
                 )
             by_hash[entry_hash] = version
 
+            # An archived version declares itself. Outside the content hash by design (limit (b)),
+            # so only its presence and its directory name are checked — but *checked*: the docstring
+            # claimed this and the code did not do it, and an archive missing its `template.toml`
+            # passed all seven legs.
+            if not (entry / DECLARATION).is_file():
+                raise GateFailureError(
+                    f"{name}@{version} is archived without a {DECLARATION}.",
+                    "An archived version declares its own name and version; `pnk upgrade` reads "
+                    "them back when it reconstructs what a KB was stamped from.",
+                )
+            archived_declares = declared_version(entry)
+            if archived_declares != version:
+                raise GateFailureError(
+                    f"{name}@{version} is archived in a directory named {version} but its "
+                    f"{DECLARATION} declares {archived_declares}.",
+                )
+
             # (vi) it still renders. An archive `pnk upgrade` cannot render is not an archive.
             manifest_template = entry / MANIFEST_TEMPLATE
             if not manifest_template.is_file():
@@ -368,41 +499,74 @@ def _first_difference(live: Path, archived: Path) -> str:
 
 
 def _history_leg(templates: Path, names: Sequence[Path], *, repo: Path | None) -> str:
-    """Leg (vii). Always returns a line naming which mode it ran in — a skip is not a pass."""
-    where = repo if repo is not None else templates
+    """Leg (vii). Always returns a line naming which mode it ran in — a skip is not a pass.
+
+    **Two halves, because no single one of them is complete.** The question is whether a version
+    that already *shipped* has been edited, and an archive can be wronged from either side of the
+    publication line:
+
+    * **landed history** — at most one commit *reachable from the published ref* may touch an
+      archived directory. Catches an add and a later edit that both landed.
+    * **in-flight content** — if the published ref carries the directory at all, the working tree's
+      copy must be byte-identical to it. Catches the coordinated three-file edit **before** it
+      merges, which is the case worth catching.
+
+    Counting every commit instead — the first version of this leg — failed a branch that adds an
+    archive and then corrects it during review, which is the sequence `docs/BUILDING.md` requires
+    (green `./check.sh` before review, review fixes in their own commit). An archive the published
+    ref does not carry is **new**, and neither half constrains it.
+    """
+    where = (repo if repo is not None else templates).resolve()
     reason = git_history_reason(where)
     if reason is not None:
         return f"{PREFIX}: history leg (vii) skipped: {reason}."
 
-    edited: list[str] = []
+    ref = published_ref(where)
+    if ref is None:
+        return (
+            f"{PREFIX}: history leg (vii) skipped: no published branch here "
+            "(looked for origin/main, origin/HEAD, main)."
+        )
+
+    problems: list[str] = []
     checked = 0
+    fresh = 0
     for template in names:
         for entry in archived_dirs(template):
-            commits = commits_touching(where, entry)
+            absolute = entry.resolve()
+            if not is_published(where, ref, absolute):
+                fresh += 1
+                continue
             checked += 1
-            # **Zero commits is allowed and is not a hole.** The increment that adds an archive
-            # runs `./check.sh` before committing it, so the directory is untracked at the moment
-            # the gate first sees it. What the leg forbids is a *second* commit: an archived
-            # version that was added and later edited. Zero means "not committed yet"; one means
-            # "added once, never touched"; two or more is the property violation.
+            commits = commits_touching(where, absolute, ref)
             if len(commits) > 1:
-                edited.append(
-                    f"  {entry.relative_to(templates)} — {len(commits)} commits: "
+                problems.append(
+                    f"  {entry.relative_to(templates)} — {len(commits)} commits on {ref}: "
                     + ", ".join(commit[:12] for commit in commits)
                 )
-    if edited:
+            elif differs_from(where, ref, absolute):
+                problems.append(
+                    f"  {entry.relative_to(templates)} — differs from {ref} in this working tree"
+                )
+    if problems:
         raise GateFailureError(
-            "an archived version was edited after it was added. An archive is frozen: the "
-            "whole point is that it still says what the version said when it shipped.",
-            *edited,
+            "an archived version was edited after it shipped. An archive is frozen: the whole "
+            "point is that it still says what the version said when it was published.",
+            *problems,
             "If this was a tree-wide move or a header sweep rather than a content edit, the "
             "commits above will show it — the remedy is to say so in review, not to weaken "
             "the leg.",
         )
+    if checked == 0:
+        return (
+            f"{PREFIX}: history leg (vii) ran against {ref} — every archived version here is new "
+            f"({_plural(fresh, 'directory', 'directories')} not on {ref}), so nothing was frozen "
+            "yet for it to check."
+        )
     return (
-        f"{PREFIX}: history leg (vii) ran — "
-        f"{_plural(checked, 'archived directory', 'archived directories')}, "
-        "none edited after the commit that added it."
+        f"{PREFIX}: history leg (vii) ran against {ref} — "
+        f"{_plural(checked, 'published archived directory', 'published archived directories')} "
+        f"unchanged since it shipped, {fresh} new."
     )
 
 
@@ -436,8 +600,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="print the content hash of one directory and exit — the value a ledger row needs",
     )
     args = parser.parse_args(argv)
-    templates: Path = args.templates
-    repo: Path | None = args.repo
+    # Resolved here, once. A relative `--templates` used to leave leg (vii) building a pathspec
+    # relative to the process cwd while git resolved it against the templates directory: it matched
+    # nothing, and the gate printed `history leg (vii) ran` over a tree it had not looked at.
+    templates: Path = args.templates.resolve()
+    repo: Path | None = args.repo.resolve() if args.repo is not None else None
     one_directory: Path | None = args.print_hash
     if one_directory is not None:
         if not one_directory.is_dir():
