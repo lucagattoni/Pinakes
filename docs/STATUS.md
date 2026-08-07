@@ -117,8 +117,11 @@ edits the manifest by hand. That gap, and what to do about it, is worked through
 half **shipped in 0.6.0 (G4)** — a manifest can declare the oldest Pinakes that can read it, so an
 out-of-date build says so instead of reporting a typo, closing the *diagnosis*. **Detection shipped
 in 0.17.0**: `notes` moved to `1.1`, a CI gate keeps its version honest, and `pnk doctor` now WARNs
-on every KB recording an older reference. What is still missing is the part that closes *this*
-caveat — `pnk doctor` reports only *that* a KB is behind, never *which lines differ*, and nothing
+on every KB recording an older reference. **Measurement followed in T2**: where both versions are
+archived, `pnk doctor` renders them both and reports how many lines separate them — but on a KB
+recording `notes@1.0` it reports `cannot compare`, because that version's content was never
+archived and never will be, so the KB in front of you is not one it can measure. What is still
+missing is the part that closes *this* caveat: nothing shows *which* lines differ, and nothing
 adopts a new default into an existing manifest. Both are template-release work.
 
 ### Caveat: the `[light]` backend needs a manifest edit

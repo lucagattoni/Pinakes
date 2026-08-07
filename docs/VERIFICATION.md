@@ -524,6 +524,17 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 | **every check `diagnose` can produce is named by a test** | I9 | `tests/test_doctor.py::test_every_doctor_check_is_exercised_by_a_test` |
 | a non-OK check carries a remedy — **spot-checked on five, not enumerated** | I11 | `tests/test_doctor.py::test_every_problem_carries_a_remedy` asserts over whichever checks are non-OK in one unsynced fixture (5 of 18 there; `diagnose` produces ≥29 on a synced KB), so a new remedy-less WARN passes unless it fires in that fixture. The enumerating sibling is `tests/test_doctor.py::test_every_doctor_check_is_exercised_by_a_test` |
 | the template check reports drift without applying anything | I9 | `tests/test_doctor.py::test_a_template_version_drift_is_reported_with_both_versions`, `tests/test_doctor.py::test_a_template_the_install_does_not_have_is_a_warning_not_a_failure` |
+| drift is reported as a **computed** line count, never a constant | T2 | `tests/test_doctor.py::test_a_kb_recording_an_older_template_version_reports_the_line_count` |
+| **nothing the user wrote reaches the report** — a rendered value cancels on both sides, a literal enters neither | T2 | `tests/test_doctor.py::test_a_user_edited_manifest_value_never_appears_in_the_template_drift_report` |
+| a comment-only template change is still reported — the live gap (F3) is entirely comments | T2 | `tests/test_doctor.py::test_a_comment_only_template_change_is_reported` |
+| the `[kb]` identity block never produces a hunk, so T4's `--apply` cannot refuse for everyone | T2 | `tests/test_doctor.py::test_the_kb_identity_block_never_produces_a_hunk` |
+| an unarchived recorded version says *cannot compare*, with a remedy naming the manual comparison | T2 | `tests/test_doctor.py::test_an_unarchived_recorded_version_says_it_cannot_compare_rather_than_ok` |
+| a version bump that leaves the manifest alone says *same manifest*, never `0 lines differ` | T2 | `tests/test_doctor.py::test_a_version_bump_that_leaves_the_manifest_alone_does_not_report_zero_lines` |
+| the *cannot compare* remedy promises nothing a later release cannot keep | T2 | `tests/test_doctor.py::test_the_cannot_compare_remedy_promises_nothing_a_later_release_cannot_keep` |
+| a template version needing an unknown variable refuses with a **message**, not a traceback | T2 | `tests/test_doctor.py::test_a_template_version_needing_an_unknown_variable_refuses_with_a_message`, `tests/test_init.py::test_a_template_variable_that_is_never_supplied_fails_loudly` |
+| `pnk doctor` on a current KB renders nothing | T2 | `tests/test_doctor.py::test_a_template_with_no_drift_reports_ok_and_renders_nothing` |
+| an archived version needing a variable the current one dropped still renders (the union context) | T2 | `tests/test_doctor.py::test_an_archived_version_needing_a_variable_the_current_one_dropped_still_renders` |
+| the gate's leg (vi) context and the product's `render_context` cannot drift apart | T2 | `tests/test_template_drift.py::test_render_context_supplies_exactly_the_declared_union` |
 | a disabled reranker is reported as configured, not as missing | I9 | `tests/test_doctor.py::test_the_reranker_check_says_when_reranking_is_off_rather_than_loading_one` |
 | the model cache check names where weights resolve | I9 | `tests/test_doctor.py::test_the_model_cache_check_names_the_directory_weights_resolve_under` |
 | an unavailable extension loader says what it does *not* affect | I9 | `tests/test_doctor.py::test_the_extensions_check_explains_that_it_only_gates_an_unshipped_tier` |
