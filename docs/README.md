@@ -25,7 +25,7 @@ anyway.
 | [**BUILDING.md**](BUILDING.md) | *How do I build one increment?* Worktree, tests, `check.sh`, mutation, adversarial review, fragments, `land.py` — the procedure that runs before [RELEASING.md](RELEASING.md) |
 | [**DESIGN.md**](DESIGN.md) | *Why is it built this way?* Architecture, storage, sync semantics, concurrency, trade-offs |
 | [**RETROSPECTIVES.md**](RETROSPECTIVES.md) | *What did we learn?* Per-increment findings, and the design's own review passes |
-| [**KB-UPDATES.md**](KB-UPDATES.md) | *What happens to a KB somebody already has when Pinakes changes?* Design note — **mostly proposal**; its `requires_pinakes` half is built (G4), the rest is not |
+| [**KB-UPDATES.md**](KB-UPDATES.md) | *What happens to a KB somebody already has when Pinakes changes?* Design note — **part built**: `requires_pinakes` (G4, 0.6.0) and template-drift **detection** (§6's gate, 0.17.0). `pnk upgrade` and reporting drift as a diff are still proposals |
 | [**graph/**](graph/) | Graph-retrieval research shaping the links and graph releases — thirteen investigations plus the synthesis |
 
 Build plans live in [`plans/`](../plans/); the release history is [`CHANGELOG.md`](../CHANGELOG.md).
@@ -41,7 +41,7 @@ build order:
 | [`20260731_2128-source-walk-containment.md`](../plans/20260731_2128-source-walk-containment.md) | A standalone increment, shipped in 0.7.1 — outside both releases above |
 | [`20260731_1202-open-corrections.md`](../plans/20260731_1202-open-corrections.md) | Numbered corrections for the implementing agent; items are closed in place, never deleted |
 | [`20260801_0749-realism-corpus.md`](../plans/20260801_0749-realism-corpus.md) | The RFC corpus and the dogfooding KB — both live **outside** this repo |
-| [`20260804_1016-template-release.md`](../plans/20260804_1016-template-release.md) | **The other live plan** — the template release: the ecosystem, `pnk upgrade`, the `sqlite-vec` tier. Reviewed (36 findings) and revised, its four decisions taken 20260804, unstarted; re-run its Baseline block first |
+| [`20260804_1016-template-release.md`](../plans/20260804_1016-template-release.md) | **The other live plan** — the template release: the ecosystem, `pnk upgrade`, the `sqlite-vec` tier. Reviewed (36 findings) and revised, its four decisions taken 20260804. **Started: T1 shipped in 0.17.0, T2 is next.** Re-run its Baseline block first, and read T1's landing commits — three of the plan's own measurements were wrong |
 | [`20260804_1016-graph-remainder-reentry.md`](../plans/20260804_1016-graph-remainder-reentry.md) | What must be re-verified about G3/G5/G6 **if** the blocking measurement is ever passed — a re-entry checklist, not a plan |
 | [`20260804_1016-staged-channel-gates.md`](../plans/20260804_1016-staged-channel-gates.md) | The **gates** for the PPR channel and the `[ner]` extra — what measurement would justify each, and what would refuse it. Deliberately not implementation plans |
 | [`20260803_2239-corpus-probe-run.md`](../plans/20260803_2239-corpus-probe-run.md) | How the second headroom measurement is run against that corpus, and the conversion contract that keeps its frozen questions frozen |

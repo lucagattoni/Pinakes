@@ -55,9 +55,10 @@ precision nobody measured.
 - ⚠️ **`0.11.0`'s verdict is narrower than it reads** — three of the seven edge kinds derived
   **zero** edges on the corpus it was gated against. **0.12.0 ships the check that reports it**, so a
   future corpus cannot repeat it silently.
-- **[The template release](#the-template-release--ready-to-start) is unblocked** — plan written,
-  reviewed, four decisions taken. Nobody has started it; `main` has moved far enough that its
-  Baseline block must be re-run before any `file:line` in it is trusted.
+- **[The template release](#the-template-release--t1-shipped-in-0170) has started** — plan written,
+  reviewed, four decisions taken, and **T1 shipped as `0.17.0`**: template versions now mean
+  something and a gate keeps them meaning it. T2–T4 and T7 remain; `main` has moved far enough that
+  the plan's Baseline block must be re-run before any `file:line` in it is trusted.
 - **[Two open corrections](#open-corrections--two-live)** — the list emptied on 20260805 and
   refilled on 20260807 from a single increment. It refills from *use*: both entries came from
   **building** 2d, and neither is visible from reading the code that holds it.
@@ -99,10 +100,11 @@ number belongs to a release only when it is cut
 | **[0.15.0](#0150--a-document-says-what-it-is-called--20260805-2248)** | 20260805 22:48 | A document says what it is called | • A Markdown `# ` heading becomes the title<br>• Fence-aware, `##` excluded, Markdown only<br>• No migration — existing titles are never rewritten |
 | **[0.15.1](#0151--one-clock--20260806-0051)** | 20260806 00:51 | One clock | • The last three naive-local timestamps are UTC<br>• `pnk init`'s `created`, the paid extractor's pricing, `doctor`'s price age<br>• Pinned by a test running at UTC+14<br>• `CLAUDE.md` 273 → 191 lines, into two new documents |
 | **[0.16.0](#0160--metadata-injection-measured-and-answered--20260807-1139)** | 20260807 11:39 | Metadata injection, measured and answered | • **6 improved, 6 regressed, 84 unchanged** — no-go<br>• `schema_version` stays 3; PDF layout heuristics and paid title inference stay unapproved<br>• `[chunking] metadata`, default `off`<br>• `tools/two_leg_gate.py`<br>• Five silent-failure fixes its own review found |
+| **[0.17.0](#0170--a-template-version-that-means-something--20260807-2055)** | 20260807 20:55 | A template version that means something | • `notes` 1.0 → **1.1**; **every existing KB now WARNs** in `pnk doctor`<br>• A check live since 0.1 that could never fire<br>• Template content archived under `_versions/`, SHA-256 ledger<br>• `tools/template_drift_gate.py` — seven legs, `check.sh` + CI<br>• `pnk init --template` refuses a non-single-component name<br>• *The template release, interim cut (D-9)* |
 | | | **[Open corrections](#open-corrections--two-live)** | • **Two live**, both from building 2d<br>• **Every one** came from *building* something, not from reading code<br>• Neither blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
-| | | **[The template release](#the-template-release--ready-to-start)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• Not started |
+| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0**; T2–T4, T7 to come<br>• Cuts more than once (D-9), so the name stays here |
 
 ---
 
@@ -242,7 +244,9 @@ on purpose, watch the right test fail, restore.
 → The gap that remains: a template change reaches **new KBs only**, so a KB created before this one
 never sees the explanation. That is
 [KB-UPDATES § 3](KB-UPDATES.md#3-the-gap-is-live-not-theoretical), and closing it is
-[the template release](#the-template-release--ready-to-start).
+[the template release](#the-template-release--t1-shipped-in-0170) — whose
+[`0.17.0`](#0170--a-template-version-that-means-something--20260807-2055) makes the divergence
+*detectable*; adopting it still needs `pnk upgrade`.
 
 ## 0.3.0 — It can spend money — if you ask · 20260729 04:17
 
@@ -679,6 +683,50 @@ saying so.
 
 ---
 
+## 0.17.0 — A template version that means something · 20260807 20:55
+
+*The template release, interim cut — T1 of T1–T4, T7. Per D-9 the release cuts more than once, so
+the name stays in the unbuilt-work table until the final cut.*
+
+- **A check that had never been able to fire, for eleven releases.** `pnk doctor` has compared the
+  KB's recorded template reference against the installed one since `0.1`. `notes` declared
+  `version = "1.0"` in every commit since it was written, while the files that version denotes
+  changed in ten later ones. So every KB recorded `notes@1.0`, the installed template was also
+  `notes@1.0`, and the check printed `OK` — over eleven different template contents. `notes` is now
+  **1.1**, and the comparison finally discriminates.
+
+**The user-visible effect is the intended one, and it is not small.** Every KB in existence now
+prints `WARN template: KB says notes@1.0, installed is notes@1.1`. Nothing is applied
+automatically, no KB needs changing, and **the WARN does not change `pnk doctor`'s exit code** —
+only a `FAIL` does — so no CI that runs it turns red. `pnk upgrade` is what will diff and apply,
+and it is not built yet.
+
+**Why the archive had to come first.** A KB records a *reference*, never the content. Without a
+copy of what a version meant, nothing on the machine can answer *what was `notes@1.1`?* — which is
+why `pnk upgrade` could never have worked, whatever the version string said. Template content is
+now archived under `src/pinakes/templates/<name>/_versions/<version>/`, travels in the wheel, and
+`templates/_versions.toml` records each file's SHA-256. **`1.0` is deliberately not archived**: it
+denotes eleven different contents, so any single answer would be wrong for ten of them, and a diff
+computed from the wrong base is worse than no diff.
+
+**A convention nobody followed became a gate.** `tools/template_drift_gate.py` runs seven legs in
+`check.sh` (0.12 s) and as its own `template-drift` CI job, so editing a template without bumping
+its version is a red build. It **reports which mode it ran in every time**: its git-history leg
+needs a full clone and says so when it has been skipped, because a skip is not a pass. Its own
+review found the gate committing the defect it exists to catch — a relative `--templates` made it
+report `all legs green` over a tree it had never looked at — and the leg now checks both halves
+against `origin/main`.
+
+**Also:** `pnk init --template` refuses a name that is not a single path component. `notes/../notes`
+and `../templates/notes` both resolved to a real template before, and `notes/eval` raised a bare
+`FileNotFoundError`. Harmless while every directory under the package root was a template — but
+with the archive present, `--template notes/_versions/1.1` would have stamped a KB from a version
+nobody released. And `[tool.ruff] extend-exclude` now keeps the project's own formatter away from
+the archived bytes: `check.sh` runs `ruff format` repo-wide and ruff rewrites Python inside
+Markdown fences, so the formatter had write access to the very bytes the ledger freezes.
+
+No `schema_version` bump, so no rebuild.
+
 ---
 
 # Part 5 · What is not built
@@ -857,22 +905,26 @@ writing its discoveries back into sidecars.
 [DESIGN § 4.2 Escalation — "free path first"](DESIGN.md#42-escalation--free-path-first). Its
 placeholder in the CLI: [CLI § Planned — not built yet](CLI.md#planned--not-built-yet).
 
-## The template release — ready to start
+## The template release — T1 shipped in 0.17.0
 
-✅ **Unblocked.** Plan written, reviewed, decisions taken. Nobody has started it.
+▶ **Started.** T1 landed and shipped as
+[`0.17.0`](#0170--a-template-version-that-means-something--20260807-2055); **T2, T3, T4 and T7 are
+still to come.** Per D-9 the release cuts more than once, so the name stays here until the final
+cut.
 
 **What it adds:** the template ecosystem, `pnk upgrade` migrations, and the `sqlite-vec` tier.
 
 **The problem it solves:** a template change reaches **new KBs only**. The PDF-glob explanation
-shipped in [`0.2.2`](#022--the-silent-skip-named--20260728-1849) appears in no KB created before it,
-and nothing detects that divergence — so existing KBs stay PDF-blind permanently unless their owner
-edits the manifest by hand. [`0.6.0`](#060--links-you-can-write--20260801-1051)'s `requires_pinakes`
-closed the *diagnosis*; nothing yet closes the gap.
+shipped in [`0.2.2`](#022--the-silent-skip-named--20260728-1849) appears in no KB created before it
+— so existing KBs stay PDF-blind permanently unless their owner edits the manifest by hand.
+[`0.6.0`](#060--links-you-can-write--20260801-1051)'s `requires_pinakes` closed the *diagnosis*;
+**0.17.0 makes the divergence detectable**, and `pnk upgrade` is what will close the gap.
 
 **State:** the plan
 ([`plans/20260804_1016-template-release.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1016-template-release.md))
 is written, adversarially reviewed (36 findings), and its four open decisions were taken by the user
-on 20260804. T1–T4 are unblocked.
+on 20260804. **T1 is done.** T2 is next: `pnk doctor` reports drift as a diff rather than a version
+string, introducing the shared `render_context` that T1's gate had to work around.
 
 ⚠️ Its measurements are recorded *as of a named commit*, not as properties — `main` moved twice
 during the session that wrote it. **Re-run its Baseline block before trusting any line number in

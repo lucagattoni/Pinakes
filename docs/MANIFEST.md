@@ -34,7 +34,7 @@ else in the repo, that copy is the stale one.
 |---|---|---|
 | `name` | ✅ | Local, human-facing. Rename freely; nothing depends on it |
 | `id` | ✅ | ULID. **Permanent.** The authority in every `pnk://` URI. Never edit, never regenerate |
-| `template` | | The blueprint and its own version, e.g. `notes@1.0` — the *template's* version, not the package's |
+| `template` | | The blueprint and its own version, e.g. `notes@1.1` — the *template's* version, not the package's. The version denotes **every byte the template ships**, not just its keys: `tools/template_drift_gate.py` hashes the whole directory, so any change to a consumed file requires a bump. A KB keeps the reference it was stamped with, which is what `pnk doctor` compares against the installed one |
 | `created` | | `YYYYMMDD HH:MM`, **UTC** — stamped by `pnk init`. Naive by design: a KB carried between machines must not disagree about when it was made |
 | `requires_pinakes` | | The oldest Pinakes that can read this KB, as a **floor only**: `">=0.6"`. Absent means no floor declared, which is not an error — see below |
 

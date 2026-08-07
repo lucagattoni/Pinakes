@@ -77,7 +77,7 @@ pnk init my-kb --name "My notes"
 ```
 
 ```
-created /path/to/my-kb from notes@1.0
+created /path/to/my-kb from notes@1.1
   kb id: 01KYMJMH8ECH945D5056CJD72V  (permanent — never edit it)
 
 Next:
@@ -111,7 +111,7 @@ pnk init . --name "Team notes"
 ```
 
 ```
-created /path/to/team-notes from notes@1.0
+created /path/to/team-notes from notes@1.1
   kb id: 01KZ9ZEX1A4RYP0BSZFSSBATQG  (permanent — never edit it)
   left as they were: .gitignore, README.md
 

@@ -39,7 +39,7 @@ Stamps a new KB and mints its **permanent** KB ULID.
 |---|---|---|
 | `path` | — | Directory to create the KB in |
 | `--name NAME` | the directory name | Human-facing only; rename freely |
-| `--template TEMPLATE` | `notes` | The blueprint. `notes` is the only one shipped |
+| `--template TEMPLATE` | `notes` | The blueprint. `notes` is the only one shipped. **A single path component** — `[A-Za-z0-9][A-Za-z0-9_-]*` — refused before any directory is created, so `notes/../notes` and `notes/_versions/1.1` both print `no template named` and write nothing |
 | `--ci` | off | Also write `.github/workflows/pinakes.yml`, which syncs and caches `.pinakes/`. Refuses to overwrite an existing one |
 
 Writes `pinakes.toml`, `docs/` and a `.gitignore` covering `.pinakes/`. It does **not** create an
