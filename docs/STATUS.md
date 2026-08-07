@@ -1,6 +1,6 @@
 # Status — what ships today
 
-**Latest release: 0.15.1** · last reviewed 20260806 20:41
+**Latest release: 0.16.0** · last reviewed 20260807 11:45
 
 > **This file is the only place in the repo that says what is built.** Every other doc describes
 > *how* something works or *why* it was designed that way, and links here for whether you can use it
@@ -64,22 +64,42 @@ asserting no paid client reached `sys.modules`. It found two real leaks the day 
 for `claude-vision` imported `anthropic` on commands that cannot spend (fixed in the same
 increment; no version ever shipped able to spend from them).
 
-### On `main`, unreleased — 20260806
+### Metadata injection: measured, answered, and shipped `off` — 0.16.0
 
-Three increments of the metadata-injection experiment have landed since `0.15.1` and **nothing above
-moves because of them**: no command, flag or manifest key reaches a user yet, and `pip install
-pinakes` still gets `0.15.1`. Recorded here because this file is the only place that says what is
-built, and "merged" and "released" are different answers.
+**The investigation that ran for two days ended in a number.**
+[`plans/20260805_1721-metadata-as-retrieval-context.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260805_1721-metadata-as-retrieval-context.md)
+asked whether `title` and `heading_path` are retrieval context. 0.16.0 is what it produced, and the
+answer is **no — through one channel, on one corpus**.
 
-| | Landed | What it is |
-|---|---|---|
-| **2a** | 20260806 06:17, `86cd403` | `tools/build_rfc_corpus.py` mints each RFC sidecar with the title published at `rfc<N>.json` and stamps `max_tokens = 414`, reserving 96 tokens of the model's 512-token window. A build tool; no shipped code path changed |
-| **2b** | 20260806 08:33, `fcabc02` | `chunk.metadata_prefix`, `chunk.embedding_text` and `chunk.assert_prefix_fits` — the prefix, the text that would be embedded, and a refusal for a prefix that would not fit. **Dormant**: nothing on the indexing path calls it, so no KB changes behaviour |
-| **2c** | 20260806 11:56, `36f32ce` | A frozen 110-question golden set for the RFC corpus, calibrated, with its `before` leg committed (numbers below). Also user-visible when it releases: `eval/outcomes.json` now records the `[chunking]` settings its run was produced under |
+| | |
+|---|---|
+| What was injected | `title > heading path`, section numbers stripped, into the text that is **embedded**. `chunks.text`, `char_start` and `char_end` untouched |
+| Corpus | 195 RFCs, **43 353 chunks**, rebuilt in 44 min 45 s with 0 failures |
+| Instrument | 110 questions, **authored blind** by six agents who had not read this repository, frozen and calibrated before any injection code existed |
+| Result | **6 improved, 6 regressed, 84 unchanged** over 96 answerable questions, at `rerank = "none"` |
+| Criterion, fixed in writing beforehand | strictly more improvements than regressions — **not met** |
 
-The experiment they serve is
-[`plans/20260805_1721-metadata-as-retrieval-context.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260805_1721-metadata-as-retrieval-context.md);
-2d is next.
+**So `schema_version` stays at 3, and two expensive things are not being built:** PDF layout
+heuristics and paid LLM title inference were both gated on this measurement showing movement. The
+screen existed to make that call *before* the irreversible schema bump, and it did.
+
+**Read the result as narrowly as it was measured.** Only the vector channel was injected; the
+lexical channel needs the schema bump the screen declined. The claim is *"vector-only injection does
+not help on this corpus"* — **not** *"metadata is worthless"*. What would re-open it is a corpus,
+not a new idea about the prefix: this one's `lexical` and `simple-lookup` questions are saturated at
+1.00, so all its statistical power sat in `paraphrase`.
+
+**Why the null is trustworthy** — the controls, not the number: both legs proven to be the same
+corpus (one sha256 over all 43 353 chunk texts, equal); the injection proven to have reached the
+vectors (mean cosine 0.8398, zero unchanged); the uninjected index proven to still reproduce the
+frozen baseline 110 rows out of 110. Without the second, a silent no-op and a true null would have
+produced identical artifacts.
+
+**`[chunking] metadata` ships anyway, default `"off"`**, so a KB whose questions are not solved by
+BM25 plus a reranker can measure it rather than inherit this verdict
+([MANIFEST](MANIFEST.md#chunking)). Turning it on is reported as drift and applied by
+`pnk sync --rebuild`; a prefix that would not fit the model's window is refused per document rather
+than silently truncated.
 
 ### Caveat: PDFs are off by default (but no longer silently)
 
@@ -279,6 +299,7 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **0.13.0** ✅ | **Plain text can carry a heading path.** `[chunking] headings = "numbered"` reads a dotted-decimal outline into `heading_path` — opt-in, `text` only, and it **refuses rather than guesses**: the numbers must form a valid outline walk across the whole document, and if the walk fails anywhere that document yields no headings at all rather than a partial labelling. **Measured against 980 real RFCs in doubling rounds** ([§5.4](https://github.com/lucagattoni/pinakes/blob/main/plans/20260805_1721-metadata-as-retrieval-context.md)): 644 accepted overall and **314 of 314 modern-era documents, 100% at every round size**. Two clauses were added from that measurement and two more were tried and rejected by it. Also: a `[chunking]` edit is no longer a silent no-op — the index records what it was built under, and both `pnk sync` and `pnk doctor` say so — and `tools/build_rfc_corpus.py` makes the corpus reproducible instead of local to one machine |
 | **0.14.0** ✅ | **`pnk doctor` stops crying wolf, and `pnk init` stops refusing the normal way to start a KB.** Heading coverage now WARNs only for `markdown` at 0% — the one case a user can act on — and reports the rest as OK with a note that separates *`text` can carry one*, *`text` was offered and refused*, and *`code`/`pdf` cannot today*. `pnk init` **adopts a directory that already has content** and never overwrites a file it finds there, so cloning a repo and initialising inside it works; an adopted `.gitignore` missing `.pinakes/` is flagged with the line to add. A new `titles` check counts documents still carrying the filename-minted title — a nudge, never a warning, because both committed corpora sit at 100%. Also settled by measurement rather than argument: **the first sync is not single-core** (peak 5.0, mean 4.8 of 10 under `fastembed`), so the document loop stays serial |
 | **0.15.0** ✅ | **A Markdown document is titled by its own `# ` heading.** `sync` had never read one — `skeleton()` was called without `title=` at both sites, so the filename stem always won, and the two usually differ only in capitalisation (`# Access restrictions` beside `title: access restrictions`), which is why it went unnoticed. A file called `rfc9110-notes.md` opening on `# HTTP Semantics` is now titled *HTTP Semantics*. An H1 is an authored marker, not a guess — the first-line heuristic stays rejected. Markdown only, fence-aware, `##` excluded, and **no migration**: titles are minted only when a sidecar is created, so every existing KB keeps what it has |
+| **0.16.0** ✅ | **Is document metadata retrieval context? Measured — and no, through one channel on one corpus.** `title > heading path` injected into the **embedded** text of a 195-document, 43 353-chunk RFC corpus, scored against a blind-authored, frozen 110-question golden set: **6 improved, 6 regressed, 84 unchanged**, against a criterion of *strictly more improvements than regressions* fixed in writing beforehand. **`schema_version` stays at 3**, and PDF layout heuristics and paid title inference — both gated on this — stay unapproved. `[chunking] metadata` ships **default `off`** so another corpus can be measured rather than inherit the verdict, with a per-document refusal instead of the silent truncation an over-long embedding input otherwise gets. Also `tools/two_leg_gate.py`, which refuses to compare two eval legs differing in anything but one named key — `graph_gate` compares five header fields and not `chunking`, so two legs chunked differently compared clean. **And five silent-failure fixes its own adversarial review found in it**, the sharpest being that on every index built before this release, turning injection on was completely silent: absent identity keys read as *unknown*, so `pnk sync` reported nothing, nothing re-embedded, and `pnk doctor` printed `OK chunking coherence` over uninjected vectors |
 | **0.15.1** ✅ | **Every timestamp Pinakes writes is UTC — the last three naive-local sites are gone.** `pnk init` stamped `[kb] created` from the machine's wall clock, the paid extractor priced a document against a local `now`, and `pnk doctor`'s price-age check subtracted a naive local clock from a price table whose `as_of` is authored in UTC. `sync`, `lock`, the ledger and the accountant were already UTC, which is what made the remainder a **mixed** scheme rather than a consistent local one — the worse of the two, because two stamps in the same index no longer shared a zero point. Pinned by a test running under `TZ=Pacific/Kiritimati` (UTC+14), where a naive stamp lands on a *different date* for ten hours of every day, so the failure is loud. **`[budget] timezone` is untouched and is not an exception**: it decides where a *daily* or *monthly* window starts, and the ledger still stores UTC and converts at read time. Also documentation: `CLAUDE.md` 273 → 191 lines into [`docs/BUILDING.md`](BUILDING.md) and [`docs/INVARIANTS.md`](INVARIANTS.md), with 21 pointers across the tree re-aimed at the new homes |
 | **the graph release** ✅ **shipped 0.11.0** | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. All six increments landed: **G1** and **G4** in 0.6.0, **G2** in 0.7.0, **G3**, **G5** and **G6** in 0.11.0. **Its gate ran and did not pass, so `expand` ships `off`** ([the numbers](#did-the-expansion-channel-earn-its-default--no-measured-20260804-2252)) — an eval-gated feature that is built, measured and off by construction, which is the structure working rather than failing. What would change it is a corpus or a different channel design, never a more expensive one ([decision](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1442-decision-g3-go.md)) |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
@@ -342,7 +363,7 @@ against it. **The measurement it cannot carry now has an instrument.** 110 quest
 band `build_rfc_corpus.py --era modern --count 200` (RFCs 8600-8799, 195 published, **43 353** chunks),
 frozen at
 [`tools/rfc_corpus/questions.yaml`](https://github.com/lucagattoni/pinakes/blob/main/tools/rfc_corpus/questions.yaml)
-with its `before` leg beside it. **On `main`, unreleased.**
+with its `before` leg beside it. **Released in 0.16.0**, and it has now been used once: it produced that release's no-go (above). The questions stay frozen — `id` is what pairs a `before` row with an `after` row, so rewording or renumbering one silently unpairs it.
 
 | Metric | Value | |
 |---|---|---|
@@ -572,7 +593,7 @@ having run it. The first attempt read *unsatisfiable* and the second, 30 s later
 
 | | |
 |---|---|
-| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.1, 0.8.0, 0.9.0, 0.10.0, 0.11.0, 0.12.0, 0.13.0, 0.14.0, 0.15.0 and 0.15.1.** **0.11.0 bumps `schema_version` to 3**, so the first `pnk sync` after upgrading rebuilds the whole index — free, and `pnk sync --rebuild` is what the refusal prints. 0.9.0's upload was refused on first attempt — renaming the repository broke PyPI trusted publishing, which matches on the exact repository name — and succeeded once the publisher was corrected. **0.8.0 renames the paid extractor's API key** to `PINAKES_ANTHROPIC_API_KEY`, so a KB driving the paid path from an older `.env` refuses until the variable is renamed. 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
+| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.1, 0.8.0, 0.9.0, 0.10.0, 0.11.0, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.15.1 and 0.16.0.** **0.11.0 bumps `schema_version` to 3**, so the first `pnk sync` after upgrading rebuilds the whole index — free, and `pnk sync --rebuild` is what the refusal prints. 0.9.0's upload was refused on first attempt — renaming the repository broke PyPI trusted publishing, which matches on the exact repository name — and succeeded once the publisher was corrected. **0.8.0 renames the paid extractor's API key** to `PINAKES_ANTHROPIC_API_KEY`, so a KB driving the paid path from an older `.env` refuses until the variable is renamed. 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
 | First upload | 20260728 17:16 UTC · latest 20260806 00:56 UTC (0.15.1) |
 | Extras available | `st`, `light`, `pdf`, `claude` — all four |
 | `requires-python` | `>=3.13` |

@@ -2,11 +2,73 @@
 
 **Audience: the planner and the coder. Goal: executor.** Written 20260805 17:21 against `main` at
 `3a4fa9e`, deliberately before a context compaction, so nothing below has to be rediscovered.
+**Closed 20260807 11:39 — read §0 first; everything after it is the record of how.**
 
 **The question.** Are `title` and `heading_path` *"fundamental context, useful for search and
 retrieval"* (the user's claim, 20260805), or display-and-graph metadata? **Everything expensive
-downstream — PDF layout heuristics, a paid title-inference call — is gated on the answer, and the
-answer is one measurement nobody has run.**
+downstream — PDF layout heuristics, a paid title-inference call — was gated on the answer, and the
+answer was one measurement nobody had run.**
+
+---
+
+## 0 · ANSWERED — and what the answer does and does not say (20260807 11:39)
+
+**Step 2 ran, and it is closed.** 2d's vector-only screen measured, on the 195-document /
+43 353-chunk RFC corpus, at `rerank = "none"`, over the 96 answerable questions of the frozen
+golden set:
+
+    6 improved     6 regressed     84 unchanged
+
+The pre-registered criterion was *strictly more improvements than regressions*. It is not met.
+**No-go.** By that same pre-registration, written before the screen was run:
+
+* **`schema_version` 4 is not taken.** 2e and 2f do not happen.
+* **Steps 5 and 6 stay unapproved** — PDF layout heuristics and paid LLM title inference were gated
+  on step 2 showing movement, and it did not.
+* The screen's legs are **not committed**, and its numbers are not evidence for or against the
+  hypothesis in either direction. They appear here, once, as the go/no-go they were run to produce.
+
+**What was measured, stated so nobody reads it as more.** Injecting `title > heading path` into the
+text that is **embedded** — the vector channel alone — moved nothing net on this corpus. **The
+both-channel form was never tested**: reaching the lexical channel is the irreversible schema bump
+this screen existed to price, and the screen said it would buy nothing. So the claim the evidence
+supports is *"vector-only injection does not improve retrieval on this corpus"*, **not** *"metadata
+is not retrieval context"*. The dilution objection that disqualified vector-only as a **gate**
+(§2, finding 6 and the table under it) applies in full to this null.
+
+**Why the null is believable — four controls, three of which this plan never asked for.**
+
+| Control | Result |
+|---|---|
+| The uninjected index still reproduces 2c's committed baseline | **110 of 110 rows identical**, twice: on `main`'s binary, and with the option off on the branch carrying it |
+| Both legs are the same corpus | 195 documents, 43 353 chunks, and **one sha256 over every chunk text, equal** |
+| The injection reached the vectors at all | mean cosine **0.8398** between the before and after vectors of 2 000 sampled chunks; **zero** unchanged |
+| The prefix was the intended string | **195 of 195** published titles, **zero** filename stems — finding 5's confound absent — and 93.2% of chunks carrying a heading path |
+
+The third decides how to read the null. Chunk texts are byte-identical between the legs by
+construction, so had the injection silently not happened, every artifact would look exactly as it
+does — same corpus, same questions, a clean flat result — and the conclusion would have been drawn
+from a no-op. Measuring the vectors is the only thing separating *no effect* from *no injection*,
+and it cost one script.
+
+**Shape, recorded as an observation and explicitly not as a result.** Of the 6 improvements, 5 were
+`paraphrase` — the only class with power on this corpus. Of the 6 regressions, 2 were
+`simple-lookup` questions that had been at rank 1, which is what a dilution cost looks like. Twelve
+of 96 rows moved, so the mechanism does *something*; it does not do more good than harm through one
+channel. **This must not become the premise of a retry** — the anti-circularity rule says a result
+short of the threshold is reported, never retried with a different injection format.
+
+**What shipped anyway, because it is useful independently of the answer** (0.16.0):
+`[chunking] metadata`, default `"off"`, so a user with a different corpus can measure it rather
+than inherit this one's verdict; `tools/two_leg_gate.py`; and five silent-failure fixes the
+increment's own adversarial review found, which stand on their own.
+
+**What would re-open this: a corpus, not an idea about the prefix.** Every number here is one
+corpus's, and its two saturated classes — `lexical` and `simple-lookup`, both at 1.00 — put the
+whole improvable pool in `paraphrase`. A KB whose questions are *not* solved by BM25 plus a
+reranker is the condition under which this is worth asking again, and §3's criterion (an improvable
+pool of at least 10, measured before any injection code exists) is what such a corpus must meet
+first.
 
 ---
 
@@ -223,7 +285,7 @@ document:
 
 | | |
 |---|---|
-| Chunks | **1 858**, of which **1 838 (99%)** carry a `heading_path` |
+| Chunks | **1 858**, of which **1 838 (99%)** carry a `heading_path`. ⚠️ **That share is this one document's.** Measured 20260807 over the built 195-document index: **40 421 of 43 353, 93.2%** — still high, and not 99% |
 | Sections spanning more than one chunk | **233 of 271** |
 | **Continuation chunks — the mechanism's target** | **1 567, in a single document** |
 | Largest `token_count` | **510 — exactly the cap**, so finding 1's zero headroom is real on real text, not merely implied by a default |
@@ -321,6 +383,11 @@ use that file as one.**
 * **No movement** → `title` and `heading_path` stay display-and-graph. **The expensive work dies
   cheaply, which is the point of running this first.**
 
+> ⚠️ **This is the gate's licence table, and the gate never ran** — the screen at 2d ended the
+> experiment before it (§0). Read the second bullet with the qualifier §0 states in full: what was
+> measured is *vector-only* injection on *this* corpus. It is enough to leave steps 5 and 6
+> unapproved, which is what the bullet is for. It is **not** enough to say the claim is disproved.
+
 **"Movement" now has a number. DECIDED 20260806 03:55 by the user: an exact one-sided sign test on
 rank improvements, p < 0.05** — the same bar the graph channel was held to, so the two results are
 comparable, and already implemented in `graph_gate.sign_test`. The alternatives and why they lost:
@@ -348,11 +415,11 @@ recorded here.**
 | # | Step | Blocked on | Cost |
 |---|---|---|---|
 | 1 | **Numbered-heading grammar for `.txt`** | ✅ **Shipped 0.13.0.** All of §5 settled: the key and vocabulary (§5.2) and the full predicate, written before any corpus was consulted (§5.3) | Moderate |
-| 2 | **The injection experiment** (§2) | **Steps 2d–2e below** — 2a shipped 20260806 06:17, 2b 08:33, 2c 11:56. Re-scoped 20260806 03:55, re-ordered 05:15, screen inserted 05:30 — see the notes | **Measured, not estimated:** `pnk sync --rebuild` over the 43 353-chunk corpus takes **46 min**, and 2d and 2f need two legs each |
+| 2 | **The injection experiment** (§2) | ✅ **CLOSED 20260807 11:39 — the screen returned no-go (§0).** 2a–2d shipped; 2e and 2f do not happen | Spent: 2a–2d, one 45-minute rebuild and two eval passes |
 | 3 | **Markdown H1 → title** | ✅ **Shipped 0.15.0.** `first_h1()` in `chunk.py`, wired at mint time. Existing sidecars are never rewritten, so no migration | Small |
 | 4 | **`pnk doctor` title check** (B3) | ✅ **Shipped 0.14.0** | Small |
-| 5 | PDF layout heuristics + confidence scoring | **Step 2 showing movement** | High |
-| 6 | Paid LLM title inference | **Step 2 showing movement** | High — the full paid-path apparatus |
+| 5 | PDF layout heuristics + confidence scoring | ❌ **Not approved.** Gated on step 2 showing movement; it did not (§0) | High — and unspent |
+| 6 | Paid LLM title inference | ❌ **Not approved**, same gate, same reason | High — the full paid-path apparatus, unspent |
 
 **Step 2 is five increments and a run, not "~2 h rebuild + eval".** That estimate costed the run
 alone, and neither the obligations in front of it nor the size of the corpus were visible when the
@@ -364,9 +431,9 @@ separate, bisectable landing:
 | **2a** | ✅ **Shipped 20260806 06:17, `86cd403`.** `tools/build_rfc_corpus.py` fetches each document's published title from `rfc<N>.json` and mints its sidecar before the first sync; the manifest stamps `max_tokens = 414`, reserving **96**. Verified by execution: two RFCs built and synced with the real `fastembed` backend index under their published titles, largest `token_count` exactly 414 | Without titles there is nothing to inject (finding 5); without the reduced `max_tokens` the two legs are chunked differently and the comparison is void (below) |
 | **2b** | ✅ **Shipped 20260806 08:33, `fcabc02`.** `chunk.assert_prefix_fits` refuses a document whose longest prefix exceeds the reserve `max_tokens` left, naming that prefix and the value to lower to — after chunking, before embedding, per the decision below. It ships **with the prefix construction**, not just the check: `Chunk.unnumbered_heading_path` (numbers stripped by construction, from the `(number, label)` pair the grammar already parsed), `metadata_prefix` and `embedding_text`. Verified by execution against 195 RFCs — see the note below | Converts finding 2's silent truncation into a loud error. Code-only; it changes no existing KB, because the reserve lives in the corpus manifest |
 | **2c** | ✅ **Shipped 20260806 11:56, `36f32ce`** (`a42d962`, review `5993521`). `tools/rfc_corpus/questions.yaml` freezes **110 questions** — 32 lexical, 32 simple-lookup, 32 paraphrase, 14 no-answer — one answerable question per document over **96 of the band's 195**, authored **blind** by six agents on disjoint slices and each verified against the sentence in its document that answers it (`tools/verify_rfc_golden_set.py`). `[retrieval.confidence]` fitted against the 14 unanswerable questions and stamped into the builder's manifest template. **Improvable pool 15**, against the ≥ 10 the criterion requires. The `before` leg is committed at `tools/rfc_corpus/{baseline,outcomes}.json`: **recall@k 0.9271, MRR 0.8767**, rerank_precision 0.8438, false_abstain 0.0104, false_confidence 0.1429, confidence_coverage 1.0; by_kind lexical 1.00, simple-lookup 1.00, paraphrase 0.7812, no-answer 1.00 — at `max_tokens = 414`, `k = 5`, `rerank = "local"`, `graph_channel = "off"` | Had to be on `main` **before any injection code existed**, or the questions could have been influenced by a number. **Ordered after 2a and 2b** because its exit criterion is measured on the chunking the experiment will actually use |
-| **2d** | **The vector-only screen.** The manifest option `[chunking] metadata`, default `"off"`; the call to `assert_prefix_fits`; the switch to `embedding_text` at `sync.py:2005`. The prefix itself already exists. **No schema change.** Built as *What 2d builds* below | A **go/no-go on cost**, not a test of the hypothesis. See the pre-registration below. The option ships here, so a user who turns it on with the default `max_tokens` must meet 2b's refusal rather than silent truncation — which is why the refusal landed first, dormant |
-| **2e** | **The injection: a new `chunks` column, rewritten FTS5 triggers, `schema_version` 4** | Only if 2d says go. A schema bump is breaking for every existing KB and is the landing a bisect must be able to isolate |
-| **2f** | **The run** | Regenerate both legs from the same binary (never reuse the committed pre-G5 `tests/demo-kb` artifact as a `before`), rebuild, judge with `sign_test` at p < 0.05 — and **compare `[chunking]` before judging anything**: see *the identity gap* below |
+| **2d** | ✅ **Shipped 20260807, `f253556`, and it returned NO-GO — 6 improved, 6 regressed, 84 unchanged (§0).** `[chunking] metadata` (default `"off"`), the `assert_prefix_fits` call, `embedding_text` at the one indexing-path embed site, and `tools/two_leg_gate.py`, which `graph_gate` could not supply. Two adversarial rounds found **11 confirmed defects in the increment's own code**, two of them HIGH and both in checks it had already claimed to make — see `docs/RETROSPECTIVES.md` | A **go/no-go on cost**, not a test of the hypothesis — and it did its job: it stopped an irreversible schema bump that the evidence says would have bought nothing |
+| **2e** | ❌ **Cancelled.** The new `chunks` column, rewritten FTS5 triggers and `schema_version` 4 | Conditional on 2d saying go. It said no, and the whole point of inserting a screen was to make that decision cheaply. **The bump is irreversible; not taking it is the one part of this plan that cannot be regretted later** |
+| **2f** | ❌ **Cancelled** with 2e, which it measured | — |
 
 #### 2d's pre-registration — written 20260806 05:30, **before the screen has been run**
 
@@ -508,9 +575,16 @@ does. `check_baseline` guards the other half — that a baseline and its per-que
 one run.
 
 **Budget, measured 20260806.** The corpus is **43 353** chunks and `pnk sync --rebuild` over it took
-**46 minutes**. 2d needs two syncs (uninjected, then injected); 2e's schema bump invalidates both, so
-2f needs two more. **Start the first rebuild in the background at the top of a session, never at the
-end.**
+**46 minutes** — 2d's own injected rebuild took **44 min 45 s**, 195 documents, 0 failures.
+**Start a rebuild in the background at the top of a session, never at the end.**
+
+> **Corrected 20260807 by execution: 2d needed *one* rebuild, not two.** The paragraph above assumed
+> both legs must be built. 2c's index was still on disk, uninjected and byte-identical to what it
+> measured, so both `before` legs were **query passes over it** — and `rerank` is query-time, so the
+> screen's `none` leg cost nothing extra either. **An eval pass is 80 seconds against a 45-minute
+> rebuild**, a ratio worth knowing before planning any future leg: the expensive thing is building
+> an index, not scoring one. The rule that follows is *do not delete an index you might want a
+> second reading of* — 2d's two are kept beside the corpus, uninjected and injected.
 
 **The ordering of 2a–2c was load-bearing and was wrong in the first revision of this table.** The
 golden set's exit criterion is a *measured* improvable pool, and a pool measured against different
@@ -652,6 +726,7 @@ Full records: [`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_13
 | **Is injection a shipped option?** | **Yes — a manifest option defaulting to `off`** (20260806 04:15), on `graph_channel`'s mechanism: enumerated, `table.choice` with a default, never stamped into the template (`manifest.py:658,683`). Rejected: **unconditional**, because the two legs could then only come from two different builds, and comparing across builds attributes every build-induced flip to the injection — the precise failure `graph_gate.check_identity` exists to refuse |
 | **Which table the option lives in** | **`[chunking] metadata`, values `"off"` \| `"prefix"`** (20260806 20:41). It changes what is embedded and indexed, and the index records both build sections — `[embedding]`'s identity and `[chunking]`'s settings (`store.chunking_identity`) — so a flip without a rebuild is *reported* rather than silently serving uninjected vectors. Rejected: **`[retrieval] metadata_injection`**, which the row above reads as at a glance — `[retrieval]` is query-time and is the one section nothing in the index records, so the same flip is silent; and **a boolean**, for §5.1's reason, since the prefix form is a decision this plan has already re-opened once. Full argument and what it obliges: §3, *What 2d builds* |
 | **Corpus for the experiment** | **The RFC corpus, with a golden set authored first** (20260806 03:55). `tests/demo-kb` was weighed and rejected: it carries the mechanism but cannot license a result — `sign_test(4, 0)` = p = 0.0625 on a 4-question improvable pool (§2). Running it there anyway was offered as a cheap smoke test and not taken |
+| **A prefix whose path repeats the title** | **De-duplicate the root — contribute it once** (20260807 11:39, by the user, from four options with costs). On Markdown `first_h1()` mints the title from the H1 and the chunker roots every heading path at that same H1, so the prefix read `Access restrictions > Access restrictions > Loans`: **60 of 60 prefixes on `tests/demo-kb`, 41% of their tokens**. Mean Markdown prefix 5.3 → 2.1 tokens. **Only the root is compared, case-insensitively**, so a section legitimately named after its document but nested deeper keeps its level. **It could not have moved the experiment and that was checked before choosing: 12 of the RFC corpus's 40 421 heading-bearing chunks (0.03%) are affected, against 100% of Markdown.** Rejected: **leave it**, which ships 41% repetition on the default source type; **drop the title when a path exists**, which discards the document-level context the hypothesis was about and neighbours a form §2 already rejected; **stop rooting Markdown paths at the H1**, which is breaking — `heading_path` is persisted, cited, and parsed by three graph edge kinds |
 | **Which channel is injected** | **Both, at `schema_version` 4** (20260806 03:55). Vector-only and mutating `chunks.text` were both weighed and rejected — see §2 *The experiment*, step 1 |
 | **What licenses "movement"** | **Exact one-sided sign test on rank improvements, p < 0.05** (20260806 03:55) — see §2 *What each outcome licenses* |
 | Grammar scope | **`.txt` only** for now. Not `.csv`/`.json`/`.yaml` — they have no headings and a line beginning `1.` is *data*, so a numbered grammar would manufacture structure from noise. Not `.rst`/`.adoc`/`.org` — they carry their own conventions and a numbered grammar would half-work, which is worse than not working. Not `code` |

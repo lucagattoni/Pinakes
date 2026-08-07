@@ -4313,6 +4313,441 @@ four from the twenty-five; only a per-sentence check did.
 `--at`, against the repo's UTC rule adopted 20260804 11:32. One for
 [`plans/20260731_1202-open-corrections.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md).
 
+## A plan's blocking premise was inferred, not measured — and it was wrong for two days (20260806 04:05)
+
+**HIGH — the reason a plan gives for a blocker is reused long after the blocker is gone.**
+`plans/20260805_1721-metadata-as-retrieval-context.md` said `tests/demo-kb` could not measure the
+injection experiment because *"no section spans multiple chunks, so there are no continuation chunks
+to rescue — the mechanism has nothing to act on"*. Measured with the real chunker and the real
+tokenizer over all 30 documents: **30 of 30 sections span more than one chunk**, and **29 of the 30
+continuation chunks do not contain their own heading text**. The corpus carries the exact mechanism
+the plan said it lacked.
+
+The error was an inference from the wrong mechanism. The plan's *fact* was right — the documents are
+~7 lines — but it reasoned that a short document fits in one chunk. `chunk.py` splits on **paragraph
+blocks first** (`Block` is "one paragraph under one heading path") and only then applies token
+limits, so a 7-line document with two paragraphs yields two chunks of 27 and 31 tokens under a
+120-token budget. Nothing about the token budget was ever reached.
+
+**What makes this worth recording is that the plan's *conclusion* was right.** Use the RFC corpus —
+correct. So the wrong premise cost nothing at the time and would have cost a great deal later: it is
+the sentence a future agent quotes when deciding whether some *other* experiment can run on the demo
+KB. A conclusion is checked when it is acted on; a reason is copied forward unexamined.
+
+**MEDIUM — the honest reason demo-kb cannot license this is arithmetic nobody had done.** 66
+answerable questions, **4 misses**, and **56 of 62 hits already at rank 1**. The whole improvable
+pool on `recall@k` is 4, and the project's own `sign_test(4, 0)` returns **p = 0.0625** — so a
+*perfect* result fails the p < 0.05 bar the graph channel was held to. That is a **power** limit, not
+a mechanism limit, and the two have different remedies: a mechanism limit is fixed by a different
+corpus, a power limit by a different metric or more questions. Writing the wrong one down sends the
+next person to the wrong fix.
+
+**MEDIUM — reasoning from a committed artifact nearly produced a confident wrong number.** The miss
+count above was first read out of `tests/demo-kb/eval/outcomes.json`, whose header **predates G5** —
+no `graph_channel`, no `edge_kinds`, no `retrieval.adjacent_k`, and `graph_gate.read_leg` reports its
+channel as `(absent)`. Two independent reasons the number could not be trusted from that file alone:
+the artifact is only rewritten under `--write-baseline`, so CI never refreshes it; and `compare()`
+tolerates a **±0.02** drift, which spans 4 to 6 misses — and `sign_test(5, 0)` = 0.0312 **passes**.
+The claim "a perfect result cannot license" was therefore one question wide. Re-running the eval
+settled it: aggregates identical, and **all 74 rows match the committed file exactly**. The rule is
+not "distrust artifacts" but **an artifact whose header does not match the current binary is
+evidence about the past** — the identity check `graph_gate.check_identity` performs on legs is the
+same check a reader owes any committed number.
+
+**MEDIUM — four silent failures sat in front of an experiment costed at "~2 h rebuild + eval".** The
+RFC corpus stamps no `max_tokens`, so the default **510** applies against a measured window of
+**512** with 2 special tokens: **zero headroom**, and prepending anything pushes every full chunk
+past the window. Embedding an over-length string raises **no warning and no error** (measured, empty
+`warnings` list), and `assert_chunkable` cannot catch it because it validates `max_tokens`, never
+`max_tokens + prefix`. The direction is what makes it dangerous: truncation removes text from
+exactly the long chunks the hypothesis is about, biasing the result toward **no movement** — a false
+negative that reads as a clean result. Separately, the lexical channel cannot be injected at all
+without a new `chunks` column, rewritten FTS5 triggers and a `schema_version` bump, because
+`chunks_fts` is an external-content table filled by triggers copying `new.text`.
+
+**The estimate was not wrong about the run; it costed the run alone.** Step 2 is three increments and
+a measurement, and none of the three was visible from the plan as written.
+
+**LOW — a plan that forbids retrying below "the threshold" has to name it.** The document's
+anti-circularity clause read *"a result short of the threshold is reported rather than retried"*
+while nothing in it ever said what the threshold was. An unfalsifiable gate is not a gate; it was
+fixed by decision rather than discovered, but it survived a full adversarial review of the plan
+because the sentence *sounds* like a commitment.
+
+## 2a — Real titles and a measured chunking reserve for the RFC corpus (20260806 06:12)
+
+**The plan's worked reserve was wrong by more than twofold, and only measuring found it.** The
+injection experiment's plan offered `480` as the corpus `max_tokens`, from "a measured max prefix of
+30" — RFC 9110's largest `title > heading_path` with section numbers stripped. Measured properly,
+over every heading path of RFCs 8600-8799 (195 documents, 5 of the 200 numbers unpublished),
+tokenised with the corpus's own `BAAI/bge-small-en-v1.5`: the largest prefix is **68 tokens**, the
+per-document largest has **median 31**, p95 51, p99 61. The median document already exceeds 30.
+RFC 9110 was an unrepresentative sample for one reason nobody spotted: its title is **two tokens**
+long, and titles run to 32.
+
+Reserving 30 would have truncated roughly half the corpus's longest chunks — silently, since an
+over-length embedding input raises no warning and no error. That truncation removes text from
+exactly the continuation chunks the hypothesis is about, so it biases toward **no movement**: a
+false negative that reads as a clean result. The reserve shipped is **96**, deliberately 41% above
+the measured maximum, because 200 numbers is under a third of the modern band.
+
+**The plan said "do not re-derive these" about a table whose own line numbers had already drifted.**
+Same failure class, one level up: a number recorded as measured invites reuse, and reuse is
+exactly what makes a sampling flaw permanent. The four "read this before writing a line" findings in
+§2 were all correct and all load-bearing; the one worked number beside them was not.
+
+**A defect I nearly introduced, caught in my own adversarial pass.** Preserving the KB id across a
+re-run — needed once the output directory holds permanent document ULIDs — makes a re-run *look*
+identity-preserving while `write_kb` still rewrote `pinakes.toml`. That would silently discard the
+`[retrieval.confidence]` thresholds 2c will fit onto this corpus, with every command reporting
+success: the same KB by its id, no longer the same KB by its calibration. The fix removed the
+reason rather than the symptom — an existing manifest is not rewritten at all, so the id is stable
+by construction and the `existing_kb_id` reader that motivated the concern was deleted. Its cost is
+that a re-run does not adopt a changed `[chunking]`, so the run now names both values.
+
+**What nothing else in the repository exercises: a title with YAML punctuation.** RFC 8713 is
+*"IAB, IESG, IETF Trust, and IETF LLC Selection, Confirmation, and Recall Process: Operation of…"*.
+Every committed corpus is hand-titled in plain words, so the first colon in a `title:` arrives from
+the RFC Editor — into the one file holding a document's permanent ULID. `ruamel` quotes it and it
+round-trips; that is now asserted through `sidecar.read` rather than assumed.
+
+**Verified by execution, which the plan had none of.** Two RFCs built and synced with the real
+`fastembed` backend: both documents indexed under their published titles, 801 chunks, largest
+`token_count` exactly **414** — so the stamped cap binds on real text, as finding 1 said the default
+510 does against a 512-token window.
+
+**A bound left in place, not fixed.** `corpus.json` describes the *run*, not the directory: a
+re-run over a smaller `--rfcs` set records fewer RFCs than `docs/` still holds. Pre-existing, and
+now slightly more visible because `titles.kept_from_earlier_run` hints at accumulation. Worth
+fixing before the run at 2f, where the corpus's composition has to be attributable.
+
+## 2b — Refusing a prefix that would not fit (20260806 08:24)
+
+**A refusal with no caller is a refusal nobody has watched fire, so this one was written to be
+runnable on day one.** The manifest option that turns injection on belongs to 2d, so nothing on the
+indexing path calls `assert_prefix_fits` yet. The temptation was to ship the check alone and let 2d
+supply the thing that exercises it. What shipped instead is the whole prefix construction —
+`metadata_prefix`, `embedding_text`, and the `unnumbered_heading_path` they read — so the refusal
+measures exactly the string that will later be embedded, and every part of it is reachable from a
+test today. 2d then adds one option and one call, not a mechanism.
+
+**The additive estimate was measured rather than argued.** The check counts each distinct prefix
+once, with its separator attached, and adds `chunk.token_count` rather than re-tokenising every
+injected string — a document has orders of magnitude fewer heading paths than chunks. That is only
+safe if the sum never *under*-counts the concatenation. The reasoning (a tokenizer that splits on
+whitespace before merging cannot produce more tokens from `prefix + sep + text` than from its
+parts) is sound but is the kind of reasoning that is wrong once per project, so it was run: against
+`BAAI/bge-small-en-v1.5`, over **43 503 chunk/prefix pairs from 195 RFCs**, the estimate was
+**exactly equal** to the concatenation's real token count every time — not merely bounding.
+The same run reproduced 2a's corpus figures from an independent code path (largest prefix 68,
+per-document largest median 31 / p95 51 / p99 61, longest title 32) and confirmed the refusal fires
+for **195 of 195** documents at the default `max_tokens = 510` and for none at the corpus's 414.
+
+**The reserve is checked, not the worst chunk in hand, and that was a decision.** Per-chunk pairing
+is more permissive and more exact: it refuses only what would actually truncate today. It was
+rejected because the two legs of an A/B comparison must chunk under the same `max_tokens` or they
+are different corpora — so what has to be safe is the *setting*, not this morning's text. A
+document that passes because none of its chunks happens to reach the cap would start truncating on
+the next edit, mid-experiment, silently. Refusing the setting is stable across documents and across
+edits to them.
+
+**A field added to a frozen dataclass is a field somewhere else forgets to copy.** `_with_pages`
+rebuilt every PDF chunk field by field to attach page numbers, so `unnumbered_heading_path` would
+have arrived as `None` for PDFs only — green suite, silent gap. It now uses `dataclasses.replace`,
+which cannot omit a field, and a test pins the property. The same reasoning kept the field out of
+`as_row`: the stored form is the citation form, and a second column is a second thing to keep in
+step with it.
+
+**Markdown keeps whatever number its author typed, and that is the same rule rather than an
+exception to it.** `## 1. Introduction` yields `1. Introduction` in both paths, because nothing
+parsed a number there — `#` is syntax and is already gone, and the text after it is the author's.
+Only the grammar that parsed a number is entitled to remove one. A regex over the joined string
+would have been shorter, would have drifted from the grammar's own rule, and would have eaten the
+`404` from `# 404 Not Found`.
+
+**Two findings from the increment's own adversarial pass, both about a value with more than one
+home.** The first: the prefix's join was introduced as a *new* constant, which would have made four
+literal `" > "`s in this module plus `graph/edges.HEADING_SEPARATOR` reading them back — for a
+format that is **persisted** in `chunks.heading_path`, where a disagreement empties three edge
+kinds and reports nothing. It is now one `HEADING_JOIN` used at every site that builds a heading
+path, with the consuming copy named in its docstring. The second: `title` is the user's field in a
+hand-edited sidecar, so it can be `""` or `"   "`, and the first draft treated whitespace as
+content — injecting a separator with nothing in front of it into every chunk of that document.
+Neither would have failed a test or a run; both are the shape this project keeps meeting, a value
+that is wrong in a way nothing reports.
+
+## 2c — A golden set authored by agents that did not know what it was for (20260806 11:42)
+
+**The anti-circularity rule was implemented rather than promised.** The plan requires the questions
+frozen before any injection code exists, "so that no number can influence them" — and the deeper
+risk it names is fitting the question set to the mechanism, which "is undetectable afterwards". An
+author who knows the hypothesis cannot prove they ignored it, and no reviewer can check it from
+outside. So the set was authored by six agents over disjoint document slices, each told only that
+it was writing an evaluation set for a retrieval system and forbidden from reading this repository,
+where the plan would have told it. Blind authorship is the only version of that guarantee that
+survives review.
+
+**The exit criterion failed the first time, and how it failed was the useful part.** 70 questions
+produced an improvable pool of **9** against a criterion of 10. The shape mattered more than the
+number: 51 of 60 answerable questions were already at rank 1, `lexical` and `simple-lookup` both
+scored **1.00**, and 8 of the 9 pool members were `paraphrase`. On a corpus of distinctive
+technical vocabulary — protocol acronyms, registered code points, field names — BM25 with a
+reranker essentially solves the classes that share words with their document.
+
+**The obvious fix was the wrong one, and it would have passed.** Authoring more paraphrase
+questions reaches a pool of 10 quickly. It also enriches the set with exactly the class a change to
+the *embedded* text is most likely to move, which is fitting the instrument to the hypothesis one
+step removed: the criterion would pass and the result would mean nothing, with nothing in the
+artifact to show it. The two new slices carried the **same proportional mix** as the first four,
+over 135 documents no question had touched. The pool went to **15**, and it changed shape — 11
+paraphrase, 2 lexical, 2 simple-lookup, where before it was one class. A pool spread across classes
+is what makes `compare()`'s per-class guard able to catch a change buying one class out of another.
+
+**The expensive error in a question set is self-concealing, so the set carries its own evidence.**
+A question pointing at the wrong document looks exactly like a retrieval miss. It would have
+inflated the pool and made the power criterion pass for the wrong reason — the measurement then
+resting on questions nobody could answer either. Every answerable question therefore records the
+sentence from its document that answers it, verbatim, and `tools/verify_rfc_golden_set.py` refuses
+the set if a sentence is not there. All 96 verified. Whitespace is normalised because RFC bodies
+are hard-wrapped at ~72 columns, which also means the recorded evidence is often the fragment on
+one line rather than a whole sentence.
+
+**A slice can only check its own slice.** Each author confirmed its `no-answer` topics absent from
+its own 50 documents. Checked across all 195, three had mentions elsewhere — "camel case" in
+rfc8618 against a question about the CAMEL protocol, one mention of blockchain databases in
+rfc8673, Bluetooth as a transport example in rfc8628 and rfc8793 — and later, SCADA as a category
+label and NFC as both a URI transport and Unicode Normalization Form C. None answers its question,
+and all were kept deliberately: a calibration set wants plausible near-misses, and a lexical
+collision that answers nothing is exactly that. Two topics were duplicated across slices and
+dropped.
+
+**`filter` and `multi-hop` are absent by decision.** `filter` needs metadata worth filtering on and
+these sidecars carry a title and nothing else. `multi-hop` is the graph channel's class and
+`graph_channel` is off here, so such a question would score as an ordinary lookup while being
+reported under a name claiming otherwise.
+
+**The corpus is not committed, so everything that reads it had to be.** The questions, the fitted
+confidence thresholds and the `before` leg all live in the repository; the 195 documents do not.
+That is the same lesson `build_rfc_corpus.py` was written for — a 300-RFC corpus once produced this
+project's most useful finding and died with the machine that held it. The thresholds are stamped
+into the builder's manifest template rather than pasted into a generated `pinakes.toml`, which also
+makes both legs of the comparison fitted identically by construction: refitting after a change
+would measure the refit.
+
+**A defect found by asking what would protect the artifact this increment produces.** Capturing a
+`before` leg raises the question of what stops it being compared against an `after` produced
+differently — and `graph_gate.check_identity` turned out to guard only the graph channel's own
+settings. Reading `eval.header` for what it *does* record showed the gap was one level lower: the
+function's docstring promises "every setting that can move a row", and `[chunking]` was not in it.
+Every other outcome-deciding setting was. So the leg committed here could not have been shown to
+have been chunked at 414 rather than the default 510 — the precise confusion 2a's reserve and 2b's
+refusal exist to prevent, surviving into the artifact that records their result. Three fields, no
+schema bump, because no *row* changed.
+
+## 2d — The screen said no, and the controls are what make that worth believing (20260807 09:07)
+
+**The result: 6 improved, 6 regressed, 84 unchanged, over 96 answerable questions.** The
+pre-registered criterion was *strictly more improvements than regressions*, so the screen is a
+**no-go** and the `schema_version` bump at 2e is not taken. Per the pre-registration these numbers
+are the whole report — they are not evidence for or against the hypothesis in either direction, and
+they appear here and in the increment's commit message and nowhere else. The screen's own artifacts
+were deliberately not committed.
+
+**What was measured, stated exactly, because a null is only as good as its controls.** Injecting
+`title > heading path` into the text that is **embedded** — the vector channel alone — moved
+nothing net on this corpus at `rerank = "none"`. **The both-channel form was not tested**: the
+lexical channel needs a new `chunks` column and a schema bump, which is the cost this screen
+existed to decide. The dilution objection that disqualified vector-only as a *gate* applies in full
+to this null: RRF fuses an injected vector channel against an unchanged BM25, so a real effect is
+attenuated before it reaches a rank.
+
+**A null result is a claim about the world only if the instrument was pointed at it, so four
+controls were run before the comparison — three of which the plan did not ask for.**
+
+| Control | Result |
+|---|---|
+| The uninjected index still reproduces 2c's baseline (`rerank = "local"`) | **110 of 110 rows identical**, twice — once on `main`'s binary, once on this branch with the option off |
+| Both legs are the same corpus | 195 documents, 43 353 chunks, and **one sha256 over every chunk text, equal** |
+| The injection actually reached the vectors | mean cosine **0.8398** between the before and after vectors of 2 000 sampled chunks; **zero** unchanged |
+| The prefix was the intended string | **195 of 195** published titles, **zero** filename stems — finding 5's confound absent — and 93.2% of chunks carrying a heading path |
+
+The third is the one that decides how to read the null. Chunk texts are byte-identical between the
+legs by construction, so if the injection had silently not happened, *every* artifact in the
+experiment would look exactly as it does now — same corpus, same questions, a clean flat result —
+and the conclusion would be drawn from a no-op. Measuring the vectors is the only thing separating
+"no effect" from "no injection", and it cost one script.
+
+**The option-off path being a verified no-op is not a formality either.** The same binary that
+carries the injection reproduced the frozen baseline row for row, which is what licenses comparing
+this branch's `after` leg against a `before` leg captured on it.
+
+**The shape of the movement is more interesting than the count, and it is not being reported as a
+result.** Of the 6 improvements, 5 were `paraphrase` — the class the hypothesis targets, and the
+only class with power on this corpus. Of the 6 regressions, 2 were `simple-lookup` questions that
+had been at rank 1. That is what a dilution cost looks like: a prefix adds tokens to a vector whose
+question needed none of them. Twelve of 96 rows moved, so the mechanism is doing something; it is
+simply not doing more good than harm through one channel. **This is an observation about a
+measurement that was pre-registered not to be interpreted, and it must not become the premise of a
+retry** — the anti-circularity rule says a result short of the threshold is reported rather than
+retried with a different injection format.
+
+**Two things surfaced by building it that the plan had not anticipated.**
+
+* **The refusal is a per-document failure, not an aborted run.** `assert_prefix_fits` raises a
+  `ChunkingError` from inside `_index_document`, and every `PinakesError` there is already caught
+  by sync's per-document handler: the transaction rolls back, the document is named in the report
+  and recorded in the index for `pnk doctor`. That is the right shape — one pathological heading
+  path should not cost a 195-document corpus its other 194 — and it still removes the silent
+  truncation, because a refused document is not indexed at all. But "refuses the corpus" was the
+  plan's phrasing, and the test written for it originally asserted a raise that never comes.
+* **With injection on, *every* document is prefixed, because `skeleton()` falls back to the
+  filename stem.** A document can reach the embedder with no `heading_path`; it cannot reach it
+  with no title. So on an uncurated corpus the injected string is a *filename* — finding 5's
+  condition, now located at the sync boundary rather than in the abstract. It is why the RFC corpus
+  mints published titles before its first sync, and it is the strongest argument for the option
+  defaulting `off`.
+
+**A test that passed vacuously, caught during development and worth naming.** The assertion that
+the injected prefix uses the *sidecar's* title was written over a sidecar-only edit — which is a
+`RefreshMetadata` action, so it updates the row and re-embeds **nothing**. `all(...)` and
+`not any(...)` over an empty list are both true, and the test was green while proving nothing. The
+fix was `--rebuild` plus an explicit `assert backend.embedded` precondition. Any assertion of the
+form *"everything embedded looks like X"* needs a companion assertion that something was embedded.
+
+**`tools/two_leg_gate.py` exists because the instrument had the same gap one level up.** `5993521`
+made an eval artifact *record* the chunking it was produced under; nothing *compared* it —
+`graph_gate.check_identity` takes three legs shaped to the graph channel and inspects `k`,
+`embedding`, `rerank`, `ranking` and `retrieval`, but not `chunking`. Two legs chunked at different
+`max_tokens` therefore compared clean, which on one RFC is 63 of 1 858 chunk texts differing: a
+rechunk reported as the effect under test. The new tool refuses on any header difference outside
+one named key, and it excepts that key **by path**, not by block — excepting the whole `chunking`
+table would hide exactly the rechunk it is there to catch.
+
+## 2d review — the grep that was necessary and not sufficient (20260807 09:54)
+
+**HIGH — a rebuild could leave a half-injected index, and the check that should have caught it was
+looking for the wrong thing.** Before landing the injection, this increment verified that
+`sync.py` has exactly **one** `.embed(` call on the indexing path — `grep -rn '\.embed(' src/`
+returns that one, plus two query-side calls. The conclusion drawn was "every vector on the indexing
+path goes through the switch". It does not follow, and the counter-example was already in the file:
+`_copy_forward_protected_document` writes rows into `embeddings` with an `INSERT … SELECT` from the
+index being replaced. It produces vectors **without embedding anything**, so no grep for `.embed(`
+could ever have found it.
+
+The consequence was the failure class this project exists to prevent. A KB with a paid-extracted
+PDF, `[chunking] metadata` flipped to `"prefix"`, and `pnk sync --rebuild`: the protected document
+keeps its uninjected vectors, `set_meta` stamps `chunking_metadata = "prefix"` over the whole
+index, and the next `pnk sync` and `pnk doctor` both report **no drift**. Every command succeeds,
+and half the index is injected.
+
+**The fix separates the two costs that had been treated as one.** The docstring said the document
+is "never re-extracted, never re-embedded", as though those were the same protection. Extraction is
+what spends money; embedding is local and free, and the chunk texts are carried forward anyway. So
+the chunks are still copied and the extraction still never re-run, and the vectors are recomputed
+under this run's settings — which fixes both directions, since turning injection *off* again had
+the mirror-image defect.
+
+**One guard is deliberately louder than it needs to be today.** `unnumbered_heading_path` is not
+persisted (`chunk.Chunk` says why: the stored form is the citation form, and a second column is a
+second thing to keep in step). A carried-forward chunk therefore cannot say what its path looks
+like with the section numbers removed, so injecting the stored form would quietly prepend the
+citation form this experiment measured at 44% numbers and rejected. Unreachable now — only PDFs are
+ever protected and the PDF path records no heading path — but **step 5 of this plan is PDF layout
+heuristics**, which is exactly what would make it reachable. It refuses with a named remedy instead.
+
+**What the review round found beyond that, all of it in code this increment wrote:**
+
+| | |
+|---|---|
+| `--sign-test` printed `FAIL at 0.05` and exited **0** | the flag names the 2f gate, which licenses the irreversible schema bump; a driver branching on `$?` would have taken it |
+| A miss was written to the artifact as `Infinity` | invalid JSON: `JSON.parse` rejects it, `jq` silently coerces it to 1.8e308 — the one outcome the rank ordering exists to make visible became a very good rank |
+| A truncated artifact exited **1**, same as a genuine no-go | `read_outcomes` only refuses a file that *parses*; a `JSONDecodeError` is a `ValueError`, which the first version of the handler did not catch |
+| Nothing recorded which leg was which | transposing `--before`/`--after` inverts the verdict, and the identity check cannot catch it — it is never told which value is the baseline, only that the two must differ |
+| `pnk doctor`'s half of the drift promise was untested | a mutant reading a constant there passed the entire suite |
+| Two more vacuous assertions | `backend.embedded == [rows]` is `[] == []` when a run indexes nothing; `all(…)` over an empty list again |
+
+**Three of those six are the same defect in three costumes, and it is worth naming once.** An
+assertion of the form *"everything we produced looks like X"* is silently satisfied by producing
+nothing. It has now been found three times in this increment alone — once during development, twice
+in review — so the rule is: **any assertion over a collection the code under test produced needs a
+companion assertion that the collection is non-empty**, and preferably one that names the expected
+count.
+
+**The review that found this was itself a measurement, and it half failed.** Five adversarial
+lenses were run as independent agents; a usage limit killed 15 of the 17 agents mid-flight,
+including every verifier. The workflow returned `{"confirmed": [], "refuted": []}` — which reads
+exactly like a clean review and was nothing of the sort. The findings were recovered from the
+agents' own transcripts and verified by hand. **An empty result from a harness that partially
+failed is not evidence of absence**, and a report that does not distinguish the two is worse than
+no report: `confirmed: []` was one careless sentence away from becoming "the review found nothing".
+
+## 2d review, round two — the argument for the key's placement was false when written (20260807 10:34)
+
+**HIGH — the option was put in `[chunking]` rather than `[retrieval]` because `[chunking]` is
+recorded in the index and therefore cannot flip silently. That reasoning was correct about the
+mechanism and wrong about every KB in existence.** `chunking_drift` treats a key absent from `meta`
+as *unknown, never drifted* — the rule that stops an upgrade demanding a rebuild of every index —
+and `chunking_metadata` is absent from every index built before this release. Only a `--rebuild`
+ever stamps the chunking identity, so the absence is self-perpetuating. Measured on a KB built by
+this branch with the key then deleted, which is exactly the shape a 0.15.1 index has:
+
+    drift ()            embedded 0          backend calls 0
+    pnk doctor:  OK  chunking coherence: index matches the configured chunking
+
+An affirmative OK over uninjected vectors, forever. For a pre-existing index the two manifest
+sections behaved identically, which is the thing the placement argument was written to rule out.
+
+**The fix turns on a distinction the original rule did not need.** `max_tokens` and `overlap` have
+been settable since v0.1, so an index that fails to record them could genuinely have been built
+under any value: absence there is ignorance. `chunking_metadata` is different — no release that
+could have written any existing index was able to inject anything — so absence *proves* `off`.
+`store.ABSENT_MEANS` says so, and because it resolves to the default, it fires only for a user who
+explicitly opted in: the compatibility guarantee it looks like it threatens is untouched. Both
+directions have tests, and the second one matters as much as the first — an unclearable warning on
+every upgraded KB is the failure mode the heading-coverage check already had to answer for.
+
+**MEDIUM — the fix for round one's finding shipped with the same class of hole inside it.** Round
+one found that `--rebuild` carried a protected document's *vectors* forward, and the fix re-embedded
+them. But the re-embed called `embedding_text` without calling `assert_prefix_fits`, so the one path
+that re-embeds **without re-chunking** became the only path with no truncation guard — and it is the
+path that needs one most, since its chunks were sized by whatever `max_tokens` built the previous
+index and are never re-chunked. A fix for a silent-truncation defect that reintroduced silent
+truncation one function away.
+
+**MEDIUM — and it also introduced a way to publish a half-written document.** `DETACH` requires the
+transaction closed, so that function commits in a `finally`; with the writes inside that block, a
+document whose embedding failed was committed *active* with chunks and zero vectors, which
+`_apply`'s `rollback()` could no longer undo and `--rebuild`'s unconditional index swap then
+published. No later sync repairs it: the file's content hash is unchanged, so every future run says
+`Skip`. Now the old rows are read under the attach and every write happens after it, in one
+transaction the caller can still roll back.
+
+**MEDIUM — the eval artifact labels a leg from the manifest, never from the index.** Every
+`[chunking]` value in a header is read from `pinakes.toml` at eval time. Because flipping `metadata`
+changes no chunk's text, hash or span, an eval run against an index that was never rebuilt produces
+a byte-for-byte plausible artifact stamped `metadata: "prefix"` over uninjected vectors — and
+`tools/two_leg_gate.py` would accept it as the injected leg, since it compares headers to headers.
+The instrument that licenses an irreversible schema bump could be handed a leg that never existed.
+`eval.run` now compares the index's recorded chunking against the manifest and refuses before
+scoring a single question.
+
+**The four rules this round leaves behind.**
+
+1. **A grep for the operation is not a proof about the outcome.** Round one's defect survived a
+   check for every `.embed(` call site because the offending path produces vectors with
+   `INSERT … SELECT`. Round two's survived a reading of `chunking_drift` because the defect is in
+   what the function does with a key that *is not there*. Both times the search was over the wrong
+   set — the question is never "where is this called" but "what else can reach this state".
+2. **A fix is a change, and gets the same review as one.** Two of this round's findings are in code
+   written to fix round one, hours earlier and with the defect fresh in mind.
+3. **State an argument in terms of the population it covers.** *"`[chunking]` is recorded, so the
+   flip is reported"* was true of indexes this release builds and false of every index that existed.
+   The sentence never said which it meant.
+4. **A partially-failed harness must not report like a completed one.** Round one lost 15 of 17
+   agents to a usage limit and returned `{"confirmed": [], "refuted": []}` — indistinguishable from
+   a clean review. The findings were recovered from the agents' transcripts by hand; one was the
+   HIGH above. Round two ran complete: 14 findings, 14 judged, 9 confirmed, 5 refuted.
+
 ## Design review passes 1–7 (pre-implementation)
 
 Seven adversarial passes over [`DESIGN.md`](DESIGN.md) **before any code was written** — 58 findings

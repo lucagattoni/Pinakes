@@ -14,10 +14,9 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**No live items as of 20260805 22:18 — the list is empty for the first time since it was
-opened on 20260731.** That is not a finish line: the list refills from *use*, and every entry
-it has ever held came from building something rather than from reading code. An empty one
-means nobody has run Pinakes lately, never that it is done.
+**It was empty on 20260805 22:18, for the first time since 20260731. It refilled on 20260807, from
+one increment.** Both items below came out of *building* 2d — neither is visible from reading the
+code that contains it — which is the pattern every entry this list has ever held.
 
 The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
 finished. Note what is **not** here: **both releases in
@@ -31,8 +30,40 @@ default *on a corpus where three of the seven edge kinds derived zero edges*.
 
 ## Live
 
+### 1 · `graph_gate.check_identity` is blind to `chunking`
 
+**File:** `tools/graph_gate.py`, `check_identity` (~line 140).
+**Current:** it compares `k`, `embedding`, `rerank`, `ranking` and `retrieval` across its three
+legs, and not `chunking` — which `5993521` added to `eval.header` precisely so a leg could say what
+it was built under.
+**Required:** compare the `chunking` block too, so two legs chunked differently cannot be judged
+against each other.
 
+**Why it matters, measured:** `max_tokens` 510 versus 480 moves **63 of 1 858 chunk texts** on one
+RFC, and `tools/eval_reproducibility_gate.py` exists because *one question in 41* moved across a
+rebuild. A rechunk between legs is reported as whatever was being tested.
+
+**Partly worked around, not fixed.** `tools/two_leg_gate.py` (0.16.0) does this for the **two**-leg
+case, excepting one named key by path. The three-leg graph gate still has the gap, and it is the
+one that licensed the graph channel's default.
+
+### 2 · `--rebuild` never re-chunks a protected paid document
+
+**File:** `src/pinakes/sync.py`, `_copy_forward_protected_document`.
+**Current:** the chunks of a paid-extracted document are copied verbatim from the index being
+replaced, so a change to `[chunking] headings`, `max_tokens` or `overlap` does not reach it —
+while `set_meta` stamps the current settings over the whole index.
+**Required:** either re-chunk such a document on a rebuild, or record that the index is
+inhomogeneous so the drift report can say so.
+
+**Why it is not simply fixed:** re-chunking needs the extracted *text*, and for this class of
+document that text is exactly what may cost money to obtain again — which is the reason the
+copy-forward path exists. Any fix has to get the text without re-extracting (the extraction cache,
+when it is warm) or accept a paid call, and that is a decision rather than a correction.
+
+**The `metadata` half of this was closed in 0.16.0** — vectors are now recomputed rather than
+copied, since embedding is free and the chunk texts are already in hand. The chunking half is what
+remains, and it predates the injection option by three releases.
 
 
 

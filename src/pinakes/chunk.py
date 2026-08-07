@@ -164,8 +164,30 @@ def metadata_prefix(chunk: Chunk, *, title: str | None) -> str | None:
     `heading_path` and `unnumbered_heading_path` — the numbered form is for citation, and passing
     it here would inject `7.  Routing HTTP Messages`, which is the form the plan measured at 44%
     numbers and rejected (`plans/20260805_1721-metadata-as-retrieval-context.md` §2).
+
+    **A heading path whose root repeats the title contributes that root once, not twice.** On
+    Markdown the two are routinely the same string: `first_h1()` mints the title from the document's
+    H1 (0.15.0) and `_markdown_blocks` puts that same H1 at the root of every heading path, so the
+    unguarded form reads `Access restrictions > Access restrictions > Loans`. Measured 20260807:
+    **60 of 60 prefixes on `tests/demo-kb`, 41% of their tokens** spent restating the title — in a
+    prefix whose whole purpose is to add context a continuation chunk lacks.
+
+    **It is a comparison of the root only, so nothing else about the path moves**: `partition`
+    takes the first separator, the remainder is passed through byte-identical, and a label that
+    legitimately contains ` > ` is untouched beyond that first split. Case-insensitive, because
+    `# Access Restrictions` and a section named `Access restrictions` are the same heading for this
+    purpose and neither spelling is more correct.
+
+    Measured on the corpus the injection experiment scored, so the change is on the record as one
+    that could not have moved it: **12 of 40 421 chunks (0.03%)** carry a path whose root repeats
+    their document's title, against 100% of the Markdown corpus.
     """
-    written = (title, chunk.unnumbered_heading_path)
+    path = chunk.unnumbered_heading_path
+    if title is not None and title.strip() and path is not None:
+        root, separator, rest = path.partition(HEADING_JOIN)
+        if root.strip().casefold() == title.strip().casefold():
+            path = rest if separator else None
+    written = (title, path)
     parts = [part.strip() for part in written if part is not None and part.strip()]
     return HEADING_JOIN.join(parts) if parts else None
 

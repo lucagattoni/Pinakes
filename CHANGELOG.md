@@ -10,6 +10,181 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.16.0] — 20260807 11:45
+
+### Added
+
+- **The metadata prefix, and a refusal that fires before it can be truncated away.**
+  `chunk.metadata_prefix` builds the `title > heading_path` string the injection experiment
+  prepends, with section numbers stripped **by construction** — `Chunk` now carries
+  `unnumbered_heading_path` beside `heading_path`, filled from the `(number, label)` pair the
+  numbered-heading grammar already parsed, so nothing re-parses a joined string and a heading whose
+  text legitimately begins with a digit keeps its digits. `chunk.embedding_text` is what gets
+  embedded once injection is on; a chunk with neither a title nor a heading path is embedded
+  exactly as it is today.
+  `chunk.assert_prefix_fits` refuses a corpus whose longest prefix does not fit the reserve
+  `[chunking] max_tokens` left for it, naming that prefix and the `max_tokens` to lower to. It runs
+  **after chunking and before embedding**, because a prefix is built from `heading_path` and its
+  length is a property of the documents, not of the manifest: measured 20260806, 30 tokens on
+  RFC 9110 and 68 across 195 RFCs of the same era. `assert_chunkable` could not catch this — it
+  validates `max_tokens` alone, before anything has been chunked, and an embedding input longer
+  than the model's window is truncated with no warning and no error.
+  **No behaviour changes for any existing KB**: nothing on the indexing path calls the refusal yet.
+  The manifest option that turns injection on ships with the injection itself.
+
+- **A frozen golden set for the RFC realism corpus, calibrated, with its baseline captured.**
+  110 questions at `tools/rfc_corpus/questions.yaml` — 32 lexical, 32 simple-lookup, 32
+  paraphrase, 14 no-answer over 96 of the corpus's 195 documents. The corpus itself stays
+  uncommitted and regenerable; the questions are authored rather than harvested, so they ship with
+  the engine, and `tools/build_rfc_corpus.py` copies them into `<out>/eval/questions.yaml` on every
+  build. `python -m pinakes.eval <out>` then needs no path flag.
+  The generated manifest also stamps `[retrieval.confidence]`, fitted against the set's
+  unanswerable questions. Without it every confidence is `unknown`, and the eval reports
+  `false_abstain` and `false_confidence` as a vacuous 0.0 — measured here: stamping the block moved
+  `confidence_coverage` from 0.0 to 1.0 and the two error rates from 0.0 to 0.0104 and 0.1429.
+  `tools/verify_rfc_golden_set.py` is new: every answerable question records the sentence from its
+  document that answers it, and this checks each one is really there. A wrong `expect` is otherwise
+  indistinguishable from a retrieval miss.
+
+- **`[chunking] metadata` — prepend `title > heading path` to the text that is embedded.**
+  Accepted values `"off"` (the default) and `"prefix"`. With it on, `pnk sync` embeds
+  `chunk.embedding_text` instead of `chunk.text`, so a chunk taken from the middle of a long
+  section carries its document's title and its section's heading into the vector — the thing a
+  continuation chunk otherwise has none of. **`chunks.text`, `char_start` and `char_end` are
+  untouched**, so what `search` returns, what citations quote and the byte-identity bound
+  `text == source[char_start:char_end]` all stand; only the *embedded* string changes. The lexical
+  channel is unreached by design — FTS5 indexes `chunks.text`, and injecting there needs a new
+  column and a schema bump.
+  **The option is in `[chunking]`, not `[retrieval]`, deliberately.** The index records what it
+  was built with through `store.chunking_identity`, so turning injection on is reported as drift by
+  both `pnk sync` and `pnk doctor` — and it is the flip that most needs reporting, since it changes
+  no chunk's text, hash or span and an incremental sync therefore finds every document unchanged
+  and re-embeds nothing. The same key under `[retrieval]` would be silent, and the user would
+  search uninjected vectors with every command reporting success.
+  `chunk.assert_prefix_fits` — which shipped dormant — is now called after chunking and before
+  embedding whenever the option is on, so a corpus whose prefix does not fit the reserve
+  `max_tokens` leaves is refused per document rather than silently truncated by the embedder. With
+  the option off it is not called at all: a KB that is not prefixed is not at risk, and refusing it
+  would make an opt-in feature a breaking change.
+  Enumerated rather than boolean, and **not stamped into the template**: `pinakes.toml` hard-errors
+  on an unknown key, so a manifest carrying this one could not be read by an older Pinakes at all.
+
+- **`tools/two_leg_gate.py` — two eval legs, paired on question id and counted by rank.**
+  Compares a before and an after artifact that differ in exactly one header key (default
+  `chunking.metadata`) and **refuses to compare at all** if they differ anywhere else — the check
+  `graph_gate.check_identity` could not provide, because it takes three legs shaped to the graph
+  channel and inspects `k`, `embedding`, `rerank`, `ranking` and `retrieval` but not `chunking`.
+  Two legs chunked at different `max_tokens` therefore compared clean, and on one RFC that is 63 of
+  1 858 chunk texts differing: a rechunk reported as the effect under test. It also refuses a leg
+  compared against itself and legs that do not cover the same questions.
+  A miss sorts after every hit, so a change that loses an answer outright is counted as the worst
+  regression rather than as no movement; `no-answer` questions are excluded, having no rank to
+  move. `--sign-test` layers `graph_gate.sign_test` — the same exact one-sided test, reused rather
+  than rewritten — on the same comparison.
+
+### Changed
+
+- **`tools/build_rfc_corpus.py` curates real titles and reserves room for an injected prefix.**
+  Each document's sidecar is now minted by the builder *before the first sync*, carrying the title
+  published at `https://www.rfc-editor.org/rfc/rfc<N>.json` — without it every `.txt` RFC falls
+  back to its filename stem, so the corpus was titled `rfc9110` throughout. A document whose
+  metadata carries no title keeps the stem and is named, in the run's output and in `corpus.json`.
+  The generated manifest stamps `[chunking] max_tokens = 414` rather than the default 510, leaving
+  96 tokens for the `title > heading_path` prefix the injection experiment prepends to the embedded
+  and indexed text; the default leaves zero headroom against the model's 512-token window, so the
+  prefix would have been truncated away silently. An existing `pinakes.toml` is no longer
+  overwritten by a re-run — it holds the KB's permanent id and, once calibrated, its fitted
+  confidence thresholds.
+
+### Fixed
+
+- **The per-question eval artifact records the chunking it was produced under.** `eval.header`
+  promises "every setting that can move a row" and did not include `[chunking]` — the one setting a
+  before/after comparison is least able to notice going wrong. Two legs chunked under different
+  `max_tokens` are two corpora: measured on one RFC, 63 of 1 858 chunk texts differ between 510 and
+  480, and `tools/eval_reproducibility_gate.py` exists because *one* question in 41 moved across a
+  rebuild. `max_tokens`, `overlap` and `headings` now travel with every artifact. No row gained a
+  field, so `OUTCOMES_SCHEMA` is unchanged and an older artifact still reads.
+
+- **Three docstrings corrected where the code had moved under them.**
+  `tools/build_rfc_corpus.py` said `assert_chunkable` was what catches a corpus exceeding the
+  prefix reserve — it cannot and never could, since it validates `max_tokens` before anything is
+  chunked and so never sees a prefix; `chunk.assert_prefix_fits` is the one, which is why it
+  exists. The same module's header said the 300-RFC corpus "lived on one machine and died with
+  it": it is public at `lucagattoni/pinakes-corpus-rfc` with documents, sidecars and manifest
+  committed, so its figures are re-derivable — what is gone is the index and the unpinned backend
+  revision, and its manifest carries no `[chunking] headings` key, so rebuilding it today still
+  yields zero heading paths. (`CHANGELOG.md` keeps the superseded sentence in its released entry:
+  a dated record keeps its words.)
+  `doctor.py`'s heading-coverage check said detection is "for `markdown` only — every other kind
+  goes through `_plain_blocks`", which 0.13.0 falsified and which the same docstring contradicted
+  twenty lines later, where it tells a `text` corpus at 0% to set `[chunking] headings`. The same
+  stale sentence in `tests/test_doctor.py` promised a `.txt` file "cannot carry one whatever it
+  contains", while that test's own assertions turn on the opposite.
+
+- **`--rebuild` no longer leaves a paid-extracted document holding vectors from the old settings.**
+  A document whose paid extraction `--rebuild` protects is carried forward from the index being
+  replaced instead of being re-extracted — and its **embeddings** were carried forward with it,
+  while the run stamped the *current* `[chunking]` over the whole index. Turning
+  `[chunking] metadata` on and rebuilding therefore produced a KB whose paid documents held
+  uninjected vectors, whose recorded identity said `prefix`, and whose next `pnk sync` and
+  `pnk doctor` both reported no drift: every command succeeded over a half-injected index. Turning
+  injection back off had the mirror-image defect.
+  The vectors are now recomputed from the carried-forward chunks. **The paid extraction is still
+  never re-run** — that is the part that costs money; embedding is local and free, and the chunk
+  texts are already in hand. A carried-forward chunk that has a `heading_path` is refused with a
+  named remedy rather than injected with the citation form of its path, since the numbers-stripped
+  form is built during chunking and deliberately not stored; no source type reaching this path
+  produces one today.
+  **Not closed, and larger than this key:** those chunks are still copied verbatim, so `headings`,
+  `max_tokens` and `overlap` changes do not reach a protected document on a rebuild. Re-chunking
+  needs the extracted text, which is exactly what may not be obtainable again without paying.
+
+- **Turning metadata injection on is now reported on indexes built before the option existed.**
+  `chunking_drift` treats a key absent from the index as *unknown* rather than drifted — the rule
+  that stops an upgrade demanding a rebuild of every KB. But `chunking_metadata` is absent from
+  **every** index built before this release, and only a `--rebuild` ever stamps the chunking
+  identity, so on a KB that already exists the flip was completely silent: no drift from
+  `pnk sync`, nothing re-embedded, and `pnk doctor` printing `OK  chunking coherence: index matches
+  the configured chunking` over vectors with no prefix in them. `store.ABSENT_MEANS` records that
+  this one key's absence is *known* — no release that could have written such an index was able to
+  inject, so absence proves `off`. It therefore fires only for someone who opted in, and never for
+  a KB left on the default.
+- **`pnk sync` names a document whose title changed while injection is on.** With
+  `[chunking] metadata = "prefix"`, `title` is part of the text a document's vectors were built
+  from, but a title edit is a sidecar-only change: the row is updated and nothing is re-embedded,
+  and nothing repairs it later either, since the file's content hash is unchanged. The run now says
+  so and names `pnk sync --rebuild`. Reported rather than repaired on purpose — repairing means
+  re-extracting, which on a paid-extracted PDF would spend money in response to a typo fix.
+- **A carried-forward document gets the same prefix fit check as any other.** The path that
+  re-embeds *without* re-chunking had no truncation guard at all, and needs one most: its chunks
+  were sized by whatever `max_tokens` built the previous index and are never re-chunked, so the
+  current reserve does not bound them even in principle.
+- **`pnk sync --rebuild` can no longer leave a document indexed with no vectors.** The copy-forward
+  path must commit before it can detach the old index, and it did that *before* embedding — so a
+  failure left an active document with chunks and zero embeddings that the caller's rollback could
+  no longer undo, and the rebuild's unconditional index swap then published it. It now reads the
+  old rows under the attach and writes everything afterwards, in one transaction.
+- **`python -m pinakes.eval` refuses an index its manifest no longer describes.** Every
+  `[chunking]` value in an eval artifact is read from `pinakes.toml` at eval time, so an eval over
+  an index that was never rebuilt produces a plausible artifact labelled with settings that index
+  was not built under — and for `metadata`, which changes no chunk text, hash or span, nothing else
+  would reveal it. The index records what built it, so the disagreement is now caught before any
+  question is scored.
+
+- **A metadata prefix no longer repeats the document's title as its own first heading.**
+  On Markdown the two are routinely the same string — `first_h1()` mints the title from the
+  document's H1 and the chunker puts that same H1 at the root of every heading path — so the prefix
+  read `Access restrictions > Access restrictions > Loans`. Measured on `tests/demo-kb`: **60 of 60
+  prefixes, 41% of their tokens** spent restating the title, in a string whose entire purpose is to
+  add context the chunk does not already have. The root is now contributed once; the mean Markdown
+  prefix falls from 5.3 tokens to 2.1.
+  Only the **root** is compared, and case-insensitively: a section legitimately named after its
+  document but nested under something else is a real level of context and is kept, and the rest of
+  the path passes through untouched. Measured on the RFC corpus the injection experiment scored,
+  **12 of 40 421 heading-bearing chunks (0.03%)** are affected — which is why this could be fixed
+  without re-opening that measurement.
+
 ## [0.15.1] — 20260806 00:51
 
 ### Changed
@@ -2648,7 +2823,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.16.0
 [0.15.1]: https://github.com/lucagattoni/pinakes/releases/tag/v0.15.1
 [0.15.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.15.0
 [0.14.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.14.0

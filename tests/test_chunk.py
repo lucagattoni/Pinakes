@@ -643,3 +643,80 @@ def test_page_labelling_preserves_the_unnumbered_path(counter: TokenCounter) -> 
         "Introduction > Scope",
         "Terminology",
     ]
+
+
+def test_a_heading_path_repeating_the_title_contributes_it_once() -> None:
+    """The Markdown case, which is every Markdown document: `first_h1()` mints the title from the
+    H1 and `_markdown_blocks` puts that same H1 at the root of the heading path. Measured
+    20260807 on `tests/demo-kb`: 60 of 60 prefixes repeated the title, 41% of their tokens."""
+    chunk = Chunk(
+        text="Body.",
+        char_start=0,
+        char_end=5,
+        token_count=1,
+        heading_path="Access restrictions > Loans",
+        unnumbered_heading_path="Access restrictions > Loans",
+    )
+    assert metadata_prefix(chunk, title="Access restrictions") == "Access restrictions > Loans"
+
+
+def test_the_root_comparison_is_case_insensitive_and_ignores_surrounding_space() -> None:
+    """`# Access Restrictions` and a section named `Access restrictions` are the same heading for
+    this purpose, and neither spelling is the correct one."""
+    chunk = Chunk(
+        text="Body.",
+        char_start=0,
+        char_end=5,
+        token_count=1,
+        heading_path="Access Restrictions > Loans",
+        unnumbered_heading_path="Access Restrictions > Loans",
+    )
+    assert metadata_prefix(chunk, title="  access restrictions ") == "access restrictions > Loans"
+
+
+def test_only_the_root_is_compared_so_a_repeat_deeper_in_the_path_survives() -> None:
+    """A section legitimately named after its document, nested under something else, is not the
+    duplication this removes — and dropping it would lose a real level of context."""
+    chunk = Chunk(
+        text="Body.",
+        char_start=0,
+        char_end=5,
+        token_count=1,
+        heading_path="Policies > Access restrictions",
+        unnumbered_heading_path="Policies > Access restrictions",
+    )
+    assert (
+        metadata_prefix(chunk, title="Access restrictions")
+        == "Access restrictions > Policies > Access restrictions"
+    )
+
+
+def test_a_path_that_is_only_the_title_leaves_the_title_alone() -> None:
+    """A one-level Markdown document: the whole path is the H1, so removing it leaves the title as
+    the entire prefix rather than a title followed by an empty separator."""
+    chunk = Chunk(
+        text="Body.",
+        char_start=0,
+        char_end=5,
+        token_count=1,
+        heading_path="Access restrictions",
+        unnumbered_heading_path="Access restrictions",
+    )
+    assert metadata_prefix(chunk, title="Access restrictions") == "Access restrictions"
+
+
+def test_a_different_root_is_never_dropped() -> None:
+    """The RFC shape, and the reason this could not have moved the injection experiment: measured
+    20260807, 12 of that corpus's 40 421 heading-bearing chunks have a root repeating their title,
+    against 60 of 60 on Markdown."""
+    chunk = Chunk(
+        text="Body.",
+        char_start=0,
+        char_end=5,
+        token_count=1,
+        heading_path="7.  Routing HTTP Messages > 7.6.  Message Forwarding",
+        unnumbered_heading_path="Routing HTTP Messages > Message Forwarding",
+    )
+    assert metadata_prefix(chunk, title="HTTP Semantics") == (
+        "HTTP Semantics > Routing HTTP Messages > Message Forwarding"
+    )
