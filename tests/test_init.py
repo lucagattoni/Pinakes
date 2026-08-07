@@ -20,7 +20,7 @@ def test_init_produces_a_kb_that_parses(tmp_path: Path) -> None:
 
     assert manifest.kb.name == "research"
     assert manifest.kb.id == result.kb_id
-    assert manifest.kb.template == "notes@1.0"
+    assert manifest.kb.template == "notes@1.1"
     assert manifest.kb.created == "20260725 17:30"
     assert manifest.embedding.model == "BAAI/bge-small-en-v1.5"
     assert manifest.rerank.model == "BAAI/bge-reranker-base"
@@ -163,7 +163,7 @@ def test_an_unknown_template_lists_the_known_ones(tmp_path: Path) -> None:
 def test_templates_are_readable_from_the_installed_package() -> None:
     assert "notes" in template.available()
     info = template.describe("notes")
-    assert info.reference == "notes@1.0"
+    assert info.reference == "notes@1.1"
 
 
 def test_a_template_variable_that_is_never_supplied_fails_loudly() -> None:

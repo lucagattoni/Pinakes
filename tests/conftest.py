@@ -68,7 +68,7 @@ VALID_MANIFEST = """\
 [kb]
 name     = "research"
 id       = "{kb_id}"
-template = "notes@1.0"
+template = "notes@1.1"
 created  = "20260725 09:14"
 
 [sources]

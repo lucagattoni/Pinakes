@@ -1,0 +1,12 @@
+# Every archived template version and the SHA-256 of its frozen content — the record that makes
+# editing a published version a two-file commit a reviewer can see, rather than a one-file edit
+# nobody notices. Written and checked by `tools/template_drift_gate.py`; never edit a row by hand.
+#
+# The hash covers every consumed file under `_versions/<version>/` except `template.toml`, which
+# declares the version and would otherwise make every bump change the hash by construction — the
+# exclusion is what lets the gate detect a version bumped with no content change.
+
+[[template]]
+name    = "notes"
+version = "1.1"
+sha256  = "e4010f5918263a0e8b140945514f13b82a67820f20850cfd3443a542a086534e"

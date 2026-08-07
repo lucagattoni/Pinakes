@@ -173,4 +173,21 @@ if bad:
 print(f"nul-scan: {scanned} text file(s) scanned, no NUL byte.")
 NULSCAN
 
+# template drift (T1): a template version number means the bytes it denotes. `pnk doctor` has
+# compared a KB's recorded template reference against the installed one since 0.1 and has never
+# once been able to fire — `notes` said `version = "1.0"` in every commit while the files that
+# version denotes changed in ten later ones, so every KB in existence recorded a reference that
+# matched and meant something different. The rule "bump the version when you change the template"
+# existed and was silently not followed, which is this project's threshold for replacing a
+# convention with a gate.
+#
+# `uv run` rather than plain `python3`: it renders every archived version through jinja2 (leg vi)
+# using `pinakes.init`'s own default constants, so the variables the gate supplies cannot drift
+# from the ones `pnk init` actually passes. Nothing has to run this before the package is installed.
+#
+# Leg (vii) needs git history and says so when it has none — a skip is not a pass, and the gate
+# names which mode it ran in every time. CI gives this gate's own job `fetch-depth: 0` for that
+# reason; every other checkout in `ci.yml` is shallow and would silently lose the leg.
+uv run --frozen python3 tools/template_drift_gate.py
+
 echo "all gates green"
