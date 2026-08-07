@@ -202,6 +202,19 @@ class SyncReport:
     """`(key, built_with, configured_now)` per `[chunking]` key that moved since the index was
     built. Reported here rather than only in `pnk doctor` because this is the command that just
     said `unchanged` — the moment the wrong impression forms is the moment to correct it."""
+    stale_prefixes: list[str] = field(default_factory=list[str])
+    """Documents whose `title` changed while `[chunking] metadata = "prefix"` is on, so the title
+    in the index no longer matches the one embedded in their vectors.
+
+    A title edit is a sidecar-only change, which pairing routes as `RefreshMetadata`: the row is
+    updated and nothing is re-embedded. That is correct while `title` is display metadata, and
+    injection is exactly what stops it being only that — so the vectors keep the old title until
+    something re-chunks the document, which for an unchanged file is never.
+
+    **Reported rather than repaired, deliberately.** Repairing it means re-running
+    `_index_document`, which re-*extracts* — and on a PDF whose extraction was paid for, that can
+    spend money in response to someone fixing a typo in a title. Naming the documents and the
+    remedy is what this run can do honestly; `pnk sync --rebuild` is what applies it."""
     busy: bool = False
     reclaimed_lock: bool = False
     # --clear-cache's own outcome; None on every other run (see `sync()`'s early return for it).
@@ -330,6 +343,14 @@ class SyncReport:
                 f"[chunking] changed since this index was built ({moved}) — the documents above "
                 "were not re-chunked, because an incremental sync re-chunks a document only when "
                 "the document itself changed. Run `pnk sync --rebuild` to apply it."
+            )
+        if self.stale_prefixes:
+            named = ", ".join(sorted(self.stale_prefixes))
+            lines.append(
+                f'title changed for {named} while [chunking] metadata = "prefix" — the title is '
+                "part of what those documents' vectors were built from, and a sidecar-only edit "
+                "re-embeds nothing, so their vectors still carry the old one. Run "
+                "`pnk sync --rebuild` to apply it."
             )
         if self.unmatched:
             lines.append(self.unmatched_line())
@@ -1181,7 +1202,7 @@ def _apply(
             # (which is what the overwrite fix guards). The three paths had three different
             # behaviours for one cause.
             try:
-                _refresh_metadata(manifest, connection, doc_id, path, sidecar_hash)
+                _refresh_metadata(manifest, connection, doc_id, path, sidecar_hash, report=report)
             except (PinakesError, OSError, ValueError) as exc:
                 connection.rollback()
                 remedy = exc.remedy if isinstance(exc, PinakesError) else ""
@@ -1505,12 +1526,23 @@ def _refresh_metadata(
     doc_id: DocId,
     path: str,
     sidecar_hash: str | None,
+    *,
+    report: SyncReport,
 ) -> None:
     parsed = _read_sidecar_for(manifest, path)
+    title = parsed.title if parsed else None
+    if manifest.chunking.metadata == "prefix":
+        # With injection on, `title` is no longer only display metadata — it is part of the text
+        # these vectors were built from, and this path re-embeds nothing. Say so rather than let
+        # the index show one title while its vectors carry another (`SyncReport.stale_prefixes`).
+        row = connection.execute("SELECT title FROM documents WHERE id = ?", (doc_id,)).fetchone()
+        was = None if row is None or row["title"] is None else str(row["title"])
+        if was != title:
+            report.stale_prefixes.append(path)
     connection.execute(
         "UPDATE documents SET title = ?, metadata = ?, sidecar_hash = ? WHERE id = ?",
         (
-            parsed.title if parsed else None,
+            title,
             store.dumps_metadata(_metadata(parsed)),
             sidecar_hash,
             doc_id,
@@ -1723,6 +1755,12 @@ def _copy_forward_protected_document(
         raise SyncError("no embedding backend was loaded.", remedy="This is a bug; report it.")
     source = manifest.root / path
     parsed = _read_sidecar_for(manifest, path)
+    # **Read under the ATTACH, write after it.** `DETACH` needs the transaction closed, so the
+    # `finally` below commits — and it commits whether or not the rest of this function succeeds.
+    # With the writes inside it, a document whose embedding failed was left committed and *active*
+    # with chunks and no vectors, which `_apply`'s `connection.rollback()` could no longer undo and
+    # `--rebuild`'s unconditional index swap then published. Copying the old rows into memory first
+    # keeps every write in one transaction the caller can still roll back.
     connection.execute("ATTACH DATABASE ? AS old_index", (str(old_index_path),))
     try:
         old_row = connection.execute(
@@ -1731,86 +1769,104 @@ def _copy_forward_protected_document(
             (old_doc_id,),
         ).fetchone()
         assert old_row is not None, "content_hash lookup that found this id proves the row exists"
-        connection.execute(
-            "INSERT INTO documents (id, path, content_hash, sidecar_hash, mtime, source_type, "
-            "title, metadata, state, extraction_backend, extraction_fingerprint) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?) "
-            "ON CONFLICT (id) DO UPDATE SET path = excluded.path, "
-            "content_hash = excluded.content_hash, sidecar_hash = excluded.sidecar_hash, "
-            "mtime = excluded.mtime, source_type = excluded.source_type, "
-            "title = excluded.title, metadata = excluded.metadata, state = 'active', "
-            "extraction_backend = excluded.extraction_backend, "
-            "extraction_fingerprint = excluded.extraction_fingerprint",
-            (
-                new_doc_id,
-                path,
-                content_hash,
-                sidecar_hash,
-                source.stat().st_mtime,
-                old_row["source_type"],
-                parsed.title if parsed else None,
-                store.dumps_metadata(_metadata(parsed)),
-                old_row["extraction_backend"],
-                old_row["extraction_fingerprint"],
-            ),
+        old_source_type = str(old_row["source_type"])
+        old_backend: str | None = (
+            None if old_row["extraction_backend"] is None else str(old_row["extraction_backend"])
         )
-        connection.execute(
-            "INSERT INTO chunks (doc_id, ordinal, text, char_start, char_end, token_count, "
-            "heading_path, page_start, page_end) "
-            "SELECT ?, ordinal, text, char_start, char_end, token_count, heading_path, "
+        old_fingerprint: str | None = (
+            None
+            if old_row["extraction_fingerprint"] is None
+            else str(old_row["extraction_fingerprint"])
+        )
+        old_chunks = connection.execute(
+            "SELECT ordinal, text, char_start, char_end, token_count, heading_path, "
             "page_start, page_end FROM old_index.chunks WHERE doc_id = ? ORDER BY ordinal",
-            (new_doc_id, old_doc_id),
-        )
-        copied = connection.execute(
-            "SELECT id, text, char_start, char_end, token_count, heading_path FROM chunks "
-            "WHERE doc_id = ? ORDER BY ordinal",
-            (new_doc_id,),
+            (old_doc_id,),
         ).fetchall()
     finally:
         connection.commit()
         connection.execute("DETACH DATABASE old_index")
 
-    # Outside the ATTACH: nothing below reads the old index. These are this index's own rows, and
-    # they are embedded under *this* run's settings rather than under whatever built the vectors
-    # being replaced.
+    # Everything below is this index's own, in one transaction, under *this* run's settings.
     title = parsed.title if parsed else None
     inject = manifest.chunking.metadata == "prefix"
-    texts: list[str] = []
-    for row in copied:
-        stored_path: str | None = None if row["heading_path"] is None else str(row["heading_path"])
-        if inject and stored_path is not None:
-            # `unnumbered_heading_path` is deliberately not persisted (`chunk.Chunk`), so a copied
-            # row cannot say what its path looks like with the section numbers removed — and
-            # injecting the *stored* form would silently prepend the citation form this experiment
-            # measured at 44% numbers and rejected. Unreachable today, because only a PDF is ever
-            # protected and the PDF path records no heading path; **step 5 of the injection plan is
-            # what would make it reachable**, and it must arrive as this error rather than as a
-            # quietly different prefix on one class of document.
-            raise SyncError(
-                f"{path}: a paid-extracted document carried forward by --rebuild has a heading "
-                f"path ({stored_path!r}), which cannot be re-injected — the numbers-stripped form "
-                "is built when a document is chunked and is not stored.",
-                remedy=(
-                    'Set [chunking] metadata = "off", or re-extract this document so it is '
-                    "chunked by this run (`pnk sync --rebuild --force --extract=<backend>`, which "
-                    "spends)."
-                ),
-            )
-        chunk = Chunk(
+    chunks = [
+        Chunk(
             text=str(row["text"]),
             char_start=int(row["char_start"]),
             char_end=int(row["char_end"]),
             token_count=int(row["token_count"]),
-            heading_path=stored_path,
-            unnumbered_heading_path=stored_path,
+            heading_path=None if row["heading_path"] is None else str(row["heading_path"]),
+            # `unnumbered_heading_path` is deliberately not persisted (`chunk.Chunk`), so a copied
+            # row cannot say what its path looks like with the section numbers removed. It is
+            # `None` here rather than a guess, and the refusal below is what keeps that from
+            # silently shortening a prefix.
+            unnumbered_heading_path=None,
+            page_start=None if row["page_start"] is None else int(row["page_start"]),
+            page_end=None if row["page_end"] is None else int(row["page_end"]),
         )
-        texts.append(embedding_text(chunk, title=title) if inject else chunk.text)
+        for row in old_chunks
+    ]
+    if inject and any(chunk.heading_path is not None for chunk in chunks):
+        # Injecting the *stored* path would prepend the citation form this experiment measured at
+        # 44% numbers and rejected; injecting nothing would silently shorten the prefix for one
+        # class of document. Unreachable today — only a PDF is ever protected and the PDF path
+        # records no heading path — and **step 5 of the injection plan (PDF layout heuristics) is
+        # what would reach it**, which is why it is an error and not an assumption.
+        raise SyncError(
+            f"{path}: a paid-extracted document carried forward by --rebuild has a heading path, "
+            "which cannot be re-injected — the numbers-stripped form is built when a document is "
+            "chunked and is deliberately not stored.",
+            remedy=(
+                'Set [chunking] metadata = "off", or re-extract this document so that this run '
+                "chunks it (`pnk sync --rebuild --force --extract=<backend>`, which spends)."
+            ),
+        )
+    if inject:
+        # The same guard `_index_document` applies, and this path needs it *more*: these chunks
+        # were sized by whatever `max_tokens` built the old index and are never re-chunked, so the
+        # current reserve does not bound them even in principle. Without it, the one path that
+        # re-embeds without re-chunking was the one path with no truncation guard.
+        assert_prefix_fits(
+            chunks,
+            title=title,
+            path=path,
+            counter=backend,
+            max_tokens=manifest.chunking.max_tokens,
+            model_max_tokens=backend.info().max_seq_length,
+        )
 
-    if texts:
-        vectors = backend.embed(texts)
-        for row, vector in zip(copied, vectors, strict=True):
-            store.store_embedding(connection, int(row["id"]), vector)
-        connection.commit()
+    connection.execute(
+        "INSERT INTO documents (id, path, content_hash, sidecar_hash, mtime, source_type, "
+        "title, metadata, state, extraction_backend, extraction_fingerprint) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?) "
+        "ON CONFLICT (id) DO UPDATE SET path = excluded.path, "
+        "content_hash = excluded.content_hash, sidecar_hash = excluded.sidecar_hash, "
+        "mtime = excluded.mtime, source_type = excluded.source_type, "
+        "title = excluded.title, metadata = excluded.metadata, state = 'active', "
+        "extraction_backend = excluded.extraction_backend, "
+        "extraction_fingerprint = excluded.extraction_fingerprint",
+        (
+            new_doc_id,
+            path,
+            content_hash,
+            sidecar_hash,
+            source.stat().st_mtime,
+            old_source_type,
+            title,
+            store.dumps_metadata(_metadata(parsed)),
+            old_backend,
+            old_fingerprint,
+        ),
+    )
+    chunk_ids = store.replace_chunks(connection, new_doc_id, [chunk.as_row() for chunk in chunks])
+    if chunk_ids:
+        embedded = [
+            embedding_text(chunk, title=title) if inject else chunk.text for chunk in chunks
+        ]
+        vectors = backend.embed(embedded)
+        for chunk_id, vector in zip(chunk_ids, vectors, strict=True):
+            store.store_embedding(connection, chunk_id, vector)
     _replace_links(connection, manifest, new_doc_id, parsed)
 
 

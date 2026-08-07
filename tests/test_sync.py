@@ -2287,3 +2287,139 @@ def test_turning_injection_off_re_embeds_a_protected_document_as_well(
 
     assert backend.embedded, "precondition: the copied-forward chunks were embedded at all"
     assert not any(PREFIX_SEPARATOR in embedded for embedded in backend.embedded)
+
+
+def test_turning_injection_on_is_reported_on_an_index_that_predates_the_key(kb: Path) -> None:
+    """**Every KB in existence on the day this ships.** `chunking_drift` treats an absent key as
+    unknown — the compatibility rule that stops an upgrade demanding a rebuild of every index — and
+    `chunking_metadata` is absent from every index built by 0.13.0-0.15.1, since only a `--rebuild`
+    ever stamps the identity. So without `store.ABSENT_MEANS` the flip was silent on exactly the
+    indexes that exist: no drift, nothing re-embedded, and `pnk doctor` affirming coherence.
+
+    Absence is *known* for this key, unlike `max_tokens` and `overlap`: no release that could have
+    written such an index was able to inject, so absence proves `off`. It therefore fires only for
+    a user who opted in — never for anyone left on the default, which is the compatibility
+    guarantee it must not break.
+    """
+    write(kb, "rfc.md", SECTIONED)
+    run(kb)
+    connection = sqlite3.connect(kb / ".pinakes" / "index.db")
+    connection.execute("DELETE FROM meta WHERE key = 'chunking_metadata'")  # the 0.15.1 shape
+    connection.commit()
+    connection.close()
+
+    _set_chunking(kb, metadata='"prefix"')
+    report = run(kb)
+
+    assert report.chunking_drift == (("chunking_metadata", "off", "prefix"),)
+    assert any("--rebuild" in line for line in report.lines())
+
+
+def test_an_index_predating_the_key_is_still_not_drifted_while_injection_stays_off(
+    kb: Path,
+) -> None:
+    """The other half, and the one that keeps the compatibility promise: reading absence as `off`
+    must not fire on a KB whose owner never turned injection on. Every upgraded index is in exactly
+    this state, and a warning here would be one nobody could clear."""
+    write(kb, "rfc.md", SECTIONED)
+    run(kb)
+    connection = sqlite3.connect(kb / ".pinakes" / "index.db")
+    connection.execute("DELETE FROM meta WHERE key = 'chunking_metadata'")
+    connection.commit()
+    connection.close()
+
+    assert run(kb).chunking_drift == ()
+
+
+def test_a_carried_forward_document_is_refused_when_its_prefix_would_be_truncated(
+    kb: Path, fake_paid: str
+) -> None:
+    """The path that re-embeds **without re-chunking** needs the fit check more than the indexing
+    path does, and it was the one path without it. These chunks were sized by whatever `max_tokens`
+    built the *old* index and are never re-chunked, so the current reserve does not bound them even
+    in principle — and the remedy the manifest docstring prescribes (lower `max_tokens`) cannot
+    help a document this run never chunks."""
+    _paid_index(kb, fake_paid)
+    # The default: a 512-token window, 2 special tokens, so `max_tokens = 510` reserves **zero**
+    # for a prefix. That is finding 1 of the plan, and the condition every hand-written manifest
+    # reintroduces.
+    _set_chunking(kb, metadata='"prefix"', max_tokens="510")
+
+    report, backend = run_recording(kb, rebuild=True)
+
+    assert [path for path, _error, _remedy in report.failures] == ["docs/a.pdf"]
+    assert "prefix" in report.failures[0][1]
+    assert backend.embedded == [], "nothing embedded, so nothing truncated"
+
+
+def test_a_failed_carry_forward_leaves_no_half_written_document_behind(
+    kb: Path, fake_paid: str
+) -> None:
+    """`--rebuild` swaps its new index in unconditionally, so anything committed before a failure
+    is published. The copy-forward path has to commit before `DETACH`, and while the writes sat
+    inside that transaction a document whose embedding failed survived as `active` with chunks and
+    **zero vectors** — a state `_apply`'s `rollback()` could no longer undo, and one no later sync
+    repairs, because the file's content hash is unchanged and every future run reports `Skip`."""
+    _paid_index(kb, fake_paid)
+    _set_chunking(kb, metadata='"prefix"', max_tokens="510")
+
+    run_recording(kb, rebuild=True)  # the refusal above, mid-way through the copy-forward
+
+    connection = sqlite3.connect(kb / ".pinakes" / "index.db")
+    try:
+        rows = connection.execute(
+            "SELECT count(*) FROM documents d JOIN chunks c ON c.doc_id = d.id "
+            "LEFT JOIN embeddings e ON e.chunk_id = c.id "
+            "WHERE d.state = 'active' AND e.chunk_id IS NULL"
+        ).fetchone()[0]
+    finally:
+        connection.close()
+    assert rows == 0, "no active document may hold a chunk with no vector"
+
+
+def test_a_title_edit_under_injection_is_reported_rather_than_left_silent(kb: Path) -> None:
+    """With injection on, `title` stops being display metadata: it is part of the text the vectors
+    were built from. A title edit is still a sidecar-only change, which pairing routes as
+    `RefreshMetadata` — the row is updated, nothing is re-embedded — and nothing repairs it later
+    either, because the file's content hash is unchanged so every future sync yields `Skip`.
+
+    Reported, not repaired: repairing means re-running `_index_document`, which re-*extracts*, and
+    on a paid-extracted PDF that would spend money in response to a typo fix.
+    """
+    write(kb, "rfc.md", SECTIONED)
+    _set_chunking(kb, metadata='"prefix"')
+    run(kb)
+
+    sidecar = kb / "docs" / f"rfc.md{SIDECAR_SUFFIX}"
+    sidecar.write_text(
+        sidecar.read_text(encoding="utf-8").replace(
+            "title: HTTP Semantics", "title: What I Actually Call It"
+        ),
+        encoding="utf-8",
+    )
+    report, backend = run_recording(kb)
+
+    assert report.refreshed == 1 and backend.embedded == [], "precondition: nothing re-embedded"
+    assert report.stale_prefixes == ["docs/rfc.md"]
+    line = next(line for line in report.lines() if "title changed" in line)
+    assert "docs/rfc.md" in line and "--rebuild" in line
+
+
+def test_a_title_edit_with_injection_off_reports_nothing(kb: Path) -> None:
+    """The default, and it must stay quiet: with no injection the vectors never carried the title,
+    so a refreshed row is the whole of the change and there is nothing stale to report."""
+    write(kb, "rfc.md", SECTIONED)
+    run(kb)
+
+    sidecar = kb / "docs" / f"rfc.md{SIDECAR_SUFFIX}"
+    sidecar.write_text(
+        sidecar.read_text(encoding="utf-8").replace(
+            "title: HTTP Semantics", "title: What I Actually Call It"
+        ),
+        encoding="utf-8",
+    )
+    report = run(kb)
+
+    assert report.refreshed == 1
+    assert report.stale_prefixes == []
+    assert not any("title changed" in line for line in report.lines())
