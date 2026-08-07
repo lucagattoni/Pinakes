@@ -217,3 +217,10 @@ def test_the_json_artifact_carries_every_moved_row(tmp_path: Path) -> None:
     assert written["improved"] == 2 and written["regressed"] == 0
     assert written["screen_passes"] is True
     assert [move["id"] for move in written["moved"]] == ["q1", "q3"]
+    # 2d's screen is pre-registered as having no p-value, and its numbers may not be cited as
+    # evidence in either direction. One left in the file is one that gets quoted later.
+    assert "sign_test_p" not in written
+
+    gated = tmp_path / "gate.json"
+    run("--before", str(before), "--after", str(after), "--sign-test", "--json", str(gated))
+    assert "sign_test_p" in json.loads(gated.read_text(encoding="utf-8"))

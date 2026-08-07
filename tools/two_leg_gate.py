@@ -213,19 +213,28 @@ def report(comparison: Comparison, *, sign: bool) -> str:
     return "\n".join(lines)
 
 
-def as_dict(comparison: Comparison) -> dict[str, Any]:
-    return {
+def as_dict(comparison: Comparison, *, sign: bool) -> dict[str, Any]:
+    """The artifact records what was asked for, and `sign_test_p` only when it was.
+
+    Not cosmetic. 2d's screen is pre-registered as having **no p-value** — its criterion is
+    deliberately looser than the gate's and its numbers may not be cited as evidence in either
+    direction. A p-value sitting in the screen's own artifact is how it gets quoted anyway, by
+    someone reading the file a week later with none of that context.
+    """
+    written: dict[str, Any] = {
         "answerable": comparison.answerable,
         "improved": len(comparison.improved),
         "regressed": len(comparison.regressed),
         "unchanged": comparison.unchanged,
-        "sign_test_p": sign_test(len(comparison.improved), len(comparison.regressed)),
         "screen_passes": comparison.screen_passes,
         "moved": [
             {"id": move.id, "kind": move.kind, "before": move.before, "after": move.after}
             for move in comparison.moved
         ],
     }
+    if sign:
+        written["sign_test_p"] = sign_test(len(comparison.improved), len(comparison.regressed))
+    return written
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -257,7 +266,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     comparison = compare(before, after)
     print(report(comparison, sign=args.sign_test))
     if args.json is not None:
-        args.json.write_text(json.dumps(as_dict(comparison), indent=2) + "\n", encoding="utf-8")
+        args.json.write_text(
+            json.dumps(as_dict(comparison, sign=args.sign_test), indent=2) + "\n", encoding="utf-8"
+        )
     return 0 if comparison.screen_passes else 1
 
 
