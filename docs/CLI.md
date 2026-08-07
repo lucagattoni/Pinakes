@@ -42,8 +42,9 @@ Stamps a new KB and mints its **permanent** KB ULID.
 | `--template TEMPLATE` | `notes` | The blueprint. `notes` is the only one shipped. **A single path component** — `[A-Za-z0-9][A-Za-z0-9_-]*` — refused before any directory is created, so `notes/../notes` and `notes/_versions/1.1` both print `no template named` and write nothing |
 | `--ci` | off | Also write `.github/workflows/pinakes.yml`, which syncs and caches `.pinakes/`. Refuses to overwrite an existing one |
 
-Writes `pinakes.toml`, `docs/` and a `.gitignore` covering `.pinakes/`. It does **not** create an
-index — the first `pnk sync` does that.
+Writes `pinakes.toml`, `docs/`, a `.gitignore` covering `.pinakes/`, and the template's `README.md`
+and `eval/questions.yaml` — each skipped, never overwritten, when it is already there. It does
+**not** create an index — the first `pnk sync` does that.
 
 **It adopts a directory that already has content, and never overwrites a file it finds there.**
 Creating a repository, cloning it, then running `pnk init` inside it is the normal way to start a
@@ -87,7 +88,7 @@ corpus. Failures are recorded, the run continues, and sync exits non-zero listin
 | Flag | Notes |
 |---|---|
 | `--rebuild` | Rebuild the index from scratch. Builds into `index.db.new`, checkpoints, closes, then renames atomically. **`ledger.jsonl` always survives** |
-| `--sidecars-only` | Mint missing sidecars; never touch the index. The `pre-commit` half. Refuses to mint over a sidecar that exists but will not parse — it still holds that document's permanent ULID — and records it as a failure, so **a `pre-commit` hook blocks the commit** until the file is repaired. Only a commit staging that *document* is affected; editing the sidecar alone is not |
+| `--sidecars-only` | Mint missing sidecars; never touch the index. The `pre-commit` half. **The title it mints is the filename, even for a Markdown file with a `# ` heading** — only the indexing path reads the heading ([`titles`](#pnk-doctor)), and a sidecar is never retitled once it exists. Refuses to mint over a sidecar that exists but will not parse — it still holds that document's permanent ULID — and records it as a failure, so **a `pre-commit` hook blocks the commit** until the file is repaired. Only a commit staging that *document* is affected; editing the sidecar alone is not |
 | `--index-only` | Update the index; never write into `docs/`. The `post-commit` half |
 | `--stage` | With `--sidecars-only`: limit to staged files and `git add` them, so a document and its ID land in one commit |
 | `--scan-links` | Re-read every `[[links.kb]]`'s committed sidecars now, ignoring the freshness window. Ordinary syncs skip a partner read within the last hour, because this runs on `post-commit` and `post-merge`. Refused together with `--sidecars-only`, which never opens the index at all |
@@ -152,7 +153,11 @@ Filters compose and are applied in SQL *before* retrieval, not as a post-filter.
 **Citations name a page when the source has pages.** A PDF passage cites `docs/paper.pdf:p7`, or
 `docs/paper.pdf:p7-8` when the chunk straddles a page break — which happens legitimately, since a
 word hyphenated across the break is joined into one block. Every other source keeps the character
-offsets it always rendered: `docs/notes.md:12-480`. **The `p` is not decoration** — without it,
+offsets it always rendered: `docs/notes.md:12-480`. **A chunk carrying a `heading_path` appends it
+in parentheses** — `docs/notes.md:12-480 (Notes > Section)` — on both the text and `--json`
+surfaces; the bare form is what a chunk with no heading path prints. Both committed corpora sit at
+100% heading coverage, so the parenthesised form is the usual one. **The `p` is not decoration** —
+without it,
 `:12-480` would mean character offsets and `:12-13` would mean pages, in the same syntax, told
 apart only by knowing the file.
 
@@ -186,8 +191,13 @@ the free one, the highest-degree structural edge hubs, heading coverage, chunkin
 titles.
 
 **`titles` counts documents still carrying the title `sync` minted from their filename, and is
-always OK.** A **Markdown** document titles itself from its own `# ` heading, so this mostly counts
-the types that cannot: plain text, code, PDFs, and Markdown files with no `# `. A filename-derived title is a legitimate state — the fallback is deliberate — so
+always OK.** A **Markdown** document titles itself from its own `# ` heading — but **only when the
+sidecar is minted by the indexing path**, a plain `pnk sync`. `pnk sync --sidecars-only`, and
+therefore the `pre-commit` hook, mints the filename title even for a Markdown file that opens with a
+`# `. So in a hook-driven KB this count includes Markdown documents that *do* have headings, and a
+later full `pnk sync` does not retitle them: the sidecar already exists and holds the document's
+permanent ULID. Otherwise it counts the types that cannot carry one: plain text, code, PDFs, and
+Markdown files with no `# `. A filename-derived title is a legitimate state — the fallback is deliberate — so
 warning would fire on every KB whose titles nobody has curated yet, which is most of them and both
 committed corpora at 100%. It is a nudge: search results read better with a real title, and `title`
 in each `.pnk.yaml` is yours to write. **Nothing infers one for you.** Guessing from a document's
@@ -372,8 +382,19 @@ the alias form bites **only** on a declared name — a POSIX path may legitimate
 `pnk://<kb-ulid>/<doc-ulid>`, which is why a link survives the KB being shared. The same is true of
 `self`.
 
-**What is refused, and what is not.** A well-formed `pnk://` URI whose target is not on this
-machine **is written**: both ULIDs are already in it, and refusing would make authoring depend on
+**What is refused, and what is not.** **A target resolving to the source document itself is
+refused** — the refusal a typo actually reaches, whether that is the same path twice or a `pnk://`
+copied out of the file being edited. It names the shared ULID and points at `pnk doctor`, because
+the other way to reach it is two files sharing one id:
+
+```
+error: docs/notes.md and the target are the same document (01K…).
+A link goes between two documents. If you meant two different files, they are sharing a ULID —
+`pnk doctor` names duplicate ids, and one of them has to be corrected before either can be linked.
+```
+
+An empty `--rel` is refused too, naming two example relations. A well-formed `pnk://` URI whose
+target is not on this machine **is written**: both ULIDs are already in it, and refusing would make authoring depend on
 which KBs happen to be checked out. What checks it afterwards is **`pnk doctor`**, which resolves
 each cross-KB target through its `[[links.kb]]` entry and reports the ones it cannot find as
 `N cross-KB unresolved` — a WARN, never a FAIL, because a partner absent from this machine is a fact

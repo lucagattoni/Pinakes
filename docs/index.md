@@ -82,8 +82,9 @@ pnk doctor                            # environment, coherence, orphans, link co
 
 !!! warning "Two things `pnk init` cannot know"
 
-    Each needs one manifest edit: on a `[light]` install set `provider = "fastembed"`, and to
-    index PDFs add `"**/*.pdf"` to `[sources] include`. Both are in
+    On a `[light]` install set `provider = "fastembed"` in **both** `[embedding]` and `[rerank]` —
+    the model ids are identical on the two backends, so only `provider` moves. To index PDFs, add
+    `"**/*.pdf"` to `[sources] include`. Both are in
     [the Guide](GUIDE.md#choosing-a-backend).
 
 ## Reading paths

@@ -42,8 +42,10 @@ Python 3.13+. To try it without installing anything:
 uvx --from "pinakes[light]" pnk --version
 ```
 
-**To install unreleased work from `main`** — a contributor, or anything in
-[STATUS](STATUS.md#the-surface-you-can-use-today) marked "on `main`, unreleased":
+**To install unreleased work from `main`** — a contributor, or anything listed under
+`[Unreleased]` in the
+[CHANGELOG](https://github.com/lucagattoni/pinakes/blob/main/CHANGELOG.md), which is where work
+that has landed but not shipped is recorded:
 
 ```bash
 uv add "pinakes[light] @ git+https://github.com/lucagattoni/pinakes"
@@ -175,7 +177,17 @@ model    = "BAAI/bge-reranker-base"
 ```
 
 The model **ids are identical on both backends**, so only `provider` changes. Skip this and the
-first sync stops with the core-only error above — accurate, but an avoidable wall.
+first sync stops — but on a `[light]` install the error is not the core-only one above. Because
+`fastembed` *is* installed, it names the alternative and the edit rather than an install:
+
+```
+error: the `sentence-transformers` backend is not installed.
+`fastembed` is already installed on this machine — no install needed. Set `provider = "fastembed"`
+in both `[embedding]` and `[rerank]` in pinakes.toml, with the model fastembed expects.
+```
+
+The fence [above](#install) is the *core-only* wording — no embedding backend at all, so there is
+nothing to point you at and installing one is the only remedy.
 
 Changing the embedding model later invalidates the index: queries refuse to run rather than return
 garbage, and `pnk doctor` names the mismatch. `pnk sync --rebuild` fixes it, and costs nothing.
@@ -263,9 +275,15 @@ absolute threshold is meaningless until it is **fitted against a golden set for 
 Thresholds fitted on someone else's corpus are not a calibration, so the template ships
 `[retrieval.confidence]` commented out.
 
-To calibrate: write questions with known-correct sources in `eval/questions.yaml`, then run
-`pinakes.calibrate`, which *prints* a `[retrieval.confidence]` block for you to paste — it never
-writes one. Until you do, every result reports `unknown`.
+To calibrate: write questions with known-correct sources in `eval/questions.yaml` — `pnk init`
+scaffolds that file for you, with the entry schema in comments — then run:
+
+```bash
+python -m pinakes.calibrate my-kb
+```
+
+It is a module entry point, not a `pnk` subcommand. It *prints* a `[retrieval.confidence]` block
+for you to paste and never writes one. Until you paste it, every result reports `unknown`.
 
 The cost of the heuristic once calibrated is published rather than hidden: measured false-confidence
 on the demo corpus is **0.25** ([STATUS](STATUS.md#measured-numbers)).
@@ -446,7 +464,7 @@ them and `pnk links` traverses them: see [Following links between two KBs](#foll
 | `the sentence-transformers backend is not installed` | `[light]` install, default manifest | Set `provider = "fastembed"` in `[embedding]` **and** `[rerank]` |
 | `N file(s) matched no include pattern` | Those files are in your roots but no glob picks them up | Add the glob it names ([above](#indexing-pdfs)), or `exclude` them |
 | A PDF indexes with no text | Scanned / image-only — the free path has no OCR | The opt-in paid extractor: `uv add "pinakes[pdf,claude]"`, then `--extract=claude-vision` ([STATUS](STATUS.md)) |
-| `no extractor for .pdf` | `[pdf]` extra missing | `uv add "pinakes[pdf]"` |
+| `the pypdfium2 extractor is not installed` | `[pdf]` extra missing | `uv add "pinakes[pdf]"` |
 | Queries refuse to run, naming a model mismatch | Embedding model changed since the index was built | `pnk sync --rebuild` — free |
 | `pnk doctor` reports `WARN sync completeness` | A first sync was interrupted before it finished, so `meta` carries no embedding identity yet | `pnk sync`. It resumes incrementally and keeps every embedding already written; **do not** run `--rebuild`, which would discard them |
 | Index refuses to open, naming `schema_version` | The index was built by a Pinakes with a different schema. `3` is current; every index built before the graph release is a `2` or lower | `pnk sync --rebuild`. There are no migrations, by design |
