@@ -581,6 +581,11 @@ def header(
             "max_tokens": manifest.chunking.max_tokens,
             "overlap": manifest.chunking.overlap,
             "headings": manifest.chunking.headings,
+            # `metadata` is the one key in this block two legs of the injection experiment are
+            # *meant* to differ on, which is exactly why it has to be recorded: a comparison
+            # excepts it by name and refuses on any other difference here. An artifact that did
+            # not carry it could not tell an injected leg from an uninjected one on inspection.
+            "metadata": manifest.chunking.metadata,
         },
         "embedding": {
             "provider": manifest.embedding.provider,

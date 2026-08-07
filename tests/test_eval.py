@@ -1570,4 +1570,8 @@ def test_the_artifact_header_records_the_chunking_a_leg_was_produced_under(demo:
         "max_tokens": manifest.chunking.max_tokens,
         "overlap": manifest.chunking.overlap,
         "headings": manifest.chunking.headings,
+        # The injection experiment's own key. Two legs differ on exactly this one and must be
+        # identical everywhere else in the block, so an artifact that did not record it could not
+        # tell an injected leg from an uninjected one on inspection.
+        "metadata": manifest.chunking.metadata,
     }

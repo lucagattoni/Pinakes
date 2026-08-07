@@ -267,13 +267,20 @@ def set_meta(connection: sqlite3.Connection, values: dict[str, str]) -> None:
     )
 
 
-def chunking_identity(*, headings: str, max_tokens: int, overlap: int) -> dict[str, str]:
+def chunking_identity(
+    *, headings: str, max_tokens: int, overlap: int, metadata: str
+) -> dict[str, str]:
     """The `[chunking]` settings an index was built under, as `meta` keys.
 
     Recorded because an incremental sync re-chunks a document only when *the document* changed, so
     a manifest-only edit leaves every content hash intact, reports `unchanged`, and does nothing —
     measured 20260805 on `headings`, and true of `max_tokens` and `overlap` since v0.1. Without
     this, the tool cannot tell the user what it just failed to do.
+
+    `metadata` is here for a sharper version of the same reason: it changes what is *embedded*
+    rather than what is chunked, so flipping it leaves every chunk's text, hash and offsets
+    identical and an incremental sync has nothing to notice at all. Without this key the user
+    searches uninjected vectors with every command reporting success.
 
     Deliberately plain values rather than a hash: the point is to name *which* key moved and to
     what, and a fingerprint can only say "something".
@@ -282,6 +289,7 @@ def chunking_identity(*, headings: str, max_tokens: int, overlap: int) -> dict[s
         "chunking_headings": headings,
         "chunking_max_tokens": str(max_tokens),
         "chunking_overlap": str(overlap),
+        "chunking_metadata": metadata,
     }
 
 

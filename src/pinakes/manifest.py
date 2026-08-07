@@ -70,6 +70,29 @@ than *"predates the feature"*. **Deliberately not stamped into the template**, f
 `adjacent_k` carries below: `_toml.py` hard-errors on an unknown key, so a manifest holding this one
 cannot be read at all by a Pinakes built before it existed.
 """
+CHUNK_METADATA = ("off", "prefix")
+"""`[chunking] metadata` — whether `title > heading path` is prepended to the **embedded** text.
+
+`"prefix"` embeds `chunk.embedding_text` instead of `chunk.text`; `chunks.text`, `char_start` and
+`char_end` are untouched, so what `search` returns and what the offsets index into do not move.
+
+**In `[chunking]` rather than `[retrieval]`, decided 20260806.** The key changes what is *embedded
+and indexed*, so it is a property of the build. The index records both build sections —
+`[embedding]` through the fingerprint `search` checks on every query, and `[chunking]` through
+`store.chunking_identity`, whose drift `pnk sync` and `pnk doctor` report. `[retrieval]` is the
+section nothing in the index records, so the same flip there would be **silent**: the user would
+search uninjected vectors with every command reporting success.
+
+**Off by default and deliberately not stamped into the template**, for the reason `headings`
+carries above: `_toml.py` hard-errors on an unknown key, so a manifest holding this one cannot be
+read at all by a Pinakes built before it existed. Turning it on with the default `max_tokens` is
+what `chunk.assert_prefix_fits` refuses — the prefix has to be reserved for, or it is silently
+truncated off the longest chunks (`plans/20260805_1721-metadata-as-retrieval-context.md` §2,
+finding 2).
+
+**Enumerated rather than a boolean**, for the reason `headings` is: the prefix *form* is a decision
+this experiment has already reopened once, and a boolean cannot absorb a second form.
+"""
 ON_EXCEED = ("abort", "partial")
 EXTRACTION_BACKEND_DEFAULT = "pypdfium2"
 EXTRACTION_MODEL_DEFAULT = "claude-opus-5"
@@ -112,6 +135,7 @@ class ChunkingSection:
     max_tokens: int
     overlap: int
     headings: str
+    metadata: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -625,10 +649,13 @@ def _extraction(root_table: Table, path: Path) -> ExtractionSection:
 def _chunking(root_table: Table, path: Path) -> ChunkingSection:
     table = _optional_table(root_table, "chunking")
     if table is None:
-        return ChunkingSection(strategy="structural", max_tokens=510, overlap=64, headings="none")
+        return ChunkingSection(
+            strategy="structural", max_tokens=510, overlap=64, headings="none", metadata="off"
+        )
     section = ChunkingSection(
         strategy=table.choice("strategy", CHUNK_STRATEGIES, default="structural"),
         headings=table.choice("headings", HEADING_GRAMMARS, default="none"),
+        metadata=table.choice("metadata", CHUNK_METADATA, default="off"),
         max_tokens=table.integer("max_tokens", default=510, minimum=1),
         overlap=table.integer("overlap", default=64, minimum=0),
     )

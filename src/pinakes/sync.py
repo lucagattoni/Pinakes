@@ -40,7 +40,9 @@ from pinakes import linkscan
 from pinakes.chunk import (
     PDF_SUFFIXES,
     assert_chunkable,
+    assert_prefix_fits,
     chunk_document,
+    embedding_text,
     first_h1,
     source_type,
 )
@@ -994,6 +996,7 @@ def _run(
                         headings=manifest.chunking.headings,
                         max_tokens=manifest.chunking.max_tokens,
                         overlap=manifest.chunking.overlap,
+                        metadata=manifest.chunking.metadata,
                     ),
                 ).items()
             )
@@ -1066,6 +1069,7 @@ def _run(
                         headings=manifest.chunking.headings,
                         max_tokens=manifest.chunking.max_tokens,
                         overlap=manifest.chunking.overlap,
+                        metadata=manifest.chunking.metadata,
                     )
                     if chunked_from_empty
                     else {}
@@ -1969,6 +1973,29 @@ def _index_document(
         page_spans=page_spans,
     )
 
+    # One title for both the row below and the prefix above it. Read once rather than twice so the
+    # string injected into a document's vectors is by construction the string the index shows for
+    # that document — two reads of the same field are two chances to inject something the user
+    # cannot see.
+    title = parsed.title if parsed else None
+    inject = manifest.chunking.metadata == "prefix"
+    if inject:
+        # After chunking, because the prefix is built from `heading_path` and its length is not
+        # knowable before the document has been chunked; before embedding, because what it prevents
+        # is a silent truncation *by* the embedder. `assert_chunkable` cannot stand in for it: that
+        # one validates a setting against the model window before anything is read (above), so it
+        # never sees a prefix. Gated on the option, since with injection off nothing is prefixed and
+        # refusing a corpus that is not at risk would make an opt-in feature a breaking change for
+        # every existing KB.
+        assert_prefix_fits(
+            chunks,
+            title=title,
+            path=path,
+            counter=backend,
+            max_tokens=manifest.chunking.max_tokens,
+            model_max_tokens=backend.info().max_seq_length,
+        )
+
     connection.execute(
         "INSERT INTO documents (id, path, content_hash, sidecar_hash, mtime, source_type, title, "
         "metadata, state, extraction_backend, extraction_fingerprint) "
@@ -1992,7 +2019,7 @@ def _index_document(
             ),
             source.stat().st_mtime,
             kind,
-            parsed.title if parsed else None,
+            title,
             store.dumps_metadata(_metadata(parsed)),
             used_backend,
             used_fingerprint,
@@ -2002,7 +2029,17 @@ def _index_document(
 
     chunk_ids = store.replace_chunks(connection, doc_id, [chunk.as_row() for chunk in chunks])
     if chunk_ids:
-        vectors = backend.embed([chunk.text for chunk in chunks])
+        # The injection point, and the only one on the indexing path: what is *embedded* changes,
+        # what is *stored* does not. `replace_chunks` above wrote `chunk.text` with its own
+        # `char_start`/`char_end`, so a chunk's text stays exactly `source[char_start:char_end]` —
+        # the identity `search` returns and citations index into. Reaching the lexical channel is a
+        # schema change and is deliberately not here.
+        embedded = (
+            [embedding_text(chunk, title=title) for chunk in chunks]
+            if inject
+            else [chunk.text for chunk in chunks]
+        )
+        vectors = backend.embed(embedded)
         for chunk_id, vector in zip(chunk_ids, vectors, strict=True):
             store.store_embedding(connection, chunk_id, vector)
 

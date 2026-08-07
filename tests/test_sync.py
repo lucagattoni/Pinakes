@@ -17,6 +17,7 @@ import yaml
 from conftest import pdf_extraction_runnable
 
 from pinakes import store
+from pinakes.chunk import PREFIX_SEPARATOR
 from pinakes.embed import EmbeddingBackend, ModelInfo, Vectors
 from pinakes.errors import DuplicateIdsError, ManifestError
 from pinakes.extract import (
@@ -2043,3 +2044,195 @@ def test_an_existing_sidecars_title_is_never_rewritten(kb: Path) -> None:
     run(kb)
 
     assert _title_of(kb, "rfc9110-notes.md") == "What I Actually Call It"
+
+
+class _RecordingBackend(FakeBackend):
+    """`FakeBackend` that keeps every string it was asked to embed.
+
+    What is *embedded* is the one thing injection changes and the one thing no artifact records:
+    the index stores `chunk.text` either way, so a test reading the database alone cannot tell an
+    injected run from an uninjected one — which is precisely the failure mode the option is
+    designed around."""
+
+    def __init__(self) -> None:
+        self.embedded: list[str] = []
+
+    def embed(self, texts: Sequence[str]) -> Vectors:
+        self.embedded.extend(texts)
+        return super().embed(texts)
+
+
+def run_recording(kb: Path, **options: Any) -> tuple[SyncReport, _RecordingBackend]:
+    backend = _RecordingBackend()
+    report = sync(
+        load(kb),
+        options=SyncOptions(**options),
+        backend_factory=lambda manifest, offline: backend,
+        now="20260725 16:00",
+    )
+    return report, backend
+
+
+def _chunk_rows(kb: Path) -> list[tuple[str, int, int, str | None]]:
+    connection = sqlite3.connect(kb / ".pinakes" / "index.db")
+    try:
+        return [
+            (str(text), int(start), int(end), None if path is None else str(path))
+            for text, start, end, path in connection.execute(
+                "SELECT text, char_start, char_end, heading_path FROM chunks ORDER BY id"
+            )
+        ]
+    finally:
+        connection.close()
+
+
+SECTIONED = """# HTTP Semantics
+
+## Message Forwarding
+
+A first paragraph, long enough that the fixture's forty-token budget cannot hold
+the whole section in one chunk and a continuation chunk has to exist.
+
+A second paragraph under the same heading, which is the chunk the hypothesis is
+about: it carries none of the section's own heading text.
+"""
+
+
+def test_metadata_injection_is_off_by_default_and_embeds_the_chunk_text(kb: Path) -> None:
+    """The default is the whole compatibility story: every KB that predates the key embeds exactly
+    what it embedded before, so no existing index's vectors change meaning under an upgrade."""
+    write(kb, "rfc.md", SECTIONED)
+    _report, backend = run_recording(kb)
+
+    assert backend.embedded == [text for text, _start, _end, _path in _chunk_rows(kb)]
+
+
+def test_metadata_injection_embeds_the_prefix_and_stores_the_text_unchanged(kb: Path) -> None:
+    """The two halves of §2 step 1: the prefix reaches the **embedded** text, and `chunks.text`,
+    `char_start` and `char_end` do not move — a chunk's text stays exactly
+    `source[char_start:char_end]`, which is what `search` returns and what citations index into.
+    Mutating the stored text would reach both channels for free and is refused for that reason."""
+    source = write(kb, "rfc.md", SECTIONED)
+    _set_chunking(kb, metadata='"prefix"')
+    _report, backend = run_recording(kb)
+
+    rows = _chunk_rows(kb)
+    assert len(rows) > 1, "precondition: a section spanning more than one chunk"
+    text_of_source = source.read_text(encoding="utf-8")
+    for (text, start, end, _path), embedded in zip(rows, backend.embedded, strict=True):
+        assert text == text_of_source[start:end], "the byte-identity bound, unchanged"
+        assert embedded.endswith(PREFIX_SEPARATOR + text)
+        assert embedded != text, "something was actually prepended"
+    assert any("Message Forwarding" in embedded for embedded in backend.embedded)
+
+
+def test_the_injected_title_is_the_one_the_index_records(kb: Path) -> None:
+    """One read of `title`, used for both the document row and the prefix. Two reads are two
+    chances to inject a string the user cannot see — and `title` is the user's field, so the
+    hand-edited value is the one that must travel into the vectors.
+
+    Re-synced with `--rebuild` deliberately: a sidecar-only edit is a `RefreshMetadata`, which
+    updates the row without re-embedding, so the assertions below would hold over an empty list
+    and prove nothing. The non-empty check is there to keep them from going vacuous again.
+    """
+    write(kb, "rfc.md", SECTIONED)
+    _set_chunking(kb, metadata='"prefix"')
+    run_recording(kb)
+
+    sidecar = kb / "docs" / f"rfc.md{SIDECAR_SUFFIX}"
+    sidecar.write_text(
+        sidecar.read_text(encoding="utf-8").replace(
+            "title: HTTP Semantics", "title: What I Actually Call It"
+        ),
+        encoding="utf-8",
+    )
+    _report, backend = run_recording(kb, rebuild=True)
+
+    assert index(kb)[0]["title"] == "What I Actually Call It"
+    assert backend.embedded, "precondition: this run actually re-embedded"
+    assert all(embedded.startswith("What I Actually Call It > ") for embedded in backend.embedded)
+
+
+def test_injection_refuses_a_prefix_that_does_not_fit_the_reserve(kb: Path) -> None:
+    """`assert_prefix_fits`, wired in here and dormant until now. Without it the embedder silently
+    truncates — measured 20260806, a 512-token string embedded with an empty `warnings` list — and
+    what it cuts is the tail of the *longest* chunks, exactly the ones a prefix is meant to help.
+    The loss then reads as "the change did nothing", a false negative that looks like a clean
+    result.
+
+    **A per-document failure, not an aborted run** — what every `PinakesError` out of the indexing
+    path already becomes: the transaction rolls back, the document is named in the report and
+    recorded in the index for `pnk doctor`, and one pathological heading path does not cost a
+    195-document corpus its other 194. What the refusal has to guarantee is the narrower thing
+    asserted below: a document whose prefix does not fit is **not indexed truncated**.
+    """
+    write(kb, "rfc.md", SECTIONED)
+    _set_chunking(kb, metadata='"prefix"', max_tokens="508")  # 510 encodable, so 2 left over
+
+    report, backend = run_recording(kb)
+
+    assert [path for path, _error, _remedy in report.failures] == ["docs/rfc.md"]
+    error = report.failures[0][1]
+    assert "prefix" in error and "max_tokens" in error
+    assert backend.embedded == [], "nothing was embedded, so nothing could be truncated"
+    assert _chunk_rows(kb) == []
+
+
+def test_the_refusal_does_not_fire_when_injection_is_off(kb: Path) -> None:
+    """The reserve is only needed by a corpus that is actually prefixed. Refusing one that is not
+    at risk would turn an opt-in feature into a breaking change for every existing KB — the same
+    manifest, the same documents, and a sync that used to work."""
+    write(kb, "rfc.md", SECTIONED)
+    _set_chunking(kb, max_tokens="508")
+
+    report, backend = run_recording(kb)
+    assert report.embedded == 1
+    assert backend.embedded == [text for text, _start, _end, _path in _chunk_rows(kb)]
+
+
+def test_turning_injection_on_is_reported_as_drift_rather_than_silently_ignored(kb: Path) -> None:
+    """The sharpest case of the defect `chunking_identity` exists for. Flipping `metadata` changes
+    no chunk's text, hash or span, so an incremental sync finds every document unchanged and
+    re-embeds nothing: without the recorded key the user would search uninjected vectors with
+    every command reporting success."""
+    write(kb, "rfc.md", SECTIONED)
+    run(kb)
+    _set_chunking(kb, metadata='"prefix"')
+    report = run(kb)
+
+    assert report.embedded == 0, "precondition: nothing re-embedded, which is the whole problem"
+    assert report.chunking_drift == (("chunking_metadata", "off", "prefix"),)
+    assert any("--rebuild" in line for line in report.lines())
+
+
+def test_a_rebuild_applies_the_injection_and_clears_the_drift(kb: Path) -> None:
+    write(kb, "rfc.md", SECTIONED)
+    run(kb)
+    _set_chunking(kb, metadata='"prefix"')
+    _report, backend = run_recording(kb, rebuild=True)
+
+    assert all(PREFIX_SEPARATOR in embedded for embedded in backend.embedded)
+    assert run(kb).chunking_drift == ()
+
+
+def test_a_document_with_no_headings_is_still_prefixed_with_its_title(kb: Path) -> None:
+    """Either part of the prefix alone is a legitimate prefix — and through `sync` the title part
+    is always there. `skeleton()` falls back to the filename stem, so a document can reach the
+    embedder with no `heading_path` but never with no title, and with injection on **every**
+    document is prefixed.
+
+    **Which makes this the plan's finding 5, measured at the sync boundary** (§2 of
+    `plans/20260805_1721-metadata-as-retrieval-context.md`): on an uncurated corpus the injected
+    string is a *filename*, so `rfc9110` enters every chunk of that document — able to lift any
+    question naming it and to dilute every other. It is why the RFC corpus mints published titles
+    before its first sync rather than relying on the fallback, and why `pnk doctor`'s title check
+    (0.14.0) exists to find the corpora that do not.
+    """
+    write(kb, "plain.md", "Body text with no heading at all.\n")
+    _set_chunking(kb, metadata='"prefix"')
+    _report, backend = run_recording(kb)
+
+    rows = _chunk_rows(kb)
+    assert [path for _text, _start, _end, path in rows] == [None], "nothing but the title to say"
+    assert index(kb)[0]["title"] == "plain", "the filename stem, not content"
+    assert backend.embedded == [f"plain{PREFIX_SEPARATOR}{text}" for text, *_rest in rows]

@@ -615,6 +615,7 @@ def _chunking_drift(manifest: Manifest, connection: sqlite3.Connection) -> Check
             headings=manifest.chunking.headings,
             max_tokens=manifest.chunking.max_tokens,
             overlap=manifest.chunking.overlap,
+            metadata=manifest.chunking.metadata,
         ),
     )
     if not drift:

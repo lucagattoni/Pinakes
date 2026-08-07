@@ -390,28 +390,42 @@ def test_chunking_drift_ignores_a_key_the_index_never_recorded() -> None:
     upgrade, for a setting that probably never changed — and would fire forever on a KB nobody
     touched, which is the unclearable-warning failure the heading-coverage check already answers
     for. It is also what keeps a *future* key from firing on today's indexes."""
-    expected = chunking_identity(headings="numbered", max_tokens=510, overlap=64)
+    expected = chunking_identity(headings="numbered", max_tokens=510, overlap=64, metadata="off")
     assert chunking_drift({}, expected) == {}
     assert chunking_drift({"embedding_model": "x"}, expected) == {}
 
 
 def test_chunking_drift_reports_only_what_actually_moved() -> None:
-    built = chunking_identity(headings="none", max_tokens=510, overlap=64)
-    now = chunking_identity(headings="numbered", max_tokens=510, overlap=64)
+    built = chunking_identity(headings="none", max_tokens=510, overlap=64, metadata="off")
+    now = chunking_identity(headings="numbered", max_tokens=510, overlap=64, metadata="off")
     assert chunking_drift(built, now) == {"chunking_headings": ("none", "numbered")}
 
 
 def test_chunking_drift_is_empty_when_nothing_moved() -> None:
-    identity = chunking_identity(headings="numbered", max_tokens=256, overlap=32)
+    identity = chunking_identity(headings="numbered", max_tokens=256, overlap=32, metadata="off")
     assert chunking_drift(identity, identity) == {}
 
 
 def test_chunking_drift_sees_every_key_not_just_headings() -> None:
     """`max_tokens` and `overlap` have had this defect since v0.1 — `headings` is only what made it
     reachable, being the first `[chunking]` key worth flipping on an already-indexed KB."""
-    built = chunking_identity(headings="none", max_tokens=510, overlap=64)
-    now = chunking_identity(headings="none", max_tokens=256, overlap=32)
+    built = chunking_identity(headings="none", max_tokens=510, overlap=64, metadata="off")
+    now = chunking_identity(headings="none", max_tokens=256, overlap=32, metadata="off")
     assert chunking_drift(built, now) == {
         "chunking_max_tokens": ("510", "256"),
         "chunking_overlap": ("64", "32"),
     }
+
+
+def test_chunking_drift_reports_metadata_injection_being_turned_on() -> None:
+    """The key with the least visible effect on the index and the most need to be recorded.
+
+    Flipping `metadata` changes what is *embedded*, not what is chunked: every chunk's text, hash
+    and character span come out identical, so an incremental sync sees no changed document and
+    re-embeds nothing. Without this key in the identity the user turns injection on, `pnk sync`
+    reports `unchanged`, and every subsequent search runs against uninjected vectors with nothing
+    anywhere reporting a problem.
+    """
+    built = chunking_identity(headings="numbered", max_tokens=414, overlap=64, metadata="off")
+    now = chunking_identity(headings="numbered", max_tokens=414, overlap=64, metadata="prefix")
+    assert chunking_drift(built, now) == {"chunking_metadata": ("off", "prefix")}
