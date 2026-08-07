@@ -1570,4 +1570,31 @@ def test_the_artifact_header_records_the_chunking_a_leg_was_produced_under(demo:
         "max_tokens": manifest.chunking.max_tokens,
         "overlap": manifest.chunking.overlap,
         "headings": manifest.chunking.headings,
+        # The injection experiment's own key. Two legs differ on exactly this one and must be
+        # identical everywhere else in the block, so an artifact that did not record it could not
+        # tell an injected leg from an uninjected one on inspection.
+        "metadata": manifest.chunking.metadata,
     }
+
+
+def test_eval_refuses_an_index_the_manifest_no_longer_describes(demo: Path) -> None:
+    """**The artifact labels a leg from the manifest, not from the index.** Every `[chunking]`
+    value in the header — including `metadata`, which is what says whether a leg is the injected
+    one — is read from `pinakes.toml` at eval time. Flipping `metadata` changes no chunk's text,
+    hash or span, so an eval over an *unrebuilt* index yields a byte-for-byte plausible artifact
+    stamped `metadata: "prefix"` over uninjected vectors, and a two-leg comparison accepts the
+    pair. The index does record what built it, so the disagreement is caught here instead."""
+    from pinakes.eval import run
+
+    manifest_path = demo / "pinakes.toml"
+    original = manifest_path.read_text(encoding="utf-8")
+    manifest_path.write_text(
+        original.replace("[chunking]\n", '[chunking]\nmetadata = "prefix"\n', 1), encoding="utf-8"
+    )
+    try:
+        with pytest.raises(EvalError) as caught:
+            run(demo)
+        assert "chunking_metadata off -> prefix" in caught.value.message
+        assert "--rebuild" in caught.value.remedy
+    finally:
+        manifest_path.write_text(original, encoding="utf-8")

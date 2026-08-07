@@ -514,6 +514,30 @@ def run(
     reranker = load_reranker(manifest.rerank) if manifest.retrieval.rerank == "local" else None
     connection = store.connect_ro(manifest.index_path)
     try:
+        # **The header records the manifest, and the manifest is a statement of intent.** Every
+        # `[chunking]` value in the artifact — including `metadata`, which is what identifies an
+        # injected leg — is read from `pinakes.toml` at eval time, never from the index the queries
+        # actually ran against. Flipping `metadata` changes no chunk's text, hash or span, so an
+        # eval over an *unrebuilt* index produces a byte-for-byte plausible artifact stamped
+        # `metadata: "prefix"` over uninjected vectors, and a two-leg comparison accepts the pair.
+        # The index does record what built it, so the disagreement is detectable — here.
+        drift = store.chunking_drift(
+            store.get_meta(connection),
+            store.chunking_identity(
+                headings=manifest.chunking.headings,
+                max_tokens=manifest.chunking.max_tokens,
+                overlap=manifest.chunking.overlap,
+                metadata=manifest.chunking.metadata,
+            ),
+        )
+        if drift:
+            moved = ", ".join(f"{key} {was} -> {now}" for key, (was, now) in sorted(drift.items()))
+            raise EvalError(
+                f"{kb_root}: the index was built under different chunking than the manifest "
+                f"configures ({moved}), so this run would score the index it has while labelling "
+                "the artifact with settings that index was not built under.",
+                remedy="Run `pnk sync --rebuild` and evaluate again.",
+            )
         metrics, outcomes = evaluate(
             connection,
             manifest,
@@ -581,6 +605,11 @@ def header(
             "max_tokens": manifest.chunking.max_tokens,
             "overlap": manifest.chunking.overlap,
             "headings": manifest.chunking.headings,
+            # `metadata` is the one key in this block two legs of the injection experiment are
+            # *meant* to differ on, which is exactly why it has to be recorded: a comparison
+            # excepts it by name and refuses on any other difference here. An artifact that did
+            # not carry it could not tell an injected leg from an uninjected one on inspection.
+            "metadata": manifest.chunking.metadata,
         },
         "embedding": {
             "provider": manifest.embedding.provider,

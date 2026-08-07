@@ -1764,11 +1764,13 @@ def test_heading_coverage_is_full_on_an_all_markdown_kb(kb: Path) -> None:
 def test_a_plain_text_source_type_is_reported_at_zero(kb: Path) -> None:
     """The RFC case, in miniature — and the reason this check exists.
 
-    `chunk.py` routes anything that is not `markdown` to `_plain_blocks`, which sets
-    `heading_path=None` unconditionally, so a `.txt` file cannot carry one **whatever it
-    contains**. This one is written with a heading that looks exactly like an RFC's, to pin that
-    the absence is the code path and not the document: if a future change makes plain text carry
-    heading paths, this test fails and has to be re-decided rather than silently passing.
+    `chunk.py` routes `text` to `_plain_blocks` — which sets `heading_path=None` unconditionally —
+    **unless `[chunking] headings = "numbered"` is set**, which this fixture does not set. So the
+    absence here is the *grammar not being offered*, not a `.txt` file being unable to carry a
+    heading path: that stopped being true in 0.13.0, and the assertions below turn on the
+    difference, since the note has to point at the unset key rather than declare a limit of the
+    tool. This document is written with a heading that looks exactly like an RFC's, so the
+    distinction is load-bearing: the same bytes under `headings = "numbered"` do carry one.
 
     **Two chunks, not one**, and the count is the point: `_plain_blocks` splits on blank lines, so
     the `1.  Introduction` line becomes a chunk *of its own* with no heading path and no body —
@@ -1886,6 +1888,29 @@ def test_chunking_coherence_warns_after_a_manifest_only_edit(kb: Path) -> None:
     status, detail = checks(kb)["chunking coherence"]
     assert status is Status.WARN
     assert "none -> numbered" in detail
+    assert "--rebuild" in _remedy(kb, "chunking coherence")
+
+
+def test_chunking_coherence_warns_when_metadata_injection_was_turned_on(kb: Path) -> None:
+    """`doctor` is the command a user runs to ask exactly this question, and it was the untested
+    half: `manifest.py`'s own docstring promises the flip is reported by `pnk sync` **and**
+    `pnk doctor`, but only the sync side had a test — a `doctor` that read a constant here would
+    report a healthy KB while every search ran against uninjected vectors.
+
+    It is also the key with the least visible effect: flipping it changes no chunk's text, hash or
+    span, so an incremental sync finds nothing changed and re-embeds nothing.
+    """
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    manifest = kb / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            "[chunking]\n", '[chunking]\nmetadata = "prefix"\n', 1
+        ),
+        encoding="utf-8",
+    )
+    status, detail = checks(kb)["chunking coherence"]
+    assert status is Status.WARN
+    assert "chunking_metadata off -> prefix" in detail
     assert "--rebuild" in _remedy(kb, "chunking coherence")
 
 

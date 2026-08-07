@@ -615,6 +615,7 @@ def _chunking_drift(manifest: Manifest, connection: sqlite3.Connection) -> Check
             headings=manifest.chunking.headings,
             max_tokens=manifest.chunking.max_tokens,
             overlap=manifest.chunking.overlap,
+            metadata=manifest.chunking.metadata,
         ),
     )
     if not drift:
@@ -899,9 +900,14 @@ def _heading_coverage(manifest: Manifest, connection: sqlite3.Connection) -> Che
     measured against. A graph result on such a corpus reads as "structure does not help" when what
     it measured is "the structure was never extracted".
 
-    **Zero for a source type is the predicate, not a fitted share.** `chunk.py` runs heading
-    detection for `markdown` only — every other kind goes through `_plain_blocks`, which sets
-    `heading_path=None` unconditionally — so a partial share is an ordinary property of a corpus
+    **Zero for a source type is the predicate, not a fitted share.** `chunk.py` dispatches three
+    ways, not two: `markdown` always gets ATX headings; `text` gets the numbered grammar **when
+    `[chunking] headings = "numbered"` is set** (0.13.0); everything else goes through
+    `_plain_blocks`, which sets `heading_path=None` unconditionally. The grammar is opt-in and
+    defaults to `"none"`, so a `text` corpus at 0% has usually never been *offered* one — which is
+    the distinction the note below draws, and the reason this docstring no longer says detection is
+    "for `markdown` only", a claim 0.13.0 falsified and which contradicted that note twenty lines
+    on. A partial share is an ordinary property of a corpus
     (a document's chunks before its first heading legitimately have none) while a **total** absence
     across a whole source type is the failure. Measured on the committed corpora, both sit at
     **100%** (demo-kb 60/60, partner-kb 55/55) against the RFC corpus's **0%**, so the distribution

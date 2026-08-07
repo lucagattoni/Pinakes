@@ -58,7 +58,7 @@ def test_paths_derive_from_the_root(kb_root: Path) -> None:
 
 def test_omitted_sections_take_the_documented_defaults(write_manifest: WriteManifest) -> None:
     manifest = load(write_manifest(minimal()))
-    assert manifest.chunking == manifest.chunking.__class__("structural", 510, 64, "none")
+    assert manifest.chunking == manifest.chunking.__class__("structural", 510, 64, "none", "off")
     assert manifest.extraction == manifest.extraction.__class__("pypdfium2", "claude-opus-5")
     assert manifest.retrieval.candidates_per_source == 50
     assert manifest.retrieval.rerank == "local"
@@ -367,3 +367,32 @@ def test_chunking_headings_refuses_an_unknown_grammar(write_manifest: WriteManif
     body = minimal(chunking='\n[chunking]\nheadings = "markdown"\n')
     with pytest.raises(ManifestError):
         load(write_manifest(body))
+
+
+def test_chunking_metadata_defaults_to_off(write_manifest: WriteManifest) -> None:
+    """Injection is opt-in, and the default is the whole compatibility story: a manifest written
+    before the key existed embeds exactly what it embedded before, so no existing KB's vectors
+    change meaning under an upgrade."""
+    # Both paths to a `ChunkingSection`: no `[chunking]` table at all, and one that exists but
+    # predates this key. They are separate constructions in `_chunking` and can disagree.
+    assert load(write_manifest(minimal())).chunking.metadata == "off"
+    predating = minimal(chunking="\n[chunking]\nmax_tokens = 400\n")
+    assert load(write_manifest(predating)).chunking.metadata == "off"
+
+
+def test_chunking_metadata_accepts_prefix_and_an_explicit_off(
+    write_manifest: WriteManifest,
+) -> None:
+    for value in ("off", "prefix"):
+        body = minimal(chunking=f'\n[chunking]\nmetadata = "{value}"\n')
+        assert load(write_manifest(body)).chunking.metadata == value
+
+
+def test_chunking_metadata_refuses_an_unknown_form(write_manifest: WriteManifest) -> None:
+    """Enumerated rather than boolean, so the prefix *form* can gain a second value later —
+    which is also why an unknown one has to be a hard error rather than a silently ignored key.
+    `"true"` is the plausible wrong answer: it is what a user who expects a boolean would write."""
+    for value in ("true", "on", "heading_path"):
+        body = minimal(chunking=f'\n[chunking]\nmetadata = "{value}"\n')
+        with pytest.raises(ManifestError):
+            load(write_manifest(body))

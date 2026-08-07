@@ -267,13 +267,20 @@ def set_meta(connection: sqlite3.Connection, values: dict[str, str]) -> None:
     )
 
 
-def chunking_identity(*, headings: str, max_tokens: int, overlap: int) -> dict[str, str]:
+def chunking_identity(
+    *, headings: str, max_tokens: int, overlap: int, metadata: str
+) -> dict[str, str]:
     """The `[chunking]` settings an index was built under, as `meta` keys.
 
     Recorded because an incremental sync re-chunks a document only when *the document* changed, so
     a manifest-only edit leaves every content hash intact, reports `unchanged`, and does nothing —
     measured 20260805 on `headings`, and true of `max_tokens` and `overlap` since v0.1. Without
     this, the tool cannot tell the user what it just failed to do.
+
+    `metadata` is here for a sharper version of the same reason: it changes what is *embedded*
+    rather than what is chunked, so flipping it leaves every chunk's text, hash and offsets
+    identical and an incremental sync has nothing to notice at all. Without this key the user
+    searches uninjected vectors with every command reporting success.
 
     Deliberately plain values rather than a hash: the point is to name *which* key moved and to
     what, and a fingerprint can only say "something".
@@ -282,26 +289,48 @@ def chunking_identity(*, headings: str, max_tokens: int, overlap: int) -> dict[s
         "chunking_headings": headings,
         "chunking_max_tokens": str(max_tokens),
         "chunking_overlap": str(overlap),
+        "chunking_metadata": metadata,
     }
+
+
+ABSENT_MEANS: dict[str, str] = {"chunking_metadata": "off"}
+"""Identity keys whose **absence is known**, not unknown — the exception to `chunking_drift`'s rule.
+
+`chunking_max_tokens` and `chunking_overlap` have been settable since v0.1, so an index that does
+not record them could genuinely have been built under any value: absence there is ignorance, and
+reporting it as drift would demand a rebuild of every KB on upgrade. `chunking_metadata` is not
+like that. **No release that could have written any existing index was able to inject anything** —
+the option arrives with this one — so absence proves the value was `off`.
+
+Reading it as `off` therefore fires only for a user who has explicitly set `metadata = "prefix"`,
+which is exactly the case where a rebuild really is required, and never for anyone left on the
+default. Without it the whole `[chunking]`-over-`[retrieval]` argument in `manifest.CHUNK_METADATA`
+is false for every KB in existence on the day this ships: the flip would be silent, nothing would
+re-embed, and `pnk doctor` would print `OK  chunking coherence: index matches the configured
+chunking` over vectors with no prefix in them.
+"""
 
 
 def chunking_drift(meta: dict[str, str], expected: dict[str, str]) -> dict[str, tuple[str, str]]:
     """`{key: (built_with, configured_now)}` for every key that is **recorded and different**.
 
-    **A key absent from `meta` is unknown, never drifted, and that is the whole compatibility
-    story.** Every index built before this existed has none of these keys; reading absence as a
-    mismatch would demand a full rebuild of every KB on upgrade — a cost nobody agreed to, for a
-    setting that probably never changed. It also keeps the check forward-compatible: a *future*
-    key is absent from today's indexes for the same reason and must not fire either.
+    **A key absent from `meta` is unknown, never drifted — except for the keys in `ABSENT_MEANS`,
+    whose absence is *known*. That is the whole compatibility story.** Every index built before
+    this existed has none of these keys; reading absence as a mismatch would demand a full rebuild
+    of every KB on upgrade — a cost nobody agreed to, for a setting that probably never changed. It
+    also keeps the check forward-compatible: a *future* key is absent from today's indexes for the
+    same reason and must not fire either. `ABSENT_MEANS` is the narrow exception, and it earns its
+    place only where no release could have written a different value.
 
     That is the opposite reading from `search.check_coherence`, and deliberately so. There, a
     partial `meta` means an interrupted sync and must not be waved through. Here, absence carries
     no such signal — nothing is being protected from, only reported on.
     """
+    known = ABSENT_MEANS | meta
     return {
-        key: (meta[key], value)
+        key: (known[key], value)
         for key, value in expected.items()
-        if key in meta and meta[key] != value
+        if key in known and known[key] != value
     }
 
 

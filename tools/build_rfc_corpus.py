@@ -3,11 +3,18 @@ directory nobody else has.
 
 **Why this exists as a script and not as committed fixtures.** This repository is public and its
 rule is that the only KBs in it are synthetic and written for the purpose, never harvested
-(`CLAUDE.md`). So the corpus that produced this project's most useful findings — 300 RFCs, 106 806
-chunks, every `heading_path` empty — lived on one machine and died with it, which is why that
-measurement cannot be re-run today and its verdict is correspondingly hard to revisit. A script is
-the version of it that survives: nothing harvested is committed, and anyone can regenerate the
-corpus from a recorded list.
+(`CLAUDE.md`). So no corpus is committed *here*: a script is the version of one that survives,
+because nothing harvested is committed and anyone can regenerate the documents from a recorded
+list.
+
+**What is re-runnable about the 300-RFC corpus, stated exactly, because this docstring twice said
+it was gone.** That corpus — 300 RFCs, 106 806 chunks, every `heading_path` empty — is public at
+`github.com/lucagattoni/pinakes-corpus-rfc`, documents, sidecars and manifest all committed, so its
+*figures* are re-derivable. What is unavailable is its **index** (`.pinakes/` is gitignored) and the
+unpinned backend revision that built it. ⚠️ Its manifest carries no `[chunking] headings` key and
+the grammar is opt-in at `"none"`, so rebuilding it today still yields zero heading paths unless you
+add the key yourself. (`CHANGELOG.md` carries the superseded "died with it" sentence in a released
+entry and stays as written — a dated record keeps its words.)
 
 **It writes outside the repository by default** (`--out`), and never into `tests/`. A KB built here
 must not become a fixture by accident.
@@ -205,9 +212,17 @@ reserve the two legs can disagree about. Stamping one `max_tokens` makes the chu
 byte-identical by construction, leaving the injected text as the only difference — which is the
 entire requirement.
 
-**What catches a corpus that exceeds it even so: `assert_chunkable`, loudly.** This is measured
-over a band, not proven over every band. Exceeding it must be a refusal naming the value to lower
-`max_tokens` to, never the silent truncation an over-length embedding input gets today."""
+**What catches a corpus that exceeds it even so: `chunk.assert_prefix_fits`, loudly.** This is
+measured over a band, not proven over every band. Exceeding it must be a refusal naming the value
+to lower `max_tokens` to, never the silent truncation an over-length embedding input gets today.
+
+**Not `assert_chunkable`, which cannot and never could** — the claim this paragraph made until 2d.
+That one validates `max_tokens` against the model's window at `sync.py`, *before* anything is
+chunked, so no `heading_path` exists yet and no prefix is knowable there; it is why
+`assert_prefix_fits` was written (2b) and why it runs after chunking and before embedding. It sat
+dormant until 2d wired it into `sync` behind `[chunking] metadata = "prefix"`: the reserve binds
+only a corpus that is actually prefixed, so refusing one that is not at risk would turn an opt-in
+feature into a breaking change for every existing KB."""
 
 CHUNK_MAX_TOKENS = EMBEDDING_WINDOW_TOKENS - SPECIAL_TOKENS - PREFIX_RESERVE_TOKENS
 """What the manifest stamps. The default 510 leaves *zero* headroom against this model, so an

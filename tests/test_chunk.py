@@ -422,10 +422,10 @@ def test_a_genuine_subsection_is_not_confused_with_a_trailing_zero(counter: Toke
 
 # --- The metadata prefix, and the refusal that keeps it out of the model's window ----------------
 #
-# `plans/20260805_1721-metadata-as-retrieval-context.md` § 3, the reserve bullet. Nothing calls
-# `assert_prefix_fits` on the indexing path yet — the manifest option that turns injection on
-# arrives in 2d — so these tests are the only thing exercising it, deliberately: a refusal shipped
-# without a caller and without tests would be a refusal nobody had ever seen fire.
+# `plans/20260805_1721-metadata-as-retrieval-context.md` § 3, the reserve bullet. It shipped in 2b
+# with no caller at all — deliberately, since a refusal nobody has seen fire is a refusal nobody
+# has tested — and 2d wired it into `sync._index_document` behind `[chunking] metadata = "prefix"`.
+# These tests own the refusal itself; `tests/test_sync.py` owns the wiring and the gating.
 
 
 class NewlineCounter:
