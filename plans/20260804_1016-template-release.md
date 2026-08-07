@@ -15,11 +15,34 @@ is the first thing to re-run** if `main` has moved again. Every claim about curr
 or measured with a command, and the command is given so it can be re-run. Do not trust a line of it
 once `main` has moved — re-run the *Baseline* section first.
 
+> ✅ **Baseline re-run 20260807 13:14 against `main` at `71911e2`** — 235 commits and 33 changed
+> source files after `aae76fc`, across seven releases (`v0.10.0` → `v0.16.0`). **The plan survives
+> it, and no increment changes shape.** M1, M2, M3, M5 and M7 hold verbatim; the `_root()` traversal,
+> `pnk doctor`'s exit `1` and F5 all reproduce exactly; the four taken decisions and O-1/O-2 are
+> untouched; T1–T4 are still unblocked.
+>
+> **Four things changed in substance, and each is marked where it lives:**
+>
+> | | What | Where it bites |
+> |---|---|---|
+> | 1 | **`SCHEMA_VERSION` is `3`, not `2`** — the graph release's G3 landed first (`8550dfd`) | **T6 takes `4`.** The collision T6 predicted has resolved, and not this plan's way |
+> | 2 | **Six `notes@1.0` sites in five files, not two** — three of them shared *fixtures* | T1's bump; leaving a fixture at `1.0` fails **silently**, not red |
+> | 3 | **`pnk init` no longer refuses a non-empty directory** (changed 20260805) | Snippet rule 1, and any criterion asserting on that refusal |
+> | 4 | **`notes@1.0` denotes eleven template contents, not six** (ten later commits, not six) | D-2b and T1's seed argument — both get *stronger* |
+>
+> **About thirty `file:line` citations drifted** and are corrected in place; all 86 in this document
+> now resolve. The Baseline table's historical column is kept rather than overwritten, because the
+> drift between its two columns is the evidence for the rule stated just below.
+> `docs/KB-UPDATES.md`'s own four citations are **all** stale too — re-derived under F3 and left for
+> T4, which owns that document.
+
 **The revision's own lesson, kept because it recurs.** The draft written against `aae76fc` asserted
 *"zero keys added, zero values changed"* over the template's whole history. Two commits later
 (`97309d8`, `e3685e1`) that was false, and it was the sentence three increments were built on. A
-measurement in a plan is a measurement **as of a commit**, never a property — M1–M6 below carry the
-commit they were run at for that reason.
+measurement in a plan is a measurement **as of a commit**, never a property — M1–M8 below carry the
+commit they were run at for that reason, and **the 20260807 re-run kept the old column rather than
+overwriting it**: the drift between the two is the evidence for that rule, and deleting it would
+delete the reason the rule exists.
 
 **Four decisions were taken by the user on 20260804 and are folded in below — D-2b (option D),
 D-10 (option B), D-11 (option A), D-12 (option A).** Their entries in *Decisions* are marked
@@ -47,15 +70,22 @@ ls plans/          # every file here carries a YYYYMMDD_HHMM- prefix since 55a87
 
 Then re-run every measurement this plan rests on. They are commands, not assertions:
 
-| # | Run this | What it said **at `d001175`, 20260804** |
-|---|---|---|
-| M1 | `git log --oneline --follow -- src/pinakes/templates/notes/template.toml` | one commit, `873d2e2` (20260725) — `version = "1.0"` has never changed |
-| M2 | `git log --oneline --follow -- src/pinakes/templates/notes/pinakes.toml.j2` | **six** commits: `873d2e2`, `01c60db`, `232e14e`, `49ede26`, `97309d8`, `e3685e1` |
-| M3 | `git diff 873d2e2 HEAD -- src/pinakes/templates/notes/pinakes.toml.j2` | two hunks. `[sources]`: **+4 comment lines**, nothing removed. `[budget]`: **−3/+4**, comments rewritten **and two defaults changed** — `per_operation_eur 0.05 → 0.30` (`97309d8`) and `monthly_eur 5.00 → 30.00` (`e3685e1`). **No key was added or removed; two values changed.** |
-| M4 | `git log --oneline --follow -- src/pinakes/templates/notes/eval/questions.yaml` | two commits: `873d2e2`, `9595370` (G2) |
-| M5 | `grep -n '"\*\*/\*.pdf"' src/pinakes/templates/notes/pinakes.toml.j2` | **one match, `pinakes.toml.j2:11` — inside a comment.** The glob is *not* in `include`; the comment block at `pinakes.toml.j2:11-14` explains why it is left out |
-| M6 | `grep -n 'vector_tier' src/pinakes/sync.py src/pinakes/search.py` | `sync.py:971` writes the literal `"numpy"` into `meta`; `search.py` never reads `vector_tier` at all |
-| M7 | `grep -n '"--kb"' src/pinakes/cli.py` | one hit, `cli.py:74`, inside `_kb_argument` (`cli.py:72-79`, `metavar="PATH"`). The shared KB flag is **`--kb`**; **there is no `--path` flag on any command** — `pnk doctor --path X` dies at argparse with `unrecognized arguments`. `metavar="PATH"` is the trap: `--help` shows `--kb PATH`, which reads as a flag called `--path` at a glance. Run this before writing any snippet in this plan |
+| # | Run this | What it said **at `d001175`, 20260804** | Re-run **20260807 13:14, `main` at `71911e2`** |
+|---|---|---|---|
+| M1 | `git log --oneline --follow -- src/pinakes/templates/notes/template.toml` | one commit, `873d2e2` (20260725) — `version = "1.0"` has never changed | ✅ unchanged — still one commit, still `version = "1.0"` |
+| M2 | `git log --oneline --follow -- src/pinakes/templates/notes/pinakes.toml.j2` | **six** commits: `873d2e2`, `01c60db`, `232e14e`, `49ede26`, `97309d8`, `e3685e1` | ✅ unchanged — the same six, same order |
+| M3 | `git diff 873d2e2 HEAD -- src/pinakes/templates/notes/pinakes.toml.j2` | two hunks. `[sources]`: **+4 comment lines**, nothing removed. `[budget]`: **−3/+4**, comments rewritten **and two defaults changed** — `per_operation_eur 0.05 → 0.30` (`97309d8`) and `monthly_eur 5.00 → 30.00` (`e3685e1`). **No key was added or removed; two values changed.** | ✅ unchanged — both hunks byte-identical, both defaults still the changed values |
+| M4 | `git log --oneline --follow -- src/pinakes/templates/notes/eval/questions.yaml` | two commits: `873d2e2`, `9595370` (G2) | ❌ **now six.** Adds `832cb2f`, `7ddb908`, `1d4d3e6`, `be68f93` — four golden-set review passes since. This is the number F1 and T1's D-2b box both counted from |
+| M5 | `grep -n '"\*\*/\*.pdf"' src/pinakes/templates/notes/pinakes.toml.j2` | **one match, `pinakes.toml.j2:11` — inside a comment.** The glob is *not* in `include`; the comment block at `pinakes.toml.j2:11-14` explains why it is left out | ✅ unchanged — same line, same comment block |
+| M6 | `grep -n 'vector_tier' src/pinakes/sync.py src/pinakes/search.py` | `sync.py:971` writes the literal `"numpy"` into `meta`; `search.py` never reads `vector_tier` at all | ⚠️ **`sync.py:1083`**, same literal. `search.py` still never reads it. Fact intact, line moved |
+| M7 | `grep -n '"--kb"' src/pinakes/cli.py` | one hit, `cli.py:74`, inside `_kb_argument` (`cli.py:72-79`, `metavar="PATH"`). The shared KB flag is **`--kb`**; **there is no `--path` flag on any command** — `pnk doctor --path X` dies at argparse with `unrecognized arguments`. `metavar="PATH"` is the trap: `--help` shows `--kb PATH`, which reads as a flag called `--path` at a glance. Run this before writing any snippet in this plan | ✅ unchanged — all four sub-claims re-verified, including that no `--path` flag exists. **One addition: `pnk init` takes a positional `path`, not `--kb`** (`pnk init <dir>`), because the KB does not exist yet. `pnk init --kb X` dies with `unrecognized arguments` — the same trap from the other side |
+| **M8** | `git log --oneline --follow -- src/pinakes/templates/notes/README.md` | *not measured* — the block had no row for it | **one commit, `873d2e2`; never changed since.** Added 20260807 because **T1 archives `README.md` as a consumed file** and no M-number covered it, so its drift history was an assumption rather than a measurement. Benign today; measure it, do not assume it |
+
+**Union check, which is what F1 and T1 actually need** — `git log --oneline 873d2e2..HEAD -- src/pinakes/templates/notes/`
+returns **ten** commits at `71911e2` (five to `pinakes.toml.j2`, five to `eval/questions.yaml`, none
+to `README.md` or `template.toml`). Run this rather than adding M2 and M4 by hand: the four consumed
+files are what a template version denotes, and only the union counts them without double-counting a
+commit that touched two.
 
 **M3's exact text, so a later reader does not have to re-derive it.** This is the entire drift
 history of the only shipped template, and three increments below rest on it:
@@ -86,23 +116,29 @@ line, a named key's value — never on how many lines a diff has.
 
 **Read these before writing code. Never describe current behaviour from a document.**
 
+> **Every row re-verified 20260807 13:14 against `main` at `71911e2`.** Unlike the Baseline table
+> above, this one is *current state*, so it was rewritten rather than annotated. **Two rows changed
+> in substance** — the index schema version and the `notes@1.0` test pins — and are marked
+> **CHANGED**; eight citations moved by line only and now carry the new numbers. The line numbers
+> are still a snapshot: re-run the Baseline block, not this table, if `main` has moved again.
+
 | Fact | Where |
 |---|---|
 | A template is `name`, `version`, `description` in `template.toml`, plus `pinakes.toml.j2`, `README.md`, `eval/questions.yaml` | `src/pinakes/template.py:24-64`, `src/pinakes/templates/notes/` |
 | `copy_extras` copies a **hardcoded** two-entry list — `README.md`, `eval/questions.yaml` | `src/pinakes/template.py:73-88` |
 | `available()` skips any **top-level** entry of `pinakes.templates` whose name starts with `_`. It never descends into a template directory, so nothing under `templates/notes/` is a candidate either way | `src/pinakes/template.py:49-54` |
-| **`_root()` does no name validation at all**, so a template name may contain path separators and `..`. Measured at `d001175`: `template.describe("notes/../notes")` and `template.describe("../templates/notes")` both **succeed**, and `template.describe("notes/eval")` raises a bare `FileNotFoundError` rather than a `PinakesError`. This is live today and T1's archive makes it reachable — see T1's containment rule | `src/pinakes/template.py:36-46` |
+| **`_root()` does no name validation at all**, so a template name may contain path separators and `..`. Measured at `d001175` **and re-measured 20260807 13:14 at `71911e2` — all three reproduce unchanged**: `template.describe("notes/../notes")` and `template.describe("../templates/notes")` both **succeed** (each returning `TemplateInfo(name='notes', version='1.0', …)`), and `template.describe("notes/eval")` raises a bare `FileNotFoundError` rather than a `PinakesError`. This is live today and T1's archive makes it reachable — see T1's containment rule | `src/pinakes/template.py:36-46` |
 | The KB records only the *reference* `notes@1.0`, never the content | `src/pinakes/template.py:30-33`, `src/pinakes/init.py:57-70` |
-| `pnk doctor` compares the recorded version string against the installed one and warns on mismatch | `src/pinakes/doctor.py:163-184` |
+| `pnk doctor` compares the recorded version string against the installed one and warns on mismatch | `src/pinakes/doctor.py:205-226` *(was `163-184`)* |
 | The manifest is read-only to Pinakes after `init`, stated as a property | `src/pinakes/manifest.py:3-5` |
-| Unknown manifest keys are a hard error; an empty string is an error too | `src/pinakes/_toml.py`, `docs/DESIGN.md:124-127` |
-| `[kb] requires_pinakes` is read in a pre-pass before strict validation. It shipped in **0.6.0**, so a manifest carrying the key is unreadable by any earlier build | `src/pinakes/manifest.py:207-210,237-331`, `docs/STATUS.md:258` |
-| `[retrieval] adjacent_k` is settable but deliberately **not stamped** into the template, because an older Pinakes cannot read it | `src/pinakes/manifest.py:644-651` |
-| `vector_tier` accepts `auto` / `numpy` / `sqlite-vec`, and `docs/MANIFEST.md:135` documents all three as settable | `src/pinakes/manifest.py:48,643`, `docs/MANIFEST.md:135` |
-| Index `SCHEMA_VERSION` is `2`; a mismatch refuses to open and names `pnk sync --rebuild`; **there are no migrations, by design** | `src/pinakes/store.py:4,28,197-206` |
-| **Two** tests hardcode `notes@1.0`: `tests/test_init.py:20` asserts `manifest.kb.template`, `tests/test_init.py:99` asserts `TemplateInfo.reference`. Both move together or the branch lands red | `tests/test_init.py:20,99` |
+| Unknown manifest keys are a hard error; an empty string is an error too | `src/pinakes/_toml.py:196-200`, `docs/DESIGN.md:123-127` |
+| `[kb] requires_pinakes` is read in a pre-pass before strict validation. It shipped in **0.6.0**, so a manifest carrying the key is unreadable by any earlier build | `src/pinakes/manifest.py:18` (the stated rule), `:282-283` (constants), `:287` (`_check_required_version`), `docs/STATUS.md:116` *(was `manifest.py:207-210,237-331`, `STATUS.md:258`)* |
+| `[retrieval] adjacent_k` is settable but deliberately **not stamped** into the template, because an older Pinakes cannot read it. `graph_channel` directly below it is unstamped for the same reason | `src/pinakes/manifest.py:699-706` *(was `644-651`)* |
+| `vector_tier` accepts `auto` / `numpy` / `sqlite-vec`, and `docs/MANIFEST.md` documents all three as settable. **Unlike `adjacent_k`, it *is* stamped**: the `notes` template writes `vector_tier = "auto"` into every KB it creates, so T5 and T6 change a key that already exists in the wild rather than introducing one | `src/pinakes/manifest.py:48` (`VECTOR_TIERS`), `:157` (the field), `:698` (parsed, default `"auto"`), `docs/MANIFEST.md:150` *(was `manifest.py:48,643`, `MANIFEST.md:135`)*. The stamping is in `templates/notes/pinakes.toml.j2` — verified 20260807 by reading a fresh `pnk init` manifest |
+| **CHANGED 20260807.** Index `SCHEMA_VERSION` is **`3`**, not `2`; a mismatch refuses to open and names `pnk sync --rebuild`; **there are no migrations, by design**. Confirmed in a live index built at `71911e2`. Nothing in this plan bumps it, and nothing in it should: T1–T8 touch templates and manifests, never the index schema — **if an increment finds itself needing a bump, that is a signal to stop and re-scope, not a step** | `src/pinakes/store.py:4` (the rule), `:28` (`SCHEMA_VERSION: Final = 3`), `:250-259` (`_check_schema_version`) *(was `:4,28,197-206`, and `2`)* |
+| **CHANGED 20260807 — the row T1 most depends on.** **Six** sites across **five** files hardcode the literal `notes@1.0`, not two: `tests/conftest.py:71` and `tests/test_partner_kb.py:34` and `tests/test_graph_channel.py:104` stamp it into fixture manifests; `tests/test_manifest.py:39` and `tests/test_init.py:23` assert `manifest.kb.template`; `tests/test_init.py:166` asserts `TemplateInfo.reference`. **All six move together with T1's version bump or the branch lands red**, and two of them are shared fixtures, so the blast radius is wider than `test_init.py`. `tests/test_doctor.py:1035,1055-1061` reads the version out of the manifest instead of hardcoding it and **survives a bump** — that is the pattern the six should move toward, and T1 should convert them rather than retype a new literal six times | `tests/conftest.py:71`, `tests/test_partner_kb.py:34`, `tests/test_graph_channel.py:104`, `tests/test_manifest.py:39`, `tests/test_init.py:23,166` *(was “two tests”, `test_init.py:20,99`)* |
 | Core dependencies today: `jinja2`, `mcp`, `numpy`, `python-ulid`, `ruamel.yaml` (`pyproject.toml:21-27`). Extras: `st`, `light`, `pdf`, `claude` (`pyproject.toml:29-33`) | `pyproject.toml:21-27,29-33` |
-| `pnk doctor` **exits 1 on a default `uv sync` of this repo**, because `[st]` is not installed and the template stamps `sentence-transformers` (`init.py:25-26`). Measured at `d001175` on a fresh `pnk init` KB: two `FAIL` lines, exit `1`. **No exit criterion in this plan may assert on `pnk doctor`'s exit code** — assert on the specific line | measured; `.github/workflows/ci.yml:99-102` runs it under the `[light]` matrix leg |
+| `pnk doctor` **exits 1 on a default `uv sync` of this repo**, because `[st]` is not installed and the template stamps `sentence-transformers` (`init.py:25-26`). Measured at `d001175` on a fresh `pnk init` KB: two `FAIL` lines, exit `1`. **Re-measured 20260807 13:14 at `71911e2`: identical** — exit `1`, exactly two `FAIL` lines, both `embedding` and `reranker` naming `sentence-transformers`, every other check `OK` or `WARN`. **No exit criterion in this plan may assert on `pnk doctor`'s exit code** — assert on the specific line | measured; `.github/workflows/ci.yml:99-102` runs it under the `[light]` matrix leg |
 
 ---
 
@@ -112,13 +148,20 @@ These are the reason this plan is not `docs/KB-UPDATES.md` §9 turned into incre
 
 ### F1 — The shipped drift check has never been able to fire
 
-`doctor._template` (`doctor.py:163-184`) warns when a KB's recorded template version differs from the
-installed one. `notes`' version has been `"1.0"` since `873d2e2` while its content changed in **six**
-later commits — five to `pinakes.toml.j2` and one to `eval/questions.yaml` (M1, M2, M4). Every KB
+`doctor._template` (`doctor.py:205-226`) warns when a KB's recorded template version differs from the
+installed one. `notes`' version has been `"1.0"` since `873d2e2` while its content changed in **ten**
+later commits — five to `pinakes.toml.j2` and **five** to `eval/questions.yaml`, none to `README.md`
+or `template.toml` (M1, M2, M4, M8 and the union check). Every KB
 ever created records `notes@1.0`, every installed template *is*
 `notes@1.0`, and the check has returned `Status.OK` on every KB in existence for every version of
 Pinakes. `docs/KB-UPDATES.md` §3 case 3 predicted this before it shipped ("a rule with no gate; it
 already lapsed before shipping") and nothing has closed it since.
+
+> **The count was `six` until 20260807 and is now `ten`** — four golden-set review passes landed in
+> `eval/questions.yaml` while this plan sat unstarted. **The finding got stronger, not weaker**, and
+> that is the point worth carrying: the drift this check cannot see accumulates on its own, at
+> roughly one commit a week, with no one deciding to cause it. Do not re-derive the number from this
+> paragraph when T1 lands — **re-run the union check**, because it will have moved again.
 
 ### F2 — No template drift has ever added or removed a key; the drift that matters is a comment
 
@@ -163,20 +206,33 @@ and misses the half that is the live gap.
 It says *"I9 adds `**/*.pdf` to the template, which only affects `pnk init`, so every KB created
 before I9 stays PDF-blind permanently."* I9 did not do that, and the current template deliberately
 omits the glob, explaining why in the comment block at `pinakes.toml.j2:11-14` (M5).
-`docs/STATUS.md:69-74` records the reversed decision. So the live gap is real but its content is a
+`docs/STATUS.md:107-114` records the reversed decision *(was `69-74`)*. So the live gap is real but
+its content is a
 **comment**, which is the one thing a key-level mechanism cannot see. This is the same finding as F2
 arriving from the other direction, and it is why §3 case 1 must be rewritten rather than cited.
 
-Other stale references in that document, to fix in the same pass: `doctor.py:135` is now
-`doctor.py:163`; `sidecar.py:35,106` predates L5b's move to `ruamel.yaml`, so the "preserved verbatim
-under `extra`" claim in §4's table needs re-verification against `src/pinakes/sidecar.py` as it is
-now; `_toml.py:184` and `store.py:205` were still correct on 20260803.
+**Other stale references in that document, to fix in the same pass — re-derived 20260807 13:14 at
+`71911e2`, because the list written on 20260804 has itself gone stale.** All four of
+`docs/KB-UPDATES.md`'s code citations now point at unrelated lines; **none is correct today**:
+
+| `docs/KB-UPDATES.md` cites | Where, and for what | Correct at `71911e2` |
+|---|---|---|
+| `store.py:205` | §1 table row 1 and §4's table — the `schema_version` refusal | **`store.py:250-259`** (`_check_schema_version`; the `found != str(SCHEMA_VERSION)` comparison is `:258`) |
+| `doctor.py:135` | §3 finding 3 — `doctor._template`'s version-string comparison | **`doctor.py:205-226`** |
+| `sidecar.py:35,106` | §4's table — *"preserved verbatim under `extra`"* | **`sidecar.py:54`** (the rule, stated), **`:304`** (the `extra` comprehension), **`:322`** (where it is carried onto the record) |
+| `_toml.py:184` | §4's table — the manifest's unknown-key hard error | **`_toml.py:196-200`** |
+
+The 20260804 note said *"`_toml.py:184` and `store.py:205` were still correct on 20260803"*. They
+were, and they are not now. **That is the finding, not an aside**: a citation list in a document
+nobody is editing decays at the same rate as the code around it. **T4 should re-derive these four
+rather than copy this table**, which will itself be stale by the time T4 runs. **Fix them in
+`docs/KB-UPDATES.md`, not here** — this plan records what T4 owes; it does not do it.
 
 ### F4 — `pnk upgrade` cannot do what its name says, because the old template is not shipped
 
-`docs/DESIGN.md:625-627`, `docs/CLI.md:406` and `docs/KB-UPDATES.md` §5 all describe `pnk upgrade` as
+`docs/DESIGN.md:707-708`, `docs/CLI.md:473` and `docs/KB-UPDATES.md` §5 all describe `pnk upgrade` as
 diffing *"the KB's recorded template version against the installed one."* The wheel ships exactly one
-copy of each template — the current one (`pyproject.toml:65`, `template.py:36-46`). At runtime,
+copy of each template — the current one (`pyproject.toml:62-66`, `template.py:36-46`). At runtime,
 `notes@1.0`'s content does not exist. The recorded reference is a string.
 
 What is implementable without new machinery is a different operation: diff the KB's **current
@@ -186,10 +242,17 @@ this project refuses everywhere else. **Decision D-2** resolves it.
 
 ### F5 — `vector_tier = "sqlite-vec"` is accepted today and silently does nothing
 
-`manifest.py:643` validates it against `VECTOR_TIERS`; `sync.py:971` then writes the literal
+`manifest.py:698` validates it against `VECTOR_TIERS`; `sync.py:1083` then writes the literal
 `"numpy"` into `meta` regardless; `search.py` never reads the field (M6). A user who sets
 `sqlite-vec` gets the NumPy tier, an index whose `meta` says `numpy`, and no message.
-`docs/MANIFEST.md:135` documents that only the NumPy tier is built, so this is disclosed rather than
+
+> ✅ **Re-measured end to end 20260807 13:14 at `71911e2` — F5 reproduces exactly.** A fresh
+> `pnk init` KB with `vector_tier = "sqlite-vec"` loads without complaint, `pnk sync` succeeds
+> (`1 indexed`), the index's `meta` records `vector_tier = numpy`, and `pnk search` returns results.
+> **`pnk doctor` says nothing about it either** — its output contains no line matching `vector`
+> or `tier`. So the silence is on all four surfaces, not the three the finding names.
+
+`docs/MANIFEST.md:150` documents that only the NumPy tier is built, so this is disclosed rather than
 hidden — but a manifest whose validator accepts a value that changes nothing sits badly beside
 `docs/DESIGN.md:124-127`, where an unknown key is a hard error and an empty string is an error rather
 than a request for the default. **Decision D-4.**
@@ -203,7 +266,7 @@ entirely.
 
 **`CLAUDE.md`:** *"Index schema changes bump `schema_version` and require a rebuild. Never write a
 migration."*
-**`docs/CLI.md:406`:** *"`pnk upgrade` … diffs a KB's template version against the installed one and
+**`docs/CLI.md:473`:** *"`pnk upgrade` … diffs a KB's template version against the installed one and
 **prints** a migration — never applies one."*
 
 | | `CLAUDE.md`'s invariant | `pnk upgrade` |
@@ -212,7 +275,7 @@ migration."*
 | Ownership | derived state, disposable | committed, hand-edited, the user's |
 | Remedy on drift | `pnk sync --rebuild` — free, lossless, deterministic | none exists; that is the whole problem (`docs/KB-UPDATES.md` §1–§2, axis 4) |
 | Why no migration code | it would be pure liability against a free rebuild | not applicable — there is nothing to rebuild from |
-| Enforced by | `store.py:197-206` | nothing yet |
+| Enforced by | `store.py:250-259` | nothing yet |
 
 **They are different subjects and neither constrains the other.** `pnk upgrade` may never touch
 `.pinakes/`, and this plan's increments do not; the index invariant is untouched by all of it.
@@ -220,8 +283,8 @@ Conversely, `pnk upgrade` writing to `pinakes.toml` is not "a migration" in `CLA
 
 **The real contradiction is internal to the docs, and it is `docs/CLI.md` against the other two:**
 
-* `docs/CLI.md:406` — "**never applies one**" (absolute).
-* `docs/DESIGN.md:625-627` — "It never applies changes **automatically**" (permits an explicit opt-in).
+* `docs/CLI.md:473` — "**never applies one**" (absolute).
+* `docs/DESIGN.md:707-708` — "It never applies changes **automatically**" (permits an explicit opt-in).
 * `docs/KB-UPDATES.md` §5 — "**with `--apply`**, write the additive changes into `pinakes.toml`".
 
 Two of three permit an opt-in write; `docs/CLI.md`'s one-line planned-surface row is the outlier.
@@ -310,7 +373,8 @@ the accepted cost, not an oversight.
 > against a **synthetic** two-version template because this decision makes it unreachable from
 > `notes`.
 >
-> **Why.** `1.0` denotes six different template contents (M1, M2, M4); any seed is a guess for five
+> **Why.** `1.0` denotes **eleven** different template contents (M1, M2, M4, M8 — *six* when this
+> was written on 20260804, re-counted 20260807); any seed is a guess for ten
 > of them, and the wrong guess for every KB created since `01c60db` — where `--apply` would
 > re-insert lines already present and duplicate `per_operation_eur` and `monthly_eur`, a TOML
 > duplicate-key error landing every such run in the rollback path. The accepted cost is stated and
@@ -319,9 +383,12 @@ the accepted cost, not an oversight.
 
 **This is the finding that most changes T1, and the draft had it backwards.** `template.toml`'s
 `version = "1.0"` has never changed (M1) while `pinakes.toml.j2` changed in five later commits (M2)
-and `eval/questions.yaml` in one (M4). **`notes@1.0` therefore denotes six different template
-contents**, and every one of them shipped *as* `1.0`. A KB created today records `notes@1.0` with
-today's content — verified at `d001175`:
+and `eval/questions.yaml` in **five** (M4); `README.md` in none (M8). **`notes@1.0` therefore denotes
+eleven different template contents** — the initial one plus ten changes — and every one of them
+shipped *as* `1.0`. **The number was six on 20260804 and is eleven on 20260807**, which is the
+decision's own argument arriving on schedule: the ambiguity this seed would have to guess through
+grows without anybody choosing to grow it. A KB created today records `notes@1.0` with
+today's content — verified at `d001175`, and the count re-run at `71911e2`:
 
 ```
 $ pnk init /tmp/xkb && pnk doctor --kb /tmp/xkb
@@ -368,7 +435,7 @@ re-litigate it.
 
 | Option | Pros | Cons |
 |---|---|---|
-| **A. Refuse at parse time, naming `numpy`/`auto`** ⭐ | Matches the manifest's own posture — an unknown key and an empty string are both hard errors precisely so a user is never left believing they configured something. Costs one entry in `VECTOR_TIERS` and its restoration in T6. | A behaviour change for anyone who set it: **their KB stops loading entirely** — every command, including `pnk search`, not just the one that would have used the tier. `docs/MANIFEST.md:135` currently documents `sqlite-vec` as a settable value, so this breaks a *documented* config contract, not only an accidental one. Its release type is settled — **D-12, taken 20260804: a PATCH with the break stated** — so choosing A commits to shipping a config-contract break in a PATCH, deliberately and in the CHANGELOG's own words. |
+| **A. Refuse at parse time, naming `numpy`/`auto`** ⭐ | Matches the manifest's own posture — an unknown key and an empty string are both hard errors precisely so a user is never left believing they configured something. Costs one entry in `VECTOR_TIERS` and its restoration in T6. | A behaviour change for anyone who set it: **their KB stops loading entirely** — every command, including `pnk search`, not just the one that would have used the tier. `docs/MANIFEST.md:150` currently documents `sqlite-vec` as a settable value, so this breaks a *documented* config contract, not only an accidental one. Its release type is settled — **D-12, taken 20260804: a PATCH with the break stated** — so choosing A commits to shipping a config-contract break in a PATCH, deliberately and in the CHANGELOG's own words. |
 | **B. Accept and warn on every command** | Nothing breaks. | A warning on a value that cannot be honoured is noise until it is honoured, and there is no mechanism to remove it on time. |
 | **C. Leave it** | Zero work. | A validator that accepts a value it ignores is the defect class this project spends review passes hunting. |
 | **D. WARN in one release, refuse in the next** — accept `sqlite-vec` with a deprecation warning, then apply A | Nobody's KB stops loading without having first been told, in the tool, that it would. Turns a config-contract break into a deprecation, which is the shape a documented value deserves. | Two releases instead of one, and the second is easy to forget — the same rule-without-a-gate shape as F1 unless the removal is written into a plan at the moment the warning ships. B's objection applies to the interim release: a warning on a value that changes nothing is noise. **The warning may not name the release that will refuse it** — `CLAUDE.md`'s unbuilt-work rule forbids a version number for unbuilt work *in an error message* by name — so it points at `docs/STATUS.md` instead, which is a weaker signal than the option's pro implies. |
@@ -377,7 +444,7 @@ re-litigate it.
 on the grounds that nobody can be harmed without having set a value that never did anything, and
 that `plans/20260731_2128-source-walk-containment.md` set the precedent for hard-erroring a manifest that
 previously loaded. **D is the defensible alternative** and the planner should take it if the
-`docs/MANIFEST.md:135` documentation is judged to be a real promise rather than a disclosure.
+`docs/MANIFEST.md:150` documentation is judged to be a real promise rather than a disclosure.
 
 **D-12 (taken 20260804) does not decide this.** It fixes the *type* of whichever increment refuses
 the value — a PATCH with the break stated — and that is true under A (T5 refuses) and under D (the
@@ -403,7 +470,7 @@ exists — a backup written after the change would satisfy the weaker check and 
 
 | Option | Pros | Cons |
 |---|---|---|
-| **A. No — leave it absent** (today's behaviour) ⭐ | A new KB stays readable by any Pinakes that can read its keys. `requires_pinakes` is precisely the key an older build cannot read, so stamping it makes the *diagnosis field itself* the thing that breaks the diagnosis on builds before 0.6.0 (`manifest.py:237-331`). | The floor stays a lower bound that nothing ever raises — **and D-11 (taken 20260804) confirms it: `pnk upgrade --apply` recommends the key and never writes it**, so nothing in this plan raises a floor (`docs/KB-UPDATES.md` §8, which assumes otherwise, is one of the corrections T4 proposes). |
+| **A. No — leave it absent** (today's behaviour) ⭐ | A new KB stays readable by any Pinakes that can read its keys. `requires_pinakes` is precisely the key an older build cannot read, so stamping it makes the *diagnosis field itself* the thing that breaks the diagnosis on builds before 0.6.0 (`manifest.py:287`, `_check_required_version`). | The floor stays a lower bound that nothing ever raises — **and D-11 (taken 20260804) confirms it: `pnk upgrade --apply` recommends the key and never writes it**, so nothing in this plan raises a floor (`docs/KB-UPDATES.md` §8, which assumes otherwise, is one of the corrections T4 proposes). |
 | **B. Stamp `">=<current>"`** | Every new KB carries an honest floor from birth. | On any Pinakes < 0.6.0 the KB fails with "unknown key `requires_pinakes`" — a *worse* error than the one the field exists to prevent, and one that fires for KBs whose floor that build would actually meet. |
 
 **Recommendation: A.** Note that this reasoning does not stop at `init`: **whatever writes
@@ -414,7 +481,7 @@ who finds the key written by Pinakes has found a defect, not a feature.
 
 ### D-7 — Does a second template ship in this release?
 
-`docs/DESIGN.md:1080` places the template release at *"Generalisation, once real usage has shaped one
+`docs/DESIGN.md:1164` places the template release at *"Generalisation, once real usage has shaped one
 template well."* No real usage exists yet: the dogfooding KB is `pinakes-kb` in
 `plans/20260801_0749-realism-corpus.md` and is not built.
 
@@ -608,7 +675,7 @@ should not have to cross-reference to know what binds them.
      `_run_free_surfaces` (`tests/free_path_run.py:182-202`), so the fresh-subprocess run actually
      reaches it;
   2. `tests/test_paid_path.py` — add the new module to the surface list the run asserts it reached
-     (`tests/test_paid_path.py:299-314`), which is what stops a run that quietly did nothing from
+     (`tests/test_paid_path.py:298-314`), which is what stops a run that quietly did nothing from
      satisfying every "no paid import" assertion below it.
 
   **T3, T4 and T7 each name these two files in their deliverable lists.** `tools/paid_path_gate.py`
@@ -655,8 +722,11 @@ version's content to exist at runtime (F4), and all three are meaningless while 
    > two-version template.
    >
    > **Never seed `_versions/1.0/` from anything** — not `873d2e2`, not today's files. `notes@1.0`
-   > denotes **six** different template contents (M1, M2, M4), all of which shipped as `1.0`; a
-   > seed is a guess for five of them. For every KB created since `01c60db` the hunks computed
+   > denotes **eleven** different template contents (M1, M2, M4, M8; **six** when this plan was
+   > written on 20260804, re-counted at `71911e2` on 20260807), all of which shipped as `1.0`; a
+   > seed is a guess for ten of them. **Re-run the union check when T1 lands rather than trusting
+   > this number** — it grew by five in three days without anyone deciding to grow it, which is
+   > the decision's own reasoning, not a footnote to it. For every KB created since `01c60db` the hunks computed
    > from a `873d2e2` base are already present in `theirs`, so `--apply` re-inserts them and
    > duplicates `per_operation_eur` and `monthly_eur` — a TOML duplicate-key error landing every
    > such run in the rollback path. D-2b holds the full refutation; this is the executable form.
@@ -742,16 +812,40 @@ version's content to exist at runtime (F4), and all three are meaningless while 
    The content hash's scope is **everything under `templates/<name>/` except `_versions/` and
    `template.toml`** — an *exclude*-list, so a template gaining a new consumed file is covered by
    default. **`README.md` is in scope**, correcting `docs/KB-UPDATES.md` §6, which exempts it:
-   `copy_extras` (`template.py:78`) copies it into every KB, so it is consumed, and exempting it
+   `copy_extras` (`template.py:85` — the literal `("README.md", "eval/questions.yaml")` tuple)
+   copies it into every KB, so it is consumed, and exempting it
    would let the KB's copy drift without a bump — the exact failure the gate exists to prevent.
-5. **Both hardcoded `notes@1.0` assertions move**, not one:
-   `tests/test_init.py:20` (`manifest.kb.template`) and `tests/test_init.py:99`
-   (`TemplateInfo.reference`). Measured at `d001175`:
-   `grep -n 'notes@1.0' tests/test_init.py` → `20:` and `99:`. Bumping one and leaving the other
-   lands the increment red. **Leave both exact.** A version-agnostic assertion
-   (`startswith("notes@")`) would pass under every future bump and is the defect class this project
+5. **All six hardcoded `notes@1.0` sites move**, not two.
+
+   > ⚠️ **CORRECTED 20260807 13:14 at `71911e2`. This item said "both", named two lines in one file,
+   > and gave a `grep` scoped to that file — which is why it read as complete.** The scoped grep is
+   > the defect: `grep -n 'notes@1.0' tests/test_init.py` still returns two lines and still looks
+   > right. **Run it over `tests/`, never over one file.**
+
+   `grep -rn 'notes@1\.0' tests/` at `71911e2` returns **six sites in five files**, in two kinds:
+
+   | Site | Kind |
+   |---|---|
+   | `tests/conftest.py:71` | stamps `template = "notes@1.0"` into a **shared fixture manifest** |
+   | `tests/test_partner_kb.py:34` | same, `partner-kb`'s fixture |
+   | `tests/test_graph_channel.py:104` | same, its own fixture |
+   | `tests/test_manifest.py:39` | asserts `manifest.kb.template` |
+   | `tests/test_init.py:23` | asserts `manifest.kb.template` |
+   | `tests/test_init.py:166` | asserts `TemplateInfo.reference` |
+
+   **The three fixture sites are the ones that make this bigger than a rename.** They are inputs,
+   not assertions: `conftest.py:71` feeds every test taking that fixture, so leaving it at `1.0`
+   after the bump does not fail loudly — it silently tests the *old* reference everywhere, which is
+   the failure this increment exists to catch, reproduced inside its own test suite. Bump all six or
+   the increment is not done.
+
+   **Leave the three assertions exact** — a version-agnostic form (`startswith("notes@")`) would
+   pass under every future bump and is the defect class this project
    hunts: it names "the KB records the template it was stamped from" and is satisfied by "the KB
-   records something beginning with `notes@`".
+   records something beginning with `notes@`". **The three fixtures are the opposite case**: they
+   are inputs to other assertions, so `tests/test_doctor.py:1035,1055-1061` is the model there — it
+   reads the recorded version out of the manifest and rewrites it, and survives a bump untouched.
+   T1 may convert the fixtures to that shape; it must not convert the assertions.
 6. **A template name may not contain a path separator or `..`.** This is not archive hygiene — it is
    a live hole that the archive makes reachable. `_root()` (`template.py:36-46`) joins the name onto
    the package root with no validation; measured at `d001175`:
@@ -809,10 +903,27 @@ to weaken the leg.
 **Four rules every snippet in this plan obeys, each because breaking it produced a criterion that
 passed for the wrong reason:**
 
-1. `pnk init` refuses a non-empty directory (`init.py:97-101`), so every snippet starts with
-   `rm -rf` on its scratch KB, or it fails on the second run.
+1. **Every snippet starts with `rm -rf` on its scratch KB, or it fails on the second run** — but
+   **not for the reason this rule used to give.**
+
+   > ⚠️ **CHANGED 20260807 13:14 at `71911e2`, and this one is a behaviour change, not a moved
+   > line.** This rule said *"`pnk init` refuses a non-empty directory (`init.py:97-101`)"*. It does
+   > not, and has not since **20260805**: `_check_target` (`init.py:119-127`) now carries an
+   > explicit `# **No emptiness test.**` and its own reasoning — the emptiness test refused every
+   > real adoption, because a `.git`, a `README.md` and a `pyproject.toml` are already "not empty".
+   > **What `init` refuses now is narrower**: a directory that already holds `pinakes.toml`
+   > (*"is already a KB"*), a path that exists and is not a directory, and — under `--ci` only — an
+   > existing workflow file. What replaces the emptiness test is that **`init` never overwrites a
+   > file that is already there**; `copy_extras` *adopts* rather than overwrites.
+   >
+   > **The `rm -rf` is still required and the practical rule is unchanged**, because the second run
+   > now fails on *"is already a KB"* rather than on emptiness. **What changes is any snippet or
+   > criterion that asserted on the refusal's message or reached it by putting a stray file in the
+   > directory** — that no longer refuses at all. Five snippets in this plan use a scratch KB; each
+   > must assert on `is already a KB` if it asserts on a refusal.
 2. **Never assert on `pnk doctor`'s exit code.** It is `1` on this repo's default `uv sync` because
-   `[st]` is absent (measured; `tests/free_path_run.py:182-190` makes the same point in its own
+   `[st]` is absent (measured, and re-measured 20260807: exit `1`, two `FAIL` lines;
+   `tests/free_path_run.py:183-205` makes the same point in its own
    docstring). Assert on the specific line: `| grep '^OK   template'`, `| grep '^WARN template'`.
 3. **Never use `grep -c … # 0`** — `grep -c` exits **1** when the count is zero, which aborts the
    block under any `set -e` reading. Use `! grep -q …`.
@@ -856,7 +967,7 @@ grep -qF "template = \"$ref\"" /tmp/t1kb/pinakes.toml
 #  manifest line is `template = "notes@1.0"`, so the grep matches and the guard above is the only
 #  thing that fails — which is exactly what it is for.)
 # A KB that records the old version now warns, which is F1 closing. At T1 this is doctor's EXISTING
-# version-string comparison (doctor.py:163-184); the *cannot compare* wording is T2's and must not
+# version-string comparison (doctor.py:205-226); the *cannot compare* wording is T2's and must not
 # be asserted here:
 sed -i '' 's/^template = .*/template = "notes@1.0"/' /tmp/t1kb/pinakes.toml
 uv run --frozen pnk doctor --kb /tmp/t1kb | grep '^WARN template' | grep -qF 'notes@1.0'
@@ -941,7 +1052,7 @@ builds the variable mapping used for *both* renders, from the KB's own manifest 
 defaults (`init.py:25-26`) for anything the manifest cannot supply.
 
 **Every identity field comes from the manifest, and `{{ template }}` is the one that matters.**
-`init.py:62` passes `template=info.reference` — the *installed* reference — because at `init` time
+`init.py:75,111` passes `template=info.reference` — the *installed* reference — because at `init` time
 the two are the same thing. They are not the same thing here, and the obvious third choice is a
 guaranteed defect: rendering `base` with the recorded reference and `ours` with the installed one
 puts a `[kb] template` hunk in **every** report on **every** KB, which under T4's all-or-nothing
@@ -983,7 +1094,7 @@ own test:
 | Case | Status | Message |
 |---|---|---|
 | recorded version absent from the archive. **Under D-2b (taken) this is `notes@1.0` — every KB in existence — plus the exotic cases (a newer Pinakes wrote the KB; a third-party template)** | `WARN` | `cannot compare: notes@1.0 is not in this build's archive` — never a diff, never a silent OK. **This is the ordinary path, not an edge case, so its remedy is written for a user who did nothing wrong**: it says the recorded version's content cannot be reconstructed, names the manual comparison as the action available now, and says `pnk upgrade` becomes useful from the next template bump onward. A one-word shrug here is the single most-read string this increment ships |
-| template name not installed at all | `WARN` | unchanged from today (`doctor.py:170-176`), with the remedy's "(the template release)" parenthesis removed |
+| template name not installed at all | `WARN` | unchanged from today (`doctor.py:211-217`), with the remedy's "(the template release)" parenthesis removed |
 | versions equal | `OK` | unchanged |
 
 **Tests** — `tests/test_doctor.py`:
@@ -1074,7 +1185,7 @@ from two different contexts and confirm the same test fails. Make the unarchived
 and confirm `test_an_unarchived_recorded_version_says_it_cannot_compare_rather_than_ok` fails.
 Feed `ours` the *installed* reference for `{{ template }}` while `base` keeps the recorded one, and
 confirm `test_the_kb_identity_block_never_produces_a_hunk` fails — this is the mutant that matters,
-because that implementation is the one a reader of `init.py:62` would write. Remove the
+because that implementation is the one a reader of `init.py:75,111` would write. Remove the
 `UndefinedError` mapping and confirm the refusal test fails on the *message*, not on a traceback.
 
 ---
@@ -1137,7 +1248,7 @@ each of which must report a **conflict**:
 * the user reordered tables, so a hunk's context lines exist but not in that order;
 * the user rewrote the region's whitespace or comments — the manifest is comment-dense by design
   (`pinakes.toml.j2`), so this is not exotic;
-* the KB has `[[links.kb]]` entries (`manifest.py:769-803`) appended after `[budget]`, or an
+* the KB has `[[links.kb]]` entries (`manifest.py:828` (`_links`)) appended after `[budget]`, or an
   uncommented `[retrieval.confidence]` table — which lives *inside* the template's own comment region
   (`pinakes.toml.j2:35-41`), so **any hunk touching those lines conflicts for every calibrated KB**.
   Both are near-universal in a real KB and both are fixtures, not thought experiments.
@@ -1257,7 +1368,7 @@ grep -qE '^[1-9][0-9]* passed' /tmp/t3pytest.out   # verified: an empty selectio
 **Free-path coverage — a deliverable, not a note.** `pnk upgrade` is a new CLI entry point, so this
 increment edits **both**: a `main(["upgrade", "--kb", str(root)])` call in
 `tests/free_path_run.py`'s `_run_free_surfaces`, and `pinakes.upgrade` (or whatever the module is
-named) in the surface list at `tests/test_paid_path.py:299-314`. Neither
+named) in the surface list at `tests/test_paid_path.py:298-314`. Neither
 `tools/paid_path_gate.py` nor `.paid-path-allowlist` changes — gates 1 and 2 scan `src/` wholesale.
 
 **Docs:** `docs/CLI.md` — a `## pnk upgrade` section, the row moves out of *Planned — not built
@@ -1820,7 +1931,7 @@ saying `sqlite-vec` raises a `ManifestError` naming the tier that is built and p
 `docs/STATUS.md`. `manifest.py:48` gains a comment saying the value is restored by the increment that
 builds the tier, so the removal is not read as a decision against it.
 
-**And the second half, which is the reason this is not a one-line change.** `sync.py:971` writes the
+**And the second half, which is the reason this is not a one-line change.** `sync.py:1083` writes the
 literal `"numpy"` into `meta` while `manifest.retrieval.vector_tier` is a parsed field nothing
 consumes. Replace the literal with the tier actually used, resolved by one function
 (`search.resolve_tier(manifest)`) that both `sync` and `search` call, so `meta`'s claim and the code
@@ -1885,11 +1996,14 @@ both sides are the same function. The discriminating comparison is the **injecte
 lives in the test, not here. Nothing in this block can distinguish a working resolver from a deleted
 one; that is a property of having one tier, and it is stated rather than papered over.
 
-**Docs:** `docs/MANIFEST.md:135` — the `vector_tier` row currently reads *"`auto`, `numpy` or
-`sqlite-vec`. **Only the NumPy tier is built**"*, which is what makes this a documented value and
-therefore a real contract break (D-4, D-12); `docs/STATUS.md`; `docs/DESIGN.md:277`'s *"with
+**Docs:** `docs/MANIFEST.md:150` — the `vector_tier` row currently reads *"`auto`, `numpy` or
+`sqlite-vec`. **Only the NumPy tier is built** — `sqlite-vec` is the template release"*, which is
+what makes this a documented value and
+therefore a real contract break (D-4, D-12); `docs/STATUS.md`; `docs/DESIGN.md:336`'s *"with
 `vector_tier = "numpy"` supported as a config override"* sentence, which currently implies three
-settable values; `docs/VERIFICATION.md`; `changelog.d/fixed-*.md`.
+settable values; `docs/VERIFICATION.md`; `changelog.d/fixed-*.md`. **The `MANIFEST.md` row now names
+the template release by name**, so T5 rewriting it must keep that phrasing and not reintroduce a
+version number (`CLAUDE.md`'s unbuilt-work rule).
 
 **Mutation targets.** Restore `"sqlite-vec"` to `VECTOR_TIERS` and confirm the refusal test fails.
 Re-hardcode `"numpy"` in `sync.py` and confirm **part 2** of `::test_the_index_records_the_tier_that_ran`
@@ -1907,7 +2021,7 @@ KB in existence (`docs/STATUS.md` § *Can the graph release's gate be reached?*)
 
 **The precondition — a corpus at which the tier's purpose is visible.**
 
-`docs/DESIGN.md:262-264` places the NumPy tier's ceiling at 50k chunks and 77 MB, measured
+`docs/DESIGN.md:323` places the NumPy tier's ceiling at 50k chunks and 77 MB, measured
 20260725 13:49. `tests/demo-kb` is ~30 documents. **A tier whose entire claim is bounded memory
 above 50k chunks cannot be evaluated on a corpus three orders of magnitude below the threshold.**
 Before T6 starts:
@@ -1926,7 +2040,7 @@ Before T6 starts:
    * **Memory:** the `sqlite-vec` tier's resident memory is **≤ 200 MB** at 100k×384, against
      NumPy's ~154 MB *for the vectors alone*. **This leg is weaker than it looks and the plan says
      so**: NumPy's resident memory at *n* chunks is arithmetic — `n × dim × 4` bytes, which
-     `docs/DESIGN.md:262-264` confirms at 77 MB for 50k×384 — so "materially below NumPy's" is a
+     `docs/DESIGN.md:323` confirms at 77 MB for 50k×384 — so "materially below NumPy's" is a
      restatement of `sqlite-vec` not holding the array in RAM, which is true by construction. The
      number above is therefore an **absolute ceiling on the vec tier**, not a ratio against a
      quantity nobody needs to measure. An earlier draft left this leg to judgement while insisting
@@ -1958,24 +2072,35 @@ If any of these fails, T6 does not start and the outcome is recorded. That is a 
   *"Core dependencies stay light"*). Verify its licence and record it, as `plans/20260801_0749-realism-corpus.md`
   does for the RFC text.
 - A `vec0` virtual table alongside `embeddings`, and `SCHEMA_VERSION` bumped. **Never a migration** —
-  the refusal at `store.py:197-206` and its `pnk sync --rebuild` remedy is the whole mechanism.
+  the refusal at `store.py:250-259` and its `pnk sync --rebuild` remedy is the whole mechanism.
 - `resolve_tier` (from T5) gains the real decision: `auto` chooses by chunk count against the
   documented threshold; `sqlite-vec` is honoured; the extra's absence is a refusal naming
   `uv add "pinakes[vec]"`, resolved through `importlib.util.find_spec` and **never** by importing the
   module — the same rule `is_backend_installed` follows for paid backends (`CLAUDE.md`).
-- `doctor`'s `enable_load_extension` probe (`doctor.py:151-160`) stops being advisory: its remedy
+- `doctor`'s `enable_load_extension` probe (`doctor.py:179,194-197`) stops being advisory: its remedy
   text loses "(the template release)" and becomes a `FAIL` when the manifest asks for the tier and
   the interpreter cannot load extensions.
 - `tools/eval_reproducibility_gate.py` runs under **both** tiers. G1's total ordering on
-  `(documents.path, chunks.ordinal)` (`store.py:263-269`) lives in `load_vectors`, which the vec tier
+  `(documents.path, chunks.ordinal)` (`store.py:383-389` states it, `:405` is the `ORDER BY`) lives
+  in `load_vectors`, which the vec tier
   does not use — so the property G1 established is **not inherited** and must be re-established for
   the new path, with its own row in the reproducibility matrix.
 
-**`SCHEMA_VERSION` collides with the graph release.** `plans/20260729_0256-links-and-graph.md` § G3 says
-`schema_version` → **3**. So does this increment if it lands first. **Neither plan may hardcode the
-number**: whichever lands first takes 3, the other takes 4, and both must read `store.py:28` at
-branch time. `tests/test_store.py:93` (`test_schema_version_is_2_for_i5s_page_and_backend_columns`)
-hardcodes 2 and is the tripwire — it will fail, and that is correct.
+**`SCHEMA_VERSION` — the collision this plan predicted has resolved, and not in this plan's favour.**
+
+> ✅ **RESOLVED 20260807 13:14.** The graph release landed first: `8550dfd` — *"G3: the node model
+> and the edge set (`schema_version` 3)"*. `store.py:28` reads `SCHEMA_VERSION: Final = 3` on `main`
+> at `71911e2`, confirmed in a live index. **So T6 takes 4, not 3.** The tripwire this paragraph
+> named is gone too: `tests/test_store.py:93`
+> (`test_schema_version_is_2_for_i5s_page_and_backend_columns`) no longer exists — it is now
+> `tests/test_store.py:96` (`test_schema_version_is_3_for_g3s_node_and_edge_tables`), and *that* is
+> T6's tripwire. **The rule below still binds and is the reason this was caught**: read
+> `store.py:28` at branch time. Do not hardcode `4` from this note either — a third plan may land
+> between now and T6, and T6 is gated behind T5 anyway.
+
+The original wording, kept because it is the rule and not the number: *neither plan may hardcode the
+number; whichever lands first takes 3, the other takes 4, and both must read `store.py:28` at branch
+time.* The hardcoded-version test is the tripwire — it will fail, and that is correct.
 
 **Tests** (sketch — this increment's full test list is written when its precondition passes, not
 before): `tests/test_store_vec.py::test_the_vec_table_and_the_embeddings_table_agree_on_every_chunk`;
@@ -2000,7 +2125,7 @@ the staged PPR channel's gate acquires a second leg — see `20260804_1016-stage
 **Depends on T1.** Independent of T3/T4.
 
 > ⚠ **`pnk templates` is a command nobody has decided on.** `grep -rn 'pnk templates' docs/ plans/
-> README.md src/` returns nothing at `d001175`, and `docs/CLI.md:398-406`'s *Planned — not built
+> README.md src/` returns nothing at `d001175`, and `docs/CLI.md:465-473`'s *Planned — not built
 > yet* table lists only `pnk ask --deep` and `pnk upgrade`. **This increment invents a CLI surface**,
 > which is the planner's to accept or reject — flag it as new rather than presenting it as scheduled.
 > If it is accepted, `docs/CLI.md`'s planned table gains a row **before** the increment lands, so the
@@ -2029,7 +2154,7 @@ the staged PPR channel's gate acquires a second leg — see `20260804_1016-stage
 3. Each entry is validated to land inside the target KB. **The predicate is not re-derived**, for the
    reason `plans/20260731_2128-source-walk-containment.md` gives: four attempts at it each got it wrong
    differently. But it also cannot simply be *called* — `manifest._check_include_containment`
-   (`manifest.py:479-571`) is module-private, takes a `SourcesSection` and raises a `ManifestError`,
+   (`manifest.py:529` (`_check_include_containment`)) is module-private, takes a `SourcesSection` and raises a `ManifestError`,
    and its glob-specific parts (dropping `**`, the `probe.name == ".."` exemption) do not apply to a
    literal relative path. **So: extract the landing test into one shared helper** —
    `paths.lands_inside(anchor: Path, base: Path, relative: str) -> bool`, implementing
@@ -2096,11 +2221,14 @@ having run none of them. The names that exist are
 `test_a_dot_dot_pattern_that_stays_inside_the_kb_is_accepted`,
 `test_the_escape_is_reported_once_per_pattern_not_once_per_file`,
 `test_a_symlinked_escape_stops_the_walk_rather_than_enumerating_the_tree`
-(`tests/test_sync.py:1507,1602,1715`). **Re-grep them at branch time and print the count.**
+(`tests/test_sync.py:1642,1737,1850` — **all three moved since 20260804**, previously cited as
+`1507,1602,1715`, which now point at unrelated tests). **Re-grep them by name at branch time and
+print the count** — which is exactly why the names are given here and the numbers are not the
+identifier.
 
 **Free-path coverage — a deliverable.** `pnk templates` is a new entry point: add
-`main(["templates"])` to `tests/free_path_run.py`'s `_run_free_surfaces` and the module to the
-surface list at `tests/test_paid_path.py:299-314`.
+`main(["templates"])` to `tests/free_path_run.py`'s `_run_free_surfaces` (`tests/free_path_run.py:183`)
+and the module to the surface list at `tests/test_paid_path.py:298-314`.
 
 **Docs:** `docs/CLI.md` (`## pnk templates`; it takes no `--kb`, so no § Common flags row — say that
 explicitly so a later reader does not "fix" the omission); `docs/STATUS.md`; `docs/GUIDE.md`;
@@ -2116,7 +2244,7 @@ nothing and confirm the historical-two test fails.
 
 ### T8 — A second template 🚫 gated
 
-**Do not write this increment until the gate passes.** Per D-7, and per `docs/DESIGN.md:1080` —
+**Do not write this increment until the gate passes.** Per D-7, and per `docs/DESIGN.md:1164` —
 *"Generalisation, once real usage has shaped one template well."*
 
 **The gate, so that it is a measurement and not a mood.** All three:
