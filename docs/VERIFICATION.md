@@ -22,9 +22,10 @@ test, or write **none** and say why in the same commit.
   make it obvious — and the I9 review still found one row mapped from a name alone, which was
   wrong (the completeness audit's). Treat a row as a strong pointer, not a proof.
 * **The scope began as `plans/20260727_1543-v0.2.md`'s promises**, which is what the table this
-  replaces covered, and has since taken in the links release, G1–G6 and 0.7.1 — see the sections
-  below. **It stopped there: 0.12.0 through 0.15.1 added no rows, and neither did the increments
-  sitting on `main` unreleased.** v0.1's own modules — `test_chunk.py`, `test_ids.py`,
+  replaces covered, and has since taken in the links release, G1–G6, 0.7.1, and 0.12.0's five
+  heading-coverage rows (in *Edge-hub reporting (G6)*, carrying `—` rather than an increment id).
+  **It stopped there: 0.13.0 through 0.15.1 added no rows, and neither did the increments sitting on
+  `main` unreleased.** v0.1's own modules — `test_chunk.py`, `test_ids.py`,
   `test_init.py`, `test_lock.py`, `test_pairing.py`, `test_uri.py`, `test_embed.py` — are not
   represented and are not unowned; they simply predate the table. (`test_eval.py` **is** represented,
   throughout *The golden set, per question (G2)*; it was listed here in error.) Closing either gap is

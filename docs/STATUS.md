@@ -42,23 +42,6 @@
 | Sidecar round-trip | **shipped 0.5.0** — `ruamel.yaml` in round-trip mode at YAML 1.2: comments, quoting, block scalars and blank lines survive a rewrite, and an unknown key's value is no longer reinterpreted | 0.5.0 |
 | `sqlite-vec` tier, template ecosystem | **not built** | the template release |
 
-### On `main`, unreleased — 20260806
-
-Three increments of the metadata-injection experiment have landed since `0.15.1` and **nothing above
-moves because of them**: no command, flag or manifest key reaches a user yet, and `pip install
-pinakes` still gets `0.15.1`. Recorded here because this file is the only place that says what is
-built, and "merged" and "released" are different answers.
-
-| | Landed | What it is |
-|---|---|---|
-| **2a** | 20260806 06:17, `86cd403` | `tools/build_rfc_corpus.py` mints each RFC sidecar with the title published at `rfc<N>.json` and stamps `max_tokens = 414`, reserving 96 tokens of the model's 512-token window. A build tool; no shipped code path changed |
-| **2b** | 20260806 08:33, `fcabc02` | `chunk.metadata_prefix`, `chunk.embedding_text` and `chunk.assert_prefix_fits` — the prefix, the text that would be embedded, and a refusal for a prefix that would not fit. **Dormant**: nothing on the indexing path calls it, so no KB changes behaviour |
-| **2c** | 20260806 11:56, `36f32ce` | A frozen 110-question golden set for the RFC corpus, calibrated, with its `before` leg committed (numbers below). Also user-visible when it releases: `eval/outcomes.json` now records the `[chunking]` settings its run was produced under |
-
-The experiment they serve is
-[`plans/20260805_1721-metadata-as-retrieval-context.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260805_1721-metadata-as-retrieval-context.md);
-2d is next.
-
 ⚠️ **0.3.0 is the first release that can spend money — and it will not, unless you ask it to.**
 Every earlier version had no paid code path at all. The only one now is the `claude-vision`
 extractor, and reaching it takes a deliberate act: `EXTRACTION_BACKEND_DEFAULT` is `pypdfium2`, so
@@ -80,6 +63,23 @@ asserting no paid client reached `sys.modules`. It found two real leaks the day 
 `pnk doctor` and `pnk sync` reported a backend's availability by *loading* it, so a KB configured
 for `claude-vision` imported `anthropic` on commands that cannot spend (fixed in the same
 increment; no version ever shipped able to spend from them).
+
+### On `main`, unreleased — 20260806
+
+Three increments of the metadata-injection experiment have landed since `0.15.1` and **nothing above
+moves because of them**: no command, flag or manifest key reaches a user yet, and `pip install
+pinakes` still gets `0.15.1`. Recorded here because this file is the only place that says what is
+built, and "merged" and "released" are different answers.
+
+| | Landed | What it is |
+|---|---|---|
+| **2a** | 20260806 06:17, `86cd403` | `tools/build_rfc_corpus.py` mints each RFC sidecar with the title published at `rfc<N>.json` and stamps `max_tokens = 414`, reserving 96 tokens of the model's 512-token window. A build tool; no shipped code path changed |
+| **2b** | 20260806 08:33, `fcabc02` | `chunk.metadata_prefix`, `chunk.embedding_text` and `chunk.assert_prefix_fits` — the prefix, the text that would be embedded, and a refusal for a prefix that would not fit. **Dormant**: nothing on the indexing path calls it, so no KB changes behaviour |
+| **2c** | 20260806 11:56, `36f32ce` | A frozen 110-question golden set for the RFC corpus, calibrated, with its `before` leg committed (numbers below). Also user-visible when it releases: `eval/outcomes.json` now records the `[chunking]` settings its run was produced under |
+
+The experiment they serve is
+[`plans/20260805_1721-metadata-as-retrieval-context.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260805_1721-metadata-as-retrieval-context.md);
+2d is next.
 
 ### Caveat: PDFs are off by default (but no longer silently)
 
@@ -323,9 +323,11 @@ commit and here, or the next reader credits a scorer fix to the ranker.
 **Paraphrase is still the only class with real room in it**, and the `multi-hop` class remains close
 to ceiling even after tripling in size — 17 of 18. That is a fact about the corpus, not about the
 questions: thirty short, topically disjoint documents make "retrieve 5 of 30" undemanding. Nothing
-should be tuned against this corpus until it is larger and its documents are less separable —
-which is now the binding constraint on the whole graph release, not a caveat
+should be tuned against this corpus until it is larger and its documents are less separable. **That
+constraint blocked the graph release for three days and was discharged on 20260804**, when the RFC
+corpus cleared the reachability precondition and 0.11.0 shipped
 ([`plans/20260801_0749-realism-corpus.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260801_0749-realism-corpus.md)).
+It binds every *future* retrieval change the same way — see the second golden set below.
 
 The false-confidence figure is fitted and scored on the same 74-question set (8 of them no-answer,
 unchanged by G2's growth — so the calibrated thresholds were re-fitted after it and came back
@@ -423,10 +425,15 @@ hub that decision 13's **2.0 undamped** weight was never designed for
 
 **Two findings about Pinakes, not about the corpus:**
 
-- **`strategy = "structural"` recognised no headings at all** — 0 of 106 806 chunks — because its
-  grammar is Markdown-shaped and RFC section numbering is not. Silent. It costs citations their
-  heading component, and it means `in-section`, `parent` and `child` would derive **zero** edges
-  here.
+- **No heading grammar ran at all** — 0 of 106 806 chunks carried a `heading_path`. Not because a
+  Markdown-shaped grammar failed to match RFC section numbering, which is what was first recorded
+  here: `chunk.py` dispatched on **source type**, and every type but `markdown` took the plain-text
+  path, which sets `heading_path=None` unconditionally. Nothing failed to match because nothing was
+  tried, so tightening a grammar would have fixed nothing. Silent. It cost citations their heading
+  component, and it meant `in-section`, `parent` and `child` derived **zero** edges here.
+  **Fixed in 0.13.0** by `[chunking] headings = "numbered"`, which `tools/build_rfc_corpus.py` now
+  stamps — so a corpus built today carries heading paths and these figures describe the corpus that
+  produced them.
 - **106 806 chunks is 2× past the NumPy vector tier's 50 000 threshold**, and `pnk doctor` says so.
   A 300-document, 20 MB knowledge base reaches the tier ceiling — which is a smaller corpus than
   the ceiling's framing implies.

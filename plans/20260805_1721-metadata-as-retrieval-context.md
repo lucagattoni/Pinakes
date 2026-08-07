@@ -24,10 +24,10 @@ Each was verified against the code, not inferred. File references are `main` at 
 >
 > **The two substantive corrections are this plan's own steps 1 and 3** — *Heading detection is
 > Markdown-only* and *Titles never come from content* — and both rows are rewritten below rather
-> than annotated. **Locate by the symbol named in each row, never by its line.** Six releases and
-> three increments have landed since this table was written, and `chunk.py` was reshaped by 0.13.0
-> and again by 2b: a stale number is worse than no number in a section headed *"do not re-derive
-> these"*.
+> than annotated. **Locate by the symbol named in each row, never by its line.** Five releases
+> (0.12.0–0.15.1) and three increments have landed since this table was written against `3a4fa9e`,
+> and `chunk.py` was reshaped by 0.13.0 and again by 2b: a stale number is worse than no number in a
+> section headed *"do not re-derive these"*.
 
 | Fact | Evidence |
 |---|---|
@@ -110,7 +110,7 @@ only part that could make metadata "fundamental for retrieval" true rather than 
 
 | Corpus | Verdict |
 |---|---|
-| `tests/demo-kb` | **Cannot — power.** 66 answerable questions, **4 misses**, and **56 of 62 hits already at rank 1**. On `recall@k` the entire improvable pool is 4, and the project's own `sign_test(4, 0)` returns **p = 0.0625** — a *perfect* result fails the p < 0.05 bar the graph channel was held to. Second and independent: scoring is **document-level over de-duplicated paths** (`eval.score_one`) and every demo-kb document has a heading-bearing chunk 0, so injecting into chunk 1 changes an outcome only when it lifts that document past a *rival* document. Numbers re-measured 20260806 03:52 against a fresh index; all 74 rows match the committed artifact exactly |
+| `tests/demo-kb` | **Cannot — power.** 66 answerable questions, **4 misses**, and **56 of 62 hits already at rank 1**. On `recall@k` the entire improvable pool is 4, and the project's own `sign_test(4, 0)` returns **p = 0.0625** — a *perfect* result fails the p < 0.05 bar the graph channel was held to. Second and independent: scoring is **document-level over de-duplicated paths** — `eval._run_question` collapses the passages to first-seen document paths and takes `hit_rank` from that list — and every demo-kb document has a heading-bearing chunk 0, so injecting into chunk 1 changes an outcome only when it lifts that document past a *rival* document. Numbers re-measured 20260806 03:52 against a fresh index; all 74 rows match the committed artifact exactly |
 | **The RFC band** — `build_rfc_corpus.py --era modern --count 200`, RFCs 8600-8799, **195 published**, ~43 350 chunks | **Can, since 2c.** Long sections; real `heading_path`s (0.13.0); published titles and a 96-token reserve (2a); and a frozen, blind-authored, calibrated **110-question golden set with an improvable pool of 15** (2c) — `tools/rfc_corpus/questions.yaml`, with the `before` leg at `tools/rfc_corpus/{baseline,outcomes}.json`. **It is not the 300-document corpus that bounded the graph gate** ([STATUS](../docs/STATUS.md#the-realism-corpus-exists-and-it-falsified-a-design-premise--built-20260804-0800)); that one lived on one machine and is gone, which is why `build_rfc_corpus.py` exists |
 
 **The experiment is blocked on neither.** Step 1 shipped in 0.13.0; the golden set was authored,
@@ -407,8 +407,9 @@ only irreversible part of this plan**, and 2d is what puts evidence in front of 
 **Everything 2d needs already exists.** The prefix (`chunk.metadata_prefix`), the text it produces
 (`chunk.embedding_text`), the refusal (`chunk.assert_prefix_fits`), the corpus settings
 (`max_tokens = 414`, published titles, `[retrieval.confidence]` stamped), the frozen questions and
-the committed `before` leg all landed in 2a–2c. What is missing is a switch, two call sites, and one
-eval run that has to happen **before** the switch is flipped.
+the committed `before` leg all landed in 2a–2c. What is missing is a switch, two call sites, two
+eval runs — the first of which has to happen **before** the switch is flipped — and the comparison
+that reads them.
 
 1. **`[chunking] metadata`, enumerated, default `"off"`. DECIDED 20260806 20:41 by the user.**
    Accepted values `"off"` and `"prefix"`, parsed by `table.choice` beside `headings` in
@@ -417,10 +418,12 @@ eval run that has to happen **before** the switch is flipped.
    Pinakes built before it existed.
 
    **Why `[chunking]` and not `[retrieval]`, which §4's row names.** The key changes what is
-   **embedded and indexed**, so it is a property of the build, not of a query — and `[chunking]` is
-   the only section whose settings the index records: `store.chunking_identity` writes them into
-   `meta`, and both `pnk sync` and `doctor._chunking_drift` report a value that moved without a
-   rebuild (0.13.0). In `[retrieval]` the same flip is **silent** — the user searches uninjected
+   **embedded and indexed**, so it is a property of the build, not of a query — and the index
+   already records the two build sections: `[embedding]`'s provider, model, revision and dim
+   (`sync.py`, checked by `search.py` on every query — DESIGN §4.4) and `[chunking]`'s settings
+   through `store.chunking_identity`, whose drift `pnk sync` and `doctor._chunking_drift` both
+   report (0.13.0). **`[retrieval]` is the section nothing in the index records**, so the same flip
+   there is **silent** — the user searches uninjected
    vectors with every command reporting success, which is the failure class this plan keeps
    guarding against. It also reaches `eval.header`'s `chunking` block for free (`5993521`), which is
    what 2f's identity check reads. §4's row settles that injection **is** an option defaulting to
@@ -458,7 +461,15 @@ eval run that has to happen **before** the switch is flipped.
    It costs one query pass and it is the only check that the instrument 2c froze is still reading the
    corpus 2c measured.
 
-6. **One correction 2d owes to code it does not otherwise touch.** `tools/build_rfc_corpus.py`'s
+6. **The injected leg, and the comparison that answers the screen.** Flip `metadata = "prefix"`,
+   `pnk sync --rebuild`, evaluate at `rerank = "none"` — that is the `after` leg. Then compute the
+   pre-registered criterion: **pair the two legs on question `id`, and over the answerable rows
+   count `hit_rank` decreases against increases**, ranking a miss as worse than any hit. Proceed to
+   2e if improvements strictly exceed regressions. **`graph_gate.judge` does not supply this** — it
+   is written around hit-flips within one `kind` — so 2d writes the comparison, and 2f can reuse it
+   with `sign_test` layered on top. Refuse to compare at all if the two headers disagree on
+   anything but the injection key (below).
+7. **One correction 2d owes to code it does not otherwise touch.** `tools/build_rfc_corpus.py`'s
    reserve note says *"what catches a corpus that exceeds it even so: `assert_chunkable`, loudly"*.
    `assert_chunkable` cannot and never could — it validates `max_tokens` against the model window at
    `sync.py:1137`, before anything is chunked, so it never sees a prefix. That is why 2b exists.
@@ -619,10 +630,10 @@ Full records: [`20260805_1313-decisions-init-titles-and-grammar.md`](20260805_13
 | **Screen before the schema bump** | **Yes — a vector-only screen at 2d, pre-registered as a go/no-go on cost** (20260806 05:30). The schema bump is the only irreversible step in this plan, and everything else in 2a–2c is needed either way, so evidence goes in front of it. Rejected: **straight to both channels**, which avoids the multiple-testing problem but rebuilds every KB on an unproven premise; **a strict p < 0.05 screen**, which would stop on a real effect that fusion dilution alone suppressed — the very objection that disqualified vector-only as a gate. Full pre-registration and its anti-circularity cost: §3, 2d |
 | **Reranker configuration** | **Gate on `rerank = "local"`; run the `none` leg as a declared diagnostic; and the 2d screen reads `none`** (20260806 04:40, screen setting 05:40) — a screen avoids false negatives, a gate avoids false positives, so they deliberately differ. Argued with measurements in §2 — the reranker moves 13 of 66 demo-kb ranks, and the `none` leg's error rates are a mirage |
 | **Prefix form** | **`title > heading_path` with section numbers stripped** (20260806 05:05). Measured token costs and the rejected alternatives: §2, the prefix-form table |
-| **Which questions the gate scores** | **All answerable questions** (20260806 04:25). Rejected: **a labelled continuation-chunk subset**, which has more power per question but makes regressions *outside* the subset invisible — clause 1 of the graph gate without clause 2, and exactly the trade `simple-lookup` was created to expose; and **`multi-hop`**, which is the graph gate's class and not this mechanism's. Two facts decided it: scoring is **document-level** (`eval.py:415-425`) while the label is **chunk-level**, so the subset does not isolate the mechanism as cleanly as it appears; and with real titles (2a) the injection acts on **every** chunk, not only continuation chunks. A sign test runs on **discordant** pairs, so non-moving questions cost nothing — the objection that a wider class "dilutes" the signal does not apply. `compare()`'s per-class `by_kind` report is kept alongside as a free guard |
+| **Which questions the gate scores** | **All answerable questions** (20260806 04:25). Rejected: **a labelled continuation-chunk subset**, which has more power per question but makes regressions *outside* the subset invisible — clause 1 of the graph gate without clause 2, and exactly the trade `simple-lookup` was created to expose; and **`multi-hop`**, which is the graph gate's class and not this mechanism's. Two facts decided it: scoring is **document-level** (`eval._run_question`) while the label is **chunk-level**, so the subset does not isolate the mechanism as cleanly as it appears; and with real titles (2a) the injection acts on **every** chunk, not only continuation chunks. A sign test runs on **discordant** pairs, so non-moving questions cost nothing — the objection that a wider class "dilutes" the signal does not apply. `compare()`'s per-class `by_kind` report is kept alongside as a free guard |
 | **The `title` half of the prefix** | **Curate real titles for the corpus first, then inject both** (20260806 04:15). On `.txt` the title is the filename stem (finding 5), so injecting `title` unmodified would inject `rfc9110`. Rejected: **`heading_path` only**, which measures a clean signal but leaves `title` formally unmeasured; **two arms**, which creates a multiple-comparison problem against a fixed p < 0.05 bar and invites picking the better arm afterwards. **What made the chosen option cheap was discovering the titles are published** — the objection to it was the cost and risk of a heuristic, and there is no heuristic |
 | **Is injection a shipped option?** | **Yes — a manifest option defaulting to `off`** (20260806 04:15), on `graph_channel`'s mechanism: enumerated, `table.choice` with a default, never stamped into the template (`manifest.py:658,683`). Rejected: **unconditional**, because the two legs could then only come from two different builds, and comparing across builds attributes every build-induced flip to the injection — the precise failure `graph_gate.check_identity` exists to refuse |
-| **Which table the option lives in** | **`[chunking] metadata`, values `"off"` \| `"prefix"`** (20260806 20:41). It changes what is embedded and indexed, and `[chunking]` is the only section the index records what it was built under (`store.chunking_identity`), so a flip without a rebuild is *reported* rather than silently serving uninjected vectors. Rejected: **`[retrieval] metadata_injection`**, which the row above reads as at a glance — `[retrieval]` is query-time and nothing ties it to the index, so the same flip is silent; and **a boolean**, for §5.1's reason, since the prefix form is a decision this plan has already re-opened once. Full argument and what it obliges: §3, *What 2d builds* |
+| **Which table the option lives in** | **`[chunking] metadata`, values `"off"` \| `"prefix"`** (20260806 20:41). It changes what is embedded and indexed, and the index records both build sections — `[embedding]`'s identity and `[chunking]`'s settings (`store.chunking_identity`) — so a flip without a rebuild is *reported* rather than silently serving uninjected vectors. Rejected: **`[retrieval] metadata_injection`**, which the row above reads as at a glance — `[retrieval]` is query-time and is the one section nothing in the index records, so the same flip is silent; and **a boolean**, for §5.1's reason, since the prefix form is a decision this plan has already re-opened once. Full argument and what it obliges: §3, *What 2d builds* |
 | **Corpus for the experiment** | **The RFC corpus, with a golden set authored first** (20260806 03:55). `tests/demo-kb` was weighed and rejected: it carries the mechanism but cannot license a result — `sign_test(4, 0)` = p = 0.0625 on a 4-question improvable pool (§2). Running it there anyway was offered as a cheap smoke test and not taken |
 | **Which channel is injected** | **Both, at `schema_version` 4** (20260806 03:55). Vector-only and mutating `chunks.text` were both weighed and rejected — see §2 *The experiment*, step 1 |
 | **What licenses "movement"** | **Exact one-sided sign test on rank improvements, p < 0.05** (20260806 03:55) — see §2 *What each outcome licenses* |

@@ -26,12 +26,18 @@ Someone must convert, and conversion touches frozen material. These are the rule
 
 1. **The frozen file is never edited.** The conversion writes a NEW file in the corpus repo,
    committed with a message naming the freezing sha it was derived from. Both files stay committed;
-   a reviewer must be able to diff intent against translation. ⚠️ **Not `eval/questions.yaml`, as
-   this rule originally said — that path is taken.** Since 2c (20260806),
-   `tools/build_rfc_corpus.py` writes the repository's own frozen 110-question golden set to
-   `<out>/eval/questions.yaml` on **every** build, unconditionally, so a conversion put there is
-   silently overwritten by the next `build_rfc_corpus.py` run. Pick a distinct name — e.g.
-   `eval/multihop-questions.converted.yaml` — and pass it explicitly.
+   a reviewer must be able to diff intent against translation.
+
+   ⚠️ **`eval/questions.yaml` is now contested, and this rule said to write there.** Since 2c
+   (20260806), `tools/build_rfc_corpus.py` writes the repository's own frozen 110-question golden
+   set to `<out>/eval/questions.yaml` on **every** build, unconditionally — so a conversion left at
+   that path is silently clobbered by the next build. `tools/reachable_ceiling_probe.py` reads that
+   exact path and has no flag to point elsewhere (`--kb`, `--fake`, `--drop`, `--json` only), so
+   "write it somewhere else" is not executable as the runbook stands. **Do this instead:** commit
+   the conversion under a distinct name — `eval/multihop-questions.converted.yaml` — and copy it
+   over `eval/questions.yaml` immediately before the probe run, never leaving it there. Giving the
+   probe a `--questions` flag would remove the dance and is the better fix if the run is
+   re-scoped; either way, **do not re-run `build_rfc_corpus.py` against that KB mid-run.**
 2. **`id` carries over unchanged.** One frozen question → one converted question. None dropped,
    none added, none merged — the converted file has exactly as many `multi-hop` entries as the
    frozen file, and the count is stated in the run report.

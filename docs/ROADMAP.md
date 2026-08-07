@@ -736,11 +736,15 @@ have fixed nothing. So the verdict is *"the edge kinds that worked did not help 
 *"graph structure does not help"*. The `--drop parent-child` arm the arity decision added could say
 nothing at all here, by construction.
 
-**What would change it**, in the order the project would try them:
+**What would change it**, in the order the project would try them — **the first two have shipped:**
 
-1. **Detect the silence** — a `pnk doctor` check on the share of chunks with an empty `heading_path`.
-   Detection only; extending the grammar is a separate decision.
-2. **Make the three inert kinds derivable** on a corpus that has sections, then re-run the gate.
+1. ✅ **Detect the silence** — `pnk doctor` reports the share of chunks carrying a `heading_path`
+   (0.12.0). Detection only, as scoped; extending the grammar was left a separate decision.
+2. ✅ **Make the three inert kinds derivable** — `[chunking] headings = "numbered"` gives plain text
+   a heading path (0.13.0), and `tools/build_rfc_corpus.py` stamps it, so a corpus rebuilt today has
+   sections. **What remains is re-running the gate against such a corpus**, which nobody has done;
+   the re-entry checklist is
+   [`plans/20260804_1016-graph-remainder-reentry.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1016-graph-remainder-reentry.md).
 3. **A different channel design.** Explicitly *not* a more expensive one — G5's result licenses
    neither PPR nor the `[ner]` extra, and the pre-commitment said so before the number was known.
 

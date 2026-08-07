@@ -23,9 +23,9 @@ The list refills from use, so an empty one means nobody has run Pinakes lately, 
 finished. Note what is **not** here: **both releases in
 [`20260729_0256-links-and-graph.md`](20260729_0256-links-and-graph.md) have shipped** — the links
 release in 0.5.0–0.6.0, the graph release in 0.11.0 — so that plan is closed and nothing here
-unblocks it. What the graph release's own gate established is narrower than it looks, and item 4
-below is why: `expand` ships `off` because it did not earn its default *on a corpus where three of
-the seven edge kinds derived zero edges*.
+unblocks it. What the graph release's own gate established is narrower than it looks, and the
+closed `strategy = "structural"` item below is why: `expand` ships `off` because it did not earn its
+default *on a corpus where three of the seven edge kinds derived zero edges*.
 
 ---
 
