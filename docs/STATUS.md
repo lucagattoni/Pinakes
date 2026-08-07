@@ -120,9 +120,12 @@ in 0.17.0**: `notes` moved to `1.1`, a CI gate keeps its version honest, and `pn
 on every KB recording an older reference. **Measurement followed in T2**: where both versions are
 archived, `pnk doctor` renders them both and reports how many lines separate them — but on a KB
 recording `notes@1.0` it reports `cannot compare`, because that version's content was never
-archived and never will be, so the KB in front of you is not one it can measure. What is still
-missing is the part that closes *this* caveat: nothing shows *which* lines differ, and nothing
-adopts a new default into an existing manifest. Both are template-release work.
+archived and never will be, so the KB in front of you is not one it can measure. **`pnk upgrade`
+followed in T3** — it prints *which* lines differ and says, hunk by hunk, whether each change still
+fits your manifest, writing nothing. On a KB recording `notes@1.0` it says `cannot compare` for the
+same reason `pnk doctor` does, and exits `3`. What is still missing is the last part of this
+caveat: nothing **adopts** a new default into an existing manifest. That is `--apply`, and it is
+template-release work.
 
 ### Caveat: the `[light]` backend needs a manifest edit
 

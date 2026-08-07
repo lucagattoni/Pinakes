@@ -15,9 +15,9 @@ from pinakes.manifest import Manifest
 # derived from COMMANDS: a test that reads the same source it checks would pass even if a command
 # were dropped.
 DESIGN_V01_COMMANDS = frozenset({"init", "sync", "search", "doctor", "install-hooks", "serve"})
-DESIGN_COMMANDS = DESIGN_V01_COMMANDS | frozenset(
-    {"budget", "links", "link"}
-)  # `budget` lands in I6b (v0.2); `links` in L4 and `link` in L6 (the links release)
+# `budget` lands in I6b (v0.2); `links` in L4 and `link` in L6 (the links release); `upgrade` in T3
+# (the template release), declared by docs/DESIGN.md §6.1 rather than §8.
+DESIGN_COMMANDS = DESIGN_V01_COMMANDS | frozenset({"budget", "links", "link", "upgrade"})
 
 
 def test_version_is_set() -> None:
@@ -41,7 +41,18 @@ def test_bare_invocation_prints_help_and_succeeds(capsys: pytest.CaptureFixture[
 
 
 IMPLEMENTED = frozenset(
-    {"sync", "init", "search", "doctor", "install-hooks", "serve", "budget", "links", "link"}
+    {
+        "sync",
+        "init",
+        "search",
+        "doctor",
+        "install-hooks",
+        "serve",
+        "budget",
+        "links",
+        "link",
+        "upgrade",
+    }
 )
 
 

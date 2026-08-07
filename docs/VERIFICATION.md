@@ -808,3 +808,29 @@ keep it — so what is pinned here is mostly *which leg reported*, not merely th
 | `1.0` is never archived (D-2b), and `archived_versions` orders by version, not by string | T1 | `tests/test_template_drift.py::test_archived_versions_lists_exactly_what_is_archived`, `tests/test_template_drift.py::test_archived_versions_sorts_by_version_not_by_string` |
 | `render_archived` renders an archived manifest, and names the version when it is not archived | T1 | `tests/test_template_drift.py::test_render_archived_renders_the_archived_manifest`, `tests/test_template_drift.py::test_render_archived_refuses_a_version_that_is_not_archived` |
 | the content hash covers a file's path as well as its bytes | T1 | `tests/test_template_drift.py::test_the_hash_covers_the_path_as_well_as_the_bytes` |
+
+## `pnk upgrade` — the report, its placement predicate and its exit codes (T3)
+
+Every positive row runs against a **synthetic two-version template**, because D-2b leaves the
+shipped `notes` with one archived version and so with exactly one reachable outcome. The one row
+that runs against `notes` says so.
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| the diff is `base → ours`, so a user's own edit appears in no changed line — on both surfaces | T3 | `tests/test_cli_upgrade.py::test_the_report_never_diffs_the_user_against_the_template`, `tests/test_cli_upgrade.py::test_a_user_edit_the_template_never_touched_appears_nowhere_in_the_output` |
+| a changed value is shown **old and new**, never only the value being moved to | T3 | `tests/test_cli_upgrade.py::test_a_drifted_kb_prints_the_template_diff` |
+| a hunk already present in the manifest is *already applied* — not clean, not conflict | T3 | `tests/test_cli_upgrade.py::test_a_hunk_already_present_in_theirs_is_reported_as_already_applied` |
+| ...and the **order** of the predicate is what makes that true for a pure addition | T3 | `tests/test_cli_upgrade.py::test_a_pure_addition_already_present_is_already_applied_not_clean` |
+| a user-edited region is a conflict, while the untouched hunk still places | T3 | `tests/test_cli_upgrade.py::test_a_user_edited_region_is_reported_as_a_conflict_not_applied` |
+| reordering inside a hunk's own window is a conflict, not a silent success | T3 | `tests/test_cli_upgrade.py::test_a_reordered_manifest_is_a_conflict_not_a_silent_success` |
+| a context matching twice is a conflict — uniqueness is part of the predicate | T3 | `tests/test_cli_upgrade.py::test_a_hunk_whose_context_matches_twice_is_a_conflict` |
+| a calibrated KB, which has uncommented `[retrieval.confidence]`, conflicts on that region | T3 | `tests/test_cli_upgrade.py::test_a_kb_with_an_uncommented_retrieval_confidence_table_conflicts_on_that_region` |
+| `[[links.kb]]` entries and tables the template never stamped do **not** stop a hunk placing | T3 | `tests/test_cli_upgrade.py::test_a_kb_with_links_kb_entries_still_places_unambiguous_hunks`, `tests/test_cli_upgrade.py::test_a_manifest_with_extra_tables_still_places_unambiguous_hunks` |
+| nothing under the KB is written — bytes **and** the path set, over the whole tree | T3 | `tests/test_cli_upgrade.py::test_nothing_under_the_kb_is_written`, `tests/test_cli_upgrade.py::test_a_current_kb_prints_up_to_date_and_writes_nothing` |
+| `--json` reports the same hunks, in the same order, as the human output | T3 | `tests/test_cli_upgrade.py::test_json_and_human_output_report_the_same_hunks` |
+| ...and is still JSON on the path that makes no comparison | T3 | `tests/test_cli_upgrade.py::test_the_json_refusal_is_still_json` |
+| a version bump that leaves the manifest alone says so, rather than printing an empty diff | T3 | `tests/test_cli_upgrade.py::test_a_version_bump_with_no_manifest_change_says_same_manifest` |
+| **`3` means *no baseline* and nothing else** — every other outcome's code is asserted beside it (O-2) | T3 | `tests/test_cli_upgrade.py::test_cannot_compare_exits_three_and_nothing_else_does` |
+| a genuine operational failure still exits `1` (O-2) | T3 | `tests/test_cli_upgrade.py::test_an_operational_failure_still_exits_one` |
+| all four *no baseline* causes are reported rather than raised: an unarchived version, a template not installed, a KB recording none, and an archive this build cannot render | T3 | `tests/test_cli_upgrade.py::test_an_unarchived_recorded_version_refuses_with_a_remedy`, `tests/test_cli_upgrade.py::test_a_template_not_installed_here_cannot_compare`, `tests/test_cli_upgrade.py::test_a_kb_recording_no_template_cannot_compare`, `tests/test_cli_upgrade.py::test_an_archived_version_this_build_cannot_render_cannot_compare` |
+| against the **shipped** template, the only reachable outcome is *cannot compare* — every KB in existence | T3 | `tests/test_cli_upgrade.py::test_the_shipped_template_reaches_the_cannot_compare_path` |

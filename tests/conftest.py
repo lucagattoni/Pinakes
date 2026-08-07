@@ -4,15 +4,19 @@
 the documented example drift apart, these tests are where it shows up.
 """
 
+import importlib
+import itertools
 import os
 import re
-from collections.abc import Callable, Sequence
+import sys
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from importlib.util import find_spec
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from pinakes import template
 from pinakes.embed import ModelInfo, Vectors, register_embedding_backend, register_reranker
 from pinakes.ids import mint_kb_id
 from pinakes.init import init
@@ -212,6 +216,54 @@ def make_fake_kb(tmp_path: Path) -> Callable[..., Path]:
 @pytest.fixture
 def fake_kb(make_fake_kb: Callable[..., Path]) -> Path:
     return make_fake_kb()
+
+
+_SYNTHETIC_PACKAGES = itertools.count()
+
+
+@pytest.fixture
+def synthetic_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Callable[..., str]]:
+    """Build a template with any number of archived versions, in a package of its own.
+
+    A real importable package rather than a monkeypatched `_root`, so `describe`,
+    `archived_versions`, `archived_root` and `render_archived` all run their real
+    `importlib.resources` paths — the ones that have to work from inside a wheel.
+
+    **Shared because the shipped template cannot reach the paths under test.** D-2b leaves `notes`
+    with exactly one archived version, so *every* positive outcome — a diff, a hunk that places, a
+    hunk that conflicts — is unreachable from it and needs a template built for the purpose.
+    `test_doctor.py` needed that first (T2); `test_cli_upgrade.py` needs the same fixture (T3),
+    and a second copy of it would be a second thing to keep true.
+    """
+    package = f"synthetic_templates_{next(_SYNTHETIC_PACKAGES)}"
+    root = tmp_path / package
+    root.mkdir()
+    (root / "__init__.py").write_text("", encoding="utf-8")
+    # `monkeypatch.syspath_prepend` is untyped, and the test suite is checked under pyright strict.
+    sys.path.insert(0, str(tmp_path))
+    monkeypatch.setattr(template, "PACKAGE", package)
+    importlib.invalidate_caches()
+
+    def _make(name: str, *, versions: Mapping[str, str], current: str) -> str:
+        def declaration(version: str) -> str:
+            return f'name = "{name}"\nversion = "{version}"\ndescription = "synthetic"\n'
+
+        directory = root / name
+        directory.mkdir()
+        (directory / "template.toml").write_text(declaration(current), encoding="utf-8")
+        (directory / "pinakes.toml.j2").write_text(versions[current], encoding="utf-8")
+        for version, source in versions.items():
+            archived = directory / template.VERSIONS_DIR / version
+            archived.mkdir(parents=True)
+            (archived / "template.toml").write_text(declaration(version), encoding="utf-8")
+            (archived / "pinakes.toml.j2").write_text(source, encoding="utf-8")
+        return name
+
+    yield _make
+    sys.modules.pop(package, None)
+    sys.path.remove(str(tmp_path))
 
 
 @pytest.fixture

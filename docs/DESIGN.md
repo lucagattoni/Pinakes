@@ -705,14 +705,28 @@ templates/research-papers/
 not implicitly change a KB's blueprint.
 
 `pnk upgrade` **diffs** the KB's recorded template version against the installed one and prints a
-proposed migration. It never applies changes automatically — a template bump that silently re-chunks
-someone's corpus is a data-loss event in slow motion.
+**template diff** — never a *migration*, a word this design reserves for index schema and
+deliberately does not reuse here, because the two obey opposite rules and every reader who has to be
+told they are different has already paid the cost. It never applies changes automatically: a
+template bump that silently re-chunks someone's corpus is a data-loss event in slow motion.
 
-**This is one of four drift axes, and the only one with no mechanism.** An index, an embedding model
+**That comparison needs the old version's *content*, and a manifest records only a reference.** A
+wheel ships one copy of each template — the current one — so for most of this project's life the
+sentence above described something unimplementable: at runtime, the content the recorded reference
+named did not exist. The only diff available without it is *the KB's own manifest against a fresh
+render*, and that cannot tell a template change from a user's deliberate tuning; reporting the
+second as the first is the failure this design refuses everywhere else. **The fix is an archive, not
+a cleverer diff.** A template's released versions are frozen inside the wheel, so both sides of the
+comparison are generated and neither is the user's file — a value they tuned that the template
+renders cancels, and a literal they edited never enters either side. A version whose content was
+never archived is reported as *cannot compare*, rather than diffed from a reconstructed base: the
+reconstruction is what would make the report wrong in the one direction nobody can check.
+
+**This is one of four drift axes, and the last to get a mechanism.** An index, an embedding model
 and a PDF extractor each drift detectably and are remedied by rebuilding derived state, which is
 free. A manifest and a template drift *silently*, and the remedy touches a file the user owns — so
-it cannot borrow the same shape. [KB-UPDATES.md](KB-UPDATES.md) works the problem through and
-records what has been decided; none of it is built.
+it cannot borrow the same shape: what is built reports, and leaves the writing to the user.
+[KB-UPDATES.md](KB-UPDATES.md) works the problem through and records what has been decided.
 
 ### 6.2 Cross-KB links
 

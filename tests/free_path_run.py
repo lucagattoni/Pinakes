@@ -13,8 +13,8 @@ Deliberately *not* named `test_*`: pytest must not collect it. It is a script, r
     python tests/free_path_run.py <modules.json>
 
 The run covers every free surface the design has: `pnk init`, `pnk sync`, `pnk search`, `pnk link`,
-`pnk links`, `pnk budget`, `pnk doctor`, and an MCP handshake — through `cli.main`, so CLI dispatch
-is in the graph too, not only the libraries beneath it.
+`pnk links`, `pnk budget`, `pnk upgrade`, `pnk doctor`, and an MCP handshake — through `cli.main`,
+so CLI dispatch is in the graph too, not only the libraries beneath it.
 
 **Two KBs, and the second is the point.** The first is an ordinary free KB. The second is
 configured for `claude-vision` and gets a `pnk doctor`, because that is the combination where the
@@ -200,6 +200,13 @@ def _run_free_surfaces(root: Path) -> None:
     # accidental paid import, and it is on the free path by definition.
     if main(["budget", "--kb", str(root)]) != 0:
         raise SystemExit(f"free-path run: `pnk budget` failed on {root}")
+    # `pnk upgrade` (T3): two archived templates rendered, the KB's manifest read, nothing written.
+    # **Its exit code IS asserted, unlike `doctor`'s below**, and the difference is not an
+    # inconsistency: this KB was stamped by the `pnk init` above, so the version it records is the
+    # version installed, and `up to date` is the only honest answer. A `3` here would say the
+    # archive did not survive into the environment — never that a real KB had drifted.
+    if main(["upgrade", "--kb", str(root)]) != 0:
+        raise SystemExit(f"free-path run: `pnk upgrade` did not report `up to date` on {root}")
     main(["doctor", "--kb", str(root)])
 
 

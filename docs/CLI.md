@@ -15,6 +15,7 @@ A contract, not an accident:
 | `0` | Success — including a no-op, and including a sync that found a live lock held by this host |
 | `1` | Operational failure — one or more documents failed, a check refused, a lock could not be taken |
 | `2` | Usage error, raised by argument parsing itself — an unknown flag, a missing argument, a value outside a flag's `choices`. An unknown **backend name** is not one of these: it is caught after parsing and exits `1`, like every other `PinakesError` |
+| `3` | **No baseline — [`pnk upgrade`](#pnk-upgrade) and nothing else.** The comparison could not be made, and no action of yours would make it possible: the KB records a template version whose content this build does not ship. Distinct from `1` because nothing is wrong and nothing is yours to fix; distinct from `0` because a script reads `0` as *up to date*. **Every KB created before the version archive gets it, on every run** |
 
 Every error carries a **remedy**, not just a message. If one doesn't, that's a bug worth filing.
 
@@ -22,7 +23,7 @@ Every error carries a **remedy**, not just a message. If one doesn't, that's a b
 
 | Flag | On | Means |
 |---|---|---|
-| `--kb PATH` | `sync`, `search`, `doctor`, `install-hooks`, `budget`, `link`, `links` | KB root. Defaults to the nearest `pinakes.toml`, searching upwards from the cwd — git-style |
+| `--kb PATH` | `sync`, `search`, `doctor`, `install-hooks`, `budget`, `link`, `links`, `upgrade` | KB root. Defaults to the nearest `pinakes.toml`, searching upwards from the cwd — git-style |
 | `--offline` | `sync`, `search`, `serve` | Never reach out for model weights. Fails fast instead of downloading |
 
 ---
@@ -504,6 +505,67 @@ stderr is listing.
 
 ---
 
+## `pnk upgrade`
+
+```
+pnk upgrade [--kb PATH] [--json]
+```
+
+**What your template changed since this KB was stamped, and whether each change still fits your
+manifest.** It writes nothing — not to `pinakes.toml`, not under `.pinakes/`.
+
+Three inputs, and which three is the whole point:
+
+| Name | What it is |
+|---|---|
+| **base** | the **recorded** version's archived manifest template, rendered |
+| **ours** | the **installed** version's, rendered through the *same* context |
+| **theirs** | your `pinakes.toml`, as it is on disk |
+
+The diff printed is `base → ours` — **template against template**, so nothing you wrote appears in
+it as a change. `theirs` is never diffed against anything; each hunk is only asked whether it still
+fits. A value you tuned that the template *renders* (`provider`) is identical on both sides and
+cancels; a literal you edited (`final_k`) never enters either side, because neither side is your
+file. It does appear as unchanged **context** where a hunk happens to cover it — the context lines
+are yours, the `+`/`-` lines are the template's.
+
+Each hunk is then placed against your manifest, and there are three answers:
+
+| Outcome | What it means |
+|---|---|
+| **applies cleanly** | the lines the change expects are in your file, contiguous, in order, at exactly one place |
+| **already applied** | the change is *already* there — you adopted it by hand, or a newer `pnk init` wrote it. Not "clean": a later `--apply` re-inserting it would duplicate a key, which is a TOML error |
+| **conflicts** | anything else — you edited that region, the lines are there but in a different order, or they match in two places. Nothing is placed, and the diff above is what to apply by hand |
+
+**A conflict is not a failure and does not change the exit code.** This command writes nothing, so
+it has nothing to fail at; `pnk upgrade` exiting non-zero on a conflict would make it unusable
+beside `pnk doctor` in one script. The one non-zero code is `3` — *no baseline* — and it means the
+comparison never happened at all:
+
+| It says | Exit | When |
+|---|---|---|
+| `up to date: notes@1.1` | `0` | the recorded and installed versions match |
+| a diff, then a placement for each hunk | `0` | both versions are archived and their manifests differ |
+| `… stamp an identical pinakes.toml` | `0` | both are archived and render the same manifest. A template version covers four files and this command reads one of them |
+| `cannot compare: …` | `3` | the recorded version is not archived, the installed one is not, the template is not installed here, this KB records no template, or an archived version needs a variable this build cannot supply |
+
+**Today `cannot compare` is what every KB in existence gets**, because `notes@1.0` is deliberately
+not archived — it denotes eleven different template contents, and a diff computed from the wrong
+base is worse than no diff. The message says so and names the comparison available now: `pnk init` a
+throwaway directory and diff its `pinakes.toml` against yours. A KB stamped from `notes@1.1` onward
+is compared automatically.
+
+**Scope is `pinakes.toml` alone, and that is a boundary rather than a gap.** A template also ships a
+`README.md` and a starter `eval/questions.yaml`, and `pnk upgrade` touches neither: your
+`eval/questions.yaml` is your golden set, and the template's is a stub with a header. Adopting the
+template's version would destroy your questions to deliver a comment.
+
+`--json` emits the same three parts — the diff, the hunks with their placements, and the counts —
+and emits JSON on the `cannot compare` path too, so a scripted caller never gets prose where it was
+promised a document.
+
+---
+
 ## Planned — not built yet
 
 Listed so the shape is known in advance; each names the increment that lands it
@@ -512,5 +574,5 @@ Listed so the shape is known in advance; each names the increment that lands it
 | Surface | Increment | Adds |
 |---|---|---|
 | `pnk ask --deep` | the deep release | Bounded, budgeted synthesis for CLI and cron use, where no agent is present |
-| `pnk upgrade` | the template release | Diffs a KB's template version against the installed one and *prints* a migration — never applies one |
+| `pnk upgrade --apply` | the template release | Writes the cleanly-applying hunks into `pinakes.toml`, after printing everything `pnk upgrade` prints and refusing outright if any hunk conflicts |
 | `pnk templates` | the template release | Lists every installed template with its version and description, `--json` available. Accepted 20260804 10:30 — today `template.available()` is reachable only by naming a template that does not exist, so discovery works by triggering an error |

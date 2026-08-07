@@ -9,12 +9,9 @@ reachable path would report green over a feature nobody had run.
 """
 
 import difflib
-import importlib
-import itertools
 import re
 import shutil
-import sys
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
 
@@ -2073,9 +2070,6 @@ def test_the_check_recomputes_minting_the_way_sync_does_it(kb: Path) -> None:
 # the path 100% of real KBs take; the rest build the template they need.
 
 
-_SYNTHETIC_PACKAGES = itertools.count()
-
-
 def _manifest_template(
     *, final_k: int, comments: Sequence[str] = (), rerank: bool = True, extra: str = ""
 ) -> str:
@@ -2103,45 +2097,6 @@ def _manifest_template(
     if extra:
         body.append(extra)
     return "\n".join(body) + "\n"
-
-
-@pytest.fixture
-def synthetic_template(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[Callable[..., str]]:
-    """Build a template with any number of archived versions, in a package of its own.
-
-    A real importable package rather than a monkeypatched `_root`, so `describe`,
-    `archived_versions`, `archived_root` and `render_archived` all run their real
-    `importlib.resources` paths — the ones that have to work from inside a wheel.
-    """
-    package = f"synthetic_templates_{next(_SYNTHETIC_PACKAGES)}"
-    root = tmp_path / package
-    root.mkdir()
-    (root / "__init__.py").write_text("", encoding="utf-8")
-    # `monkeypatch.syspath_prepend` is untyped, and this file is checked under pyright strict.
-    sys.path.insert(0, str(tmp_path))
-    monkeypatch.setattr(template, "PACKAGE", package)
-    importlib.invalidate_caches()
-
-    def _make(name: str, *, versions: Mapping[str, str], current: str) -> str:
-        def declaration(version: str) -> str:
-            return f'name = "{name}"\nversion = "{version}"\ndescription = "synthetic"\n'
-
-        directory = root / name
-        directory.mkdir()
-        (directory / "template.toml").write_text(declaration(current), encoding="utf-8")
-        (directory / "pinakes.toml.j2").write_text(versions[current], encoding="utf-8")
-        for version, source in versions.items():
-            archived = directory / template.VERSIONS_DIR / version
-            archived.mkdir(parents=True)
-            (archived / "template.toml").write_text(declaration(version), encoding="utf-8")
-            (archived / "pinakes.toml.j2").write_text(source, encoding="utf-8")
-        return name
-
-    yield _make
-    sys.modules.pop(package, None)
-    sys.path.remove(str(tmp_path))
 
 
 def _record_template(root: Path, reference: str) -> Path:
