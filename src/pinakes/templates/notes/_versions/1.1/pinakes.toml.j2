@@ -1,0 +1,53 @@
+[kb]
+name     = "{{ name }}"
+id       = "{{ kb_id }}"          # permanent — never edit or regenerate (docs/DESIGN.md §2.2)
+template = "{{ template }}"
+created  = "{{ created }}"
+
+[sources]
+roots   = ["docs/"]
+include = ["**/*.md", "**/*.txt"]
+exclude = ["**/drafts/**"]
+# Add "**/*.pdf" to `include` above to index PDFs. Left out rather than commented into place
+# because `init` cannot see whether the extractor is installed: PDF ingest needs
+# `uv add "pinakes[pdf]"`, and a glob stamped without it turns every PDF into a failed document.
+# `pnk sync` names any file it skipped for want of a pattern; `pnk doctor` checks the extractor.
+
+[embedding]
+provider = "{{ embedding_provider }}"
+model    = "{{ embedding_model }}"
+dim      = {{ embedding_dim }}
+# revision = "…"   # pin the HF commit sha once you are settled; `pnk doctor` reports the current one
+
+[chunking]
+strategy   = "structural"
+max_tokens = 510                  # <= the model's window minus special tokens
+overlap    = 64
+
+[retrieval]
+candidates_per_source = 50
+fusion                = "rrf"
+fusion_top_k          = 20
+final_k               = 8
+rerank                = "local"
+vector_tier           = "auto"
+
+# [retrieval.confidence]
+# Thresholds are fitted against *your* golden set, not shipped with the template: numbers fitted on
+# someone else's corpus are not a calibration. Until then `pnk search` reports `confidence: unknown`,
+# which is the honest answer. See eval/questions.yaml to start one.
+# fitted_for = "{{ rerank_model }}@<revision>"
+# low_below  = 0.31
+# high_above = 0.62
+
+[rerank]
+provider = "{{ rerank_provider }}"
+model    = "{{ rerank_model }}"
+
+[budget]
+confirm_above_eur = 0.01          # caps on the one thing that can spend: the paid PDF extractor.
+per_operation_eur = 0.30          # The free backend is the default, so these bind only once you
+                                  # ask for it (`--extract=claude-vision`, docs/DESIGN.md §5).
+monthly_eur       = 30.00
+timezone          = "UTC"
+on_exceed         = "abort"

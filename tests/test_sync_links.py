@@ -63,7 +63,7 @@ MANIFEST = """\
 [kb]
 name     = "{name}"
 id       = "{kb_id}"
-template = "notes@1.0"
+template = "notes@1.1"
 created  = "20260730 09:00"
 
 [sources]

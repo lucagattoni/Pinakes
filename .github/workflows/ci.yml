@@ -295,6 +295,56 @@ jobs:
           uv run --frozen python tools/status_header_gate.py --expect-version 99.99.99 2>&1 \
             | grep -q "the header drifted from the release"
 
+  template-drift:
+    # A template version number must mean the bytes it denotes. `pnk doctor` compared the recorded
+    # reference against the installed one for eleven releases and could never fire: `notes` said
+    # `1.0` in every commit while the files it denotes changed in ten later ones. Its own job for
+    # the same reason every sibling gate has one: `ci.yml` never invokes `check.sh`. Core-only —
+    # the gate needs jinja2 and `pinakes.init`'s constants, no models and no index.
+    runs-on: ubuntu-latest
+    steps:
+      # **`fetch-depth: 0`, and it is the only checkout in this file that sets it.** Leg (vii) —
+      # the one leg that catches an author editing a published archive and its ledger row in a
+      # single commit — reads `git log` per archived directory. GitHub's default is depth 1, where
+      # `git log -- <path>` returns nothing for every path; the gate detects that and *skips* the
+      # leg rather than reporting a pass it did not earn, so without this line the job would go
+      # green having silently dropped its strongest check.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      - name: Every template matches the version it declares
+        run: uv run --frozen python tools/template_drift_gate.py
+
+      - name: The history leg actually ran
+        # A skip is not a pass, and the difference is invisible in an exit code. If `fetch-depth`
+        # is ever dropped from the checkout above, this is what says so instead of the job quietly
+        # losing leg (vii).
+        run: |
+          uv run --frozen python tools/template_drift_gate.py | grep -q 'history leg (vii) ran'
+
+      - name: The gate can still fail
+        # A gate nobody has watched fail is a gate nobody knows works. Edits a consumed file
+        # without bumping the version — the exact drift this gate exists for — in the disposable
+        # CI checkout, and asserts a non-zero exit AND the stated reason: a crash or `uv` falling
+        # over satisfies a bare non-zero exit too.
+        run: |
+          printf '\n<!-- ci mutant -->\n' >> src/pinakes/templates/notes/README.md
+          if uv run --frozen python tools/template_drift_gate.py; then
+            echo "template-drift passed an unversioned edit to a consumed file — it is not gating" >&2
+            exit 1
+          fi
+          uv run --frozen python tools/template_drift_gate.py 2>&1 \
+            | grep -q 'README.md differs'
+          git checkout -- src/pinakes/templates/notes/README.md
+
   eval-cross-machine-compare:
     needs: eval-cross-machine
     runs-on: ubuntu-latest

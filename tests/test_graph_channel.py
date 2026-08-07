@@ -101,7 +101,7 @@ MANIFEST = """\
 [kb]
 name     = "channel"
 id       = "{kb_id}"
-template = "notes@1.0"
+template = "notes@1.1"
 created  = "20260804 20:00"
 
 [sources]

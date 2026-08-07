@@ -68,6 +68,13 @@ artifacts = ["src/pinakes/templates/**"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+# The version archive is frozen bytes, and `ruff format` rewrites Python inside Markdown fences
+# (measured; `check.sh` runs `ruff format --check .` over the whole repository). A template
+# `README.md` that gains a fence would be reformatted in its archived copies too — the formatter
+# editing a version that already shipped — and it would surface as a `_versions.toml` ledger
+# mismatch in `tools/template_drift_gate.py`, one leg away from its cause. Latent while no template
+# README has a fence; excluded now rather than after.
+extend-exclude = ["src/pinakes/templates/*/_versions"]
 
 [tool.ruff.lint]
 # BLE: a bare `except Exception` around a call whose failure mode is known swallows real

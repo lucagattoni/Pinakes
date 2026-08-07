@@ -36,7 +36,7 @@ def minimal(**extra: str) -> str:
 def test_the_design_example_parses(kb_root: Path) -> None:
     manifest = load(kb_root)
     assert manifest.kb.name == "research"
-    assert manifest.kb.template == "notes@1.0"
+    assert manifest.kb.template == "notes@1.1"
     assert manifest.sources.exclude == ("**/drafts/**",)
     assert manifest.embedding.dim == 384
     assert manifest.extraction.backend == "pypdfium2"

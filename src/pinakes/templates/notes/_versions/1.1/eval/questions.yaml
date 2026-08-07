@@ -1,0 +1,40 @@
+# A golden set: questions with known-correct sources. Add your own — retrieval tuning without a
+# scoreboard is guessing (docs/DESIGN.md §7).
+#
+# This file ships empty on purpose, and `make eval` **skips** rather than fails while it is: the
+# template scaffolds an empty `docs/`, so any question it shipped would name a document that does
+# not exist. The skip prints its reason.
+#
+# Each entry:
+#   id:       a short stable name, yours to choose. It is what pairs a question's result in one run
+#             with the same question's result in the next, so never reuse one and never renumber.
+#             Omit it and one is derived from the question text — which moves when you reword it.
+#   question: what someone would actually ask
+#   expect:   paths (relative to the KB root) that should be retrieved
+#   kind:     lexical | simple-lookup | paraphrase | filter | multi-hop | no-answer
+#             Required, and checked against that list — an unrecognised or missing kind is an
+#             error, not a silent `lexical`, because `kind` is what per-class scoring groups on.
+#   hops:     `multi-hop` questions only. Give every one of them two or more — two retrievals is
+#             what the kind claims. The sequence a reader would follow, in order: each hop a
+#             `query` (what you would search at that step) and one `expect` (the document that
+#             search must find). `expect` above is then exactly the hops' own documents.
+#             Unlike `kind`, this is not rejected at load time; it is scored. With no `hops` a
+#             `multi-hop` question is scored as one search of the question's own text; with a
+#             single hop, as one search of that hop's query. Either way it counts in the class and
+#             measures nothing about hopping, so `by_kind["multi-hop"]` stops being a number about
+#             multi-hop retrieval.
+#
+#               - id: who-approves-a-loan
+#                 question: Who signs off a loan of a fragile item?
+#                 kind: multi-hop
+#                 expect: [docs/loans.md, docs/conservation.md]
+#                 hops:
+#                   - query: loan approval
+#                     expect: docs/loans.md
+#                   - query: fragile item handling sign-off
+#                     expect: docs/conservation.md
+#
+# `no-answer` entries matter most: the correct behaviour is to abstain, and without them a system
+# that answers everything confidently scores perfectly.
+
+questions: []

@@ -758,3 +758,42 @@ un-rowed.
 | an escape under one root does not drop documents under another | 0.7.1 | `tests/test_sync.py::test_an_escape_under_one_root_does_not_drop_documents_under_another` |
 | an `exclude` pattern may contain `..`, and a root that does not exist yet still loads | 0.7.1 | `tests/test_sync.py::test_an_excluded_pattern_may_contain_dot_dot`, `tests/test_sync.py::test_a_root_that_does_not_exist_yet_still_loads` |
 | the density gate survives a root reached through a symlinked parent | 0.7.1 | `tests/test_partner_kb.py::test_the_gate_survives_a_root_reached_through_a_symlinked_parent` |
+
+## The template version archive and its drift gate (T1)
+
+The rows this increment's own tests require, and no others. A version number that cannot be
+compared to anything is the promise `pnk doctor` made for eleven releases without being able to
+keep it — so what is pinned here is mostly *which leg reported*, not merely that the gate failed.
+
+| What must be true | Increment | Where it is checked |
+|---|---|---|
+| the live template matches the version it declares | T1 | `tests/test_template_drift.py::test_the_live_template_matches_its_own_archived_version` |
+| editing a consumed file without bumping the version fails the gate | T1 | `tests/test_template_drift.py::test_editing_a_consumed_file_without_bumping_the_version_fails_the_gate` |
+| a comment-only edit fails it too — comments are the product (D-3 option A) | T1 | `tests/test_template_drift.py::test_editing_only_a_comment_fails_the_gate` |
+| the template's `README.md` is in scope, correcting `docs/KB-UPDATES.md` §6 | T1 | `tests/test_template_drift.py::test_editing_the_template_readme_fails_the_gate` |
+| a template that gains a consumed file is covered without editing the gate | T1 | `tests/test_template_drift.py::test_a_new_consumed_file_is_covered_without_editing_the_gate` |
+| the archive is outside the live content hash, so archiving N does not change N+1 | T1 | `tests/test_template_drift.py::test_the_archive_itself_is_outside_the_hash` |
+| a bumped version with no archived directory fails | T1 | `tests/test_template_drift.py::test_a_bumped_version_with_no_archived_directory_fails` |
+| a version bumped with no content change fails — reachable only because `template.toml` is outside the hash | T1 | `tests/test_template_drift.py::test_a_version_bump_with_no_content_change_fails_the_gate`, `tests/test_template_drift.py::test_the_declaration_is_outside_the_content_hash` |
+| an archived version edited in one file fails against the ledger | T1 | `tests/test_template_drift.py::test_a_modified_archived_version_fails_against_the_ledger` |
+| tampering with the *live* version's archive reports the ledger, not the live comparison — the two have opposite remedies | T1 | `tests/test_template_drift.py::test_editing_the_live_versions_archive_is_reported_as_a_ledger_failure` |
+| a ledger row with no archived directory fails | T1 | `tests/test_template_drift.py::test_a_ledger_row_with_no_archived_directory_fails` |
+| an archived version that no longer renders fails, naming the version and the variable | T1 | `tests/test_template_drift.py::test_an_archived_version_that_no_longer_renders_fails_the_gate` |
+| a three-file edit that passes every content leg is caught by history, before it merges | T1 | `tests/test_template_drift.py::test_a_three_file_edit_is_caught_by_the_history_leg` |
+| and once both commits have landed, when the content comparison can no longer see it | T1 | `tests/test_template_drift.py::test_an_archive_edited_after_it_shipped_is_caught_once_both_commits_have_landed` |
+| adding an archive and correcting it before landing is not an edit — the sequence `docs/BUILDING.md` requires | T1 | `tests/test_template_drift.py::test_adding_an_archive_then_correcting_it_before_landing_is_not_an_edit` |
+| with no published branch the leg skips rather than guessing | T1 | `tests/test_template_drift.py::test_the_history_leg_skips_when_there_is_no_published_branch` |
+| a relative `--templates` cannot make the leg claim it ran over a tree it never looked at | T1 | `tests/test_template_drift.py::test_a_relative_templates_path_does_not_let_the_history_leg_claim_it_ran` |
+| without git history the gate says so, and the skip is a real loss of coverage — not a formality | T1 | `tests/test_template_drift.py::test_the_gate_names_its_reason_when_it_cannot_run`, `tests/test_template_drift.py::test_a_shallow_clone_skips_the_history_leg_rather_than_passing_it` |
+| an archive not yet committed is new, not frozen | T1 | `tests/test_template_drift.py::test_an_uncommitted_archive_is_not_an_edit` |
+| the gate is actually invoked — by `check.sh`, and by its own CI job with full history | T1 | `tests/test_template_drift.py::test_the_gate_is_invoked_by_check_sh`, `tests/test_template_drift.py::test_the_gate_has_its_own_ci_job_with_full_history` |
+| a file git ignores is not part of the template, and one it does not ignore still is | T1 | `tests/test_template_drift.py::test_a_file_git_ignores_is_not_part_of_the_template`, `tests/test_template_drift.py::test_an_untracked_file_git_does_not_ignore_is_still_part_of_the_template` |
+| the hash is unchanged where git cannot answer — an sdist or a vendored copy | T1 | `tests/test_template_drift.py::test_the_hash_is_the_same_where_git_cannot_answer` |
+| an archived version carries its own `template.toml`, declaring the version its directory is named for | T1 | `tests/test_template_drift.py::test_an_archived_version_without_its_declaration_fails`, `tests/test_template_drift.py::test_an_archived_version_declaring_a_different_version_fails` |
+| the gate names which history mode it ran in, every time | T1 | `tests/test_template_drift.py::test_the_gate_says_which_history_mode_it_ran_in` |
+| leg (ii) is vacuous against the shipped template, and says so rather than reporting a pass | T1 | `tests/test_template_drift.py::test_the_gate_says_leg_two_is_vacuous_against_the_shipped_template` |
+| a template name with a path separator or `..` is refused with a message, not a traceback | T1 | `tests/test_template_drift.py::test_a_template_name_with_a_path_separator_or_dotdot_is_refused`, `tests/test_template_drift.py::test_a_valid_template_name_still_resolves` |
+| an archived *version* with a path separator is refused too — it arrives from a KB's own manifest | T1 | `tests/test_template_drift.py::test_an_archived_version_with_a_path_separator_is_refused` |
+| `1.0` is never archived (D-2b), and `archived_versions` orders by version, not by string | T1 | `tests/test_template_drift.py::test_archived_versions_lists_exactly_what_is_archived`, `tests/test_template_drift.py::test_archived_versions_sorts_by_version_not_by_string` |
+| `render_archived` renders an archived manifest, and names the version when it is not archived | T1 | `tests/test_template_drift.py::test_render_archived_renders_the_archived_manifest`, `tests/test_template_drift.py::test_render_archived_refuses_a_version_that_is_not_archived` |
+| the content hash covers a file's path as well as its bytes | T1 | `tests/test_template_drift.py::test_the_hash_covers_the_path_as_well_as_the_bytes` |
