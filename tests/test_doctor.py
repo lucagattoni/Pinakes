@@ -1,8 +1,20 @@
-"""`pnk doctor`: the checks that make the design's stated limits visible instead of mysterious."""
+"""`pnk doctor`: the checks that make the design's stated limits visible instead of mysterious.
 
+**The template-drift tests at the end of this file run against a synthetic two-version template,
+not against `notes`.** D-2b leaves the shipped template with exactly one archived version, so the
+only outcome `notes` can reach is *cannot compare* — one test asserts exactly that, deliberately,
+because it is the path every KB in existence takes. Everything that asserts a line count, an
+absent hunk or a rendered variable builds its own template. A suite that quietly exercised only the
+reachable path would report green over a feature nobody had run.
+"""
+
+import difflib
+import importlib
+import itertools
 import re
 import shutil
-from collections.abc import Mapping, Sequence
+import sys
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
 
@@ -11,15 +23,16 @@ import pytest
 import yaml
 from conftest import pdf_extraction_runnable
 
-from pinakes import store
+from pinakes import store, template
 from pinakes.budget.prices import Prices, load_prices
-from pinakes.doctor import Status, diagnose, prune
+from pinakes.doctor import Check, Status, diagnose, prune
 from pinakes.embed import (
     ModelInfo,
     Vectors,
     register_embedding_backend,
     register_reranker,
 )
+from pinakes.errors import TemplateError
 from pinakes.ids import mint_doc_id, mint_kb_id
 from pinakes.init import init
 from pinakes.manifest import load
@@ -71,6 +84,13 @@ def kb(tmp_path: Path) -> Path:
 
 def checks(root: Path) -> dict[str, tuple[Status, str]]:
     return {c.name: (c.status, c.detail) for c in diagnose(load(root)).checks}
+
+
+def template_check(root: Path) -> Check:
+    """The whole `template` check, remedy included — `checks` drops the remedy, and for this check
+    the remedy is the part the user acts on."""
+    (check,) = (c for c in diagnose(load(root)).checks if c.name == "template")
+    return check
 
 
 def _document_ids(root: Path, where: str = "state = 'active'") -> list[str]:
@@ -1050,15 +1070,24 @@ def test_a_template_the_install_does_not_have_is_a_warning_not_a_failure(kb: Pat
 
 
 def test_a_template_version_drift_is_reported_with_both_versions(kb: Path) -> None:
+    """Both references still reach the reader — the recorded one in the detail, the installed one
+    in the remedy that says what this build actually ships.
+
+    Against `notes` the outcome is *cannot compare* rather than a line count, because `1.0` is
+    deliberately unarchived (D-2b). That split is what
+    `test_an_unarchived_recorded_version_says_it_cannot_compare_rather_than_ok` is about; this test
+    is only about neither version going unnamed.
+    """
     path = kb / "pinakes.toml"
     body = path.read_text(encoding="utf-8")
     recorded = re.search(r'^template = "notes@(.+)"$', body, re.MULTILINE)
     assert recorded is not None
     path.write_text(body.replace(f"notes@{recorded.group(1)}", "notes@0.0.1"), encoding="utf-8")
 
-    status, detail = checks(kb)["template"]
-    assert status is Status.WARN
-    assert "notes@0.0.1" in detail and recorded.group(1) in detail
+    check = template_check(kb)
+    assert check.status is Status.WARN
+    assert "notes@0.0.1" in check.detail
+    assert f"notes@{recorded.group(1)}" in (check.remedy or "")
 
 
 def test_the_reranker_check_says_when_reranking_is_off_rather_than_loading_one(kb: Path) -> None:
@@ -2034,3 +2063,372 @@ def test_the_check_recomputes_minting_the_way_sync_does_it(kb: Path) -> None:
 
     assert minted_title(Path("docs/annual_report-2026.md")) == "annual report 2026"
     assert "annual_report-2026.md" in checks(kb)["titles"][1]
+
+
+# --- T2: template drift reported as a diff, not a version string --------------------------------
+#
+# **Every positive path here needs a synthetic two-version template, never `notes`.** D-2b leaves
+# the shipped template with exactly one archived version, so the only outcome reachable against
+# `notes` is *cannot compare*. One test below runs against `notes` deliberately, because that is
+# the path 100% of real KBs take; the rest build the template they need.
+
+
+_SYNTHETIC_PACKAGES = itertools.count()
+
+
+def _manifest_template(
+    *, final_k: int, comments: Sequence[str] = (), rerank: bool = True, extra: str = ""
+) -> str:
+    """A manifest template shaped like the real one: an identity block whose every field is a
+    rendered variable, some rendered values, and literals a user is free to edit.
+
+    The `[kb]` block matters most — it is the one the report must never produce a hunk for.
+    """
+    body = [
+        "[kb]",
+        'name     = "{{ name }}"',
+        'id       = "{{ kb_id }}"',
+        'template = "{{ template }}"',
+        'created  = "{{ created }}"',
+        "",
+        "[embedding]",
+        'provider = "{{ embedding_provider }}"',
+        'model    = "{{ embedding_model }}"',
+        "dim      = {{ embedding_dim }}",
+        "",
+    ]
+    if rerank:
+        body += ["[rerank]", 'model    = "{{ rerank_model }}"', ""]
+    body += ["[retrieval]", *comments, f"final_k = {final_k}"]
+    if extra:
+        body.append(extra)
+    return "\n".join(body) + "\n"
+
+
+@pytest.fixture
+def synthetic_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Callable[..., str]]:
+    """Build a template with any number of archived versions, in a package of its own.
+
+    A real importable package rather than a monkeypatched `_root`, so `describe`,
+    `archived_versions`, `archived_root` and `render_archived` all run their real
+    `importlib.resources` paths — the ones that have to work from inside a wheel.
+    """
+    package = f"synthetic_templates_{next(_SYNTHETIC_PACKAGES)}"
+    root = tmp_path / package
+    root.mkdir()
+    (root / "__init__.py").write_text("", encoding="utf-8")
+    # `monkeypatch.syspath_prepend` is untyped, and this file is checked under pyright strict.
+    sys.path.insert(0, str(tmp_path))
+    monkeypatch.setattr(template, "PACKAGE", package)
+    importlib.invalidate_caches()
+
+    def _make(name: str, *, versions: Mapping[str, str], current: str) -> str:
+        def declaration(version: str) -> str:
+            return f'name = "{name}"\nversion = "{version}"\ndescription = "synthetic"\n'
+
+        directory = root / name
+        directory.mkdir()
+        (directory / "template.toml").write_text(declaration(current), encoding="utf-8")
+        (directory / "pinakes.toml.j2").write_text(versions[current], encoding="utf-8")
+        for version, source in versions.items():
+            archived = directory / template.VERSIONS_DIR / version
+            archived.mkdir(parents=True)
+            (archived / "template.toml").write_text(declaration(version), encoding="utf-8")
+            (archived / "pinakes.toml.j2").write_text(source, encoding="utf-8")
+        return name
+
+    yield _make
+    sys.modules.pop(package, None)
+    sys.path.remove(str(tmp_path))
+
+
+def _record_template(root: Path, reference: str) -> Path:
+    """Point a KB's manifest at *reference*, refusing a no-op substitution.
+
+    `str.replace` returns the string unchanged when it matches nothing and reports it to nobody,
+    which is how I7a built a "paid" KB that was never paid (docs/RETROSPECTIVES.md).
+    """
+    path = root / "pinakes.toml"
+    edited, count = re.subn(
+        r'^template = ".+"$',
+        f'template = "{reference}"',
+        path.read_text(encoding="utf-8"),
+        count=1,
+        flags=re.MULTILINE,
+    )
+    assert count == 1, "the manifest's template line has changed shape"
+    path.write_text(edited, encoding="utf-8")
+    return root
+
+
+def _reported_lines(detail: str) -> int:
+    found = re.search(r"(\d+) lines? differs?\b", detail)
+    assert found is not None, f"no line count in {detail!r}"
+    return int(found.group(1))
+
+
+def test_a_kb_recording_an_older_template_version_reports_the_line_count(
+    kb: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The literal `2` is safe here in a way it would never be against `notes`: this pair is built
+    three lines above the assertion, so it cannot drift under a commit to the shipped template —
+    which is exactly how an earlier draft of the plan got its count, its composition *and* its
+    claim that the lines were comments wrong."""
+    synthetic_template(
+        "synth",
+        versions={"1.0": _manifest_template(final_k=5), "2.0": _manifest_template(final_k=8)},
+        current="2.0",
+    )
+    check = template_check(_record_template(kb, "synth@1.0"))
+
+    assert check.status is Status.WARN
+    assert "synth@1.0" in check.detail and "synth@2.0" in check.detail
+    assert _reported_lines(check.detail) == 2, check.detail  # one line removed, one added
+
+
+def test_a_user_edited_manifest_value_never_appears_in_the_template_drift_report(
+    kb: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The test that catches D-2 option B being implemented by accident — a report built from the
+    user's own `pinakes.toml` rather than from two archived templates.
+
+    Both halves of the property, because they fail for different reasons: a **rendered** variable
+    (`embedding_model`) is identical on both sides and so cancels; a **literal** (`final_k`) never
+    enters either side, because neither side is the user's file.
+
+    **The third edit adds a line rather than substituting one, and it is the only one that kills
+    the mutant.** Measured: with `base` swapped for the user's raw `pinakes.toml` — D-2 option B,
+    implemented by accident — the two substitutions above left the count *identical*, because one
+    line replaced by another line is still one line on each side of the diff. The count was
+    invariant under an implementation that had the user's file in it, which is the exact defect
+    class this test exists to catch. An added line is not absorbed that way.
+    """
+    synthetic_template(
+        "synth",
+        versions={"1.0": _manifest_template(final_k=5), "2.0": _manifest_template(final_k=8)},
+        current="2.0",
+    )
+    root = _record_template(kb, "synth@1.0")
+    before = template_check(root).detail
+    assert _reported_lines(before) > 0, "a comparison that reported nothing would be invariant too"
+
+    path = root / "pinakes.toml"
+    body = path.read_text(encoding="utf-8")
+    body, rendered_edits = re.subn(
+        r'^model    = "fake-model"$', 'model    = "fastembed-model"', body, flags=re.MULTILINE
+    )
+    body, literal_edits = re.subn(r"^final_k\s*=.*$", "final_k = 4", body, flags=re.MULTILINE)
+    assert rendered_edits == 1 and literal_edits == 1, "the manifest's shape has changed"
+    path.write_text(
+        body + "\n# A comment of my own, which is nobody's business but mine.\n",
+        encoding="utf-8",
+    )
+
+    assert template_check(root).detail == before
+
+
+def test_a_comment_only_template_change_is_reported(
+    kb: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The live gap this release exists for is *entirely* comments (F3, M3): the PDF-glob block
+    added four comment lines and changed no key. A report that missed a comment-only change would
+    report nothing on the case that motivated the work."""
+    synthetic_template(
+        "synth",
+        versions={
+            "1.0": _manifest_template(final_k=5),
+            "2.0": _manifest_template(
+                final_k=5,
+                comments=[
+                    '# Add "**/*.pdf" to `include` above to index PDFs.',
+                    "# Left out rather than commented into place: `init` cannot see the extractor.",
+                ],
+            ),
+        },
+        current="2.0",
+    )
+    check = template_check(_record_template(kb, "synth@1.0"))
+
+    assert check.status is Status.WARN
+    assert _reported_lines(check.detail) == 2, check.detail  # two comment lines added, none removed
+
+
+def test_the_kb_identity_block_never_produces_a_hunk(
+    kb: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The `{{ template }}` choice, asserted where it can actually fail.
+
+    Rendering `base` with the recorded reference and `ours` with the *installed* one is what a
+    reader of `init.py:75` would write, and it puts a `[kb]` hunk in every report on every KB —
+    which under T4's all-or-nothing conflict rule would make `--apply` refuse for every user who
+    has ever touched their `[kb]` block.
+
+    **Asserted through `pnk doctor`, not only through `render_archived`.** The direct-render half
+    below pins `render_context`'s contract, and it is worth having — but on its own it left the
+    mutant alive: feeding `ours` the installed reference *inside `doctor`* changed nothing the test
+    looked at, because the test never called `doctor`. Measured, not reasoned about. The count is
+    what `doctor` exposes, so the pair below differs by exactly one line outside `[kb]`; a leaking
+    identity block adds two more and the count says so.
+    """
+    name = synthetic_template(
+        "synth",
+        versions={"1.0": _manifest_template(final_k=5), "2.0": _manifest_template(final_k=8)},
+        current="2.0",
+    )
+    root = _record_template(kb, "synth@1.0")
+    context = template.render_context(load(root))
+    base = template.render_archived(name, "1.0", context)
+    ours = template.render_archived(name, "2.0", context)
+
+    assert 'template = "synth@1.0"' in base, "the recorded reference, not the installed one"
+    assert 'template = "synth@1.0"' in ours, "both sides render what the KB recorded"
+    assert "synth@2.0" not in base and "synth@2.0" not in ours
+
+    changed = [
+        line
+        for line in list(
+            difflib.unified_diff(base.splitlines(), ours.splitlines(), lineterm="", n=0)
+        )[2:]
+        if line[:1] in ("+", "-")
+    ]
+    assert changed, "a pair that does not differ would satisfy the next assertion vacuously"
+    assert not [line for line in changed if "template =" in line or "id " in line]
+
+    # The half that reaches `doctor`. `final_k` is the only line these two versions differ on, so
+    # a correct report counts exactly the two lines that change; an identity block leaking into the
+    # comparison would put `template = ` on both sides of the diff and make it four.
+    assert _reported_lines(template_check(root).detail) == 2
+
+
+def test_an_unarchived_recorded_version_says_it_cannot_compare_rather_than_ok(kb: Path) -> None:
+    """Run against the shipped `notes`, because under D-2b this is what 100% of real KBs do.
+
+    `WARN` alone does not discriminate — the version-mismatch line on `main` before this increment
+    was also a `WARN` — so the remedy is what is asserted: it has to name the comparison that is
+    available to someone who did nothing wrong.
+    """
+    check = template_check(_record_template(kb, "notes@1.0"))
+
+    assert check.status is Status.WARN
+    assert "cannot compare" in check.detail
+    assert "notes@1.0" in check.detail
+    remedy = check.remedy or ""
+    assert "compare it by hand" in remedy
+    assert "pnk init" in remedy, "the manual comparison has to be named, not alluded to"
+    assert "nothing needs changing" in remedy, "written for a user who did nothing wrong"
+
+
+def test_a_template_version_needing_an_unknown_variable_refuses_with_a_message(
+    kb: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """A third-party template can need a variable no union contains. `jinja2.UndefinedError` is not
+    a `PinakesError`, so without the mapping `cli.main` prints a traceback.
+
+    Asserted on the **message**, not on the fact that something was raised — the weaker form is
+    satisfied by any error at all, including the traceback this exists to prevent.
+    """
+    name = synthetic_template(
+        "synth",
+        versions={
+            "1.0": _manifest_template(final_k=5, extra='owner    = "{{ unknown_variable }}"'),
+            "2.0": _manifest_template(final_k=8),
+        },
+        current="2.0",
+    )
+    root = _record_template(kb, "synth@1.0")
+
+    with pytest.raises(TemplateError) as caught:
+        template.render_archived(name, "1.0", template.render_context(load(root)))
+    assert "synth@1.0" in str(caught.value), "the message names the version"
+    assert "unknown_variable" in str(caught.value), "and the variable"
+    assert "cannot render synth@1.0" in (caught.value.remedy or "")
+
+    check = template_check(root)
+    assert check.status is Status.WARN, "one unrenderable template does not take the report down"
+    assert "unknown_variable" in check.detail, "the row names the variable, not just the failure"
+    assert "cannot render synth@1.0" in (check.remedy or "")
+
+
+def test_a_template_with_no_drift_reports_ok_and_renders_nothing(
+    kb: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`pnk doctor` on a current KB pays nothing for this check — no archive read, no render."""
+    calls: list[tuple[str, str]] = []
+
+    def _record(name: str, version: str, context: Mapping[str, object]) -> str:
+        calls.append((name, version))
+        return ""
+
+    monkeypatch.setattr(template, "render_archived", _record)
+    # Without this the test cannot fail: a monkeypatch that never landed leaves `calls` empty too,
+    # and an empty list is exactly what the assertion below is looking for.
+    assert template.render_archived is _record, "the patch has to land, or this asserts nothing"
+
+    check = template_check(kb)
+
+    assert check.status is Status.OK
+    assert calls == [], "a KB on the installed version has nothing to compare"
+
+
+def test_an_archived_version_needing_a_variable_the_current_one_dropped_still_renders(
+    kb: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The union context, as the failure it prevents.
+
+    `render_manifest` uses `StrictUndefined`, so a context built for the *current* version cannot
+    render an older one that needs a variable since dropped — and it fails on one side of the
+    comparison only, which turns `pnk doctor` into a traceback on a KB whose only fault is age.
+    """
+    synthetic_template(
+        "synth",
+        versions={
+            "1.0": _manifest_template(final_k=5, rerank=True),
+            "2.0": _manifest_template(final_k=8, rerank=False),
+        },
+        current="2.0",
+    )
+    check = template_check(_record_template(kb, "synth@1.0"))
+
+    assert check.status is Status.WARN
+    assert _reported_lines(check.detail) > 0, "it rendered both sides rather than raising"
+
+
+def test_a_version_bump_that_leaves_the_manifest_alone_does_not_report_zero_lines(
+    kb: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """A template version denotes four consumed files; this comparison reads one of them.
+
+    Of the ten commits between the `notes` template's first version and its second, five touched
+    `eval/questions.yaml` and none touched the manifest — so a bump whose manifest is byte-identical
+    is the ordinary case, not a contrived one. `0 lines differ` would be true of the manifest and
+    read as *nothing changed*, which is the class of defect this check exists to end.
+    """
+    identical = _manifest_template(final_k=5)
+    synthetic_template("synth", versions={"1.0": identical, "2.0": identical}, current="2.0")
+    check = template_check(_record_template(kb, "synth@1.0"))
+
+    assert check.status is Status.WARN, "the versions differ even though the manifest does not"
+    assert "0 line" not in check.detail
+    assert "same manifest" in check.detail
+    assert "golden set" in (check.remedy or ""), (
+        "it names what a version covers beyond the manifest"
+    )
+
+
+def test_the_cannot_compare_remedy_promises_nothing_a_later_release_cannot_keep(kb: Path) -> None:
+    """`notes@1.0`'s content is not archived and never will be (D-2b), so a KB recording it stays
+    uncomparable however many versions ship afterwards.
+
+    An earlier wording ended *"from the next template version onward the comparison is automatic"*,
+    which is false for exactly the people who read this most. What a later version changes is the
+    next KB, not this one.
+    """
+    remedy = template_check(_record_template(kb, "notes@1.0")).remedy or ""
+
+    assert "there will not be a later one" in remedy
+    assert "stamped from" in remedy, (
+        "the promise is scoped to a KB stamped from an archived version"
+    )
+    assert "onward the comparison is automatic" not in remedy

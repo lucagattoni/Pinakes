@@ -205,6 +205,27 @@ first line was rejected: an RFC's begins `Internet Engineering Task Force (IETF)
 mints confidently wrong titles at scale into sidecars you then commit — and a plausible wrong title
 is far harder to notice than one that is visibly a filename.
 
+**`template` reports how far your template has drifted, by rendering both archived versions and
+counting the lines between them.** The comparison is template-against-template, never
+template-against-manifest: both sides are generated from the archive through one context, so nothing
+you wrote is in either. A value you tuned that the template *renders* (`provider`) is identical on
+both sides and cancels; a literal you edited (`final_k`) never enters either side, because neither
+side is your file. That is the point — a report mixing the two could not tell a template change from
+your own tuning, and would present the second as the first.
+
+Four outcomes, and on every KB in existence today it is the second:
+
+| What it says | When |
+|---|---|
+| `notes@1.1` — `OK` | the recorded and installed versions match |
+| `cannot compare: notes@1.0 is not in this build's archive` | the recorded version's content was never archived. `notes@1.0` denotes eleven different template contents, so it is deliberately left out: a diff from the wrong base is worse than no diff. The remedy names the comparison available today — `pnk init` a throwaway directory and diff its `pinakes.toml` against yours — and does **not** promise a later release will fix it, because an unarchived version's content is gone rather than pending. A KB stamped from `notes@1.1` onward is compared automatically |
+| `KB says X, installed is Y — 7 lines differ` | both versions are archived and their manifests differ. `pnk upgrade` will print the lines; nothing is applied automatically |
+| `KB says X, installed is Y — same manifest` | both are archived and stamp an identical `pinakes.toml`. A template version covers four files and this comparison reads one of them, so the version moved without changing your manifest. Its `README.md` and starter golden set are yours to keep or refresh by hand |
+
+A template needing a variable this build cannot supply — a third-party one, or an archived version
+that reached the machine some other way — is one `WARN` row naming the version and the variable,
+not a traceback and not the end of the report.
+
 **`chunking coherence` reports whether `[chunking]` has moved since the index was built.** It
 matters because an incremental sync re-chunks a document only when *the document* changed: a
 manifest-only edit reports every file `unchanged` and applies nothing, so the setting appears not to

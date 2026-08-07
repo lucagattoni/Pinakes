@@ -1035,6 +1035,25 @@ what must not.
 
 ### T2 — `pnk doctor` reports template drift as a diff, not a version string
 
+**✅ SHIPPED 20260807 22:28.** Built as specified, with two additions the build found and this plan
+had not:
+
+1. **A fourth outcome, `same manifest`.** A template version denotes four consumed files and this
+   comparison reads one. A bump touching only `eval/questions.yaml` renders two identical manifests
+   and the first implementation reported `0 lines differ` — true of the manifest, read as *nothing
+   changed*. Not hypothetical: of the ten commits between `notes@1.0` and `notes@1.1`, five touched
+   the golden set and none touched the manifest. **T3 and T4 inherit this**: a `pnk upgrade` with no
+   hunks is the same situation and must not print an empty diff and call it agreement.
+2. **The *cannot compare* remedy must not promise a later release.** The wording this plan implied
+   — "`pnk upgrade` becomes useful from the next template bump onward" — is false for the readers
+   who see it most: `1.0` is unarchived and stays unarchived, so a KB recording it is never
+   comparable, however many versions ship. The shipped string says the content is gone rather than
+   pending, and scopes the promise to a KB stamped from an archived version or later.
+
+**Also landed here, outside the plan's text:** `tools/template_drift_gate.py` leg (vi) now builds
+its context from `template.CONTEXT_KEYS` instead of its own literal copy of the key set — two
+copies would have let the gate stay green while `pnk doctor` raised on the KB in front of it.
+
 **Depends on T1** (the archive).
 
 **What lands.** `doctor._template` keeps its version comparison and gains a second half: when the
@@ -1141,15 +1160,17 @@ rm -rf /tmp/t2kb && uv run --frozen pnk init /tmp/t2kb
 sed -i '' 's/^template = .*/template = "notes@1.0"/' /tmp/t2kb/pinakes.toml
 uv run --frozen pnk doctor --kb /tmp/t2kb >/tmp/t2.out 2>&1   # never assert doctor's exit code
 grep '^WARN template' /tmp/t2.out | grep -qiF 'cannot compare'
+# ✅ ran 20260807 22:28 at 25cf060. The line is:
+#   WARN template: cannot compare: notes@1.0 is not in this build's archive
 # Verified at d001175 and re-checked at d06ef7e that the anchor resolves: forcing
 # `template = "notes@0.9"` on a fresh KB prints
 #   WARN template: KB says notes@0.9, installed is notes@1.0
 # so `^WARN template` and the two spaces after WARN are real, not a guess at the format.
 #
 # The remedy is the part a user acts on, and `cannot compare` alone does not prove one was printed.
-# Assert the remedy names the manual comparison — pick the exact string when the message is written
-# and put THAT here, not this placeholder:
-grep -qiF 'compare it by hand' /tmp/t2.out
+# These are the shipped strings, not placeholders — read out of the message that was written:
+grep -qF 'compare it by hand: run `pnk init` on a throwaway directory' /tmp/t2.out
+grep -qF 'there will not be a later one' /tmp/t2.out   # it promises nothing a release cannot keep
 ./check.sh
 ```
 

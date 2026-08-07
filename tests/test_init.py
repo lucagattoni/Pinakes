@@ -167,11 +167,18 @@ def test_templates_are_readable_from_the_installed_package() -> None:
 
 
 def test_a_template_variable_that_is_never_supplied_fails_loudly() -> None:
-    """StrictUndefined: a typo in a template must not render as an empty manifest key."""
-    from jinja2 import UndefinedError
+    """StrictUndefined: a typo in a template must not render as an empty manifest key.
 
-    with pytest.raises(UndefinedError):
+    It fails as a `TemplateError` rather than a raw `jinja2.UndefinedError`, which is not a
+    `PinakesError` and would reach the user as a traceback. The message names the reference and the
+    variable, because "something is undefined somewhere" is not a thing anyone can act on.
+    """
+    from pinakes.errors import TemplateError
+
+    with pytest.raises(TemplateError) as caught:
         template.render_manifest("notes", {"name": "x"})
+    assert "notes@1.1" in str(caught.value)
+    assert "kb_id" in str(caught.value)
 
 
 def test_created_is_utc_even_where_the_machine_clock_is_not(

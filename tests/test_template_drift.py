@@ -604,6 +604,17 @@ def test_archived_versions_lists_exactly_what_is_archived() -> None:
     assert "1.0" not in versions
 
 
+def test_render_context_supplies_exactly_the_declared_union(kb_root: Path) -> None:
+    """`CONTEXT_KEYS` is what leg (vi) builds its context from, and `render_context` is what the
+    product renders both sides of a comparison through. They are two literals in one module, so
+    nothing but this stops one gaining a key the other does not have — and the failure that would
+    cause is the gate staying green while `pnk doctor` raises on the KB in front of it."""
+    from pinakes.manifest import load
+    from pinakes.template import CONTEXT_KEYS, render_context
+
+    assert tuple(render_context(load(kb_root))) == CONTEXT_KEYS
+
+
 def test_archived_versions_sorts_by_version_not_by_string() -> None:
     from pinakes.template import version_key
 

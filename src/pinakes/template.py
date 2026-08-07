@@ -13,9 +13,10 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any
 
-from jinja2 import StrictUndefined, Template
+from jinja2 import StrictUndefined, Template, UndefinedError
 
 from pinakes.errors import TemplateError
+from pinakes.manifest import Manifest
 
 PACKAGE = "pinakes.templates"
 MANIFEST_TEMPLATE = "pinakes.toml.j2"
@@ -24,6 +25,29 @@ VERSIONS_DIR = "_versions"
 
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 _VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
+
+CONTEXT_KEYS: tuple[str, ...] = (
+    "name",
+    "kb_id",
+    "template",
+    "created",
+    "embedding_provider",
+    "embedding_model",
+    "embedding_dim",
+    "rerank_provider",
+    "rerank_model",
+)
+"""Every variable this build can supply to a manifest template — the **union across versions**.
+
+Not "the variables the current version uses". `render_manifest` renders under `StrictUndefined`, so
+a variable a later version drops must keep being supplied or the *older archived* version stops
+rendering — and it stops rendering on one side of a comparison only, which turns `pnk doctor` into
+a traceback on a KB whose only fault is being old. A variable leaves a template; it does not leave
+this tuple.
+
+`tools/template_drift_gate.py` leg (vi) builds its context from exactly these keys, so an archived
+version needing a variable outside the union is a red build rather than a user's crash.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,10 +105,72 @@ def describe(name: str) -> TemplateInfo:
     )
 
 
+def render_context(manifest: Manifest) -> dict[str, Any]:
+    """The one variable mapping both sides of a template comparison render through.
+
+    **One context, rendered twice.** Two contexts would let a difference between the *contexts*
+    appear as a difference between the *templates*, which is the one thing this report must never
+    say. Everything below follows from that.
+
+    **Every identity field comes from the KB's manifest, and `template` is the one that matters.**
+    `pnk init` passes the *installed* reference (`init.py:75`) because at `init` time the recorded
+    and installed references are the same string. They are not the same string here, and the
+    obvious third choice — old side gets the recorded reference, new side gets the installed one —
+    puts a `[kb] template` hunk in **every** report on **every** KB, which under T4's
+    all-or-nothing conflict rule would make `--apply` refuse for every user who ever touched their
+    `[kb]` block. Both sides therefore render the *recorded* reference and `[kb]` is byte-identical
+    on both, so it can never produce a hunk.
+
+    Two consequences, both of them the point rather than side-effects: a user's edit to a rendered
+    variable (`provider = "fastembed"`) is identical on both sides and cannot appear in the diff,
+    and a user's edit to a literal line (`final_k = 4`) never enters either side, because neither
+    side is their file.
+
+    `template` and `created` are optional in a manifest. Their fallback is `""` and it is
+    unobservable by construction: the value is written to both sides or to neither.
+    """
+    return {
+        "name": manifest.kb.name,
+        "kb_id": str(manifest.kb.id),
+        "template": manifest.kb.template or "",
+        "created": manifest.kb.created or "",
+        "embedding_provider": manifest.embedding.provider,
+        "embedding_model": manifest.embedding.model,
+        "embedding_dim": manifest.embedding.dim,
+        "rerank_provider": manifest.rerank.provider,
+        "rerank_model": manifest.rerank.model,
+    }
+
+
+def _render(source: str, context: dict[str, Any], *, name: str, version: str | None = None) -> str:
+    """Render one manifest template, turning a missing variable into a message rather than a crash.
+
+    `jinja2.UndefinedError` is not a `PinakesError`, so without this `cli.main` prints a traceback.
+    `CONTEXT_KEYS` covers every version this build ships — so the templates in the wheel cannot
+    reach here — but a third-party template, or an archived version that arrived on the machine
+    some other way, can need a variable no union contains. That is a message, not a stack trace.
+
+    The reference is assembled in the `except` branch and nowhere else: naming the version costs a
+    second file read, and the successful render is the path that runs.
+    """
+    try:
+        return Template(source, undefined=StrictUndefined, keep_trailing_newline=True).render(
+            **context
+        )
+    except UndefinedError as exc:
+        reference = f"{name}@{describe(name).version if version is None else version}"
+        raise TemplateError(
+            f"{reference} needs a variable this build does not supply: {exc.message}",
+            remedy=f"This build of Pinakes cannot render {reference}. It supplies "
+            f"{', '.join(CONTEXT_KEYS)}. A template needing anything else was written for a "
+            "different build.",
+        ) from exc
+
+
 def render_manifest(name: str, context: dict[str, Any]) -> str:
     """Render `pinakes.toml`. `StrictUndefined`: a missing variable fails here, not at read time."""
     source = _root(name).joinpath(MANIFEST_TEMPLATE).read_text(encoding="utf-8")
-    return Template(source, undefined=StrictUndefined, keep_trailing_newline=True).render(**context)
+    return _render(source, context, name=name)
 
 
 def version_key(version: str) -> tuple[str, ...]:
@@ -142,7 +228,7 @@ def render_archived(name: str, version: str, context: dict[str, Any]) -> str:
     manifest against an unrendered `.j2` would report every `{{ variable }}` as a difference.
     """
     source = archived_root(name, version).joinpath(MANIFEST_TEMPLATE).read_text(encoding="utf-8")
-    return Template(source, undefined=StrictUndefined, keep_trailing_newline=True).render(**context)
+    return _render(source, context, name=name, version=version)
 
 
 def copy_extras(name: str, target: Path) -> tuple[list[Path], list[Path]]:
