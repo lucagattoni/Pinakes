@@ -35,6 +35,13 @@ nothing compared until now: `5993521` added it to the artifact header, and
 it, so two legs chunked differently still compared clean. Measured on one RFC, `max_tokens` 510
 versus 480 moves 63 of 1 858 chunk texts — a rechunk that a rank comparison would report as the
 effect under test.
+
+**What it cannot check, stated so nobody reads it as more than it is.** `eval.header` records
+*settings*, not the corpus: no KB path, no document count, no chunk count, no index
+`schema_version`. Two legs run against genuinely different corpora — a rebuild that dropped a
+document, a re-fetch that picked up an errata-corrected source — therefore still compare clean
+here. That has to be established outside this tool, and for the 2d screen it was: both indexes were
+compared directly, giving 195 documents, 43 353 chunks and one equal sha256 over every chunk text.
 """
 
 from __future__ import annotations
