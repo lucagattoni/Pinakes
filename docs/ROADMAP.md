@@ -56,8 +56,9 @@ precision nobody measured.
   **zero** edges on the corpus it was gated against. **0.12.0 ships the check that reports it**, so a
   future corpus cannot repeat it silently.
 - **[The template release](#the-template-release--t1-shipped-in-0170) has started** — plan written,
-  reviewed, four decisions taken, and **T1 shipped as `0.17.0`**: template versions now mean
-  something and a gate keeps them meaning it. T2–T4 and T7 remain; `main` has moved far enough that
+  reviewed, four decisions taken, **T1 shipped as `0.17.0`** and **T2 as `0.18.0`**: template
+  versions now mean something, a gate keeps them meaning it, and `pnk doctor` reports how far a KB
+  has drifted rather than only that it has. T3, T4 and T7 remain; `main` has moved far enough that
   the plan's Baseline block must be re-run before any `file:line` in it is trusted.
 - **[Two open corrections](#open-corrections--two-live)** — the list emptied on 20260805 and
   refilled on 20260807 from a single increment. It refills from *use*: both entries came from
@@ -101,10 +102,11 @@ number belongs to a release only when it is cut
 | **[0.15.1](#0151--one-clock--20260806-0051)** | 20260806 00:51 | One clock | • The last three naive-local timestamps are UTC<br>• `pnk init`'s `created`, the paid extractor's pricing, `doctor`'s price age<br>• Pinned by a test running at UTC+14<br>• `CLAUDE.md` 273 → 191 lines, into two new documents |
 | **[0.16.0](#0160--metadata-injection-measured-and-answered--20260807-1139)** | 20260807 11:39 | Metadata injection, measured and answered | • **6 improved, 6 regressed, 84 unchanged** — no-go<br>• `schema_version` stays 3; PDF layout heuristics and paid title inference stay unapproved<br>• `[chunking] metadata`, default `off`<br>• `tools/two_leg_gate.py`<br>• Five silent-failure fixes its own review found |
 | **[0.17.0](#0170--a-template-version-that-means-something--20260807-2055)** | 20260807 20:55 | A template version that means something | • `notes` 1.0 → **1.1**; **every existing KB now WARNs** in `pnk doctor`<br>• A check live since 0.1 that could never fire<br>• Template content archived under `_versions/`, SHA-256 ledger<br>• `tools/template_drift_gate.py` — seven legs, `check.sh` + CI<br>• `pnk init --template` refuses a non-single-component name<br>• *The template release, interim cut (D-9)* |
+| **[0.18.0](#0180--the-drift-warning-says-something-you-can-act-on--20260807-2237)** | 20260807 22:37 | The drift warning says something you can act on | • Drift reported as a **computed line count**, both sides rendered<br>• Template against template — your own tuning cannot appear<br>• `cannot compare` on every KB that exists, with an honest remedy<br>• `same manifest` instead of a misleading `0 lines differ`<br>• An unsupplied variable is a message, not a traceback<br>• *The template release, interim cut (D-9)* |
 | | | **[Open corrections](#open-corrections--two-live)** | • **Two live**, both from building 2d<br>• **Every one** came from *building* something, not from reading code<br>• Neither blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
-| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0**; T2–T4, T7 to come<br>• Cuts more than once (D-9), so the name stays here |
+| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0, T2 in 0.18.0**; T3, T4, T7 to come<br>• Cuts more than once (D-9), so the name stays here |
 
 ---
 
@@ -729,6 +731,50 @@ No `schema_version` bump, so no rebuild.
 
 ---
 
+## 0.18.0 — The drift warning says something you can act on · 20260807 22:37
+
+*The template release, interim cut — T2 of T1–T4, T7. Per D-9 the release cuts more than once, so
+the name stays in the unbuilt-work table until the final cut.*
+
+- **0.17.0 made every KB in existence start warning; this makes the warning useful.** Where the
+  recorded and installed versions are both archived, `pnk doctor` renders **both** through one
+  context and reports how many lines separate them.
+- **Template against template, never template against manifest** — and that is the design point, not
+  an implementation detail. Both sides are generated, so nothing you wrote is in either: a value you
+  tuned that the template *renders* is identical on both sides and cancels, and a literal you edited
+  enters neither, because neither side is your file. A report mixing the two could not tell a
+  template change from your own tuning, and would present the second as the first.
+- **On every KB that exists today it says `cannot compare`**, and that is the honest answer rather
+  than a gap. `notes@1.0` denotes eleven different template contents, so it is deliberately not
+  archived — a diff from the wrong base is worse than no diff. The remedy names the comparison
+  available now (`pnk init` a throwaway directory and diff its `pinakes.toml` against yours) and
+  **promises nothing a later release can't keep**: an earlier draft said the comparison becomes
+  automatic from the next bump, which is false for exactly the people who read it most, because an
+  unarchived version's content is gone rather than pending.
+- **A bump that leaves the manifest alone reports `same manifest`, never `0 lines differ`.** A
+  template version covers four files and this comparison reads one of them. Of the ten commits
+  between `notes@1.0` and `1.1`, **five touched only the starter golden set** — so two identical
+  manifests under two different versions is the ordinary case, and `0 lines differ` would have been
+  true of the manifest and read as *nothing changed*.
+- **A template needing a variable this build cannot supply is a message, not a traceback.**
+  `jinja2.UndefinedError` is not a `PinakesError`, so it reached the terminal as a stack trace; it
+  now names the template, the version and the variable, and in `pnk doctor` it is one `WARN` row
+  rather than the end of the report.
+- **The variables this build supplies stopped being written down twice.**
+  `tools/template_drift_gate.py` leg (vi) asserts every archived version renders, and it had its own
+  copy of the key set; it now builds from `template.CONTEXT_KEYS`, the same union the product
+  renders through. The failure that avoids is the gate staying green while `pnk doctor` raises on
+  the KB in front of it.
+- **Two of five mutants survived the first mutation pass, and neither was a bug in the code.** One
+  test asserted the right property without ever calling the function under test; the other made only
+  substitution edits, and one line replaced by another is still one line on each side of a diff — so
+  it was invariant under the very implementation it existed to reject. Both are recorded in
+  [RETROSPECTIVES.md](RETROSPECTIVES.md).
+
+No `schema_version` bump, so no rebuild.
+
+---
+
 # Part 5 · What is not built
 
 ## Open corrections — two live
@@ -907,10 +953,12 @@ placeholder in the CLI: [CLI § Planned — not built yet](CLI.md#planned--not-b
 
 ## The template release — T1 shipped in 0.17.0
 
-▶ **Started.** T1 landed and shipped as
-[`0.17.0`](#0170--a-template-version-that-means-something--20260807-2055); **T2, T3, T4 and T7 are
-still to come.** Per D-9 the release cuts more than once, so the name stays here until the final
-cut.
+▶ **Started.** T1 shipped as
+[`0.17.0`](#0170--a-template-version-that-means-something--20260807-2055) and T2 as
+[`0.18.0`](#0180--the-drift-warning-says-something-you-can-act-on--20260807-2237); **T3, T4 and T7
+are still to come.** Per D-9 the release cuts more than once, so the name stays here until the final
+cut. *(The heading above still says T1 because renaming it would move this section's anchor, which
+three links and the published site resolve.)*
 
 **What it adds:** the template ecosystem, `pnk upgrade` migrations, and the `sqlite-vec` tier.
 
@@ -918,13 +966,16 @@ cut.
 shipped in [`0.2.2`](#022--the-silent-skip-named--20260728-1849) appears in no KB created before it
 — so existing KBs stay PDF-blind permanently unless their owner edits the manifest by hand.
 [`0.6.0`](#060--links-you-can-write--20260801-1051)'s `requires_pinakes` closed the *diagnosis*;
-**0.17.0 makes the divergence detectable**, and `pnk upgrade` is what will close the gap.
+**0.17.0 makes the divergence detectable** and **0.18.0 makes it measurable** — though not on a KB
+recording `notes@1.0`, whose content was never archived, which is every KB that exists today.
+`pnk upgrade` is what will close the gap.
 
 **State:** the plan
 ([`plans/20260804_1016-template-release.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1016-template-release.md))
 is written, adversarially reviewed (36 findings), and its four open decisions were taken by the user
-on 20260804. **T1 is done.** T2 is next: `pnk doctor` reports drift as a diff rather than a version
-string, introducing the shared `render_context` that T1's gate had to work around.
+on 20260804. **T1 and T2 are done.** T3 is next: `pnk upgrade`, print only. It inherits two things
+T2 found — a comparison with no hunks must not read as agreement, and a remedy must not promise what
+an unarchived version makes impossible.
 
 ⚠️ Its measurements are recorded *as of a named commit*, not as properties — `main` moved twice
 during the session that wrote it. **Re-run its Baseline block before trusting any line number in
