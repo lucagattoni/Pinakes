@@ -10,6 +10,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.18.0] — 20260807 22:37
+
+### Changed
+
+- **`pnk doctor` now says *how far* your template has drifted, not just that it has.** When a KB
+  records one version and another is installed, it renders **both archived versions** through one
+  context and reports how many lines separate them. The comparison is template-against-template, so
+  nothing you wrote is in either side: your `provider = "fastembed"` renders identically on both and
+  cancels, and your `final_k = 4` never enters either side, because neither side is your file. A
+  report that mixed the two could not tell a template change from your own tuning, and would present
+  the second as the first.
+- **On every KB in existence it says `cannot compare`, and that is the honest answer.** `notes@1.0`
+  denotes eleven different template contents, so it is deliberately not archived — a diff computed
+  from the wrong base is worse than no diff. The message says so, names the comparison available
+  today (`pnk init` a throwaway directory and diff its `pinakes.toml` against yours), and does not
+  promise that a later release fixes it: an unarchived version's content is gone, not pending. KBs
+  stamped from `notes@1.1` onward are compared automatically.
+- **A version bump that leaves the manifest alone reports `same manifest`, never `0 lines differ`.**
+  A template version covers four files and this comparison reads one of them; of the ten commits
+  between the `notes` template's first version and its second, five touched only the starter golden
+  set. `0 lines differ` would have been true of the manifest and read as *nothing changed*.
+- **A template needing a variable this build cannot supply is a message, not a traceback.**
+  `jinja2.UndefinedError` is not a `PinakesError`, so it reached the terminal as a stack trace; it
+  now names the template, the version and the variable. In `pnk doctor` it is one `WARN` row rather
+  than the end of the report — a KB with an unrenderable third-party template is not a broken KB,
+  and discarding every other check over it helps nobody.
+
+### Fixed
+
+- **`.env.example` named the one environment variable this project forbids.** It recorded
+  `ANTHROPIC_API_KEY=`, and has since before `0.8.0` renamed the paid extractor's key to
+  `PINAKES_ANTHROPIC_API_KEY` — the rename swept the code, the docs and the CHANGELOG, and missed
+  the file whose entire job is to tell an operator the shape to copy. Anyone who copied it to
+  `.env` and filled it in got a `.env` that the extractor refuses **and** that exports, into every
+  `uv run --env-file .env` process, the exact variable the Anthropic SDK picks up on its own. That
+  is the hazard the rename existed to close, reintroduced by its own example file. It now reads
+  `PINAKES_ANTHROPIC_API_KEY=` and says why in a comment. Found by a documentation audit, not by
+  use — nothing reads `.env.example`, so nothing could have failed on it.
+
 ## [0.17.0] — 20260807 20:55
 
 ### Added
@@ -2852,7 +2891,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.18.0
 [0.17.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.17.0
 [0.16.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.16.0
 [0.15.1]: https://github.com/lucagattoni/pinakes/releases/tag/v0.15.1
