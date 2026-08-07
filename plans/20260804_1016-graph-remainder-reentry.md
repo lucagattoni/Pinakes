@@ -223,12 +223,14 @@ on that corpus:
 1. **Report the census before the verdict** (D3c). *"So a null result here is not 'structure does
    not help'. It is 'two edge kinds were absent, one was weak, and two were tested'"* —
    `corpus-probe-run.md`, verbatim. A single headline number states the first and means the third.
-2. **The chunker has since been fixed, so rebuild *before* the run, never during it.** Recognising
-   RFC section numbering was a chunking change with its own decision and its own eval, and it
-   shipped in **0.13.0** (`[chunking] headings = "numbered"`), which `tools/build_rfc_corpus.py`
-   stamps. So the original instruction — do not fix the chunker mid-run — now reads: build the
-   corpus **with** the grammar, re-derive the census above against it, and only then start the run.
-   Changing anything once the run has begun still invalidates the freeze.
+2. **The chunker has since been fixed, so decide the chunking *before* the run, never during it.**
+   Recognising RFC section numbering was a chunking change with its own decision and its own eval,
+   and it shipped in **0.13.0** as `[chunking] headings = "numbered"`. ⚠️ **It is opt-in and the
+   corpus repo's committed manifest does not set it**, so cloning and rebuilding reproduces the
+   headingless census above — the grammar does not arrive by itself. Either add the key to that
+   manifest and rebuild, or build a fresh corpus with `tools/build_rfc_corpus.py`, which stamps it.
+   Then re-derive the census against whichever you chose, and only then start the run. Changing
+   anything once the run has begun still invalidates the freeze.
 3. **Decide, with the user, what a pass or a fail on a three-kinds-absent corpus licenses**, and
    write it down *before* the numbers exist. Either answer is defensible; neither is defensible
    after the fact. The two readings are set out in F.

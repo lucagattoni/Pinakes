@@ -339,7 +339,7 @@ rather than assuming it away.
 
 Every number above is `tests/demo-kb`'s, and the paragraph above says why nothing should be tuned
 against it. **The measurement it cannot carry now has an instrument.** 110 questions over the RFC
-band `build_rfc_corpus.py --era modern --count 200` (RFCs 8600-8799, 195 published, ~43 350 chunks),
+band `build_rfc_corpus.py --era modern --count 200` (RFCs 8600-8799, 195 published, ~43 500 chunks),
 frozen at
 [`tools/rfc_corpus/questions.yaml`](https://github.com/lucagattoni/pinakes/blob/main/tools/rfc_corpus/questions.yaml)
 with its `before` leg beside it. **On `main`, unreleased.**
@@ -431,9 +431,9 @@ hub that decision 13's **2.0 undamped** weight was never designed for
   path, which sets `heading_path=None` unconditionally. Nothing failed to match because nothing was
   tried, so tightening a grammar would have fixed nothing. Silent. It cost citations their heading
   component, and it meant `in-section`, `parent` and `child` derived **zero** edges here.
-  **Fixed in 0.13.0** by `[chunking] headings = "numbered"`, which `tools/build_rfc_corpus.py` now
-  stamps — so a corpus built today carries heading paths and these figures describe the corpus that
-  produced them.
+  **Fixed in 0.13.0** by `[chunking] headings = "numbered"` — opt-in, so it reaches a corpus only
+  when its manifest asks for it. `tools/build_rfc_corpus.py` stamps it; this corpus's committed
+  manifest does not carry it, so these figures still describe what a rebuild of it produces.
 - **106 806 chunks is 2× past the NumPy vector tier's 50 000 threshold**, and `pnk doctor` says so.
   A 300-document, 20 MB knowledge base reaches the tier ceiling — which is a smaller corpus than
   the ceiling's framing implies.
@@ -518,9 +518,13 @@ ever raised the count. Artifacts:
 every type but `markdown` took the plain-block path — so `in-section` and `parent-child` derived
 **zero** edges and were never exercised, and a "sibling" there is an adjacent arbitrary size-slice
 rather than an adjacent section. The 9 is therefore a **floor** for a corpus whose chunker works,
-and `sibling`'s zero is a question for G5's gate, not a design decision. **Fixed in 0.13.0**
-(`[chunking] headings = "numbered"`): a corpus built today carries heading paths, so re-running this
-probe would measure a different corpus rather than reproduce these figures.
+and `sibling`'s zero is a question for G5's gate, not a design decision. **0.13.0 shipped the fix
+but does not apply it retroactively**: `[chunking] headings = "numbered"` is opt-in, defaults to
+`"none"` and is never stamped into a template, and this corpus's committed manifest has no
+`headings` key — so re-running the probe against it as published reproduces these figures rather
+than measuring a different corpus. Getting heading paths here means adding the key and rebuilding;
+a corpus built fresh by `tools/build_rfc_corpus.py`, which does stamp it, carries them from the
+start.
 
 **Why the synthetic corpus could never answer this**, which is the finding that outlived the
 negative result:

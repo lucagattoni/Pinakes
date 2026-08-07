@@ -111,7 +111,7 @@ only part that could make metadata "fundamental for retrieval" true rather than 
 | Corpus | Verdict |
 |---|---|
 | `tests/demo-kb` | **Cannot — power.** 66 answerable questions, **4 misses**, and **56 of 62 hits already at rank 1**. On `recall@k` the entire improvable pool is 4, and the project's own `sign_test(4, 0)` returns **p = 0.0625** — a *perfect* result fails the p < 0.05 bar the graph channel was held to. Second and independent: scoring is **document-level over de-duplicated paths** — `eval._run_question` collapses the passages to first-seen document paths and takes `hit_rank` from that list — and every demo-kb document has a heading-bearing chunk 0, so injecting into chunk 1 changes an outcome only when it lifts that document past a *rival* document. Numbers re-measured 20260806 03:52 against a fresh index; all 74 rows match the committed artifact exactly |
-| **The RFC band** — `build_rfc_corpus.py --era modern --count 200`, RFCs 8600-8799, **195 published**, ~43 350 chunks | **Can, since 2c.** Long sections; real `heading_path`s (0.13.0); published titles and a 96-token reserve (2a); and a frozen, blind-authored, calibrated **110-question golden set with an improvable pool of 15** (2c) — `tools/rfc_corpus/questions.yaml`, with the `before` leg at `tools/rfc_corpus/{baseline,outcomes}.json`. **It is not the 300-document corpus that bounded the graph gate** ([STATUS](../docs/STATUS.md#the-realism-corpus-exists-and-it-falsified-a-design-premise--built-20260804-0800)) — that one is larger, differently selected (a BFS cluster over `obsoletes`/`updates`, not a band), and still public at [`pinakes-corpus-rfc`](https://github.com/lucagattoni/pinakes-corpus-rfc). **Its numbers are not re-derivable even so**, because it was indexed before 0.13.0 and a rebuild today would carry heading paths it never had |
+| **The RFC band** — `build_rfc_corpus.py --era modern --count 200`, RFCs 8600-8799, **195 published**, ~43 500 chunks | **Can, since 2c.** Long sections; real `heading_path`s (0.13.0); published titles and a 96-token reserve (2a); and a frozen, blind-authored, calibrated **110-question golden set with an improvable pool of 15** (2c) — `tools/rfc_corpus/questions.yaml`, with the `before` leg at `tools/rfc_corpus/{baseline,outcomes}.json`. **It is not the 300-document corpus that bounded the graph gate** ([STATUS](../docs/STATUS.md#the-realism-corpus-exists-and-it-falsified-a-design-premise--built-20260804-0800)) — that one is larger, differently selected (a BFS cluster over `obsoletes`/`updates`, not a band), and still public at [`pinakes-corpus-rfc`](https://github.com/lucagattoni/pinakes-corpus-rfc) — documents, sidecars and manifest all committed, so its figures **are** re-derivable. ⚠️ **Its manifest has no `[chunking] headings` key**, and the grammar is opt-in at `"none"`, so a rebuild today still produces zero heading paths: to give that corpus sections you must add the key yourself |
 
 **The experiment is blocked on neither.** Step 1 shipped in 0.13.0; the golden set was authored,
 frozen and calibrated by 2c at `36f32ce`, **before any injection code existed**. What remains is
@@ -347,7 +347,7 @@ recorded here.**
 | # | Step | Blocked on | Cost |
 |---|---|---|---|
 | 1 | **Numbered-heading grammar for `.txt`** | ✅ **Shipped 0.13.0.** All of §5 settled: the key and vocabulary (§5.2) and the full predicate, written before any corpus was consulted (§5.3) | Moderate |
-| 2 | **The injection experiment** (§2) | **Steps 2d–2e below** — 2a shipped 20260806 06:17, 2b 08:33, 2c 11:56. Re-scoped 20260806 03:55, re-ordered 05:15, screen inserted 05:30 — see the notes | **Measured, not estimated:** `pnk sync --rebuild` over the ~43 350-chunk corpus takes **46 min**, and 2d and 2f need two legs each |
+| 2 | **The injection experiment** (§2) | **Steps 2d–2e below** — 2a shipped 20260806 06:17, 2b 08:33, 2c 11:56. Re-scoped 20260806 03:55, re-ordered 05:15, screen inserted 05:30 — see the notes | **Measured, not estimated:** `pnk sync --rebuild` over the ~43 500-chunk corpus takes **46 min**, and 2d and 2f need two legs each |
 | 3 | **Markdown H1 → title** | ✅ **Shipped 0.15.0.** `first_h1()` in `chunk.py`, wired at mint time. Existing sidecars are never rewritten, so no migration | Small |
 | 4 | **`pnk doctor` title check** (B3) | ✅ **Shipped 0.14.0** | Small |
 | 5 | PDF layout heuristics + confidence scoring | **Step 2 showing movement** | High |
@@ -495,7 +495,7 @@ whose difference *is* the experiment, and pairs rows on question id as `check_id
 does. `check_baseline` guards the other half — that a baseline and its per-question rows came from
 one run.
 
-**Budget, measured 20260806.** The corpus is ~43 350 chunks and `pnk sync --rebuild` over it took
+**Budget, measured 20260806.** The corpus is ~43 500 chunks and `pnk sync --rebuild` over it took
 **46 minutes**. 2d needs two syncs (uninjected, then injected); 2e's schema bump invalidates both, so
 2f needs two more. **Start the first rebuild in the background at the top of a session, never at the
 end.**
@@ -578,9 +578,10 @@ the refusal that protects them second, and only then was the baseline captured.
   195 RFCs** under `BAAI/bge-small-en-v1.5`. The same run reproduced this bullet's own figures from
   an independent code path (largest prefix 68; per-document largest median 31, p95 51, p99 61;
   longest title 32) and confirmed the refusal fires for **195 of 195** documents at the default
-  `max_tokens = 510` and for **none** at 414. **43 503 counts chunk/prefix pairs; the corpus itself
-  is ~43 350 chunks, and `pnk sync --rebuild` over it took 46 minutes** (measured 20260806 while
-  capturing 2c's baseline) — the figure to size 2d's and 2f's two legs each against.
+  `max_tokens = 510` and for **none** at 414. **So the corpus is ~43 500 chunks** — one prefix is
+  built per chunk, so 2b's pair count is the chunk count — and **`pnk sync --rebuild` over it took
+  46 minutes** (measured 20260806 while capturing 2c's baseline). That is the figure to size 2d's
+  and 2f's two legs each against.
 
 **2a was a fetch, not a heuristic — which is what made it cheap and what kept it clear of a
 rejected decision.** `https://www.rfc-editor.org/rfc/rfc<N>.json` returns the RFC's authoritative

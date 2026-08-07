@@ -75,10 +75,11 @@ uv run python3 tools/reachable_ceiling_probe.py --kb <corpus-path> --drop shared
 `heading_path`**. The cause is not a grammar that failed to match RFC section numbering — **no
 grammar was ever run.** `chunk.py` dispatches on *source type*, and until 0.13.0 every type but
 `markdown` took `_plain_blocks`, which sets `heading_path=None` unconditionally
-([DESIGN §4.6](../docs/DESIGN.md)). Tightening a grammar would have fixed nothing. **Fixed since,
-in 0.13.0** by `[chunking] headings = "numbered"`, and the corpus builder stamps it — so the figures
-below describe the corpus as it was on 20260804 and re-running this probe today measures a different
-corpus, not a reproduction.
+([DESIGN §4.6](../docs/DESIGN.md)). Tightening a grammar would have fixed nothing. **0.13.0 shipped
+`[chunking] headings = "numbered"`, but it is opt-in and this corpus's committed manifest does not
+set it** — so re-running the probe against the corpus as published still yields zero heading paths
+and reproduces the figures below. Adding the key and rebuilding is a deliberate act, and it makes
+the run a different measurement.
 
 Consequence for this measurement, stated before it runs:
 

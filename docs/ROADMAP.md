@@ -688,8 +688,9 @@ numbering — because none was ever run: `chunk.py` dispatched on *source type*,
 `parent-child` derived **zero** edges and were never exercised, and `sibling` derived 106 506 that
 changed no outcome. All six kinds were built anyway — that zero was a question for G5's gate, which
 carried a `--drop sibling` arm to answer it, not a reason to drop a kind on evidence from a corpus
-whose chunker had never been asked. `0.13.0` gave plain text a numbered-heading grammar, so a corpus
-built today does carry heading paths; the gate's numbers are the corpus that produced them.
+whose chunker had never been asked. `0.13.0` gave plain text a numbered-heading grammar — opt-in,
+and that corpus's committed manifest does not ask for it, so re-running against it as published
+reproduces these numbers rather than replacing them.
 
 → The design it would implement: [graph/PINAKES_APPROACH.md](graph/PINAKES_APPROACH.md). The build
 order:
@@ -741,9 +742,10 @@ nothing at all here, by construction.
 1. ✅ **Detect the silence** — `pnk doctor` reports the share of chunks carrying a `heading_path`
    (0.12.0). Detection only, as scoped; extending the grammar was left a separate decision.
 2. ✅ **Make the three inert kinds derivable** — `[chunking] headings = "numbered"` gives plain text
-   a heading path (0.13.0), and `tools/build_rfc_corpus.py` stamps it, so a corpus rebuilt today has
-   sections. **What remains is re-running the gate against such a corpus**, which nobody has done;
-   the re-entry checklist is
+   a heading path (0.13.0). It is **opt-in**, so it reaches a corpus only when asked: the published
+   RFC corpus's manifest does not set it, while `tools/build_rfc_corpus.py` stamps it for a corpus
+   built fresh. **What remains is re-running the gate against a corpus that has sections**, which
+   nobody has done; the re-entry checklist is
    [`plans/20260804_1016-graph-remainder-reentry.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1016-graph-remainder-reentry.md).
 3. **A different channel design.** Explicitly *not* a more expensive one — G5's result licenses
    neither PPR nor the `[ner]` extra, and the pre-commitment said so before the number was known.
