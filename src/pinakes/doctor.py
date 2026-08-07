@@ -220,15 +220,21 @@ def _changed_lines(base: str, ours: str) -> int:
     return sum(1 for line in diff[2:] if line[:1] in ("+", "-"))
 
 
-def _cannot_compare(missing: Sequence[str], name: str) -> Check:
+def _cannot_compare(missing: Sequence[str], name: str, archived: Sequence[str]) -> Check:
     """The path every KB in existence takes, so it is written for someone who did nothing wrong.
 
     `notes@1.0` is deliberately not archived — it denotes eleven different template contents, and a
     diff computed from the wrong base is worse than no diff (D-2b). So this is the ordinary case
     and not an edge case, and a one-word shrug here would be the single most-read string this
     increment ships.
+
+    **It does not promise that a later release will fix this KB.** An earlier wording ended "from
+    the next template version onward the comparison is automatic", which is false for exactly the
+    people who read it most: `1.0`'s content is not archived and never will be, so a KB recording
+    it stays uncomparable however many versions ship afterwards. What a later version changes is
+    the *next* KB, and that is what this says.
     """
-    shipped = ", ".join(f"{name}@{version}" for version in template.archived_versions(name))
+    shipped = ", ".join(f"{name}@{version}" for version in archived)
     return Check(
         "template",
         Status.WARN,
@@ -236,10 +242,12 @@ def _cannot_compare(missing: Sequence[str], name: str) -> Check:
         f"{'is' if len(missing) == 1 else 'are'} not in this build's archive",
         f"Nothing is wrong with your KB and nothing needs changing. A manifest records a version "
         f"string, never the content that version meant, and this build ships the content of "
-        f"{shipped or 'no version of this template'} — so there is no baseline to diff against. "
+        f"{shipped or 'no version of this template'} — so there is no baseline to diff against, "
+        f"and there will not be a later one: an unarchived version's content is gone, not pending. "
         f"To see what moved, compare it by hand: run `pnk init` on a throwaway directory and diff "
-        f"its pinakes.toml against yours. From the next template version onward the comparison is "
-        f"automatic.",
+        f"its pinakes.toml against yours. A KB stamped from "
+        f"{f'{name}@{archived[-1]}' if archived else 'an archived version'} or later is compared "
+        f"automatically.",
     )
 
 
@@ -277,7 +285,7 @@ def _template(manifest: Manifest) -> Check:
         if candidate not in archived
     ]
     if missing:
-        return _cannot_compare(missing, name)
+        return _cannot_compare(missing, name, archived)
 
     context = template.render_context(manifest)
     try:
@@ -291,6 +299,23 @@ def _template(manifest: Manifest) -> Check:
         # KB; taking the whole report down over one unrenderable template — every other check
         # discarded — is the opposite of that, and the KB is not even broken.
         return Check("template", Status.WARN, f"cannot compare: {exc.message}", exc.remedy)
+
+    if difference == 0:
+        # **A version can move without the manifest moving.** A template version denotes four
+        # consumed files and this comparison reads one of them, so a bump that only touched
+        # `eval/questions.yaml` or `README.md` lands here — and of the ten commits between the
+        # `notes` template's first version and its second, five did exactly that. Reporting
+        # "0 lines differ" would be true of the manifest and read as "nothing changed", which is
+        # the whole class of defect this check was built to end.
+        return Check(
+            "template",
+            Status.WARN,
+            f"KB says {recorded}, installed is {installed.reference} — same manifest",
+            "The two versions stamp an identical `pinakes.toml`, so there is nothing to apply "
+            "there. A template version covers more than the manifest — its README and its starter "
+            "golden set — and those are yours to keep or refresh by hand; `pnk init` a throwaway "
+            "directory to see the current ones.",
+        )
     return Check(
         "template",
         Status.WARN,

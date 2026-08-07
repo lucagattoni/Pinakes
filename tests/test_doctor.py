@@ -2362,6 +2362,10 @@ def test_a_template_with_no_drift_reports_ok_and_renders_nothing(
         return ""
 
     monkeypatch.setattr(template, "render_archived", _record)
+    # Without this the test cannot fail: a monkeypatch that never landed leaves `calls` empty too,
+    # and an empty list is exactly what the assertion below is looking for.
+    assert template.render_archived is _record, "the patch has to land, or this asserts nothing"
+
     check = template_check(kb)
 
     assert check.status is Status.OK
@@ -2389,3 +2393,42 @@ def test_an_archived_version_needing_a_variable_the_current_one_dropped_still_re
 
     assert check.status is Status.WARN
     assert _reported_lines(check.detail) > 0, "it rendered both sides rather than raising"
+
+
+def test_a_version_bump_that_leaves_the_manifest_alone_does_not_report_zero_lines(
+    kb: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """A template version denotes four consumed files; this comparison reads one of them.
+
+    Of the ten commits between the `notes` template's first version and its second, five touched
+    `eval/questions.yaml` and none touched the manifest — so a bump whose manifest is byte-identical
+    is the ordinary case, not a contrived one. `0 lines differ` would be true of the manifest and
+    read as *nothing changed*, which is the class of defect this check exists to end.
+    """
+    identical = _manifest_template(final_k=5)
+    synthetic_template("synth", versions={"1.0": identical, "2.0": identical}, current="2.0")
+    check = template_check(_record_template(kb, "synth@1.0"))
+
+    assert check.status is Status.WARN, "the versions differ even though the manifest does not"
+    assert "0 line" not in check.detail
+    assert "same manifest" in check.detail
+    assert "golden set" in (check.remedy or ""), (
+        "it names what a version covers beyond the manifest"
+    )
+
+
+def test_the_cannot_compare_remedy_promises_nothing_a_later_release_cannot_keep(kb: Path) -> None:
+    """`notes@1.0`'s content is not archived and never will be (D-2b), so a KB recording it stays
+    uncomparable however many versions ship afterwards.
+
+    An earlier wording ended *"from the next template version onward the comparison is automatic"*,
+    which is false for exactly the people who read this most. What a later version changes is the
+    next KB, not this one.
+    """
+    remedy = template_check(_record_template(kb, "notes@1.0")).remedy or ""
+
+    assert "there will not be a later one" in remedy
+    assert "stamped from" in remedy, (
+        "the promise is scoped to a KB stamped from an archived version"
+    )
+    assert "onward the comparison is automatic" not in remedy
