@@ -10,6 +10,7 @@ Nothing here changes anything, with one exception behind an explicit flag: `--pr
 orphaned sidecars, after printing every path it is about to remove (§6.4).
 """
 
+import difflib
 import os
 import sqlite3
 import tomllib
@@ -202,7 +203,57 @@ def _environment() -> Iterator[Check]:
     )
 
 
+def _changed_lines(base: str, ours: str) -> int:
+    """How many lines a unified diff of two renders adds or removes.
+
+    **Computed, never written down.** The template release's plan asserted a literal line count in
+    three places and two commits made it wrong on the count, on the composition, *and* on the claim
+    that the lines in question were comments. No test and no exit criterion in this increment
+    asserts a constant here.
+
+    The first two elements are `unified_diff`'s file headers and are dropped by position rather
+    than by prefix: a manifest line whose own content began `---` would be excluded by a prefix
+    test, silently under-counting. When the renders are identical `unified_diff` yields nothing at
+    all, so the slice is empty and the count is zero.
+    """
+    diff = list(difflib.unified_diff(base.splitlines(), ours.splitlines(), lineterm="", n=0))
+    return sum(1 for line in diff[2:] if line[:1] in ("+", "-"))
+
+
+def _cannot_compare(missing: Sequence[str], name: str) -> Check:
+    """The path every KB in existence takes, so it is written for someone who did nothing wrong.
+
+    `notes@1.0` is deliberately not archived — it denotes eleven different template contents, and a
+    diff computed from the wrong base is worse than no diff (D-2b). So this is the ordinary case
+    and not an edge case, and a one-word shrug here would be the single most-read string this
+    increment ships.
+    """
+    shipped = ", ".join(f"{name}@{version}" for version in template.archived_versions(name))
+    return Check(
+        "template",
+        Status.WARN,
+        f"cannot compare: {' and '.join(missing)} "
+        f"{'is' if len(missing) == 1 else 'are'} not in this build's archive",
+        f"Nothing is wrong with your KB and nothing needs changing. A manifest records a version "
+        f"string, never the content that version meant, and this build ships the content of "
+        f"{shipped or 'no version of this template'} — so there is no baseline to diff against. "
+        f"To see what moved, compare it by hand: run `pnk init` on a throwaway directory and diff "
+        f"its pinakes.toml against yours. From the next template version onward the comparison is "
+        f"automatic.",
+    )
+
+
 def _template(manifest: Manifest) -> Check:
+    """Whether the KB's template has moved since the KB was stamped — and by how much.
+
+    **Template against template, never template against manifest.** Both sides are rendered from
+    the archive through one `template.render_context`, so nothing the user wrote appears in either.
+    A report built from the user's own `pinakes.toml` could not tell a template change from their
+    own tuning, and this check must never present the second as the first.
+
+    Nothing is rendered unless the versions actually differ: `pnk doctor` on a current KB — which
+    is every KB whose template has not moved — pays nothing for this check.
+    """
     recorded = manifest.kb.template
     if recorded is None:
         return Check("template", Status.OK, "none recorded")
@@ -214,16 +265,40 @@ def _template(manifest: Manifest) -> Check:
             "template",
             Status.WARN,
             f"{recorded} is not installed here",
-            "The KB still works; `pnk upgrade` (the template release) is what will diff templates.",
+            "The KB still works; `pnk upgrade` is what will diff templates.",
         )
-    if installed.version != version:
-        return Check(
-            "template",
-            Status.WARN,
-            f"KB says {recorded}, installed is {installed.reference}",
-            "Templates version independently of the package; nothing is applied automatically.",
+    if installed.version == version:
+        return Check("template", Status.OK, recorded)
+
+    archived = template.archived_versions(name)
+    missing = [
+        reference
+        for reference, candidate in ((recorded, version), (installed.reference, installed.version))
+        if candidate not in archived
+    ]
+    if missing:
+        return _cannot_compare(missing, name)
+
+    context = template.render_context(manifest)
+    try:
+        difference = _changed_lines(
+            template.render_archived(name, version, context),
+            template.render_archived(name, installed.version, context),
         )
-    return Check("template", Status.OK, recorded)
+    except PinakesError as exc:
+        # A template needing a variable this build cannot supply is a *message*, and it is one row
+        # of the report rather than the end of it. `pnk doctor` exists to say what is wrong with a
+        # KB; taking the whole report down over one unrenderable template — every other check
+        # discarded — is the opposite of that, and the KB is not even broken.
+        return Check("template", Status.WARN, f"cannot compare: {exc.message}", exc.remedy)
+    return Check(
+        "template",
+        Status.WARN,
+        f"KB says {recorded}, installed is {installed.reference} — "
+        f"{difference} {'line differs' if difference == 1 else 'lines differ'}",
+        "`pnk upgrade` will print them. Nothing is applied automatically, and a KB on an older "
+        "template is not a broken one.",
+    )
 
 
 def _backends(manifest: Manifest) -> Iterator[Check]:

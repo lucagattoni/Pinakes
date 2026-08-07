@@ -64,6 +64,7 @@ from typing import Any, cast
 from jinja2 import StrictUndefined, Template, TemplateError, UndefinedError
 
 from pinakes.init import DEFAULT_EMBEDDING, DEFAULT_RERANK
+from pinakes.template import CONTEXT_KEYS
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSIONS_DIR = "_versions"
@@ -78,11 +79,14 @@ _EMBEDDING_PROVIDER, _EMBEDDING_MODEL, _EMBEDDING_DIM = DEFAULT_EMBEDDING
 _RERANK_PROVIDER, _RERANK_MODEL = DEFAULT_RERANK
 
 # Leg (vi) only asks whether an archived version *renders*, so the values here are arbitrary and
-# the **key set** is the whole point. It is the set `pnk init` passes (`init.py`), sourced from
-# init's own constants where they exist so the two cannot drift apart. A template version that
-# needs a variable absent here fails leg (vi) — which is the intended coupling: this build must be
-# able to render every version it ships, or `pnk upgrade` cannot read its own archive.
-STOCK_CONTEXT: dict[str, Any] = {
+# the **key set** is the whole point. **The keys come from `template.CONTEXT_KEYS`** — the same
+# union `pnk doctor` renders both sides of a comparison through — rather than being written out
+# again here. A literal copy would let this gate stay green while `doctor` raised on a KB it could
+# not render: the gate would be asserting that the archive renders under a context the product
+# does not use. A template version needing a variable outside the union fails leg (vi), which is
+# the intended coupling: this build must be able to render every version it ships, or `pnk upgrade`
+# cannot read its own archive.
+_STOCK_VALUES: dict[str, Any] = {
     "name": "stock",
     "kb_id": "01JZZZZZZZZZZZZZZZZZZZZZZZ",
     "template": "stock@0",
@@ -93,6 +97,7 @@ STOCK_CONTEXT: dict[str, Any] = {
     "rerank_provider": _RERANK_PROVIDER,
     "rerank_model": _RERANK_MODEL,
 }
+STOCK_CONTEXT: dict[str, Any] = {key: _STOCK_VALUES.get(key, "stock") for key in CONTEXT_KEYS}
 
 
 def _plural(count: int, noun: str, plural: str | None = None) -> str:
