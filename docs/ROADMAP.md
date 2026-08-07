@@ -27,23 +27,27 @@ precision nobody measured.
   [`0.5.0`](#050--links-you-can-walk--20260731-1127)–[`0.6.0`](#060--links-you-can-write--20260801-1051),
   the graph release in [`0.11.0`](#the-graph-release--shipped-0110). The deep and template releases
   are unbuilt.
-- **The live question is whether document metadata is retrieval context**
-  ([`plans/20260805_1721-metadata-as-retrieval-context.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260805_1721-metadata-as-retrieval-context.md)).
-  Three of its four scheduled steps have shipped in
-  [`0.13.0`](#0130--plain-text-can-carry-a-heading-path--20260805-2101)–[`0.15.0`](#0150--a-document-says-what-it-is-called--20260805-2248);
-  **what remains is the injection experiment**, the measurement the investigation was opened to
-  take. Its outcome decides whether the expensive downstream work — PDF layout heuristics, paid
-  title inference — is arguable at all. **It is six increments, not one** (20260806): eight
-  adversarial rounds re-scoped it, recorded every decision with its rejected alternatives, and
-  measured six conditions that fail silently if missed, three of them since closed. **2a, 2b and 2c
-  shipped 20260806, and none of it is released yet.** The corpus carries real titles and a measured
-  token reserve; the code that builds a metadata prefix — and refuses one that would overrun the
-  model's window rather than letting it be truncated in silence — exists but is **dormant**, wired
-  into nothing until 2d; and the golden set is authored, frozen and calibrated, with its `before` leg
-  captured (110 questions, improvable pool 15). It was written by authors who had not read this
-  repository, before any injection code existed, so that no number could influence the questions.
-  **2d is next**: a vector-only screen, run before the `schema_version` 4 bump because that bump is
-  the only irreversible step in the plan.
+- **Is document metadata retrieval context? Measured, and the answer was no — on one corpus, through
+  one channel**
+  ([`plans/20260805_1721-metadata-as-retrieval-context.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260805_1721-metadata-as-retrieval-context.md),
+  closed 20260807). The investigation ran to its own pre-registered end. Its screen injected
+  `title > heading path` into the text that is **embedded**, rebuilt a 195-document / 43 353-chunk
+  RFC corpus, and scored a frozen 110-question golden set: **6 questions improved, 6 regressed, 84
+  unchanged**. The criterion — fixed in writing before the run — was strictly more improvements than
+  regressions, so the answer is no.
+  **What that bought is what it was for.** `schema_version` 4 is not taken, and **PDF layout
+  heuristics and paid LLM title inference stay unapproved** — two expensive pieces of work, killed
+  by one measurement rather than argued about. The screen existed to make exactly that call before
+  the irreversible step, and it did.
+  **What it does not say.** Only the *vector* channel was injected; reaching the lexical channel was
+  the schema bump the screen priced and declined. So the claim is *"vector-only injection does not
+  help on this corpus"*, not *"metadata is worthless"*. Re-opening it needs a **corpus**, not a new
+  idea about the prefix: this one's `lexical` and `simple-lookup` questions are saturated at 1.00,
+  which puts all its power in `paraphrase`.
+  Shipped in [`0.16.0`](#0160--metadata-injection-measured-and-answered--20260807-1139) anyway,
+  because they are useful whatever the answer: `[chunking] metadata` (default `off`, so you can
+  measure it on *your* corpus), `tools/two_leg_gate.py`, and five silent-failure fixes the
+  increment's own adversarial review found in it.
 - **[The graph release](#the-graph-release--shipped-0110) shipped — and its channel is `off`.**
   Blocked for three days on a *corpus*, not on code; the RFC corpus cleared the reachability
   precondition, and then the retrieval gate improved **0** multi-hop questions and regressed **3**
@@ -54,9 +58,9 @@ precision nobody measured.
 - **[The template release](#the-template-release--ready-to-start) is unblocked** — plan written,
   reviewed, four decisions taken. Nobody has started it; `main` has moved far enough that its
   Baseline block must be re-run before any `file:line` in it is trusted.
-- **[No open corrections](#open-corrections--none-live)** — the list is empty for the first
-  time since it opened on 20260731. It refills from *use*, so that means nobody has run Pinakes
-  lately, never that it is finished.
+- **[Two open corrections](#open-corrections--two-live)** — the list emptied on 20260805 and
+  refilled on 20260807 from a single increment. It refills from *use*: both entries came from
+  **building** 2d, and neither is visible from reading the code that holds it.
 
 ---
 
@@ -94,7 +98,8 @@ number belongs to a release only when it is cut
 | **[0.14.0](#0140--the-tool-stops-crying-wolf--20260805-2222)** | 20260805 22:22 | The tool stops crying wolf | • Heading coverage WARNs only for `markdown` at 0%<br>• `pnk init` adopts a directory with content<br>• A `titles` nudge, never a warning<br>• The sync loop stays serial — measured |
 | **[0.15.0](#0150--a-document-says-what-it-is-called--20260805-2248)** | 20260805 22:48 | A document says what it is called | • A Markdown `# ` heading becomes the title<br>• Fence-aware, `##` excluded, Markdown only<br>• No migration — existing titles are never rewritten |
 | **[0.15.1](#0151--one-clock--20260806-0051)** | 20260806 00:51 | One clock | • The last three naive-local timestamps are UTC<br>• `pnk init`'s `created`, the paid extractor's pricing, `doctor`'s price age<br>• Pinned by a test running at UTC+14<br>• `CLAUDE.md` 273 → 191 lines, into two new documents |
-| | | **[Open corrections](#open-corrections--none-live)** | • None live — first time since 20260731<br>• **Every one** came from *building* the RFC corpus, not from reading code<br>• None blocking |
+| **[0.16.0](#0160--metadata-injection-measured-and-answered--20260807-1139)** | 20260807 11:39 | Metadata injection, measured and answered | • **6 improved, 6 regressed, 84 unchanged** — no-go<br>• `schema_version` stays 3; PDF layout heuristics and paid title inference stay unapproved<br>• `[chunking] metadata`, default `off`<br>• `tools/two_leg_gate.py`<br>• Five silent-failure fixes its own review found |
+| | | **[Open corrections](#open-corrections--two-live)** | • **Two live**, both from building 2d<br>• **Every one** came from *building* something, not from reading code<br>• Neither blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
 | | | **[The template release](#the-template-release--ready-to-start)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• Not started |
@@ -621,19 +626,86 @@ written out. The relocation's real cost was its **pointers**: 21 references acro
 docs-only change does not look like it touches. A grep for the moved *wording* finds none of them —
 the sweep has to run on the source file's own name.
 
+## 0.16.0 — Metadata injection, measured and answered · 20260807 11:39
+
+- **The investigation closed with a number.** Are `title` and `heading_path` retrieval context, or
+  display metadata? Injected into the text that is **embedded**, over a 195-document /
+  43 353-chunk RFC corpus, scored against a blind-authored, frozen 110-question golden set:
+  **6 questions improved, 6 regressed, 84 unchanged.** The criterion — strictly more improvements
+  than regressions — was fixed in writing before the run. It is not met.
+
+**What the no-go bought, and it is the point of the whole exercise.** `schema_version` stays at 3,
+and **PDF layout heuristics and paid LLM title inference stay unapproved** — both were gated on this
+showing movement. A cheap screen was inserted *ahead of* the irreversible schema bump precisely so
+the expensive work could die on evidence rather than on argument, and that is what happened.
+
+**Read it as narrowly as it was measured.** Only the **vector** channel was injected. Reaching the
+lexical channel is the schema bump the screen priced and declined, so the claim is *"vector-only
+injection does not help on this corpus"* — not *"metadata is worthless"*. What would re-open it is a
+**corpus**, not another idea about the prefix: this one's `lexical` and `simple-lookup` questions
+are saturated at 1.00, which puts all of its statistical power in `paraphrase`.
+
+**Why a null was believable at all — the controls, not the number.** Both legs were proven to be the
+same corpus (one sha256 over all 43 353 chunk texts, equal); the injection was proven to have
+reached the vectors (mean cosine **0.8398**, zero unchanged); the uninjected index was proven to
+still reproduce the frozen baseline, **110 rows of 110**, twice. Chunk texts are byte-identical
+between the legs by construction, so without the second control a silent no-op and a true null
+would have produced identical artifacts — and the conclusion would have been drawn from nothing
+having happened.
+
+**Shipped anyway, because they are useful whatever the answer.** `[chunking] metadata`, default
+`"off"`, so a KB whose questions are *not* solved by BM25 plus a reranker can measure this rather
+than inherit the verdict; turning it on is reported as drift, applied by `pnk sync --rebuild`, and a
+prefix that would not fit the model's window is refused per document instead of being silently
+truncated off the longest chunks. And `tools/two_leg_gate.py`, which refuses to compare two eval
+legs differing in anything but one named header key — `graph_gate.check_identity` compares five
+fields and not `chunking`, so two legs chunked differently compared clean.
+
+**Five silent-failure fixes came out of the increment's own adversarial review**, and the sharpest
+is worth stating because it falsified a claim the increment itself had written. The option was put
+in `[chunking]` rather than `[retrieval]` *because* `[chunking]` is recorded in the index and so
+cannot flip unnoticed. True of the mechanism; false of every index that existed. Identity keys
+absent from an index read as *unknown, never drifted* — the rule that stops an upgrade demanding a
+rebuild of every KB — and this key is absent from every index built before 0.16.0, with only a
+`--rebuild` ever stamping it. So on a pre-existing KB the flip was completely silent: no drift,
+nothing re-embedded, and `pnk doctor` printing `OK  chunking coherence` over vectors with no prefix
+in them. Absence is now read as `off` for this one key, on the ground that no release which could
+have written such an index was able to inject anything. The other four: `--rebuild` carried a
+paid-extracted document's *vectors* forward while stamping the current settings over the index; the
+fix for that shipped without the truncation guard and with a commit that could publish a document
+holding chunks and no vectors; `python -m pinakes.eval` would score an index its manifest no longer
+describes; and a title edit under injection left the vectors carrying the old title with nothing
+saying so.
+
+---
+
 ---
 
 # Part 5 · What is not built
 
-## Open corrections — none live
+## Open corrections — two live
 
-**Empty as of 20260805 22:18 — the first time since this list opened on 20260731.** Owned by
+**It emptied on 20260805 22:18 and refilled on 20260807, from one increment.** Owned by
 [`plans/20260731_1202-open-corrections.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md).
 
-**That is not a finish line.** The list refills from *use*: every entry it has ever held came from
-**building** something — the RFC realism corpus, or the graph release measured against it — rather
-than from reading code, which is what that corpus was for. An empty list means nobody has run
-Pinakes lately, never that it is done.
+**Both live items came from *building* 2d, and neither is visible from reading the code that holds
+it** — which is the pattern every entry this list has ever held:
+
+* **`graph_gate.check_identity` is blind to `chunking`.** It compares `k`, `embedding`, `rerank`,
+  `ranking` and `retrieval` across its three legs, and not the block that says what a leg was
+  chunked under — so two legs chunked differently are judged against each other and the rechunk is
+  reported as whatever was being tested. Measured: `max_tokens` 510 versus 480 moves 63 of 1 858
+  chunk texts on one RFC. `tools/two_leg_gate.py` (0.16.0) closes the **two**-leg case; the
+  three-leg gate that licensed the graph channel's default still has it.
+* **`--rebuild` never re-chunks a protected paid document.** Its chunks are copied verbatim from
+  the index being replaced, so `headings`, `max_tokens` and `overlap` do not reach it while the run
+  stamps the current settings over the whole index. Not simply fixable: re-chunking needs the
+  extracted *text*, which for this class of document is exactly what may cost money to obtain
+  again. The `metadata` half was closed in 0.16.0, since embedding is free and the chunk texts are
+  already in hand.
+
+**The list refills from *use*.** An empty one means nobody has run Pinakes lately, never that it is
+done.
 
 **Nine items closed since 20260804**, and the pattern in them is worth more than the count:
 
