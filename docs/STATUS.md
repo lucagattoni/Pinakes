@@ -1,6 +1,6 @@
 # Status — what ships today
 
-**Latest release: 0.17.0** · last reviewed 20260807 20:55
+**Latest release: 0.17.0** · last reviewed 20260807 21:22
 
 > **This file is the only place in the repo that says what is built.** Every other doc describes
 > *how* something works or *why* it was designed that way, and links here for whether you can use it
@@ -602,10 +602,20 @@ the publish job had already reported `success` while `https://pypi.org/pypi/pina
 served `0.15.1` — a propagation lag that reads exactly like the failure this project has had
 before, where a run went green and nothing was published.
 
+**0.17.0, same standard, 20260807 21:22:** `uvx --no-cache --refresh --from "pinakes==0.17.0" pnk
+--version` → `pinakes 0.17.0`, on the second attempt; the first read *unsatisfiable* 30 s earlier.
+The four-step flow above was not re-run. **Two independent pieces of evidence, because neither
+alone is enough**: the `Publish to PyPI` step log prints `Uploading pinakes-0.17.0-py3-none-any.whl`
+and `Uploaded pinakes-0.17.0.tar.gz` (a step log cannot be CDN-cached), and the install above
+resolves from the index. At the moment both were true, `https://pypi.org/pypi/pinakes/json` — even
+with a cache-busting query string — still served an 18-version list ending at 0.16.0. **That
+endpoint's silence is not evidence of a failed publish**, and this is the third release where it
+has said so.
+
 | | |
 |---|---|
-| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.1, 0.8.0, 0.9.0, 0.10.0, 0.11.0, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.15.1 and 0.16.0.** **0.11.0 bumps `schema_version` to 3**, so the first `pnk sync` after upgrading rebuilds the whole index — free, and `pnk sync --rebuild` is what the refusal prints. 0.9.0's upload was refused on first attempt — renaming the repository broke PyPI trusted publishing, which matches on the exact repository name — and succeeded once the publisher was corrected. **0.8.0 renames the paid extractor's API key** to `PINAKES_ANTHROPIC_API_KEY`, so a KB driving the paid path from an older `.env` refuses until the variable is renamed. 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
-| First upload | 20260728 17:16 UTC · latest 20260806 00:56 UTC (0.15.1) |
+| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.1, 0.8.0, 0.9.0, 0.10.0, 0.11.0, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.15.1, 0.16.0 and 0.17.0** — nineteen. **0.17.0 bumps the `notes` template to 1.1**, so `pnk doctor` WARNs on every KB created before it: a report, not a fault, and there is nothing to do about it until `pnk upgrade` ships. **0.11.0 bumps `schema_version` to 3**, so the first `pnk sync` after upgrading rebuilds the whole index — free, and `pnk sync --rebuild` is what the refusal prints. 0.9.0's upload was refused on first attempt — renaming the repository broke PyPI trusted publishing, which matches on the exact repository name — and succeeded once the publisher was corrected. **0.8.0 renames the paid extractor's API key** to `PINAKES_ANTHROPIC_API_KEY`, so a KB driving the paid path from an older `.env` refuses until the variable is renamed. 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
+| First upload | 20260728 17:16 UTC · latest 20260807 21:20 UTC (0.17.0) |
 | Extras available | `st`, `light`, `pdf`, `claude` — all four |
 | `requires-python` | `>=3.13` |
 
