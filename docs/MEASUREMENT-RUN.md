@@ -50,8 +50,11 @@ print(f'one 5-page slice: EUR {est.total_eur:.4f} worst case')
 that is correct behaviour, and raising them deliberately is the first step of the measurement, not
 an obstacle to work around.
 
-**The key.** Put it in `.env` at the repo root — `.env` and `.env.*` are gitignored, and
-`.env.example` records the shape. This repo is public, so a key that is merely *untracked* is one
+**The key.** Put it in `.env` at the repo root as **`PINAKES_ANTHROPIC_API_KEY`**, never
+`ANTHROPIC_API_KEY` — `.env` and `.env.*` are gitignored, and `.env.example` records the shape.
+(It recorded the *wrong* name from 0.8.0's rename until 20260807; if your `.env` predates that,
+rename the variable or the extractor refuses.) This repo is public, so a key that is merely
+*untracked* is one
 `git add -A` from being published; ignoring it by pattern is what makes that impossible rather than
 merely unlikely.
 
@@ -117,8 +120,10 @@ uv run --env-file <repo>/.env pnk sync --estimate-only
 ```
 
 Record the measured input tokens. Compare against `budget/estimate.py`'s `PAGE_TOKEN_CEILING`
-(6,000/page) and `PROMPT_TOKENS` (300) — if the real figure is far below, the reservation is
-over-conservative and the constant can be tightened, which is this step's entire purpose.
+(6,000/page) and `PROMPT_TOKENS` (**700** — measured at 571 on 20260729 and rounded up; the
+original estimate of 300 understated it by 1.9×, in the *unsafe* direction) — if the real figure is
+far below, the reservation is over-conservative and the constant can be tightened, which is this
+step's entire purpose. **Compare against the measurement, not against a re-derivation.**
 
 **(b) Fix the output half — one real 5-page extraction.**
 
@@ -170,10 +175,12 @@ the two stages it skips.
 1. **`prices.toml`** gains the measured per-page constant and its `measured_on`.
 2. **DESIGN §9** gains the scanned-quality numbers, with date, model and euros.
 3. **DESIGN §7.1** gains the free-vs-paid delta.
-4. **`tests/fixtures/claude/`** — replace the authored bodies with recorded ones, and update the
-   README, which currently states plainly that they are not recordings.
-5. **STATUS.md** drops "output quality is not yet measured", and the release can be cut saying what
-   it measured instead of what it did not.
+4. **`tests/fixtures/claude/`** — **four branches were recorded live on 20260729 03:36** and the
+   README already carries per-fixture provenance, so the remaining work is *re-recording* those
+   four with `tools/record_claude_fixtures.py` and checking whether any still-authored branch has
+   become recordable.
+5. **STATUS.md** gains what this run measured. (Its "output quality is not yet measured" claim was
+   already dropped when the half-recording landed.)
 
 If the run contradicts the fixtures anywhere, that finding is worth more than the release schedule:
 it is the only evidence that can reach the assumption every branch test rests on.

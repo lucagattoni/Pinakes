@@ -165,7 +165,8 @@ against someone else's corpus are not a calibration. While absent, every result 
 | `low_below` | Below this, low confidence |
 | `high_above` | Above this, high confidence |
 
-Fit them with `pinakes.calibrate`, which *prints* a block to paste and never writes one.
+Fit them with `python -m pinakes.calibrate <kb>`, which *prints* a block to paste and never writes
+one. It is a module entry point, not a `pnk` subcommand.
 
 ## `[rerank]`
 

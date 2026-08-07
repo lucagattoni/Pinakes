@@ -45,6 +45,7 @@ build order:
 | [`20260804_1016-graph-remainder-reentry.md`](../plans/20260804_1016-graph-remainder-reentry.md) | What must be re-verified about G3/G5/G6 **if** the blocking measurement is ever passed — a re-entry checklist, not a plan |
 | [`20260804_1016-staged-channel-gates.md`](../plans/20260804_1016-staged-channel-gates.md) | The **gates** for the PPR channel and the `[ner]` extra — what measurement would justify each, and what would refuse it. Deliberately not implementation plans |
 | [`20260803_2239-corpus-probe-run.md`](../plans/20260803_2239-corpus-probe-run.md) | How the second headroom measurement is run against that corpus, and the conversion contract that keeps its frozen questions frozen |
+| [`20260807_2143-docs-audit-findings.md`](../plans/20260807_2143-docs-audit-findings.md) | **40 open documentation corrections** from the 20260807 audit — a worklist for the planner, **not a build plan**. Each names the file, line, claim, truth, evidence and fix; each was verified by a second agent prompted to refute it. The doctor-adjacent ones are cheaper after T2, and the three currency headers are restamped last |
 | [`decision-*.md`](../plans/) | A decision record — rationale, not instructions |
 | `20260725_1317-v0.1.md`, `20260727_1543-v0.2.md` | **Shipped.** Historical build orders, still cited by `check.sh` and `tools/paid_path_gate.py` |
 
