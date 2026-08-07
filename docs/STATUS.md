@@ -339,7 +339,7 @@ rather than assuming it away.
 
 Every number above is `tests/demo-kb`'s, and the paragraph above says why nothing should be tuned
 against it. **The measurement it cannot carry now has an instrument.** 110 questions over the RFC
-band `build_rfc_corpus.py --era modern --count 200` (RFCs 8600-8799, 195 published, ~43 500 chunks),
+band `build_rfc_corpus.py --era modern --count 200` (RFCs 8600-8799, 195 published, **43 353** chunks),
 frozen at
 [`tools/rfc_corpus/questions.yaml`](https://github.com/lucagattoni/pinakes/blob/main/tools/rfc_corpus/questions.yaml)
 with its `before` leg beside it. **On `main`, unreleased.**

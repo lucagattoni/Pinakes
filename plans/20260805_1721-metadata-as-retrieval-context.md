@@ -73,7 +73,8 @@ only part that could make metadata "fundamental for retrieval" true rather than 
    assumed.** Repeating the heading *line* inside every continuation chunk would reach both channels
    with no schema change at all, since FTS and the embedder both read `chunks.text`. But
    `_markdown_blocks` and `_numbered_blocks` include the heading line **in the block's own character
-   span** (`chunk.py:225-228`), so `chunks.text` is today exactly `text[char_start:char_end]`.
+   span** — both say so in their docstrings, and `_markdown_blocks`'s draws the consequence: a
+   chunk's text is *"exactly `source[char_start:char_end]`"*.
    Repeating a heading in a later chunk breaks that identity — the same defect as mutating
    `chunks.text`, wearing different clothes.
 
@@ -111,7 +112,7 @@ only part that could make metadata "fundamental for retrieval" true rather than 
 | Corpus | Verdict |
 |---|---|
 | `tests/demo-kb` | **Cannot — power.** 66 answerable questions, **4 misses**, and **56 of 62 hits already at rank 1**. On `recall@k` the entire improvable pool is 4, and the project's own `sign_test(4, 0)` returns **p = 0.0625** — a *perfect* result fails the p < 0.05 bar the graph channel was held to. Second and independent: scoring is **document-level over de-duplicated paths** — `eval._run_question` collapses the passages to first-seen document paths and takes `hit_rank` from that list — and every demo-kb document has a heading-bearing chunk 0, so injecting into chunk 1 changes an outcome only when it lifts that document past a *rival* document. Numbers re-measured 20260806 03:52 against a fresh index; all 74 rows match the committed artifact exactly |
-| **The RFC band** — `build_rfc_corpus.py --era modern --count 200`, RFCs 8600-8799, **195 published**, ~43 500 chunks | **Can, since 2c.** Long sections; real `heading_path`s (0.13.0); published titles and a 96-token reserve (2a); and a frozen, blind-authored, calibrated **110-question golden set with an improvable pool of 15** (2c) — `tools/rfc_corpus/questions.yaml`, with the `before` leg at `tools/rfc_corpus/{baseline,outcomes}.json`. **It is not the 300-document corpus that bounded the graph gate** ([STATUS](../docs/STATUS.md#the-realism-corpus-exists-and-it-falsified-a-design-premise--built-20260804-0800)) — that one is larger, differently selected (a BFS cluster over `obsoletes`/`updates`, not a band), and still public at [`pinakes-corpus-rfc`](https://github.com/lucagattoni/pinakes-corpus-rfc) — documents, sidecars and manifest all committed, so its figures **are** re-derivable. ⚠️ **Its manifest has no `[chunking] headings` key**, and the grammar is opt-in at `"none"`, so a rebuild today still produces zero heading paths: to give that corpus sections you must add the key yourself |
+| **The RFC band** — `build_rfc_corpus.py --era modern --count 200`, RFCs 8600-8799, **195 published**, **43 353** chunks | **Can, since 2c.** Long sections; real `heading_path`s (0.13.0); published titles and a 96-token reserve (2a); and a frozen, blind-authored, calibrated **110-question golden set with an improvable pool of 15** (2c) — `tools/rfc_corpus/questions.yaml`, with the `before` leg at `tools/rfc_corpus/{baseline,outcomes}.json`. **It is not the 300-document corpus that bounded the graph gate** ([STATUS](../docs/STATUS.md#the-realism-corpus-exists-and-it-falsified-a-design-premise--built-20260804-0800)) — that one is larger, differently selected (a BFS cluster over `obsoletes`/`updates`, not a band), and still public at [`pinakes-corpus-rfc`](https://github.com/lucagattoni/pinakes-corpus-rfc) — documents, sidecars and manifest all committed, so its figures **are** re-derivable. ⚠️ **Its manifest has no `[chunking] headings` key**, and the grammar is opt-in at `"none"`, so a rebuild today still produces zero heading paths: to give that corpus sections you must add the key yourself |
 
 **The experiment is blocked on neither.** Step 1 shipped in 0.13.0; the golden set was authored,
 frozen and calibrated by 2c at `36f32ce`, **before any injection code existed**. What remains is
@@ -347,7 +348,7 @@ recorded here.**
 | # | Step | Blocked on | Cost |
 |---|---|---|---|
 | 1 | **Numbered-heading grammar for `.txt`** | ✅ **Shipped 0.13.0.** All of §5 settled: the key and vocabulary (§5.2) and the full predicate, written before any corpus was consulted (§5.3) | Moderate |
-| 2 | **The injection experiment** (§2) | **Steps 2d–2e below** — 2a shipped 20260806 06:17, 2b 08:33, 2c 11:56. Re-scoped 20260806 03:55, re-ordered 05:15, screen inserted 05:30 — see the notes | **Measured, not estimated:** `pnk sync --rebuild` over the ~43 500-chunk corpus takes **46 min**, and 2d and 2f need two legs each |
+| 2 | **The injection experiment** (§2) | **Steps 2d–2e below** — 2a shipped 20260806 06:17, 2b 08:33, 2c 11:56. Re-scoped 20260806 03:55, re-ordered 05:15, screen inserted 05:30 — see the notes | **Measured, not estimated:** `pnk sync --rebuild` over the 43 353-chunk corpus takes **46 min**, and 2d and 2f need two legs each |
 | 3 | **Markdown H1 → title** | ✅ **Shipped 0.15.0.** `first_h1()` in `chunk.py`, wired at mint time. Existing sidecars are never rewritten, so no migration | Small |
 | 4 | **`pnk doctor` title check** (B3) | ✅ **Shipped 0.14.0** | Small |
 | 5 | PDF layout heuristics + confidence scoring | **Step 2 showing movement** | High |
@@ -469,12 +470,23 @@ that reads them.
    is written around hit-flips within one `kind` — so 2d writes the comparison, and 2f can reuse it
    with `sign_test` layered on top. Refuse to compare at all if the two headers disagree on
    anything but the injection key (below).
-7. **One correction 2d owes to code it does not otherwise touch.** `tools/build_rfc_corpus.py`'s
-   reserve note says *"what catches a corpus that exceeds it even so: `assert_chunkable`, loudly"*.
-   `assert_chunkable` cannot and never could — it validates `max_tokens` against the model window at
-   `sync.py:1137`, before anything is chunked, so it never sees a prefix. That is why 2b exists.
-   Correct it to name `assert_prefix_fits`, and say that it is dormant until this increment wires it
-   in.
+7. **Three docstring corrections 2d owes to code it does not otherwise touch**, since `src/`,
+   `tests/` and `tools/` are the implementer's to write and the planner may only ask:
+   * `tools/build_rfc_corpus.py`'s reserve note says *"what catches a corpus that exceeds it even
+     so: `assert_chunkable`, loudly"*. It cannot and never could — `assert_chunkable` validates
+     `max_tokens` against the model window at `sync.py:1137`, before anything is chunked, so it
+     never sees a prefix. That is why 2b exists. Name `assert_prefix_fits`, and say it is dormant
+     until this increment wires it in.
+   * The same module's header says the 300-RFC corpus *"lived on one machine and died with it"* and
+     that its measurement *"cannot be re-run today"*. It is public at
+     [`pinakes-corpus-rfc`](https://github.com/lucagattoni/pinakes-corpus-rfc) with documents,
+     sidecars and manifest committed; what is unavailable is the index (`.pinakes/` is gitignored)
+     and the unpinned backend revision. `CHANGELOG.md` carries the same sentence in a released entry
+     and **stays as written** — a dated record keeps its words.
+   * `doctor.py`'s heading-coverage docstring says heading detection is *"for `markdown` only —
+     every other kind goes through `_plain_blocks`"*, which 0.13.0 falsified and which the same
+     docstring contradicts twenty lines later. `tests/test_doctor.py` carries the same stale
+     sentence, plus a promise that a `.txt` file *"cannot carry one whatever it contains"*.
 
 **Do not commit the screen's legs.** The pre-registration says the screen's numbers are never cited
 as evidence in either direction and appear in the gate's report only as a note that a screen was
@@ -495,7 +507,7 @@ whose difference *is* the experiment, and pairs rows on question id as `check_id
 does. `check_baseline` guards the other half — that a baseline and its per-question rows came from
 one run.
 
-**Budget, measured 20260806.** The corpus is ~43 500 chunks and `pnk sync --rebuild` over it took
+**Budget, measured 20260806.** The corpus is **43 353** chunks and `pnk sync --rebuild` over it took
 **46 minutes**. 2d needs two syncs (uninjected, then injected); 2e's schema bump invalidates both, so
 2f needs two more. **Start the first rebuild in the background at the top of a session, never at the
 end.**
@@ -578,10 +590,14 @@ the refusal that protects them second, and only then was the baseline captured.
   195 RFCs** under `BAAI/bge-small-en-v1.5`. The same run reproduced this bullet's own figures from
   an independent code path (largest prefix 68; per-document largest median 31, p95 51, p99 61;
   longest title 32) and confirmed the refusal fires for **195 of 195** documents at the default
-  `max_tokens = 510` and for **none** at 414. **So the corpus is ~43 500 chunks** — one prefix is
-  built per chunk, so 2b's pair count is the chunk count — and **`pnk sync --rebuild` over it took
-  46 minutes** (measured 20260806 while capturing 2c's baseline). That is the figure to size 2d's
-  and 2f's two legs each against.
+  `max_tokens = 510` and for **none** at 414. ⚠️ **43 503 is 2b's harness's chunk/prefix pair count
+  over its own RFC cache. It is not this corpus's chunk count — it exceeds it.** The corpus 2c
+  measured is **43 353 chunks over 195 documents**, read from the index 2c built (`built_at`
+  20260806 10:24, `max_tokens` 414, `headings` numbered, 0 failures), and **`pnk sync --rebuild`
+  over it took 46 minutes**. That is the figure to size 2d's and 2f's two legs each against.
+  **Never derive one count from the other:** `assert_prefix_fits` skips a chunk whose prefix is
+  `None` and stores prefixes de-duplicated by string, so a pair count neither bounds nor certifies
+  a chunk count — an inference this plan drew on 20260807 and the corpus refuted.
 
 **2a was a fetch, not a heuristic — which is what made it cheap and what kept it clear of a
 rejected decision.** `https://www.rfc-editor.org/rfc/rfc<N>.json` returns the RFC's authoritative
