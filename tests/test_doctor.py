@@ -1891,6 +1891,29 @@ def test_chunking_coherence_warns_after_a_manifest_only_edit(kb: Path) -> None:
     assert "--rebuild" in _remedy(kb, "chunking coherence")
 
 
+def test_chunking_coherence_warns_when_metadata_injection_was_turned_on(kb: Path) -> None:
+    """`doctor` is the command a user runs to ask exactly this question, and it was the untested
+    half: `manifest.py`'s own docstring promises the flip is reported by `pnk sync` **and**
+    `pnk doctor`, but only the sync side had a test — a `doctor` that read a constant here would
+    report a healthy KB while every search ran against uninjected vectors.
+
+    It is also the key with the least visible effect: flipping it changes no chunk's text, hash or
+    span, so an incremental sync finds nothing changed and re-embeds nothing.
+    """
+    sync(load(kb), options=SyncOptions(), now="20260725 17:31")
+    manifest = kb / "pinakes.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            "[chunking]\n", '[chunking]\nmetadata = "prefix"\n', 1
+        ),
+        encoding="utf-8",
+    )
+    status, detail = checks(kb)["chunking coherence"]
+    assert status is Status.WARN
+    assert "chunking_metadata off -> prefix" in detail
+    assert "--rebuild" in _remedy(kb, "chunking coherence")
+
+
 def test_chunking_coherence_stays_ok_when_the_index_recorded_no_identity(kb: Path) -> None:
     """Every KB indexed before this existed. **WARN here would fire on all of them at once**, which
     is the unclearable-warning failure the heading-coverage check already has to answer for — and

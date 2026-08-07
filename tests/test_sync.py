@@ -2102,8 +2102,11 @@ def test_metadata_injection_is_off_by_default_and_embeds_the_chunk_text(kb: Path
     """The default is the whole compatibility story: every KB that predates the key embeds exactly
     what it embedded before, so no existing index's vectors change meaning under an upgrade."""
     write(kb, "rfc.md", SECTIONED)
-    _report, backend = run_recording(kb)
+    report, backend = run_recording(kb)
 
+    # Both sides are derived from the same run, so `[] == []` would satisfy this assertion while
+    # asserting nothing at all — a regression that chunked nothing would read as green.
+    assert report.embedded == 1 and len(backend.embedded) > 1, "precondition: it indexed something"
     assert backend.embedded == [text for text, _start, _end, _path in _chunk_rows(kb)]
 
 
@@ -2211,6 +2214,10 @@ def test_a_rebuild_applies_the_injection_and_clears_the_drift(kb: Path) -> None:
     _set_chunking(kb, metadata='"prefix"')
     _report, backend = run_recording(kb, rebuild=True)
 
+    # `set_meta` writes the chunking identity whenever the run chunked from empty, whether or not
+    # any document survived — so the drift assertion below does not rescue an `all(...)` over an
+    # empty list, and a rebuild that indexed nothing would pass both.
+    assert backend.embedded, "precondition: this rebuild actually re-embedded"
     assert all(PREFIX_SEPARATOR in embedded for embedded in backend.embedded)
     assert run(kb).chunking_drift == ()
 
@@ -2236,3 +2243,47 @@ def test_a_document_with_no_headings_is_still_prefixed_with_its_title(kb: Path) 
     assert [path for _text, _start, _end, path in rows] == [None], "nothing but the title to say"
     assert index(kb)[0]["title"] == "plain", "the filename stem, not content"
     assert backend.embedded == [f"plain{PREFIX_SEPARATOR}{text}" for text, *_rest in rows]
+
+
+def test_a_rebuild_injects_a_protected_paid_document_too(kb: Path, fake_paid: str) -> None:
+    """**The half-injected index.** `--rebuild` carries a paid-extracted document forward instead
+    of re-extracting it, and it used to carry its *vectors* forward with it — while `set_meta`
+    stamped the current `[chunking]` over the whole index. Turning injection on therefore produced
+    a KB whose paid documents held uninjected vectors, whose `meta` said `prefix`, and whose next
+    `pnk sync` and `pnk doctor` both reported no drift: every command succeeded over an index that
+    was injected in one half and not the other.
+
+    Extraction is what costs money; embedding is free, and the chunk texts are carried forward, so
+    the vectors are recomputed here rather than copied. The paid extraction itself is still
+    untouched — `test_a_rebuild_preserves_paid_provenance` owns that half.
+    """
+    _paid_index(kb, fake_paid)
+    _set_chunking(kb, metadata='"prefix"')
+
+    report, backend = run_recording(kb, rebuild=True)
+
+    assert report.paid_extraction_protected == ("docs/a.pdf",), "precondition: it was protected"
+    assert index(kb)[0]["extraction_backend"] == fake_paid, "and never re-extracted"
+    assert backend.embedded, "precondition: the copied-forward chunks were embedded at all"
+    assert all(embedded.startswith(f"a{PREFIX_SEPARATOR}") for embedded in backend.embedded), (
+        "a PDF carries no heading path, so the prefix is the title alone"
+    )
+    assert run(kb).chunking_drift == (), "and the index may now honestly claim the setting"
+
+
+def test_turning_injection_off_re_embeds_a_protected_document_as_well(
+    kb: Path, fake_paid: str
+) -> None:
+    """The mirror image, which a one-directional fix would leave open: an index built *with*
+    injection, rebuilt after turning it off, must not keep prefixed vectors for the one class of
+    document that is carried forward."""
+    _add_pdf_support(kb)
+    (kb / "docs" / "a.pdf").write_bytes(b"placeholder")
+    _set_chunking(kb, metadata='"prefix"')
+    assert run(kb, extract=fake_paid).embedded == 1
+
+    _set_chunking(kb, metadata='"off"')
+    _report, backend = run_recording(kb, rebuild=True)
+
+    assert backend.embedded, "precondition: the copied-forward chunks were embedded at all"
+    assert not any(PREFIX_SEPARATOR in embedded for embedded in backend.embedded)

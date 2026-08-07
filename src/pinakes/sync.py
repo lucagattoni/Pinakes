@@ -39,6 +39,7 @@ from ruamel.yaml.scalarbool import ScalarBoolean
 from pinakes import linkscan
 from pinakes.chunk import (
     PDF_SUFFIXES,
+    Chunk,
     assert_chunkable,
     assert_prefix_fits,
     chunk_document,
@@ -1234,6 +1235,7 @@ def _apply(
             _copy_forward_protected_document(
                 manifest,
                 connection,
+                backend=backend,
                 old_index_path=manifest.index_path,
                 old_doc_id=str(doc_id),
                 new_doc_id=doc_id,
@@ -1688,6 +1690,7 @@ def _copy_forward_protected_document(
     manifest: Manifest,
     connection: sqlite3.Connection,
     *,
+    backend: EmbeddingBackend | None,
     old_index_path: Path,
     old_doc_id: str,
     new_doc_id: DocId,
@@ -1695,12 +1698,29 @@ def _copy_forward_protected_document(
     content_hash: str,
     sidecar_hash: str | None,
 ) -> None:
-    """Populate one document's row, chunks and embeddings straight from the index `--rebuild` is
-    replacing — never re-extracted, never re-embedded, because `_paid_rebuild_survivors` already
-    proved nothing about its paid extraction needs to change. Title, tags and links still come from
-    the *current* sidecar (not the old row): those can have changed even when the file's content,
-    and hence its extraction, has not.
+    """Populate one document's row and chunks straight from the index `--rebuild` is replacing —
+    **never re-extracted**, because `_paid_rebuild_survivors` already proved nothing about its paid
+    extraction needs to change. Title, tags and links still come from the *current* sidecar (not
+    the old row): those can have changed even when the file's content, and hence its extraction,
+    has not.
+
+    **The vectors are recomputed rather than copied, and that distinction is the point: extraction
+    is what costs money, embedding is free.** Copying the old vectors pinned them to whatever
+    settings built them while `set_meta` stamped the *current* settings over the whole index — so
+    turning `[chunking] metadata` on and rebuilding produced a KB whose paid documents held
+    uninjected vectors, whose `meta` claimed injection was on, and whose next `pnk sync` and
+    `pnk doctor` both reported no drift: every command succeeded over a half-injected index. One
+    local embedding pass over one document's chunks removes the condition, in both directions —
+    turning injection *off* again had the mirror-image defect.
+
+    **It does not close the chunking half, which is older and wider than this key.** The chunks
+    themselves are copied verbatim, so `headings`, `max_tokens` and `overlap` still do not reach a
+    protected document on a rebuild — re-chunking needs the extracted *text*, which is exactly what
+    may no longer be obtainable without paying for it again. That one is reported to the planner
+    rather than widened into this increment.
     """
+    if backend is None:  # pragma: no cover — the caller's own assert proves an action needing one
+        raise SyncError("no embedding backend was loaded.", remedy="This is a bug; report it.")
     source = manifest.root / path
     parsed = _read_sidecar_for(manifest, path)
     connection.execute("ATTACH DATABASE ? AS old_index", (str(old_index_path),))
@@ -1741,17 +1761,56 @@ def _copy_forward_protected_document(
             "page_start, page_end FROM old_index.chunks WHERE doc_id = ? ORDER BY ordinal",
             (new_doc_id, old_doc_id),
         )
-        connection.execute(
-            "INSERT INTO embeddings (chunk_id, vector) "
-            "SELECT c.id, oe.vector FROM chunks c "
-            "JOIN old_index.chunks oc ON oc.doc_id = ? AND oc.ordinal = c.ordinal "
-            "JOIN old_index.embeddings oe ON oe.chunk_id = oc.id "
-            "WHERE c.doc_id = ?",
-            (old_doc_id, new_doc_id),
-        )
+        copied = connection.execute(
+            "SELECT id, text, char_start, char_end, token_count, heading_path FROM chunks "
+            "WHERE doc_id = ? ORDER BY ordinal",
+            (new_doc_id,),
+        ).fetchall()
     finally:
         connection.commit()
         connection.execute("DETACH DATABASE old_index")
+
+    # Outside the ATTACH: nothing below reads the old index. These are this index's own rows, and
+    # they are embedded under *this* run's settings rather than under whatever built the vectors
+    # being replaced.
+    title = parsed.title if parsed else None
+    inject = manifest.chunking.metadata == "prefix"
+    texts: list[str] = []
+    for row in copied:
+        stored_path: str | None = None if row["heading_path"] is None else str(row["heading_path"])
+        if inject and stored_path is not None:
+            # `unnumbered_heading_path` is deliberately not persisted (`chunk.Chunk`), so a copied
+            # row cannot say what its path looks like with the section numbers removed — and
+            # injecting the *stored* form would silently prepend the citation form this experiment
+            # measured at 44% numbers and rejected. Unreachable today, because only a PDF is ever
+            # protected and the PDF path records no heading path; **step 5 of the injection plan is
+            # what would make it reachable**, and it must arrive as this error rather than as a
+            # quietly different prefix on one class of document.
+            raise SyncError(
+                f"{path}: a paid-extracted document carried forward by --rebuild has a heading "
+                f"path ({stored_path!r}), which cannot be re-injected — the numbers-stripped form "
+                "is built when a document is chunked and is not stored.",
+                remedy=(
+                    'Set [chunking] metadata = "off", or re-extract this document so it is '
+                    "chunked by this run (`pnk sync --rebuild --force --extract=<backend>`, which "
+                    "spends)."
+                ),
+            )
+        chunk = Chunk(
+            text=str(row["text"]),
+            char_start=int(row["char_start"]),
+            char_end=int(row["char_end"]),
+            token_count=int(row["token_count"]),
+            heading_path=stored_path,
+            unnumbered_heading_path=stored_path,
+        )
+        texts.append(embedding_text(chunk, title=title) if inject else chunk.text)
+
+    if texts:
+        vectors = backend.embed(texts)
+        for row, vector in zip(copied, vectors, strict=True):
+            store.store_embedding(connection, int(row["id"]), vector)
+        connection.commit()
     _replace_links(connection, manifest, new_doc_id, parsed)
 
 
@@ -1973,10 +2032,14 @@ def _index_document(
         page_spans=page_spans,
     )
 
-    # One title for both the row below and the prefix above it. Read once rather than twice so the
-    # string injected into a document's vectors is by construction the string the index shows for
-    # that document — two reads of the same field are two chances to inject something the user
-    # cannot see.
+    # One title for both the row below and the prefix above it, read once rather than twice: two
+    # reads of the same field are two chances to inject a string the index does not show.
+    #
+    # **That equality is a property of this function, not of the KB over time.** A sidecar-only
+    # title edit is a `RefreshMetadata`, which updates the row and re-embeds nothing, so the
+    # vectors keep the old title until something re-embeds the document. `[chunking] metadata` is
+    # not what introduces that — `title` has always been display metadata a sync can refresh
+    # without touching an embedding — but injection is what makes it reach retrieval.
     title = parsed.title if parsed else None
     inject = manifest.chunking.metadata == "prefix"
     if inject:

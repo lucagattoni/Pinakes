@@ -224,3 +224,82 @@ def test_the_json_artifact_carries_every_moved_row(tmp_path: Path) -> None:
     gated = tmp_path / "gate.json"
     run("--before", str(before), "--after", str(after), "--sign-test", "--json", str(gated))
     assert "sign_test_p" in json.loads(gated.read_text(encoding="utf-8"))
+
+
+def test_the_exit_code_answers_the_criterion_that_was_asked_for(tmp_path: Path) -> None:
+    """**A gate that prints FAIL and exits 0.** `--sign-test` is the 2f criterion — the run that
+    licenses an irreversible `schema_version` bump — so when it is asked for, it is what the exit
+    code must answer. Six improvements against five regressions passes the screen (6 > 5) and fails
+    the gate (p = 0.5), and a driver script branching on `$?` would otherwise take the bump."""
+    rows = [(f"q{n}", "paraphrase", True, 3) for n in range(11)]
+    before = leg(tmp_path / "before.json", rows, metadata="off")
+    after = leg(
+        tmp_path / "after.json",
+        [(f"q{n}", "paraphrase", True, 1 if n < 6 else 5) for n in range(11)],
+        metadata="prefix",
+    )
+
+    screen = run("--before", str(before), "--after", str(after))
+    assert screen.returncode == 0, "6 improved > 5 regressed passes the screen"
+
+    gate = run("--before", str(before), "--after", str(after), "--sign-test")
+    assert "FAIL at 0.05" in gate.stdout
+    assert gate.returncode == 1, "and the same run fails the gate, which the exit code must say"
+
+
+def test_an_unreadable_leg_is_not_reported_as_a_no_go(tmp_path: Path) -> None:
+    """Exit 3, never 1. A mistyped path or an eval run truncated mid-write would otherwise be
+    indistinguishable from "the screen returned no-go" — and that verdict costs a 46-minute rebuild
+    pair to re-derive."""
+    before = leg(tmp_path / "before.json", PAIR, metadata="off")
+
+    missing = run("--before", str(tmp_path / "nope.json"), "--after", str(before))
+    assert missing.returncode == 3
+    assert "could not read a leg" in missing.stderr
+
+    (tmp_path / "truncated.json").write_text('{"questions": [', encoding="utf-8")
+    malformed = run("--before", str(tmp_path / "truncated.json"), "--after", str(before))
+    assert malformed.returncode == 3
+
+
+def test_a_miss_is_null_in_the_artifact_because_json_has_no_infinity(tmp_path: Path) -> None:
+    """`json.dumps(math.inf)` emits a bare `Infinity` token: `JSON.parse` rejects it outright and
+    `jq` silently coerces it to 1.8e308 — turning the one outcome the rank ordering exists to make
+    visible into a finite rank, and a very good one at that."""
+    before = leg(tmp_path / "before.json", [("q1", "paraphrase", True, 3)], metadata="off")
+    after = leg(tmp_path / "after.json", [("q1", "paraphrase", False, None)], metadata="prefix")
+    out = tmp_path / "screen.json"
+
+    run("--before", str(before), "--after", str(after), "--json", str(out))
+
+    raw = out.read_text(encoding="utf-8")
+    assert "Infinity" not in raw
+    assert json.loads(raw)["moved"][0] == {
+        "id": "q1",
+        "kind": "paraphrase",
+        "before": 3,
+        "after": None,
+    }
+
+
+def test_the_report_and_the_artifact_both_name_which_leg_was_which(tmp_path: Path) -> None:
+    """Transposing `--before` and `--after` inverts the verdict, and the identity check cannot
+    catch it: the tool is never told which value is the baseline, only that the two must differ.
+    So the legs are named — `eval.header`'s own docstring gives the reason, that a before file and
+    an after file are "otherwise indistinguishable on inspection"."""
+    before = leg(tmp_path / "before.json", PAIR, metadata="off")
+    after = leg(
+        tmp_path / "after.json",
+        [("q1", "paraphrase", True, 1), ("q2", "lexical", True, 1), ("q3", "paraphrase", True, 4)],
+        metadata="prefix",
+    )
+    out = tmp_path / "screen.json"
+
+    result = run("--before", str(before), "--after", str(after), "--json", str(out))
+
+    assert "before.json   (chunking.metadata = 'off')" in result.stdout
+    assert "after.json   (chunking.metadata = 'prefix')" in result.stdout
+    written = json.loads(out.read_text(encoding="utf-8"))
+    assert written["excepting"] == "chunking.metadata"
+    assert written["before"]["value"] == "off" and written["after"]["value"] == "prefix"
+    assert written["before"]["path"].endswith("before.json")

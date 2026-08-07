@@ -52,6 +52,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from graph_gate import Leg, read_leg, sign_test
 
+from pinakes.errors import PinakesError
 from pinakes.eval import NO_ANSWER, OutcomeRow
 
 #: The one header key the injection experiment's two legs are *meant* to differ on. Expressed as a
@@ -60,7 +61,15 @@ from pinakes.eval import NO_ANSWER, OutcomeRow
 INJECTION_KEY = ("chunking", "metadata")
 
 MISS = math.inf
-"""Where a question the run did not answer sorts: after every rank a run did answer at."""
+"""Where a question the run did not answer sorts: after every rank a run did answer at.
+
+JSON has no infinity, so the artifact writes a miss as `null` — `json.dumps` would otherwise emit a
+bare `Infinity` token, which is invalid RFC 8259: `JSON.parse` rejects it and `jq` silently coerces
+it to 1.8e308, turning the very outcome this ordering exists to make visible into a finite rank."""
+
+ALPHA = 0.05
+"""`graph_gate.ALPHA`, restated because this module's exit code depends on it when
+`--sign-test` is asked for."""
 
 
 def rank_of(row: OutcomeRow) -> float:
@@ -108,6 +117,13 @@ class Comparison:
     def answerable(self) -> int:
         return len(self.moved) + self.unchanged
 
+    def sign_test_p(self) -> float:
+        return sign_test(len(self.improved), len(self.regressed))
+
+    def gate_passes(self) -> bool:
+        """The 2f criterion: the exact one-sided sign test below `ALPHA`."""
+        return self.sign_test_p() < ALPHA
+
     @property
     def screen_passes(self) -> bool:
         """2d's pre-registered criterion: strictly more improvements than regressions.
@@ -129,6 +145,11 @@ def _flatten(header: dict[str, Any], prefix: tuple[str, ...] = ()) -> dict[tuple
         else:
             flat[path] = value
     return flat
+
+
+def _excepted(leg: Leg, excepting: tuple[str, ...]) -> Any:
+    """The value of the one key the legs may differ on; `None` if the leg does not carry it."""
+    return _flatten(leg.header).get(excepting)
 
 
 def check_identity(
@@ -193,16 +214,33 @@ def compare(before: Leg, after: Leg) -> Comparison:
     return Comparison(moved=tuple(moved), unchanged=unchanged)
 
 
-def report(comparison: Comparison, *, sign: bool) -> str:
+def report(
+    comparison: Comparison, *, sign: bool, before: Leg, after: Leg, excepting: tuple[str, ...]
+) -> str:
+    """Which leg was which, then the counts.
+
+    The legs are named because **nothing else in the output or the artifact records them**, and
+    transposing `--before` and `--after` inverts the verdict without changing anything else: the
+    identity check can only require that the excepted key *differs*, never which value is the
+    baseline, since the tool is not told what the change under test is. `eval.header`'s own
+    docstring gives the reason this matters — "a before file and an after file are otherwise
+    indistinguishable on inspection".
+    """
+    key = ".".join(excepting)
     lines = [
+        f"before                 {before.path}   ({key} = {_excepted(before, excepting)!r})",
+        f"after                  {after.path}   ({key} = {_excepted(after, excepting)!r})",
+        "",
         f"answerable questions   {comparison.answerable}",
         f"improved               {len(comparison.improved)}",
         f"regressed              {len(comparison.regressed)}",
         f"unchanged              {comparison.unchanged}",
     ]
     if sign:
-        p = sign_test(len(comparison.improved), len(comparison.regressed))
-        lines.append(f"sign test p            {p:.4f}   {'PASS' if p < 0.05 else 'FAIL'} at 0.05")
+        verdict = "PASS" if comparison.gate_passes() else "FAIL"
+        lines.append(
+            f"sign test p            {comparison.sign_test_p():.4f}   {verdict} at {ALPHA}"
+        )
     lines.append("")
     for label, moves in (("improved", comparison.improved), ("regressed", comparison.regressed)):
         if moves:
@@ -213,7 +251,14 @@ def report(comparison: Comparison, *, sign: bool) -> str:
     return "\n".join(lines)
 
 
-def as_dict(comparison: Comparison, *, sign: bool) -> dict[str, Any]:
+def _json_rank(value: float) -> int | None:
+    """A miss as `null`: JSON has no infinity, and a reader must not see it as a finite rank."""
+    return None if value == MISS else int(value)
+
+
+def as_dict(
+    comparison: Comparison, *, sign: bool, before: Leg, after: Leg, excepting: tuple[str, ...]
+) -> dict[str, Any]:
     """The artifact records what was asked for, and `sign_test_p` only when it was.
 
     Not cosmetic. 2d's screen is pre-registered as having **no p-value** — its criterion is
@@ -222,18 +267,27 @@ def as_dict(comparison: Comparison, *, sign: bool) -> dict[str, Any]:
     someone reading the file a week later with none of that context.
     """
     written: dict[str, Any] = {
+        "excepting": ".".join(excepting),
+        "before": {"path": str(before.path), "value": _excepted(before, excepting)},
+        "after": {"path": str(after.path), "value": _excepted(after, excepting)},
         "answerable": comparison.answerable,
         "improved": len(comparison.improved),
         "regressed": len(comparison.regressed),
         "unchanged": comparison.unchanged,
         "screen_passes": comparison.screen_passes,
         "moved": [
-            {"id": move.id, "kind": move.kind, "before": move.before, "after": move.after}
+            {
+                "id": move.id,
+                "kind": move.kind,
+                "before": _json_rank(move.before),
+                "after": _json_rank(move.after),
+            }
             for move in comparison.moved
         ],
     }
     if sign:
-        written["sign_test_p"] = sign_test(len(comparison.improved), len(comparison.regressed))
+        written["sign_test_p"] = comparison.sign_test_p()
+        written["gate_passes"] = comparison.gate_passes()
     return written
 
 
@@ -254,8 +308,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--json", type=Path, default=None)
     args = parser.parse_args(argv)
 
-    before, after = read_leg(args.before), read_leg(args.after)
     excepting = tuple(str(args.excepting).split("."))
+    try:
+        before, after = read_leg(args.before), read_leg(args.after)
+    except (OSError, ValueError, PinakesError) as exc:
+        # `ValueError` covers `json.JSONDecodeError`, which is what a leg truncated by an
+        # interrupted eval run raises — `read_outcomes` only refuses a file that parses.
+        # Exit 3, never 1. A 2f driver branching on the exit code would otherwise read a mistyped
+        # path or an eval run truncated mid-write as "the screen returned no-go" and discard a
+        # 46-minute rebuild pair on the strength of it.
+        print(f"could not read a leg: {exc}", file=sys.stderr)
+        return 3
     problems = check_identity(before, after, excepting=excepting)
     if problems:
         print("refusing to compare:", file=sys.stderr)
@@ -264,12 +327,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     comparison = compare(before, after)
-    print(report(comparison, sign=args.sign_test))
+    print(report(comparison, sign=args.sign_test, before=before, after=after, excepting=excepting))
     if args.json is not None:
-        args.json.write_text(
-            json.dumps(as_dict(comparison, sign=args.sign_test), indent=2) + "\n", encoding="utf-8"
+        written = as_dict(
+            comparison, sign=args.sign_test, before=before, after=after, excepting=excepting
         )
-    return 0 if comparison.screen_passes else 1
+        args.json.write_text(json.dumps(written, indent=2) + "\n", encoding="utf-8")
+    # **Which criterion the exit code answers is chosen by `--sign-test`.** Without it, the
+    # screen's (more improvements than regressions); with it, the gate's (p < ALPHA). One exit code
+    # that always answered the screen's would print `FAIL at 0.05` and exit 0 on the very run that
+    # licenses the irreversible schema bump.
+    passed = comparison.gate_passes() if args.sign_test else comparison.screen_passes
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":  # pragma: no cover
