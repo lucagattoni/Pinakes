@@ -255,9 +255,13 @@ def test_a_modified_archived_version_fails_against_the_ledger(tmp_path: Path) ->
     The tampered version is the **older** one, not the live one, so what is proved is leg (iii)
     and not leg (i): editing the live version's archive also makes the live files differ from it,
     and a gate that checked (i) first would send the reader to bump a version when a published one
-    needs restoring instead."""
+    needs restoring instead.
+
+    The tampered file is `eval/questions.yaml`, not `README.md`: the README is the subject of
+    `test_editing_the_template_readme_fails_the_gate`, and sharing a vector made a mutation that
+    exempted the README fail this test too — one assertion's mutant should not travel."""
     templates = two_versions(tmp_path)
-    archived = templates / "demo" / "_versions" / "1.0" / "README.md"
+    archived = templates / "demo" / "_versions" / "1.0" / "eval" / "questions.yaml"
     archived.write_text(archived.read_text(encoding="utf-8") + "\ntampered\n", encoding="utf-8")
     result = run(templates)
     assert result.returncode == 1
@@ -268,7 +272,7 @@ def test_editing_the_live_versions_archive_is_reported_as_a_ledger_failure(tmp_p
     """The ordering, stated as its own assertion. Tampering with `_versions/<live>/` trips (iii),
     whose remedy is *restore the archive* — never (i), whose remedy is *bump the version*."""
     templates = two_versions(tmp_path)
-    archived = templates / "demo" / "_versions" / "1.1" / "README.md"
+    archived = templates / "demo" / "_versions" / "1.1" / "eval" / "questions.yaml"
     archived.write_text(archived.read_text(encoding="utf-8") + "\ntampered\n", encoding="utf-8")
     result = run(templates)
     assert result.returncode == 1

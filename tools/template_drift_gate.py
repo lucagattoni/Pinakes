@@ -199,10 +199,16 @@ def git_history_reason(repo: Path) -> str | None:
     Detected explicitly rather than inferred from an empty `git log`, because in a shallow clone
     `git log -- <path>` returns nothing for *every* path — which reads as "one commit or fewer"
     and would let the gate report the strong mode while checking nothing.
+
+    **One probe, not two.** `--is-shallow-repository` answers both questions this leg has: outside
+    a checkout it exits 128 (measured), and inside a shallow one it prints `true`. An
+    `--is-inside-work-tree` call ahead of it looked like defensive care and was dead weight —
+    mutation testing could not find an input that told the two apart, and a branch nothing can
+    distinguish is a branch nobody knows works.
     """
     try:
-        inside = subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
+        probe = subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"],
             cwd=repo,
             capture_output=True,
             text=True,
@@ -210,16 +216,7 @@ def git_history_reason(repo: Path) -> str | None:
         )
     except OSError as exc:  # pragma: no cover — git absent from the machine
         return f"git is not runnable here ({exc})"
-    if inside.returncode != 0 or inside.stdout.strip() != "true":
-        return SKIPPED_REASON
-    shallow = subprocess.run(
-        ["git", "rev-parse", "--is-shallow-repository"],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if shallow.returncode != 0 or shallow.stdout.strip() != "false":
+    if probe.returncode != 0 or probe.stdout.strip() != "false":
         return SKIPPED_REASON
     return None
 
