@@ -531,9 +531,12 @@ negative result:
   single thirty-way directory hub. `shared-tag` derives zero edges for want of any tag;
   `sibling`, `parent`/`child` and `in-section` are intra-document and cannot bridge two evidence
   documents by construction. Any future result on this corpus is a claim about one directory.
-* **The retrieval funnel already sees the whole corpus.** `candidates_per_source` is 30 against
-  ~30 chunks, so the vector channel returns essentially every document with a positive cosine and
-  the pipeline then cuts to `final_k = 5`. A failing question here is a **ranking** failure, not a
+* **The retrieval funnel already sees the whole corpus.** The index holds **60 chunks over 30
+  documents**, and `candidates_per_source` (30) is applied **once per retrieval source** — lexical
+  and vector — so up to 60 of 60 chunks enter fusion before the pipeline cuts to `final_k = 5`. The
+  rule for sizing a replacement corpus follows: **chunk count must exceed
+  `sources × candidates_per_source`**, not merely `candidates_per_source`. A failing question here
+  is a **ranking** failure, not a
   recall failure a channel could fix by reaching further. The probe reports an `at-seed` share
   separately for that reason: under a tie-heavy fake backend, two of three questions it called
   reachable were already among the fused candidates and had traversed no edge at all.

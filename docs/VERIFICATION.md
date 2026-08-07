@@ -704,7 +704,7 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 |---|---|---|
 | `pnk doctor` reports the highest-degree structural edge hubs, highest first | G6 | `tests/test_doctor.py::test_edge_hubs_are_reported_highest_degree_first` |
 | `pnk doctor` reports what share of chunks carry a heading path | — | `tests/test_doctor.py::test_heading_coverage_is_full_on_an_all_markdown_kb` |
-| A source type carrying **no** heading path at all is a WARN naming it | — | `tests/test_doctor.py::test_a_plain_text_source_type_is_reported_at_zero` |
+| A source type carrying **no** heading path is reported and named — and only `markdown` at 0% is a WARN, every other type being OK with a note (0.14.0 reversed the original rule) | — | `tests/test_doctor.py::test_a_plain_text_source_type_is_reported_at_zero` |
 | A partial share within a source type is **not** a warning | — | `tests/test_doctor.py::test_a_partial_share_within_a_source_type_is_not_a_warning` |
 | The remedy distinguishes an unsupported source type from a headingless document | — | `tests/test_doctor.py::test_a_markdown_kb_with_no_headings_gets_the_other_remedy` |
 | Heading coverage reflects the current index, not removed documents | — | `tests/test_doctor.py::test_a_removed_documents_chunks_stop_being_counted` |
