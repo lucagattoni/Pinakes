@@ -2197,6 +2197,13 @@ def test_a_user_edited_manifest_value_never_appears_in_the_template_drift_report
     Both halves of the property, because they fail for different reasons: a **rendered** variable
     (`embedding_model`) is identical on both sides and so cancels; a **literal** (`final_k`) never
     enters either side, because neither side is the user's file.
+
+    **The third edit adds a line rather than substituting one, and it is the only one that kills
+    the mutant.** Measured: with `base` swapped for the user's raw `pinakes.toml` — D-2 option B,
+    implemented by accident — the two substitutions above left the count *identical*, because one
+    line replaced by another line is still one line on each side of the diff. The count was
+    invariant under an implementation that had the user's file in it, which is the exact defect
+    class this test exists to catch. An added line is not absorbed that way.
     """
     synthetic_template(
         "synth",
@@ -2214,7 +2221,10 @@ def test_a_user_edited_manifest_value_never_appears_in_the_template_drift_report
     )
     body, literal_edits = re.subn(r"^final_k\s*=.*$", "final_k = 4", body, flags=re.MULTILINE)
     assert rendered_edits == 1 and literal_edits == 1, "the manifest's shape has changed"
-    path.write_text(body, encoding="utf-8")
+    path.write_text(
+        body + "\n# A comment of my own, which is nobody's business but mine.\n",
+        encoding="utf-8",
+    )
 
     assert template_check(root).detail == before
 
@@ -2254,6 +2264,13 @@ def test_the_kb_identity_block_never_produces_a_hunk(
     reader of `init.py:75` would write, and it puts a `[kb]` hunk in every report on every KB —
     which under T4's all-or-nothing conflict rule would make `--apply` refuse for every user who
     has ever touched their `[kb]` block.
+
+    **Asserted through `pnk doctor`, not only through `render_archived`.** The direct-render half
+    below pins `render_context`'s contract, and it is worth having — but on its own it left the
+    mutant alive: feeding `ours` the installed reference *inside `doctor`* changed nothing the test
+    looked at, because the test never called `doctor`. Measured, not reasoned about. The count is
+    what `doctor` exposes, so the pair below differs by exactly one line outside `[kb]`; a leaking
+    identity block adds two more and the count says so.
     """
     name = synthetic_template(
         "synth",
@@ -2278,6 +2295,11 @@ def test_the_kb_identity_block_never_produces_a_hunk(
     ]
     assert changed, "a pair that does not differ would satisfy the next assertion vacuously"
     assert not [line for line in changed if "template =" in line or "id " in line]
+
+    # The half that reaches `doctor`. `final_k` is the only line these two versions differ on, so
+    # a correct report counts exactly the two lines that change; an identity block leaking into the
+    # comparison would put `template = ` on both sides of the diff and make it four.
+    assert _reported_lines(template_check(root).detail) == 2
 
 
 def test_an_unarchived_recorded_version_says_it_cannot_compare_rather_than_ok(kb: Path) -> None:
