@@ -591,6 +591,13 @@ that four-step flow** — the flow is unchanged by this release, but saying so i
 having run it. The first attempt read *unsatisfiable* and the second, 30 s later, returned
 `pinakes 0.15.1` — one failed resolve is not a failed publish.
 
+**0.16.0, same standard, 20260807 11:54:** `uvx --no-cache --refresh --from "pinakes==0.16.0" pnk
+--version` → `pinakes 0.16.0`. Installs and runs from the index; the four-step flow above was not
+re-run. **Checked against the index rather than against the workflow**, which is the whole point:
+the publish job had already reported `success` while `https://pypi.org/pypi/pinakes/json` still
+served `0.15.1` — a propagation lag that reads exactly like the failure this project has had
+before, where a run went green and nothing was published.
+
 | | |
 |---|---|
 | Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.1, 0.8.0, 0.9.0, 0.10.0, 0.11.0, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.15.1 and 0.16.0.** **0.11.0 bumps `schema_version` to 3**, so the first `pnk sync` after upgrading rebuilds the whole index — free, and `pnk sync --rebuild` is what the refusal prints. 0.9.0's upload was refused on first attempt — renaming the repository broke PyPI trusted publishing, which matches on the exact repository name — and succeeded once the publisher was corrected. **0.8.0 renames the paid extractor's API key** to `PINAKES_ANTHROPIC_API_KEY`, so a KB driving the paid path from an older `.env` refuses until the variable is renamed. 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
