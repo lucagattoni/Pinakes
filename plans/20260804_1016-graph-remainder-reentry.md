@@ -202,11 +202,12 @@ list.
 
 **E8 — Three of G3's seven edge kinds derive zero edges on the corpus the gate will run on, and
 that is a Pinakes defect, not a corpus property.** ⚠️ **This is the newest and largest item here.**
-Measured 20260804: the RFC corpus has **106 806 chunks and every one has an empty `heading_path`**
-(`docs/STATUS.md:342`; `plans/20260731_1202-open-corrections.md` item 3). `strategy = "structural"`
-uses a Markdown-shaped heading grammar; RFC section numbering does not match it, so the strategy
-degrades to size-based chunking **in silence**. `heading_path` is what `in-section`, `parent` and
-`child` derive from, so on this corpus:
+Measured 20260804: the RFC corpus had **106 806 chunks and every one an empty `heading_path`**. The
+cause was *not* a Markdown-shaped grammar failing to match RFC section numbering, which is what was
+first recorded here: `chunk.py` dispatched on **source type** and every type but `markdown` took the
+plain-text path, which sets `heading_path=None` unconditionally — no grammar ran, so tightening one
+would have fixed nothing. `heading_path` is what `in-section`, `parent` and `child` derive from, so
+on that corpus:
 
 | Kind | On the RFC corpus | Source |
 |---|---|---|
@@ -222,9 +223,14 @@ degrades to size-based chunking **in silence**. `heading_path` is what `in-secti
 1. **Report the census before the verdict** (D3c). *"So a null result here is not 'structure does
    not help'. It is 'two edge kinds were absent, one was weak, and two were tested'"* —
    `corpus-probe-run.md`, verbatim. A single headline number states the first and means the third.
-2. **Do not fix the corpus, and do not fix the chunker mid-run.** Recognising RFC section numbering
-   is a chunking change with its own decision and its own eval. `corpus-probe-run.md` forbids it
-   inside this run, and it would also invalidate the freeze.
+2. **The chunker has since been fixed, so decide the chunking *before* the run, never during it.**
+   Recognising RFC section numbering was a chunking change with its own decision and its own eval,
+   and it shipped in **0.13.0** as `[chunking] headings = "numbered"`. ⚠️ **It is opt-in and the
+   corpus repo's committed manifest does not set it**, so cloning and rebuilding reproduces the
+   headingless census above — the grammar does not arrive by itself. Either add the key to that
+   manifest and rebuild, or build a fresh corpus with `tools/build_rfc_corpus.py`, which stamps it.
+   Then re-derive the census against whichever you chose, and only then start the run. Changing
+   anything once the run has begun still invalidates the freeze.
 3. **Decide, with the user, what a pass or a fail on a three-kinds-absent corpus licenses**, and
    write it down *before* the numbers exist. Either answer is defensible; neither is defensible
    after the fact. The two readings are set out in F.

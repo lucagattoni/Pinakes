@@ -1,6 +1,6 @@
 # Status — what ships today
 
-**Latest release: 0.15.1** · last reviewed 20260806 00:51
+**Latest release: 0.15.1** · last reviewed 20260806 20:41
 
 > **This file is the only place in the repo that says what is built.** Every other doc describes
 > *how* something works or *why* it was designed that way, and links here for whether you can use it
@@ -63,6 +63,23 @@ asserting no paid client reached `sys.modules`. It found two real leaks the day 
 `pnk doctor` and `pnk sync` reported a backend's availability by *loading* it, so a KB configured
 for `claude-vision` imported `anthropic` on commands that cannot spend (fixed in the same
 increment; no version ever shipped able to spend from them).
+
+### On `main`, unreleased — 20260806
+
+Three increments of the metadata-injection experiment have landed since `0.15.1` and **nothing above
+moves because of them**: no command, flag or manifest key reaches a user yet, and `pip install
+pinakes` still gets `0.15.1`. Recorded here because this file is the only place that says what is
+built, and "merged" and "released" are different answers.
+
+| | Landed | What it is |
+|---|---|---|
+| **2a** | 20260806 06:17, `86cd403` | `tools/build_rfc_corpus.py` mints each RFC sidecar with the title published at `rfc<N>.json` and stamps `max_tokens = 414`, reserving 96 tokens of the model's 512-token window. A build tool; no shipped code path changed |
+| **2b** | 20260806 08:33, `fcabc02` | `chunk.metadata_prefix`, `chunk.embedding_text` and `chunk.assert_prefix_fits` — the prefix, the text that would be embedded, and a refusal for a prefix that would not fit. **Dormant**: nothing on the indexing path calls it, so no KB changes behaviour |
+| **2c** | 20260806 11:56, `36f32ce` | A frozen 110-question golden set for the RFC corpus, calibrated, with its `before` leg committed (numbers below). Also user-visible when it releases: `eval/outcomes.json` now records the `[chunking]` settings its run was produced under |
+
+The experiment they serve is
+[`plans/20260805_1721-metadata-as-retrieval-context.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260805_1721-metadata-as-retrieval-context.md);
+2d is next.
 
 ### Caveat: PDFs are off by default (but no longer silently)
 
@@ -306,15 +323,48 @@ commit and here, or the next reader credits a scorer fix to the ranker.
 **Paraphrase is still the only class with real room in it**, and the `multi-hop` class remains close
 to ceiling even after tripling in size — 17 of 18. That is a fact about the corpus, not about the
 questions: thirty short, topically disjoint documents make "retrieve 5 of 30" undemanding. Nothing
-should be tuned against this corpus until it is larger and its documents are less separable —
-which is now the binding constraint on the whole graph release, not a caveat
+should be tuned against this corpus until it is larger and its documents are less separable. **That
+constraint blocked the graph release for three days and was discharged on 20260804**, when the RFC
+corpus cleared the reachability precondition and 0.11.0 shipped
 ([`plans/20260801_0749-realism-corpus.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260801_0749-realism-corpus.md)).
+It binds every *future* retrieval change the same way — see the second golden set below.
 
 The false-confidence figure is fitted and scored on the same 74-question set (8 of them no-answer,
 unchanged by G2's growth — so the calibrated thresholds were re-fitted after it and came back
 identical), so treat it as a floor rather than an estimate. Publishing it is the point:
 [DESIGN §4.2](DESIGN.md#42-escalation--free-path-first) commits to measuring the heuristic's cost
 rather than assuming it away.
+
+### A second golden set, on a corpus that can license a result — frozen 20260806 11:56
+
+Every number above is `tests/demo-kb`'s, and the paragraph above says why nothing should be tuned
+against it. **The measurement it cannot carry now has an instrument.** 110 questions over the RFC
+band `build_rfc_corpus.py --era modern --count 200` (RFCs 8600-8799, 195 published, **43 353** chunks),
+frozen at
+[`tools/rfc_corpus/questions.yaml`](https://github.com/lucagattoni/pinakes/blob/main/tools/rfc_corpus/questions.yaml)
+with its `before` leg beside it. **On `main`, unreleased.**
+
+| Metric | Value | |
+|---|---|---|
+| questions | 110 | 32 lexical, 32 simple-lookup, 32 paraphrase, 14 no-answer, over 96 of the 195 documents |
+| recall@5 | 0.9271 | |
+| MRR | 0.8767 | |
+| rerank precision | 0.8438 | |
+| false-abstain | 0.0104 | |
+| false-confidence | 0.1429 | fitted on this same set — a floor, see below |
+| confidence coverage | 1.0 | |
+| **improvable pool** | **15** | 11 paraphrase, 2 lexical, 2 simple-lookup — the number that decides whether a sign test at p < 0.05 is reachable at all |
+
+Per class: `lexical` 1.00, `simple-lookup` 1.00, `no-answer` 1.00, `paraphrase` 0.7812. Measured at
+`max_tokens = 414`, `k = 5`, `rerank = "local"`, `graph_channel = "off"` — the artifact records all
+four, so a leg produced under different settings is identifiable rather than merely suspect.
+
+**Two things this set is for, and one it is not.** It exists to make the injection experiment
+falsifiable, and its questions were written by authors who had not read this repository, before any
+injection code existed — fitting a question set to the mechanism it will judge is undetectable
+afterwards. It is **not** a claim that retrieval improved: 0.9271 against demo-kb's 0.939 is two
+different corpora, not a regression. The false-confidence caveat above applies here in the same
+form, for the same reason — the thresholds are fitted on the set that scores them.
 
 ### Is the evaluation reproducible? — measured 20260801 00:35
 
@@ -375,10 +425,15 @@ hub that decision 13's **2.0 undamped** weight was never designed for
 
 **Two findings about Pinakes, not about the corpus:**
 
-- **`strategy = "structural"` recognised no headings at all** — 0 of 106 806 chunks — because its
-  grammar is Markdown-shaped and RFC section numbering is not. Silent. It costs citations their
-  heading component, and it means `in-section`, `parent` and `child` would derive **zero** edges
-  here.
+- **No heading grammar ran at all** — 0 of 106 806 chunks carried a `heading_path`. Not because a
+  Markdown-shaped grammar failed to match RFC section numbering, which is what was first recorded
+  here: `chunk.py` dispatched on **source type**, and every type but `markdown` took the plain-text
+  path, which sets `heading_path=None` unconditionally. Nothing failed to match because nothing was
+  tried, so tightening a grammar would have fixed nothing. Silent. It cost citations their heading
+  component, and it meant `in-section`, `parent` and `child` derived **zero** edges here.
+  **Fixed in 0.13.0** by `[chunking] headings = "numbered"` — opt-in, so it reaches a corpus only
+  when its manifest asks for it. `tools/build_rfc_corpus.py` stamps it; this corpus's committed
+  manifest does not carry it, so these figures still describe what a rebuild of it produces.
 - **106 806 chunks is 2× past the NumPy vector tier's 50 000 threshold**, and `pnk doctor` says so.
   A 300-document, 20 MB knowledge base reaches the tier ceiling — which is a smaller corpus than
   the ceiling's framing implies.
@@ -458,12 +513,18 @@ removing `co-located` costs 3 questions, removing `shared-tag` costs 6, and the 
 ever raised the count. Artifacts:
 [`pinakes-corpus-rfc/eval/probe`](https://github.com/lucagattoni/pinakes-corpus-rfc/tree/main/eval/probe).
 
-**The bound on all of it: every chunk in that corpus has an empty `heading_path`.** RFC section
-numbering is not Markdown-shaped, so `strategy = "structural"` degraded to size-based chunking in
-silence — `in-section` and `parent-child` derived **zero** edges and were never exercised, and a
-"sibling" there is an adjacent arbitrary size-slice rather than an adjacent section. The 9 is
-therefore a **floor** for a corpus whose chunker works, and `sibling`'s zero is a question for G5's
-gate, not a design decision. Fixing the silent degradation is a live correction.
+**The bound on all of it: every chunk in the corpus that measurement ran on had an empty
+`heading_path`.** The chunker was never asked for one — `chunk.py` dispatched on source type and
+every type but `markdown` took the plain-block path — so `in-section` and `parent-child` derived
+**zero** edges and were never exercised, and a "sibling" there is an adjacent arbitrary size-slice
+rather than an adjacent section. The 9 is therefore a **floor** for a corpus whose chunker works,
+and `sibling`'s zero is a question for G5's gate, not a design decision. **0.13.0 shipped the fix
+but does not apply it retroactively**: `[chunking] headings = "numbered"` is opt-in, defaults to
+`"none"` and is never stamped into a template, and this corpus's committed manifest has no
+`headings` key — so re-running the probe against it as published reproduces these figures rather
+than measuring a different corpus. Getting heading paths here means adding the key and rebuilding;
+a corpus built fresh by `tools/build_rfc_corpus.py`, which does stamp it, carries them from the
+start.
 
 **Why the synthetic corpus could never answer this**, which is the finding that outlived the
 negative result:
@@ -474,9 +535,12 @@ negative result:
   single thirty-way directory hub. `shared-tag` derives zero edges for want of any tag;
   `sibling`, `parent`/`child` and `in-section` are intra-document and cannot bridge two evidence
   documents by construction. Any future result on this corpus is a claim about one directory.
-* **The retrieval funnel already sees the whole corpus.** `candidates_per_source` is 30 against
-  ~30 chunks, so the vector channel returns essentially every document with a positive cosine and
-  the pipeline then cuts to `final_k = 5`. A failing question here is a **ranking** failure, not a
+* **The retrieval funnel already sees the whole corpus.** The index holds **60 chunks over 30
+  documents**, and `candidates_per_source` (30) is applied **once per retrieval source** — lexical
+  and vector — so up to 60 of 60 chunks enter fusion before the pipeline cuts to `final_k = 5`. The
+  rule for sizing a replacement corpus follows: **chunk count must exceed
+  `sources × candidates_per_source`**, not merely `candidates_per_source`. A failing question here
+  is a **ranking** failure, not a
   recall failure a channel could fix by reaching further. The probe reports an `at-seed` share
   separately for that reason: under a tie-heavy fake backend, two of three questions it called
   reachable were already among the fused candidates and had traversed no edge at all.

@@ -21,10 +21,15 @@ test, or write **none** and say why in the same commit.
   test can check that. The mapping below was resolved by reading the tests where the name did not
   make it obvious — and the I9 review still found one row mapped from a name alone, which was
   wrong (the completeness audit's). Treat a row as a strong pointer, not a proof.
-* **The scope is `plans/20260727_1543-v0.2.md`'s promises**, which is what the table this replaces covered. v0.1's
-  own modules — `test_chunk.py`, `test_ids.py`, `test_init.py`, `test_lock.py`, `test_pairing.py`,
-  `test_uri.py`, `test_embed.py`, `test_eval.py` — are not represented here and are not unowned;
-  they simply predate the table. Adding them is worth doing and nobody has.
+* **The scope began as `plans/20260727_1543-v0.2.md`'s promises**, which is what the table this
+  replaces covered, and has since taken in the links release, G1–G6, 0.7.1, and 0.12.0's five
+  heading-coverage rows (in *Edge-hub reporting (G6)*, carrying `—` rather than an increment id).
+  **It stopped there: 0.13.0 through 0.15.1 added no rows, and neither did the increments sitting on
+  `main` unreleased.** v0.1's own modules — `test_chunk.py`, `test_ids.py`,
+  `test_init.py`, `test_lock.py`, `test_pairing.py`, `test_uri.py`, `test_embed.py` — are not
+  represented and are not unowned; they simply predate the table. (`test_eval.py` **is** represented,
+  throughout *The golden set, per question (G2)*; it was listed here in error.) Closing either gap is
+  worth doing and nobody has.
 
 ## Packaging and the extractor registry
 
@@ -699,7 +704,7 @@ caller cannot check for itself, on both the CLI and the MCP surface.
 |---|---|---|
 | `pnk doctor` reports the highest-degree structural edge hubs, highest first | G6 | `tests/test_doctor.py::test_edge_hubs_are_reported_highest_degree_first` |
 | `pnk doctor` reports what share of chunks carry a heading path | — | `tests/test_doctor.py::test_heading_coverage_is_full_on_an_all_markdown_kb` |
-| A source type carrying **no** heading path at all is a WARN naming it | — | `tests/test_doctor.py::test_a_plain_text_source_type_is_reported_at_zero` |
+| A source type carrying **no** heading path is reported and named — and only `markdown` at 0% is a WARN, every other type being OK with a note (0.14.0 reversed the original rule) | — | `tests/test_doctor.py::test_a_plain_text_source_type_is_reported_at_zero` |
 | A partial share within a source type is **not** a warning | — | `tests/test_doctor.py::test_a_partial_share_within_a_source_type_is_not_a_warning` |
 | The remedy distinguishes an unsupported source type from a headingless document | — | `tests/test_doctor.py::test_a_markdown_kb_with_no_headings_gets_the_other_remedy` |
 | Heading coverage reflects the current index, not removed documents | — | `tests/test_doctor.py::test_a_removed_documents_chunks_stop_being_counted` |

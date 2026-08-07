@@ -24,10 +24,20 @@ Someone must convert, and conversion touches frozen material. These are the rule
 
 ## Conversion rules — mechanical, reviewable, and biased against yourself
 
-1. **The frozen file is never edited.** The conversion writes a NEW file,
-   `eval/questions.yaml`, in the corpus repo, committed with a message naming the freezing sha it
-   was derived from. Both files stay committed; a reviewer must be able to diff intent against
-   translation.
+1. **The frozen file is never edited.** The conversion writes a NEW file in the corpus repo,
+   committed with a message naming the freezing sha it was derived from. Both files stay committed;
+   a reviewer must be able to diff intent against translation.
+
+   ⚠️ **`eval/questions.yaml` is now contested, and this rule said to write there.** Since 2c
+   (20260806), `tools/build_rfc_corpus.py` writes the repository's own frozen 110-question golden
+   set to `<out>/eval/questions.yaml` on **every** build, unconditionally — so a conversion left at
+   that path is silently clobbered by the next build. `tools/reachable_ceiling_probe.py` reads that
+   exact path and has no flag to point elsewhere (`--kb`, `--fake`, `--drop`, `--json` only), so
+   "write it somewhere else" is not executable as the runbook stands. **Do this instead:** commit
+   the conversion under a distinct name — `eval/multihop-questions.converted.yaml` — and copy it
+   over `eval/questions.yaml` immediately before the probe run, never leaving it there. Giving the
+   probe a `--questions` flag would remove the dance and is the better fix if the run is
+   re-scoped; either way, **do not re-run `build_rfc_corpus.py` against that KB mid-run.**
 2. **`id` carries over unchanged.** One frozen question → one converted question. None dropped,
    none added, none merged — the converted file has exactly as many `multi-hop` entries as the
    frozen file, and the count is stated in the run report.
@@ -62,9 +72,14 @@ uv run python3 tools/reachable_ceiling_probe.py --kb <corpus-path> --drop shared
 ## Before the numbers mean anything: which edge kinds actually exist here
 
 **Measured on the built corpus, 20260804:** 106 806 chunks, **every one with an empty
-`heading_path`**. `strategy = "structural"` uses a Markdown-shaped heading grammar and RFC section
-numbering does not match it, so nothing was recognised
-([`20260731_1202-open-corrections.md`](20260731_1202-open-corrections.md) item 3).
+`heading_path`**. The cause is not a grammar that failed to match RFC section numbering — **no
+grammar was ever run.** `chunk.py` dispatches on *source type*, and until 0.13.0 every type but
+`markdown` took `_plain_blocks`, which sets `heading_path=None` unconditionally
+([DESIGN §4.6](../docs/DESIGN.md)). Tightening a grammar would have fixed nothing. **0.13.0 shipped
+`[chunking] headings = "numbered"`, but it is opt-in and this corpus's committed manifest does not
+set it** — so re-running the probe against the corpus as published still yields zero heading paths
+and reproduces the figures below. Adding the key and rebuilding is a deliberate act, and it makes
+the run a different measurement.
 
 Consequence for this measurement, stated before it runs:
 

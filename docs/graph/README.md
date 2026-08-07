@@ -6,9 +6,11 @@ Research, not specification: where these disagree with [`../DESIGN.md`](../DESIG
 where they disagree with [`../../plans/20260729_0256-links-and-graph.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260729_0256-links-and-graph.md) about
 what is built when, the plan wins.
 
-**Partly built.** The links release this research shaped shipped in 0.5.0 and 0.6.0, and G1, G2
-and G4 of the graph release followed; the graph release's remaining increments are blocked on a
-corpus, not on code. [`../STATUS.md`](../STATUS.md) is the authority on what exists.
+**Built, and its channel is off.** The links release this research shaped shipped in 0.5.0 and
+0.6.0, and the graph release completed in 0.11.0 — G1 and G4 in 0.6.0, G2 in 0.7.0, G3, G5 and G6 in
+0.11.0. **G5's gate ran and did not pass**, so `graph_channel` ships `off`: the structure is built
+and measured, and nothing in the staged channels below is licensed by that result.
+[`../STATUS.md`](../STATUS.md) is the authority on what exists.
 
 ## Start here
 
