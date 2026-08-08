@@ -313,7 +313,7 @@ recommendations the planner may still overrule. ✅ marks a taken decision, ⭐ 
 | D-1 | Does `pnk upgrade` ever write? | **Settled as B by implication** of D-10 and D-11 (both are rules for `--apply`, which exists only under B). Recorded rather than assumed — see the entry |
 | D-2 | How does it know the old template? | **Settled as A by implication** of D-2b — "archive the bump" *is* A's machinery. See the entry |
 | D-3 | What does a template version denote? | ⭐ A — open |
-| D-4 | What happens to `sqlite-vec` now? | ⭐ A — open. **D-12 fixes the release *type* of whichever increment refuses the value, not whether A or D is taken** |
+| D-4 | What happens to `sqlite-vec` now? | ✅ **TAKEN 20260808 — A**, shipped as T5. Refuse at parse time. The judgement it turned on was already settled beside the code — see the entry |
 | D-5 | Where does the pre-`--apply` manifest go? | ⭐ A + C — open |
 | D-6 | Does `init` stamp `requires_pinakes`? | ⭐ A — open (it is today's behaviour) |
 | D-7 | A second template this release? | ⭐ A — open |
@@ -445,6 +445,28 @@ on the grounds that nobody can be harmed without having set a value that never d
 that `plans/20260731_2128-source-walk-containment.md` set the precedent for hard-erroring a manifest that
 previously loaded. **D is the defensible alternative** and the planner should take it if the
 `docs/MANIFEST.md:150` documentation is judged to be a real promise rather than a disclosure.
+
+> ### ✅ **TAKEN 20260808 — option A. Refused at parse time; shipped as T5.**
+>
+> **The judgement this decision was framed to turn on had already been made, one line away.** The
+> question above is *"is `docs/MANIFEST.md`'s row a promise or a disclosure?"*, and the answer is
+> disclosure — the same cell that lists `sqlite-vec` as settable says, in the same sentence, that
+> only the NumPy tier is built. But the stronger evidence is not in the docs at all:
+> `manifest.py`'s `GRAPH_CHANNELS` docstring, immediately below `VECTOR_TIERS`, already states the
+> rule and applies it to `"ppr"` — *"a manifest that can ask for a mode the code does not implement
+> is a manifest whose setting silently does nothing, and `table.choice` refusing the name is how a
+> user finds that out at load time"*. `"ppr"` is the next row but one in the same documentation
+> table. **This plan cites neither**, and a decision table is a list of what the *plan* has not
+> settled, which is not the same as what the *repository* has not settled.
+>
+> Two facts that were not in the table above and bear on the cost: **no file in the repository and
+> no archived template version sets `sqlite-vec`** (`notes` stamps `"auto"`), so the value only
+> arrives by a hand edit made against that disclosure; and **option D's warning may not name the
+> release that would refuse it** — which the D row concedes — so D's central benefit is weaker than
+> it reads while still costing a second, forgettable increment.
+>
+> Cost accepted and stated: a KB setting the value stops loading entirely. The remedy is in the
+> error text, and the one-line fix changes nothing about how that KB behaves.
 
 **D-12 (taken 20260804) does not decide this.** It fixes the *type* of whichever increment refuses
 the value — a PATCH with the break stated — and that is true under A (T5 refuses) and under D (the
@@ -2022,6 +2044,18 @@ consumes. Replace the literal with the tier actually used, resolved by one funct
 (`search.resolve_tier(manifest)`) that both `sync` and `search` call, so `meta`'s claim and the code
 path cannot disagree. Today they cannot disagree only because there is one tier — which is a fact
 about the corpus of tiers, not a property.
+
+> **⚠️ Corrected at build, 20260808 — the two halves of this paragraph contradict each other, and
+> only one of them survived.** "Both `sync` and `search` call it, so the claim and the code path
+> cannot disagree" cannot hold at the same time as the test list's own admission below that "with
+> exactly one real tier there is nothing else to discriminate". If there is nothing to discriminate,
+> `search` has no dispatch to make: a `tier` parameter threaded into `_vector` that can hold exactly
+> one value, guarded by a branch no production input reaches, buys the *shape* of a shared decision
+> without the decision. **Built with one caller** — `sync`, stamping `meta` — with the reason in
+> `resolve_tier`'s docstring, and `search` becomes the second caller in **T6**, where the branch is
+> real. That is when the property this paragraph names starts holding for a reason other than there
+> being nothing to disagree about. This is the **eighth** of this plan's own measurements or specs to
+> be wrong, and the second found by building rather than by reading.
 
 **Tests** — `tests/test_manifest.py`, `tests/test_search.py`:
 

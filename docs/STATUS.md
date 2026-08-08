@@ -42,7 +42,7 @@
 | `path:page` citations | shipped | I8. `docs/paper.pdf:p7` / `:p7-8`, on the CLI and MCP alike; `pnk doctor` names the pages with no text layer |
 | Cross-KB links (`pnk link`, `pnk links`, `pinakes_links`) | **shipped 0.6.0** — `pnk sync` records what other KBs link into this one (`--scan-links`), `pnk links` and `pinakes_links` traverse (0.5.0), `pnk link` authors, and `pnk doctor` reports link coverage as a ratio and resolves cross-KB targets (0.6.0) | 0.5.0 · 0.6.0 |
 | Sidecar round-trip | **shipped 0.5.0** — `ruamel.yaml` in round-trip mode at YAML 1.2: comments, quoting, block scalars and blank lines survive a rewrite, and an unknown key's value is no longer reinterpreted | 0.5.0 |
-| `sqlite-vec` tier, template ecosystem | **not built** | the template release |
+| `sqlite-vec` tier, template ecosystem | **not built** — and `vector_tier = "sqlite-vec"` is now **refused at load time** rather than accepted and ignored (T5). A KB setting it was already getting the NumPy tier; `vector_tier = "auto"` is the fix | the template release |
 
 ⚠️ **0.3.0 is the first release that can spend money — and it will not, unless you ask it to.**
 Every earlier version had no paid code path at all. The only one now is the `claude-vision`

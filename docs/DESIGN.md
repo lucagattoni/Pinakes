@@ -348,13 +348,22 @@ search** — latency still grows linearly with corpus size in every tier.
 True ANN (faiss / hnswlib / usearch) is deliberately excluded: each means a native dependency and a
 second index file outside SQLite, which breaks the single-portable-directory constraint. If linear
 scan becomes the binding limit before 2M chunks, the honest fix is splitting the KB, not smuggling
-in an ANN index. `sqlite-vec` is also pre-v1 with breaking changes expected — contained by only
-being reached above 50k chunks, with `vector_tier = "numpy"` supported as a config override.
+in an ANN index. `sqlite-vec` is also pre-v1 with breaking changes expected — contained today by
+the tier being unbuilt and unnameable (below), and once built, by only being reached above 50k
+chunks with `vector_tier = "numpy"` supported as a config override.
 
 **What is built:** the NumPy tier only, at *any* corpus size — the `sqlite-vec` tier lands in the
 template release (§8). NumPy does not fail above 50k, it just costs linear RAM (≈1.5 GB at 1M chunks × 384
 dims); `pnk doctor` warns past the 50k threshold and names the tier that will fix it. Stating this
 matters because a table of three tiers reads as three *available* tiers.
+
+**And saying so is not enough, which is the part that had to be fixed.** `[retrieval] vector_tier`
+accepted `"sqlite-vec"` for as long as the value existed, and gave the KB the NumPy tier anyway —
+`sync` stamped `numpy` into the index's `meta` whatever the manifest said, and `search` never read
+the field, so the setting was silent on every surface a user could check. A manifest naming the
+tier is now **refused at load time**, naming the tiers that are built; the value returns when the
+tier does. This is the same rule `[retrieval] graph_channel` applies to `"ppr"` (§4A) — a setting
+the code does not implement is not a setting, and disclosing that in a table does not make it one.
 
 **Environment requirement:** SQLite ≥ 3.35 compiled with FTS5, and — for the `sqlite-vec` tier —
 `enable_load_extension` available. uv-managed CPython 3.13 satisfies both (verified 20260725 13:49: SQLite

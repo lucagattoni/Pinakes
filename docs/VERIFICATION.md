@@ -886,3 +886,11 @@ that runs against `notes` says so.
 | a hunk that no longer places uniquely is refused rather than written at a guessed position | T4 | `tests/test_cli_upgrade.py::test_splices_refuses_a_hunk_that_no_longer_places_uniquely` |
 | the *same manifest* outcome writes nothing under `--apply`, the `[kb] template` restamp included — the plan's reading taken literally, with the consequence recorded rather than fixed | T4 | `tests/test_cli_upgrade.py::test_same_manifest_under_apply_writes_nothing` |
 | the backup is named by its **full path** when it does not sit in the KB, which is what a symlinked manifest produces | T4 | `tests/test_cli_upgrade.py::test_the_backup_is_named_by_its_full_path_when_it_leaves_the_kb` |
+
+## An unbuilt vector tier is refused rather than ignored (T5)
+
+| What must be true | Increment | Test |
+|---|---|---|
+| a manifest cannot name a vector tier that is not built — and the message shows `sqlite-vec` as the value **found**, never as a comma-followed member of the accepted list, which is exactly what the pre-fix text was | T5 | `tests/test_manifest.py::test_an_unbuilt_vector_tier_is_refused_with_the_tier_that_is_built` |
+| the fix is in the error the user sees: it names `docs/STATUS.md` and the one-line remedy — and a *typo* keeps the generic remedy, so the pointer is per removed value rather than per key | T5 | `tests/test_manifest.py::test_the_manifest_error_names_docs_status` |
+| `meta`'s `vector_tier` is written from the resolver's return, not a literal — part 1 pins the shipped `numpy`, part 2 injects a resolver and asserts `meta` follows it. **Not** "the index records the tier that ran": with one tier there is nothing to discriminate, and the stronger promise waits for the tier | T5 | `tests/test_sync.py::test_the_index_records_the_tier_that_ran` |
