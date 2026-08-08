@@ -40,6 +40,11 @@ Set by the user 20260808 04:39. It **overrides the global default of stopping to
   specifies is yours, choosing *what* it should have specified is not.
 - **Iterate: build → adversarially review → fix → re-review, until a pass finds nothing**, with a
   commit per pass. This is the default shape of an increment, not a debugging-only move.
+- **At each increment boundary, judge whether the context should be cleared before the next one and
+  say so.** Clearing is the user's command — no tool clears it — so the obligation is to *offer*,
+  with the reason. Offer only once the handoff is complete: what the next session needs must be on
+  disk **and reachable from what it will actually open** — this file's live-plan pointer, `docs/`,
+  the plan itself. Verify those pointers first; an increment's own work is what falsifies them.
 
 ## This repository is PUBLIC
 
