@@ -207,6 +207,19 @@ def _run_free_surfaces(root: Path) -> None:
     # archive did not survive into the environment — never that a real KB had drifted.
     if main(["upgrade", "--kb", str(root)]) != 0:
         raise SystemExit(f"free-path run: `pnk upgrade` did not report `up to date` on {root}")
+    # `--apply` (T4) — the flag and not only the report, because this gate is about which modules a
+    # *fresh process* imports, and a flag can reach a writer nothing else does.
+    #
+    # **Say what this call actually reaches, or a later reader will over-read it.** The KB above was
+    # stamped by `pnk init`, so it records the installed reference, `--apply` takes the *up to date*
+    # path, returns 0 and writes nothing. That proves the flag imports and parses on the free path,
+    # which is what the gate is for. It does **not** exercise the writer — `test_cli_upgrade.py`
+    # owns that against a synthetic template, and deleting those on the strength of this line
+    # would leave the only code in Pinakes that rewrites a user's manifest untested.
+    if main(["upgrade", "--kb", str(root), "--apply"]) != 0:
+        raise SystemExit(f"free-path run: `pnk upgrade --apply` did not exit 0 on {root}")
+    if (root / "pinakes.toml.orig").exists():
+        raise SystemExit(f"free-path run: `--apply` wrote a backup on an up-to-date KB in {root}")
     main(["doctor", "--kb", str(root)])
 
 

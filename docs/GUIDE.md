@@ -455,7 +455,41 @@ It writes nothing. It prints the diff between the template version your KB recor
 installed, then says, hunk by hunk, whether each change still fits your file: **applies cleanly**,
 **already applied** (you adopted it by hand, or a newer `pnk init` wrote it), or **conflicts** —
 the lines it expects are not in your file the way it expects them, so nothing can be placed there
-mechanically. Adopting a change is your own edit, against the diff it printed.
+mechanically.
+
+**Read that first. Then, if you want the changes, ask for them:**
+
+```bash
+pnk upgrade --kb my-kb --apply
+```
+
+`--apply` writes every hunk that **applies cleanly** and skips the ones already there. If *any*
+hunk conflicts it writes nothing at all and names the region — a half-upgraded manifest with no
+record of which half is worse than an unupgraded one, so adopting a conflicted change stays your
+own edit against the diff above.
+
+**Watch for the spending-cap section.** A `[budget]` default is a change like any other and
+`--apply` writes it, so both commands print any cap that would move, with the old value and the new
+one, under their own heading:
+
+```
+⚠️  a spending cap changes:
+
+  per_operation_eur: 0.05 → 0.30
+```
+
+It appears only when a cap really would move, so seeing nothing means nothing moved. A raised cap
+is permission, not spending: the free extractor stays the default and a paid one still has to be
+asked for.
+
+Your previous manifest is copied to `pinakes.toml.orig` and the path is printed. **Nothing ignores
+that file** — the `.gitignore` `pnk init` writes covers `.pinakes/` only — so in a git repository it
+will show up in `git status`. Move or delete it once you are sure; Pinakes never overwrites it and
+never removes it.
+
+If an applied change touches a key your index was built under — a chunking size, an embedding model
+— the output names the key and tells you to run `pnk sync --rebuild`. `--apply` never syncs,
+re-chunks or re-embeds by itself.
 
 **On every KB that exists today it says this instead** — run 20260807 23:52, on a KB created
 before the version archive existed:
@@ -477,8 +511,9 @@ build can say which of the eleven different contents yours came from, and diffin
 would report changes you never received. KBs created from `notes@1.1` onward are compared automatically.
 
 **It exits `3` on that path** — not `0`, which a script reads as *up to date*, and not `1`, which
-means something is wrong. A conflict, by contrast, exits `0`: the command did its job, and what it
-found is your answer.
+means something is wrong. **A conflict is the one case whose code depends on what you asked for**:
+`pnk upgrade` exits `0`, because the command did its job and what it found is your answer, while
+`pnk upgrade --apply` exits `1`, because you asked for a write it could not make.
 
 ## Moving, sharing and publishing a KB
 

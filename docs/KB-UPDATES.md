@@ -23,9 +23,12 @@ rebuild, free and deterministic. `pinakes.toml`, `docs/` and the sidecars are **
 edited, and belong to the user; nothing may rewrite them casually.
 
 The design handles derived state well and committed state not at all. Every mechanism below exists
-for the first category. For the second, **detection shipped in 0.17.0 and `pnk upgrade` is
-merged** (see the header above); what is still deferred is *adoption* — `--apply`, the template
-release. This section was written when neither existed.
+for the first category. For the second, **detection shipped in 0.17.0, `pnk upgrade` in 0.19.0, and
+adoption — `--apply` — is merged** (see the header above). This section was written when none of
+them existed. **What adoption does *not* reach is still the honest gap**: it writes `pinakes.toml`
+and nothing else, so a template's `README.md` and its starter `eval/questions.yaml` remain yours to
+refresh by hand, and a KB recording a version whose content was never archived has no baseline to
+adopt against.
 
 ## 2. The four drift axes
 
@@ -34,7 +37,7 @@ release. This section was written when neither existed.
 | 1 | **Index schema** | `schema_version` mismatch → refuse to open, name `pnk sync --rebuild`. No migrations, by design (`store.py:205`) | ✅ shipped |
 | 2 | **Embedding model** | Index built by another model/revision → queries refuse rather than return garbage | ✅ shipped |
 | 3 | **PDF extractor** | Fingerprint mismatch → free backend refuses; paid marks `stale_extraction` and warns | ✅ shipped (I5) |
-| 4 | **Manifest + template** | `[kb] requires_pinakes`: a version floor read in a pre-pass, so a refusal can name the version needed (G4, shipped 0.6.0). **Detecting** template drift shipped in 0.17.0 — a bumped `notes@1.1`, a CI gate that makes the bump impossible to forget, and a `pnk doctor` WARN that now fires. **Adopting** it is still absent: nothing writes the change into a user's manifest | ◐ **detection closed, adoption open** |
+| 4 | **Manifest + template** | `[kb] requires_pinakes`: a version floor read in a pre-pass, so a refusal can name the version needed (G4, shipped 0.6.0). **Detecting** template drift shipped in 0.17.0 — a bumped `notes@1.1`, a CI gate that makes the bump impossible to forget, and a `pnk doctor` WARN that now fires. **Adopting** it landed in T4: `pnk upgrade --apply` writes the hunks that fit into the user's manifest, after printing every one of them, and refuses the whole run if any conflicts | ● **closed for `pinakes.toml`** — a template's other three files are still the user's to refresh by hand |
 
 Axes 1–3 share a shape: *detect, refuse, and point at a free remedy.* That works because the remedy
 is always "rebuild derived state", which costs nothing and destroys nothing.
@@ -111,11 +114,19 @@ Diffs the KB's recorded template version against the installed one.
 **Does:**
 
 - print the diff, always, before doing anything;
-- with `--apply`, write the additive changes into `pinakes.toml`, **preserving comments** — the
-  shipped manifest is mostly explanatory comments, and losing them would strip the guidance the
-  template exists to deliver. Via `tomlkit` (MIT, zero dependencies, 197 KB — against `numpy`'s
-  19.4 MB and `mcp`'s ~17 transitive dependencies already in core), **added to core**;
-- update `requires_pinakes` when it writes.
+- with `--apply`, write the changes that fit into `pinakes.toml`, **preserving comments**. Built in
+  the template release, and **not** the way this section proposed: the hunks are applied as *text*,
+  so comments survive because nothing ever parses them away, and **no `tomlkit` was added to core**.
+  F2 is why — no template change has ever added or removed a key, so the unit of drift is the
+  rendered text and a key-level writer would have been the wrong tool as well as the costlier one.
+  One key-level write remains, `[kb] template`, and it is a bounded textual rewrite that refuses
+  rather than guessing;
+- **never** update `requires_pinakes` — corrected 20260808, and the sentence it replaces said the
+  opposite. **D-11 (taken 20260804): nothing in Pinakes writes that key, in any direction.** Writing
+  it would make a KB unreadable to every build before 0.6.0 in order to record that it adopted a
+  comment, and no version floor could be computed honestly anyway: nothing here maps a manifest key
+  to the release that introduced it. `--apply` names the keys it introduced and leaves the floor to
+  the user.
 
 **Must never:**
 

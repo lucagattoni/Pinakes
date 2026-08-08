@@ -120,6 +120,22 @@ committed files, never in `.pinakes/`** — a freshly cloned KB has no index at 
 or the model whose output the index *is*. Everything else takes a default, except
 `[retrieval.confidence]` and `[[links.kb]]`, which stay absent until something produces them.
 
+**Pinakes writes the manifest in exactly one place, and stating the count is the rule.** The file
+is the user's, like `docs/`, and for most of this project's life nothing rewrote it after `pnk
+init`. The exception is `pnk upgrade --apply`: a **user-invoked** command that writes the KB's own
+`pinakes.toml`, **after printing the change**, and only the hunks that apply cleanly — refusing the
+whole run rather than merging if any conflicts. It backs the file up first and restores it if the
+result does not load. The narrowness is the whole justification, and it is the same shape as the
+two sidecar exceptions: an exception with a boundary anyone can check by counting write sites is
+cheaper to hold than a general permission.
+
+**One consequence is money, and it was decided rather than overlooked.** A cleanly-applying hunk
+inside `[budget]` moves a spending cap like any other hunk — there is no exclusion and no second
+flag. What makes that acceptable is the consent path: the cap's old and new values are printed
+under their own labelled heading, by the report *and* by `--apply`, before anything is written; the
+heading appears exactly when a cap would move; and a raised cap is still only permission — spending
+requires a paid entry point invoked deliberately (§5).
+
 **Three validation postures, each deliberate.** Unknown keys are rejected rather than ignored. An
 explicit empty string is an error rather than a request for the default — silently substituting one
 hides a mistake until it fails somewhere far away. And `[extraction] backend` is validated against
@@ -707,8 +723,11 @@ not implicitly change a KB's blueprint.
 `pnk upgrade` **diffs** the KB's recorded template version against the installed one and prints a
 **template diff** — never a *migration*, a word this design reserves for index schema and
 deliberately does not reuse here, because the two obey opposite rules and every reader who has to be
-told they are different has already paid the cost. It never applies changes automatically: a
-template bump that silently re-chunks someone's corpus is a data-loss event in slow motion.
+told they are different has already paid the cost. **Nothing is ever applied automatically**, and
+that is the load-bearing word rather than *applied*: `--apply` exists, and it is a separate,
+explicit invocation that prints the whole change first and refuses outright if any part of it does
+not fit. A template bump that silently re-chunks someone's corpus is a data-loss event in slow
+motion; one the user read and asked for is an upgrade.
 
 **That comparison needs the old version's *content*, and a manifest records only a reference.** A
 wheel ships one copy of each template — the current one — so for most of this project's life the
@@ -725,7 +744,8 @@ reconstruction is what would make the report wrong in the one direction nobody c
 **This is one of four drift axes, and the last to get a mechanism.** An index, an embedding model
 and a PDF extractor each drift detectably and are remedied by rebuilding derived state, which is
 free. A manifest and a template drift *silently*, and the remedy touches a file the user owns — so
-it cannot borrow the same shape: what is built reports, and leaves the writing to the user.
+it cannot borrow the same shape. What is built therefore reports first and writes only on request,
+and the write is bounded by the report: nothing reaches the file that was not printed.
 [KB-UPDATES.md](KB-UPDATES.md) works the problem through and records what has been decided.
 
 ### 6.2 Cross-KB links
