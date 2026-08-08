@@ -1,6 +1,6 @@
 # Status — what ships today
 
-**Latest release: 0.21.0** · last reviewed 20260808 10:15
+**Latest release: 0.21.0** · last reviewed 20260808 10:26
 
 > **This file is the only place in the repo that says what is built.** Every other doc describes
 > *how* something works or *why* it was designed that way, and links here for whether you can use it
@@ -675,15 +675,27 @@ against the published wheel rather than the repo, on a KB created by that wheel:
 file and `vector_tier = "auto"`, **exit `1` measured without a pipe**; then the one-line fix →
 `pnk sync` indexes, and the index's `meta` records `vector_tier = numpy`.
 
-**And the manual-release step recurred a fourth time** — `Release` green, both files on PyPI,
-`gh release view v0.20.1` → *release not found*. The rule written above after the third recurrence
-held on its first use: it was checked because the procedure now says to, not because anything
-flagged it. **Four for four since 20260804. The workflow has still never created a release.**
+**0.21.0, same standard, 20260808 10:26.** The `Publish to PyPI` step log prints `Uploading
+pinakes-0.21.0-py3-none-any.whl (360.8KiB)` and `Uploaded pinakes-0.21.0.tar.gz`;
+`uvx --no-cache --refresh --from "pinakes==0.21.0" pnk --version` → `pinakes 0.21.0` — again on a
+retry, the first attempt reading *unsatisfiable* ~60 s earlier. Verified **against the published
+wheel rather than the repo**: `pnk templates` prints `notes  1.1  Plain Markdown notes…`, `--json`
+carries the `notes@1.1` reference beside the name and version, and a KB created by that wheel still
+receives both historical files — `README.md` and `eval/questions.yaml` — with no `_versions/`
+anywhere in it, which is the check that `files`' absent-key default did not quietly become "none".
+
+**And the manual-release step recurred a fifth time** — `Release` green, both files on PyPI,
+`gh release view v0.20.1` → *release not found*, and `v0.21.0` did exactly the same. The rule
+written above after the third recurrence has now held twice, both times for the same reason: it was
+checked because the procedure says to, not because anything flagged it. **Five for five since
+20260804. The workflow has still never created a release** — every one of them was created by hand
+afterwards. At this point the pattern is not a flake and the release job's own claim of `success`
+should be read as covering the PyPI upload only.
 
 | | |
 |---|---|
-| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.1, 0.8.0, 0.9.0, 0.10.0, 0.11.0, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.15.1, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.20.0 and 0.20.1** — twenty-three. **0.20.1 refuses `vector_tier = "sqlite-vec"`**, a value that was accepted and silently ignored: a KB whose `pinakes.toml` sets it **stops loading entirely** on this release, on every command. The fix is one line — `vector_tier = "auto"` — and changes nothing about how that KB behaves, since it was already getting the NumPy tier. This is the one upgrade in this list that can stop a working KB, and it is a PATCH deliberately (D-12). **0.20.0 adds `pnk upgrade --apply`**, the only thing in Pinakes that rewrites a `pinakes.toml` after `pnk init` — it writes the hunks that fit after printing them, backs the file up to `pinakes.toml.orig`, and refuses the whole run if any hunk conflicts. It changes nothing for a KB recording `notes@1.0`, which still gets `cannot compare` and exit `3`. **0.19.0 adds `pnk upgrade`**, which prints what a template changed and wrote nothing; on every KB that predates the version archive it says `cannot compare` and exits `3`. **0.17.0 bumps the `notes` template to 1.1**, so `pnk doctor` WARNs on every KB created before it: a report, not a fault, and `pnk upgrade` (0.19.0) is what reads it — though on a KB recording `notes@1.0` it says `cannot compare` too, because that content was never archived. **0.18.0 makes that WARN say `cannot compare`** with a remedy naming the manual comparison, because `1.0`'s content was never archived — the message is the whole of what changed for an existing KB. **0.11.0 bumps `schema_version` to 3**, so the first `pnk sync` after upgrading rebuilds the whole index — free, and `pnk sync --rebuild` is what the refusal prints. 0.9.0's upload was refused on first attempt — renaming the repository broke PyPI trusted publishing, which matches on the exact repository name — and succeeded once the publisher was corrected. **0.8.0 renames the paid extractor's API key** to `PINAKES_ANTHROPIC_API_KEY`, so a KB driving the paid path from an older `.env` refuses until the variable is renamed. 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
-| First upload | 20260728 17:16 UTC · latest 20260808 06:50 UTC (0.20.1) |
+| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.1, 0.8.0, 0.9.0, 0.10.0, 0.11.0, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.15.1, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.20.0, 0.20.1 and 0.21.0** — twenty-four. **0.21.0 adds `pnk templates`** and lets a template declare the files it writes; both are additive, and a KB created by an earlier release is unaffected. **0.20.1 refuses `vector_tier = "sqlite-vec"`**, a value that was accepted and silently ignored: a KB whose `pinakes.toml` sets it **stops loading entirely** on this release, on every command. The fix is one line — `vector_tier = "auto"` — and changes nothing about how that KB behaves, since it was already getting the NumPy tier. This is the one upgrade in this list that can stop a working KB, and it is a PATCH deliberately (D-12). **0.20.0 adds `pnk upgrade --apply`**, the only thing in Pinakes that rewrites a `pinakes.toml` after `pnk init` — it writes the hunks that fit after printing them, backs the file up to `pinakes.toml.orig`, and refuses the whole run if any hunk conflicts. It changes nothing for a KB recording `notes@1.0`, which still gets `cannot compare` and exit `3`. **0.19.0 adds `pnk upgrade`**, which prints what a template changed and wrote nothing; on every KB that predates the version archive it says `cannot compare` and exits `3`. **0.17.0 bumps the `notes` template to 1.1**, so `pnk doctor` WARNs on every KB created before it: a report, not a fault, and `pnk upgrade` (0.19.0) is what reads it — though on a KB recording `notes@1.0` it says `cannot compare` too, because that content was never archived. **0.18.0 makes that WARN say `cannot compare`** with a remedy naming the manual comparison, because `1.0`'s content was never archived — the message is the whole of what changed for an existing KB. **0.11.0 bumps `schema_version` to 3**, so the first `pnk sync` after upgrading rebuilds the whole index — free, and `pnk sync --rebuild` is what the refusal prints. 0.9.0's upload was refused on first attempt — renaming the repository broke PyPI trusted publishing, which matches on the exact repository name — and succeeded once the publisher was corrected. **0.8.0 renames the paid extractor's API key** to `PINAKES_ANTHROPIC_API_KEY`, so a KB driving the paid path from an older `.env` refuses until the variable is renamed. 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
+| First upload | 20260728 17:16 UTC · latest 20260808 10:23 UTC (0.21.0) |
 | Extras available | `st`, `light`, `pdf`, `claude` — all four |
 | `requires-python` | `>=3.13` |
 
