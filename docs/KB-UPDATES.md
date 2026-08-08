@@ -111,11 +111,19 @@ Diffs the KB's recorded template version against the installed one.
 **Does:**
 
 - print the diff, always, before doing anything;
-- with `--apply`, write the additive changes into `pinakes.toml`, **preserving comments** — the
-  shipped manifest is mostly explanatory comments, and losing them would strip the guidance the
-  template exists to deliver. Via `tomlkit` (MIT, zero dependencies, 197 KB — against `numpy`'s
-  19.4 MB and `mcp`'s ~17 transitive dependencies already in core), **added to core**;
-- update `requires_pinakes` when it writes.
+- with `--apply`, write the changes that fit into `pinakes.toml`, **preserving comments**. Built in
+  the template release, and **not** the way this section proposed: the hunks are applied as *text*,
+  so comments survive because nothing ever parses them away, and **no `tomlkit` was added to core**.
+  F2 is why — no template change has ever added or removed a key, so the unit of drift is the
+  rendered text and a key-level writer would have been the wrong tool as well as the costlier one.
+  One key-level write remains, `[kb] template`, and it is a bounded textual rewrite that refuses
+  rather than guessing;
+- **never** update `requires_pinakes` — corrected 20260808, and the sentence it replaces said the
+  opposite. **D-11 (taken 20260804): nothing in Pinakes writes that key, in any direction.** Writing
+  it would make a KB unreadable to every build before 0.6.0 in order to record that it adopted a
+  comment, and no version floor could be computed honestly anyway: nothing here maps a manifest key
+  to the release that introduced it. `--apply` names the keys it introduced and leaves the floor to
+  the user.
 
 **Must never:**
 

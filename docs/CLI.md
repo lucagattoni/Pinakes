@@ -508,11 +508,12 @@ stderr is listing.
 ## `pnk upgrade`
 
 ```
-pnk upgrade [--kb PATH] [--json]
+pnk upgrade [--kb PATH] [--json] [--apply]
 ```
 
 **What your template changed since this KB was stamped, and whether each change still fits your
-manifest.** It writes nothing — not to `pinakes.toml`, not under `.pinakes/`.
+manifest.** Without `--apply` it writes nothing — not to `pinakes.toml`, not under `.pinakes/`.
+`--apply` writes the changes that fit, after printing every one of them.
 
 Three inputs, and which three is the whole point:
 
@@ -537,18 +538,21 @@ Each hunk is then placed against your manifest, and there are three answers:
 | **already applied** | the change is *already* there — you adopted it by hand, or a newer `pnk init` wrote it. Not "clean": a later `--apply` would insert the lines a second time — which duplicates a key where the change carries one, and that is a TOML error rather than a mess you can tidy |
 | **conflicts** | the lines the change expects are not in your file the way it expects them — you edited that region, they are there in a different order, or they match in two places. The command does not guess which; nothing is placed, and the diff above is what to apply by hand |
 
-**A conflict is not a failure and does not change the exit code.** This command writes nothing, so
-it has nothing to fail at; `pnk upgrade` exiting non-zero on a conflict would make it unusable
-beside `pnk doctor` in one script. The one code **peculiar to this command** is `3` — *no baseline*,
-meaning the comparison never happened at all. `1` and `2` still mean what they mean everywhere else,
-and a script that treats every non-zero as *no baseline* will read an unreadable manifest as one:
+**Without `--apply`, a conflict is not a failure and does not change the exit code.** A report
+writes nothing, so it has nothing to fail at; exiting non-zero on a conflict would make `pnk
+upgrade` unusable beside `pnk doctor` in one script. **The same conflict under `--apply` exits
+`1`** — the command was asked to do something and could not, which is what `1` means everywhere
+else in this CLI. The one code **peculiar to this command** is `3` — *no baseline*, meaning the
+comparison never happened at all. A script that treats every non-zero as *no baseline* will read an
+unreadable manifest as one:
 
 | It says | Exit | When |
 |---|---|---|
-| `up to date: notes@1.1` | `0` | the recorded and installed versions match |
-| a diff, then a placement for each hunk | `0` | both versions are archived and their manifests differ |
-| `… stamp an identical pinakes.toml` | `0` | both are archived and render the same manifest. A template version covers four files and this command reads one of them |
-| `cannot compare: …` | `3` | the recorded version is not archived, the installed one is not, the template is not installed here, this KB records no template, or an archived version needs a variable this build cannot supply. **Every one of them opens with `cannot compare:`**, so a script can match one string for the whole class |
+| `up to date: notes@1.1` | `0` | the recorded and installed versions match. With `--apply`, nothing is written |
+| a diff, then a placement for each hunk | `0` | both versions are archived and their manifests differ. With `--apply`, `0` means the clean hunks were written |
+| `… stamp an identical pinakes.toml` | `0` | both are archived and render the same manifest. A template version covers four files and this command reads one of them. **`--apply` writes nothing here** — there are no hunks, so the recorded version is left as it is |
+| `cannot compare: …` | `3` | the recorded version is not archived, the installed one is not, the template is not installed here, this KB records no template, or an archived version needs a variable this build cannot supply. **Every one of them opens with `cannot compare:`**, so a script can match one string for the whole class. `--apply` does not change it: nothing is wrong and there is nothing to write against |
+| `error: cannot apply: …` on stderr | `1` | **`--apply` only.** A hunk conflicts, `pinakes.toml.orig` is already there, a sync holds the KB, the manifest's line endings are not uniform, or `[kb] template` is not a single quoted value. Nothing was written in any of them |
 | `error: …` on stderr | `1` | an operational failure that is yours to fix: there is no KB here, or its manifest does not load |
 
 **Today `cannot compare` is what every KB in existence gets**, because `notes@1.0` is deliberately
@@ -563,8 +567,44 @@ is compared automatically.
 template's version would destroy your questions to deliver a comment.
 
 `--json` emits the same three parts — the diff, the hunks with their placements, and the counts —
-and emits JSON on the `cannot compare` path too, so a scripted caller never gets prose where it was
-promised a document.
+plus a `spend` array that is the spending-cap heading in machine-readable form, and emits JSON on
+the `cannot compare` path too, so a scripted caller never gets prose where it was promised a
+document. With `--apply` it emits **one** document after the attempt, carrying either `applied` or
+`refused`.
+
+### `--apply`
+
+**It writes every hunk that applies cleanly, `[budget]` included, and refuses the whole run if any
+hunk conflicts.** It never merges, never picks a side and never writes a conflict marker. *Already
+applied* hunks are not conflicts: they are skipped, counted and named.
+
+**A change to a spending cap is called out in its own labelled section, naming every key with both
+values, and it is printed by `pnk upgrade` and `pnk upgrade --apply` alike** — the report is where
+you decide, so it is never the weaker of the two outputs. The section appears exactly when a cap
+would move and never otherwise, so its absence is information too. There is no separate flag and no
+exception for `[budget]`: what makes a cap safe to move is that you saw the numbers first and asked
+for the write separately.
+
+Before it writes:
+
+| It does | Because |
+|---|---|
+| copies your `pinakes.toml` to `pinakes.toml.orig` and prints the path | it is the only way back to the old numbers without an editor and a memory. It is **never** overwritten — move it yourself once you no longer need it. Nothing ignores it: `pnk init`'s `.gitignore` covers `.pinakes/` only, so in a git repository it will show up in `git status` |
+| refuses if a sync holds the KB | a sync indexes under the settings the manifest states. This is advisory: a sync starting a moment later is not caught |
+| refuses a manifest whose line endings are not uniform | it writes lines back, and writing into a file whose endings already disagree leaves a mixture nobody chose. A uniformly CRLF file is preserved as CRLF |
+| decides every refusal first | so a run that refuses is byte-identical afterwards and leaves no `pinakes.toml.orig` behind — otherwise the next run would refuse on the backup rather than on the real reason |
+
+After it writes, it re-reads the result as a manifest and restores the original if it does not load.
+
+It also updates **one** key outside the hunks — `[kb] template`, to the version now installed — and
+refuses rather than guessing if that key is not a single quoted value inside `[kb]`.
+
+**What it does not do.** It does not sync, re-chunk, re-embed or re-extract; if an applied key is
+one your index was built under, it names the key and tells you to run `pnk sync --rebuild`. It does
+not touch `docs/`, `.pinakes/`, or your `eval/questions.yaml`. And it **never writes
+`[kb] requires_pinakes`** — when applied hunks introduce keys, it names them and says you may want
+to set a floor by hand. Nothing in Pinakes maps a manifest key to the release that introduced it,
+so a printed `>=x.y.z` would be a guess wearing a decimal point.
 
 ---
 
@@ -576,5 +616,4 @@ Listed so the shape is known in advance; each names the increment that lands it
 | Surface | Increment | Adds |
 |---|---|---|
 | `pnk ask --deep` | the deep release | Bounded, budgeted synthesis for CLI and cron use, where no agent is present |
-| `pnk upgrade --apply` | the template release | Writes the cleanly-applying hunks into `pinakes.toml`, after printing everything `pnk upgrade` prints and refusing outright if any hunk conflicts |
 | `pnk templates` | the template release | Lists every installed template with its version and description, `--json` available. Accepted 20260804 10:30 — today `template.available()` is reachable only by naming a template that does not exist, so discovery works by triggering an error |

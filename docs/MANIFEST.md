@@ -57,8 +57,15 @@ when the user's real problem is an out-of-date Pinakes. This field lets the mani
   shipped — which is also why `pnk init` does **not** stamp it: a fresh KB carries no key an older
   Pinakes would choke on, so a stamped floor would lock out readers for no gain.
 
-Nothing updates the field on a KB whose owner never edits it, so it is a lower bound rather than a
-promise. The wider design note is [KB-UPDATES.md](KB-UPDATES.md).
+- **Nothing in Pinakes ever writes it — including `pnk upgrade --apply`.** That is a decision, not
+  a gap: writing a floor would make the KB unreadable to every build below it in order to record an
+  adopted comment, and no honest number is available anyway, because nothing here maps a manifest
+  key to the release that introduced it. When `--apply` writes hunks that introduce keys, it
+  **names those keys** and says you may want a floor; it suggests no version and edits nothing. An
+  existing value is left byte-identical, in either direction.
+
+So it is a lower bound you maintain, rather than a promise the tool keeps for you. The wider design
+note is [KB-UPDATES.md](KB-UPDATES.md).
 
 ## `[sources]`
 

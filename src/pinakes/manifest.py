@@ -1,8 +1,11 @@
 """`pinakes.toml` — the manifest, and how a KB root is found.
 
-The manifest is **user-owned**, like `docs/`. Nothing in Pinakes rewrites it after `pnk init`, so
-this module only ever reads. Validation is strict in both directions: a missing required key fails,
-and so does an unknown one (docs/DESIGN.md §2.1).
+The manifest is **user-owned**, like `docs/`. **This module only ever reads it**, and exactly one
+thing in Pinakes writes it after `pnk init`: `pnk upgrade --apply`, which lives in `upgrade.py`,
+prints every change first and writes only the hunks that apply cleanly (docs/DESIGN.md §2.1). The
+count is the rule — a reviewer checks it by counting write sites, and a second one is a design
+change rather than a convenience. Validation is strict in both directions: a missing required key
+fails, and so does an unknown one.
 
 Cross-key invariants are checked here rather than at the point of use, because a manifest that
 cannot produce sane behaviour should fail when it is read, not three commands later:

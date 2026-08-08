@@ -25,7 +25,8 @@
 | `pnk budget` | shipped 0.3.0 | I6b. Day/month/operation spend, `--resolve` for an unknown outcome |
 | `pnk links` | shipped 0.5.0 | L4. What a document connects to and what connects to it: `--rel`, `--direction`, `--depth`, `--query`, `--json` |
 | `pnk link` | shipped 0.6.0 | L6. Writes one `links[]` entry into the source document's own sidecar. Targets: a `pnk://` URI, `<alias>:<path>`, or a path in this KB |
-| `pnk upgrade` | shipped 0.19.0 | T3. Prints the template diff and says, hunk by hunk, whether each change still fits your manifest. Writes nothing. Exits `3` — *no baseline* — on every KB that predates the version archive, which today is all of them |
+| `pnk upgrade` | shipped 0.19.0 | T3. Prints the template diff and says, hunk by hunk, whether each change still fits your manifest. Exits `3` — *no baseline* — on every KB that predates the version archive, which today is all of them |
+| `pnk upgrade --apply` | shipped, T4 | Writes the hunks that apply cleanly, `[budget]` included, after printing them; refuses the whole run if any conflicts. **The only thing in Pinakes that rewrites a `pinakes.toml` after `pnk init`.** Backs the file up to `pinakes.toml.orig`, prints any spending cap that would move with both values, and never writes `[kb] requires_pinakes` |
 | `pnk ask --deep` | **not built** | the deep release |
 
 | Capability | State | Notes |
@@ -123,10 +124,12 @@ archived, `pnk doctor` renders them both and reports how many lines separate the
 recording `notes@1.0` it reports `cannot compare`, because that version's content was never
 archived and never will be, so the KB in front of you is not one it can measure. **`pnk upgrade` shipped in
 0.19.0** — it prints *which* lines differ and says, hunk by hunk, whether each change still
-fits your manifest, writing nothing. On a KB recording `notes@1.0` it says `cannot compare` for the
-same reason `pnk doctor` does, and exits `3`. What is still missing is the last part of this
-caveat: nothing **adopts** a new default into an existing manifest. That is `--apply`, and it is
-template-release work.
+fits your manifest. On a KB recording `notes@1.0` it says `cannot compare` for the
+same reason `pnk doctor` does, and exits `3`. **`--apply` (T4) closes the last part of this
+caveat**: it adopts the hunks that fit, after printing them, refusing the whole run if any
+conflicts. **It changes nothing for a KB recording `notes@1.0`** — there is still no baseline to
+apply against, so that KB gets `cannot compare` and exit `3` under `--apply` too. Adoption starts
+working at the *next* template bump, for KBs stamped from `notes@1.1` onward.
 
 ### Caveat: the `[light]` backend needs a manifest edit
 
