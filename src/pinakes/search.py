@@ -247,6 +247,29 @@ def _lexical(
     return [chunk_id for chunk_id in ranked if chunk_id in allowed][:limit]
 
 
+def resolve_tier(manifest: Manifest) -> str:
+    """Which vector tier a query against this KB actually runs on — never the configured string.
+
+    `auto` is a request to choose, not a tier, so nothing may record or report it: an index whose
+    `meta` said `auto` would answer "which tier built this?" with the question. Only the NumPy tier
+    is built, so today the choice is settled for both accepted values.
+
+    **One caller today** — `sync`, stamping `meta`. That is deliberate, and less than this function
+    was drafted to do: the plan asks that `search` call it too "so `meta`'s claim and the code path
+    cannot disagree", but with one tier there is no dispatch for `search` to make, and a parameter
+    threaded into `_vector` that can hold one value and is guarded by an unreachable branch is
+    decoration, not a shared decision. The increment that builds the second tier is where the
+    branch becomes real and `search` becomes the second caller — and where the property the plan
+    names starts holding for a reason other than there being nothing to disagree about.
+    """
+    tier = manifest.retrieval.vector_tier
+    # An explicit tier is honoured rather than re-derived, which is what makes this read the
+    # manifest instead of returning a constant that happens to be right. `VECTOR_TIERS` is what
+    # bounds the values reaching here, so the increment restoring `"sqlite-vec"` gets it honoured
+    # by this line and owes only `auto`'s side of the choice.
+    return "numpy" if tier == "auto" else tier
+
+
 def _vector(
     connection: sqlite3.Connection,
     backend: EmbeddingBackend,

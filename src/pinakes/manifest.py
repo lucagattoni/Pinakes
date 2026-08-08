@@ -27,7 +27,7 @@ died and the good error is unreachable (docs/KB-UPDATES.md §7).
 """
 
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -48,7 +48,31 @@ TIMESTAMP_FORMAT = "%Y%m%d %H:%M"
 
 FUSION_STRATEGIES = ("rrf",)
 RERANK_MODES = ("local", "none")
-VECTOR_TIERS = ("auto", "numpy", "sqlite-vec")
+VECTOR_TIERS = ("auto", "numpy")
+"""`[retrieval] vector_tier`, default `"auto"`. Both values resolve to the NumPy tier today.
+
+`"sqlite-vec"` was accepted here until it was removed, and the removal is a fix rather than a
+decision against the tier. It never selected anything: `sync` stamped `numpy` into the index's
+`meta` whatever this said and `search` never read the field, so a manifest asking for the tier got
+the NumPy one, silently, on every surface. **The increment that builds the tier restores the value
+here** — with `UNBUILT_VECTOR_TIERS` losing its entry in the same change.
+
+Same reasoning as `GRAPH_CHANNELS` and `"ppr"` below, applied to a value that had already shipped:
+a manifest that can ask for something the code does not implement is a manifest whose setting
+silently does nothing.
+"""
+UNBUILT_VECTOR_TIERS: Mapping[str, str] = {
+    "sqlite-vec": (
+        "The sqlite-vec tier is not built yet — see docs/STATUS.md. Setting it never selected it; "
+        'use `vector_tier = "auto"` (the default) or `"numpy"`, which is what such a KB was '
+        "already getting."
+    )
+}
+"""What a manifest still naming an unbuilt tier is told, keyed by the value it names.
+
+Separate from `VECTOR_TIERS` rather than a fourth entry with a flag, because the accepted list is
+exactly what the error message prints: a value living here cannot be re-admitted by accident.
+"""
 GRAPH_CHANNELS = ("off", "expand")
 """`[retrieval] graph_channel` (G5), default `"off"`.
 
@@ -698,7 +722,9 @@ def _retrieval(root_table: Table, path: Path) -> RetrievalSection:
         fusion_top_k=table.integer("fusion_top_k", default=20, minimum=1),
         final_k=table.integer("final_k", default=8, minimum=1),
         rerank=table.choice("rerank", RERANK_MODES, default="local"),
-        vector_tier=table.choice("vector_tier", VECTOR_TIERS, default="auto"),
+        vector_tier=table.choice(
+            "vector_tier", VECTOR_TIERS, default="auto", remedies=UNBUILT_VECTOR_TIERS
+        ),
         # Deliberately **not** stamped into the `notes` template, in this release or the next:
         # `_toml.py` hard-errors on an unknown key, so a manifest carrying `adjacent_k` cannot be
         # read by any Pinakes built before it existed. `[kb] requires_pinakes` cannot help

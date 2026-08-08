@@ -8,7 +8,7 @@ Errors name the file, the table and the key, in that order — a validation erro
 locate is barely better than no validation.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
@@ -69,12 +69,28 @@ class Table:
     def string_or(self, key: str, default: str) -> str:
         return self._string(key, required=False) or default
 
-    def choice(self, key: str, allowed: Sequence[str], *, default: str | None = None) -> str:
+    def choice(
+        self,
+        key: str,
+        allowed: Sequence[str],
+        *,
+        default: str | None = None,
+        remedies: Mapping[str, str] | None = None,
+    ) -> str:
+        """One of `allowed`, with an optional per-value remedy for a name that *used* to be one.
+
+        `remedies` exists for a value a release removes rather than one it never had: "must be one
+        of ..." is the right message for a typo and the wrong one for a name the documentation
+        listed yesterday, which needs to say what happened to it. A rejected value with no entry
+        falls through to `ManifestError`'s default remedy, so the mapping only carries the names
+        that need more than the accepted list.
+        """
         value = self.string(key) if default is None else self.string_or(key, default)
         if value not in allowed:
             raise self._fail(
                 f"`{key}` must be one of {', '.join(repr(option) for option in allowed)}, "
-                f"found {value!r}"
+                f"found {value!r}",
+                remedy=None if remedies is None else remedies.get(value),
             )
         return value
 

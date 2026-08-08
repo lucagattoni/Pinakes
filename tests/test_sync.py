@@ -16,7 +16,7 @@ import pytest
 import yaml
 from conftest import pdf_extraction_runnable
 
-from pinakes import store
+from pinakes import search, store
 from pinakes.chunk import PREFIX_SEPARATOR
 from pinakes.embed import EmbeddingBackend, ModelInfo, Vectors
 from pinakes.errors import DuplicateIdsError, ManifestError
@@ -146,6 +146,15 @@ def index(kb: Path) -> list[dict[str, object]]:
     connection = store.connect_ro(kb / ".pinakes" / "index.db")
     try:
         return [dict(row) for row in connection.execute("SELECT * FROM documents ORDER BY path")]
+    finally:
+        connection.close()
+
+
+def meta_of(kb: Path) -> dict[str, str]:
+    """The index's `meta` table, connection closed before returning — same reason as `index`."""
+    connection = store.connect_ro(kb / ".pinakes" / "index.db")
+    try:
+        return store.get_meta(connection)
     finally:
         connection.close()
 
@@ -488,6 +497,38 @@ def test_a_real_sync_stamps_utc_not_local_under_a_non_utc_timezone(
     # exactly the size a local stamp under UTC+14 would be off by, and a UTC one cannot be.
     assert before.replace(second=0, microsecond=0) - timedelta(minutes=1) <= recorded
     assert recorded <= after.replace(second=0, microsecond=0) + timedelta(minutes=1)
+
+
+def test_the_index_records_the_tier_that_ran(monkeypatch: pytest.MonkeyPatch, kb: Path) -> None:
+    """Two parts, and only the second one discriminates.
+
+    **Part 1** is the concrete shipped fact a reader can check without running anything: the NumPy
+    tier is the only one built, so a KB on the default `auto` records `numpy`. It holds whether
+    `meta` was written from the resolver or from a re-hardcoded literal — which is exactly why it
+    is not the whole test.
+
+    **Part 2** injects a resolver returning a string no tier has and asserts `meta` moved with it.
+    That is the half that goes red if `sync.py` writes the literal again. It is a test against an
+    **injected value, not against a second tier**: with one tier there is nothing else to compare,
+    so the honest claim today is "`meta` is written from the resolver's return", not "`meta`
+    records the tier that ran" — the name this test keeps for the property it will assert once a
+    second tier exists to discriminate.
+
+    Asserting `meta == resolve_tier(manifest)` instead would put one function on both sides and
+    hold even when the resolver is wrong; that is the tautology this replaces.
+    """
+    write(kb, "a.md", "# A\n\nSome text.\n")
+    run(kb)
+    assert meta_of(kb)["vector_tier"] == "numpy"
+
+    def injected(_manifest: Manifest) -> str:
+        return "injected-tier"
+
+    # Patched on the module `sync` calls *through* — which is why it calls through one rather than
+    # importing the name.
+    monkeypatch.setattr(search, "resolve_tier", injected)
+    run(kb, rebuild=True)
+    assert meta_of(kb)["vector_tier"] == "injected-tier"
 
 
 @pytest.mark.skipif(not pdf_extraction_runnable(), reason="pinakes[pdf] not installed")

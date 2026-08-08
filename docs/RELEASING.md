@@ -23,9 +23,16 @@ was dropped in the move.
    and `docs/RETROSPECTIVES.md`, then deletes the fragments. A release that skips this and runs it
    later splices into the wrong version.
 2. Bump `__version__` in `src/pinakes/__init__.py`.
-3. Move `[Unreleased]` into a dated `[x.y.z] — YYYYMMDD HH:MM` section. **Add its link definition at
-   the foot and repoint `[Unreleased]`'s compare** — `fragments.py --apply` splices entries and does
-   not touch the footer.
+3. **Insert** a dated `## [x.y.z] — YYYYMMDD HH:MM` heading *below* `## [Unreleased]`, so the freshly
+   spliced entries fall under it. **Add its link definition at the foot and repoint `[Unreleased]`'s
+   compare** — `fragments.py --apply` splices entries and does not touch the footer.
+
+   > ⚠️ **`## [Unreleased]` must survive the release — it is `fragments.py`'s insertion anchor.**
+   > *Renaming* it into the version heading instead of inserting below it leaves the file with no
+   > anchor, and the **next** release then dies at step 1 with `CHANGELOG.md: anchor '##
+   > [Unreleased]' not found`, before it has written anything. 0.20.0 did exactly that and 0.20.1
+   > found it. The footer's `[Unreleased]:` link is no guard: it survived that release untouched
+   > and simply dangled, pointing at a heading that no longer existed.
 4. Commit, then **land with `python3 tools/land.py <branch>`** — never `git merge` by hand. It
    merges in the primary checkout whatever directory you ran it from, refuses if `main`'s sha did
    not move, and pushes; `--cleanup-only` removes the branch and its worktree later, once you have

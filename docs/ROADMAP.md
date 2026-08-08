@@ -17,11 +17,11 @@ precision nobody measured.
 
 ---
 
-## Where things stand right now — 20260808 05:41 UTC
+## Where things stand right now — 20260808 06:41 UTC
 
-- **29 releases in 14 days.** [`0.1.0`](#010--the-engine--20260725-1527) on 20260725;
-  [`0.20.0`](#0200--adopting-the-change-after-you-have-seen-it--20260808-0541) on 20260808.
-- **Latest on PyPI: `0.20.0`.** Every release from `0.2.2` on is published
+- **30 releases in 14 days.** [`0.1.0`](#010--the-engine--20260725-1527) on 20260725;
+  [`0.20.1`](#0201--a-tier-that-is-not-built-stops-being-accepted--20260808-0641) on 20260808.
+- **Latest on PyPI: `0.20.1`.** Every release from `0.2.2` on is published
   ([STATUS § Published on PyPI](STATUS.md#published-on-pypi)).
 - **Two of the four named releases have shipped** — the links release across
   [`0.5.0`](#050--links-you-can-walk--20260731-1127)–[`0.6.0`](#060--links-you-can-write--20260801-1051),
@@ -59,12 +59,16 @@ precision nobody measured.
 - **[The template release](#the-template-release--t1-shipped-in-0170) has started** — plan written,
   reviewed, four decisions taken, **T1 shipped as `0.17.0`** and **T2 as `0.18.0`**: template
   versions now mean something, a gate keeps them meaning it, and `pnk doctor` reports how far a KB
-  has drifted rather than only that it has, and **T3 merged `pnk upgrade`**, which prints the lines
-  themselves. T4 and T7 remain; `main` has moved far enough that
-  the plan's Baseline block must be re-run before any `file:line` in it is trusted.
-- **[Four open corrections](#open-corrections--four-live)** — the list emptied on 20260805 and
-  refilled on 20260807 and 20260808. It refills from *use*: two entries came from **building** 2d
-  and are invisible from reading the code, and two from **reading** it under adversarial review.
+  has drifted rather than only that it has, **T3 shipped `pnk upgrade` as `0.19.0`**, which prints the
+  lines themselves, **T4 shipped `--apply` as `0.20.0`**, which writes the ones that fit, and **T5
+  shipped as `0.20.1`**, refusing a vector tier that is not built rather than accepting it silently.
+  **T7 remains**; `main` has moved far enough that the plan's Baseline block must be re-run before
+  any `file:line` in it is trusted.
+- **[Five open corrections](#open-corrections--five-live)** — the list emptied on 20260805 and
+  refilled on 20260807 and 20260808. It refills from *use*, and by four different routes: two
+  entries came from **building** 2d and are invisible from reading the code, one from **reading**
+  under adversarial review, one was **created** by the increment that closed another, and one came
+  from **generalising a fix** — asking where else the defect just repaired still lives.
 
 ---
 
@@ -107,10 +111,11 @@ number belongs to a release only when it is cut
 | **[0.18.0](#0180--the-drift-warning-says-something-you-can-act-on--20260807-2237)** | 20260807 22:37 | The drift warning says something you can act on | • Drift reported as a **computed line count**, both sides rendered<br>• Template against template — your own tuning cannot appear<br>• `cannot compare` on every KB that exists, with an honest remedy<br>• `same manifest` instead of a misleading `0 lines differ`<br>• An unsupplied variable is a message, not a traceback<br>• *The template release, interim cut (D-9)* |
 | **[0.19.0](#0190--what-the-template-changed-in-your-own-file--20260808-0418)** | 20260808 04:18 | What the template changed, in your own file | • `pnk upgrade` — the diff itself, hunk by hunk<br>• **applies cleanly / already applied / conflicts**, and *already applied* is why a later `--apply` cannot duplicate a key<br>• Writes nothing; exit **`3`** is new and means *no baseline*<br>• `cannot compare` on every KB that exists, same wording as `pnk doctor`<br>• Five adversarial passes: 30 → 22 → 13 → 6 → 1<br>• *The template release, interim cut (D-9)* |
 | **[0.20.0](#0200--adopting-the-change-after-you-have-seen-it--20260808-0541)** | 20260808 05:41 | Adopting the change, after you have seen it | • `pnk upgrade --apply` — writes the hunks that fit, refuses the whole run if any conflicts<br>• The **only** thing that rewrites a `pinakes.toml` after `pnk init`<br>• A `[budget]` cap applies like any other change — and both commands print it first, with both values (D-10)<br>• Never writes `[kb] requires_pinakes`; it names the keys and leaves the floor to you (D-11)<br>• A conflict now carries two codes: `0` reporting, `1` applying<br>• Five adversarial passes: 5 → 2 → 2 → 3 → 0<br>• *The template release, interim cut (D-9)* |
-| | | **[Open corrections](#open-corrections--four-live)** | • **Four live** — two from building 2d, one from T3's review, one from T4's<br>• CRLF closed by T4; the same-manifest gap opened by it<br>• Building and reading find different classes; neither finds the other's<br>• None blocking |
+| **[0.20.1](#0201--a-tier-that-is-not-built-stops-being-accepted--20260808-0641)** | 20260808 06:41 | A tier that is not built stops being accepted | • `vector_tier = "sqlite-vec"` is **refused at load time** — it was accepted and silently ignored<br>• A KB setting it **stops loading entirely**, on every command; the fix is `vector_tier = "auto"` and changes nothing else<br>• Silent on all four surfaces before this: `sync`, `search`, the index's `meta`, `pnk doctor`<br>• A **PATCH with a documented config break**, deliberately (D-12), on 0.7.1's precedent<br>• The value returns when the tier does — D-4 taken as option A (T5)<br>• `meta`'s tier now comes from `search.resolve_tier()`, not a literal<br>• *The template release, interim cut (D-9)* |
+| | | **[Open corrections](#open-corrections--five-live)** | • **Five live** — two from building 2d, one from T3's review, one from T4's, one from T5's<br>• CRLF closed by T4; the same-manifest gap opened by it<br>• Four routes in: building, reading, shipping, generalising a fix — none finds the others'<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
-| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0, T2 in 0.18.0, T3 in 0.19.0, T4 in 0.20.0**; T5, T7 to come<br>• Cuts more than once (D-9), so the name stays here |
+| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0, T2 in 0.18.0, T3 in 0.19.0, T4 in 0.20.0, T5 in 0.20.1**; T7 to come<br>• Cuts more than once (D-9), so the name stays here |
 
 ---
 
@@ -855,17 +860,50 @@ No `schema_version` bump, so no rebuild.
 
 ---
 
+## 0.20.1 — A tier that is not built stops being accepted · 20260808 06:41
+
+- **`vector_tier = "sqlite-vec"` is refused at load time.** It named a tier that does not exist in
+  any release, and was accepted anyway. What that bought a user who set it: `pnk sync` stamped
+  `numpy` into the index's `meta` whatever the manifest said, `search` never read the field at all,
+  and `pnk doctor` reported nothing — **silent on all four surfaces there were to check**.
+- **A KB setting it now stops loading entirely — every command, not only search.** That is the cost,
+  it is stated rather than softened, and it is why the release notes lead with it. The fix is one
+  line, `vector_tier = "auto"`, and it changes nothing about how that KB behaves: it was already
+  getting the NumPy tier. The error names the tiers that are built and points at `docs/STATUS.md`.
+- **A PATCH carrying a documented config break, deliberately** (D-12, taken 20260804), on this
+  project's own **0.7.1** precedent — a release that hard-errored a manifest which previously
+  loaded, on the reasoning that the previous behaviour *was* the defect. It holds exactly here.
+- **The value is not cancelled.** It returns in the increment that builds the tier; `VECTOR_TIERS`
+  says so where the removal is, so nobody reads the removal as a decision against `sqlite-vec`.
+- **D-4 taken as option A**, and the evidence was not in the plan that asked the question: three
+  lines below `VECTOR_TIERS`, `graph_channel` already refuses `"ppr"` for the same reason — *a
+  manifest that can ask for a mode the code does not implement is a setting that silently does
+  nothing*. A plan's open decision is what the *plan* has not settled, which is not the same as what
+  the repository has not settled.
+- **The index's `vector_tier` is written from a resolver, not a literal.** `search.resolve_tier()`
+  is now the single answer to which tier ran; `sync` had hardcoded `"numpy"` beside a parsed field
+  nothing consumed.
+
+No `schema_version` bump, so no rebuild.
+
+---
+
 # Part 5 · What is not built
 
-## Open corrections — four live
+## Open corrections — five live
 
 **It emptied on 20260805 22:18, refilled on 20260807 from one increment, and again on 20260808 from
-T3's review.** Owned by
-[`plans/20260731_1202-open-corrections.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md).
+T3's, T4's and T5's work.** Owned by
+[`plans/20260731_1202-open-corrections.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md),
+which carries all five in full.
 
-**Items 1 and 2 came from *building* 2d, and neither is visible from reading the code that holds
-it** — the pattern every entry had followed until 20260808, when items 3 and 4 arrived from an
-adversarial *reading* instead:
+**The five arrived four different ways, and that is the useful part of the count.** Items 1 and 2
+came from *building* 2d and neither is visible from reading the code that holds it — the pattern
+every entry had followed until 20260808. **Item 3** broke it, found by T3's adversarial *reading*.
+**Item 4** was not found at all but *created*, by T4, in the increment that closed the item standing
+there before it. **Item 5** came from T5 asking where else the defect it had just fixed still
+lives, and finding it two files away in code T5 never touched — an eval outcome recording the
+vector tier it was *configured* with rather than the one that ran. The first two:
 
 * **`graph_gate.check_identity` is blind to `chunking`.** It compares `k`, `embedding`, `rerank`,
   `ranking` and `retrieval` across its three legs, and not the block that says what a leg was
@@ -1059,11 +1097,13 @@ will be until the next template bump.
 **State:** the plan
 ([`plans/20260804_1016-template-release.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1016-template-release.md))
 is written, adversarially reviewed (36 findings), and its four open decisions were taken by the user
-on 20260804. **T1 to T4 are done.** T5 (`vector_tier = "sqlite-vec"` stops being accepted silently)
-and T7 (`pnk templates`) remain. T4 in turn left two things behind: it **created** an open
-correction — `--apply` writes nothing on the *same manifest* outcome, so that KB can never record
-the new reference — and it found two of the plan's own test specifications unable to measure what
-they named.
+on 20260804. **T1 to T5 are done** — T5 shipped in 0.20.1, refusing `vector_tier = "sqlite-vec"`
+instead of accepting and ignoring it, and taking D-4 as option A. **T7 (`pnk templates`) remains.**
+T4 in turn left two things behind: it **created** an open correction — `--apply` writes nothing on
+the *same manifest* outcome, so that KB can never record the new reference — and it found two of the
+plan's own test specifications unable to measure what they named. T5 found an eighth: the plan asks
+that both `sync` and `search` call the tier resolver *and* admits two paragraphs later that with one
+tier there is nothing to discriminate.
 
 ⚠️ Its measurements are recorded *as of a named commit*, not as properties — `main` moved twice
 during the session that wrote it. **Re-run its Baseline block before trusting any line number in
