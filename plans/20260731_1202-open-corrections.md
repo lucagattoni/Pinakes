@@ -15,11 +15,14 @@ the planner's, and this file held six. They were closed as part of that ownershi
 implementer. What remains below is code and tooling.
 
 **It was empty on 20260805 22:18, for the first time since 20260731. It refilled on 20260807, and
-again on 20260808 — four live items.** Items 1 and 2 came out of *building* 2d and are invisible
-from reading the code that contains them, which is the pattern every entry this list had ever held
-until now. **Items 3 and 4 broke it**: both were found by T3's adversarial review, by reading — one
-on a surface T3 only inherited. Reading finds a different class than building does, and neither
-finds the other's.
+again on 20260808 — four live items, and the four arrived three different ways.** Items 1 and 2
+came out of *building* 2d and are invisible from reading the code that contains them, which is the
+pattern every entry this list had ever held until 20260808. **Item 3 broke it**: found by T3's
+adversarial review, by reading, on a surface T3 only inherited. **Item 4 is a third way again** —
+it was not found, it was *created*, by the increment that closed the item standing here before it.
+T4 resolved the CRLF item (preserve a uniform convention, refuse a mixed one — closed below) and
+opened this one in the same breath. Building, reading and shipping each find a different class, and
+none of them finds the others'.
 
 The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
 finished. Note what is **not** here: **both releases in
@@ -87,23 +90,27 @@ identical hole since the archive landed, and `pnk upgrade` inherited it by calli
 functions. Unreachable from a wheel this project ships — the drift gate would be red first — so it
 is a message-quality defect on a damaged or third-party install, not a correctness one.
 
-### 4 · CRLF is invisible to the placement predicate, and only `--apply` can be hurt by it
+### 4 · `--apply` writes nothing on the *same manifest* outcome, so that KB can never stop drifting
 
-**File:** `src/pinakes/upgrade.py`, `plan` (`manifest.path.read_text()`).
-**Current:** `Path.read_text` opens in text mode with **universal newlines**, so a CRLF manifest is
-already `\n`-only by the time `hunks` sees it — verified: `read_text` on bytes `b"[a]\r\nb = 1\r\n"`
-returns `'[a]\nb = 1\n'`. A hunk generated from LF-rendered templates therefore places against a
-CRLF manifest, and for a *report* that is correct: the change genuinely does belong there.
+**File:** `src/pinakes/cli.py`, `run_upgrade` (`applying = args.apply and report.outcome is
+Outcome.DRIFTED`).
+**Current:** a template bump that leaves the rendered manifest byte-identical produces no hunks and
+reports `same manifest`. `--apply` therefore does nothing at all — **including the `[kb] template`
+restamp** — so the KB goes on recording the old reference, `pnk doctor` goes on warning, and the
+user has no command that records the new one. It is reachable: of the ten commits between
+`notes@1.0` and `1.1`, five touched only the starter golden set.
 
-> ⚠️ An earlier wording named `str.splitlines()` as the mechanism. It is not — the translation has
-> already happened one call earlier, in the read. The conclusion below is unchanged; the cause is
-> not where it said, which matters because T4 will go looking.
+**Not a defect of T4's implementation — T4 specifies `--apply` in terms of hunks and there are
+none.** Writing the reference anyway would be behaviour the plan does not describe, so the
+conservative reading was taken deliberately and pinned by
+`tests/test_cli_upgrade.py::test_same_manifest_under_apply_writes_nothing`.
 
-**Required, in T4 and not before:** `--apply` writes lines back, so it would write LF lines into a
-CRLF file and leave a mixed-ending manifest. Either preserve each line's ending or refuse a
-manifest whose endings are not uniform, and say which.
+**Required: a decision, not a correction.** Either `--apply` restamps `[kb] template` when the
+outcome is `same manifest` — which means it writes to a manifest with no hunk to justify it, and
+the printed report must then say so — or `pnk upgrade` gains a way to record a reference without
+applying anything, or the case is accepted and documented. This is the planner's to take.
 
-**Recorded now because the evidence is now**, and T4 will otherwise meet it as a bug report.
+**Recorded 20260808 by T4's third review pass**, in the increment that created it.
 
 
 ---
@@ -112,6 +119,7 @@ manifest whose endings are not uniform, and say which.
 
 | Was | Closed by |
 |---|---|
+| CRLF was invisible to the placement predicate, and only `--apply` could be hurt by it — `Path.read_text` opens with universal newlines, so a CRLF manifest is already `\n`-only by the time `hunks` sees it, which is right for a *report* and would have written LF lines into a CRLF file | 20260808, in T4, and the fork it named resolves to **both**. A **uniform** convention is preserved, because a CRLF manifest is an ordinary Windows file and rewriting it is a change nobody asked for; a **mixed** one is refused, because it is already two tools disagreeing and picking a winner silently rewrites lines the user never touched. The report path is unaffected either way, since reporting reads. **A third case the item had not named turned up in review**: `str.splitlines()` also breaks on `\u2028`, `\u2029` and `\x85`, all three legal in a TOML comment — so the report and the writer would disagree about *which lines the file has*. Refused, for the same reason |
 | Every document was titled by its filename — all 300 RFC sidecars read `title: rfc9110` rather than *"HTTP Semantics"*, so search results were unreadable, and nothing reported it | 20260805 22:18. `pnk doctor`'s `titles` check counts documents still carrying the minted title, with a sample. **Always OK, never a warning**, and that is the decision rather than timidity: the filename fallback was kept deliberately, so warning would fire on every uncurated KB — most of them, and both committed corpora at **100%**. The first-line heuristic stays **rejected** — an RFC's first line is `Internet Engineering Task Force (IETF)`, so inference mints confidently wrong titles at scale into sidecars the user then commits, and a plausible wrong title is harder to notice than a visibly wrong one. The check and the minter share one `minted_title()`, because a second copy of the rule would fail silently toward reporting nothing |
 | `pnk init` could not adopt a directory that already had content — a `.git`, a `README.md` and a `pyproject.toml` made it *"not empty"*, and *"clear this one first"* is alarming about a directory holding the documents you meant to index. **Hit three times independently** | 20260805 22:11. The blanket emptiness test is gone; what replaces it is narrower and stronger — **`init` never overwrites a file that is already there**, so nothing is left for an emptiness test to protect. Adopted files are left byte-identical and named in the output. **The decision as written said to *refuse* any file `init` would write that already exists; implemented literally that refuses on `README.md` and `.gitignore`, which a real repository always has, so adoption would still have been impossible in the exact case the item exists for.** The intent — do not destroy the user's files — is honoured by never overwriting and reporting instead. Two things are called out rather than silently handled: an adopted `.gitignore` missing `.pinakes/` is flagged with the line to add, and `--ci` is refused (an explicit request, so doing nothing would be worse) **before anything is created** — a gap the removed guard had been holding, found by an existing test |
 | The heading-coverage check WARNed forever on `code` and `pdf`, which can never carry a heading path — so a KB holding one `.py` file warned on every run with a remedy amounting to *"a limit of the tool"* | 20260805 21:56, as the user decided. **WARN only when `markdown` is at 0%** — the one case a user can fix, where the chunker reads ATX headings and found none, so the corpus is being silently size-sliced. Everything else is reported **OK with a note**, because an un-actionable warning that cannot be cleared is how doctor output stops being read at all, which costs the actionable warnings too. The note now separates three facts that wore the same 0%: `text` **can** carry one (set `[chunking] headings`), `text` with the key **already set** means the grammar was offered those documents and *refused* them, and `code`/`pdf` cannot today. It also corrects a claim 0.13.0 falsified — the old remedy still said non-Markdown types cannot carry a heading path *whatever the document contains* |

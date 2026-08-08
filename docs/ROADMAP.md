@@ -17,16 +17,16 @@ precision nobody measured.
 
 ---
 
-## Where things stand right now — 20260808 04:18 UTC
+## Where things stand right now — 20260808 05:41 UTC
 
-- **28 releases in 14 days.** [`0.1.0`](#010--the-engine--20260725-1527) on 20260725;
-  [`0.19.0`](#0190--what-the-template-changed-in-your-own-file--20260808-0418) on 20260808.
-- **Latest on PyPI: `0.19.0`.** Every release from `0.2.2` on is published
+- **29 releases in 14 days.** [`0.1.0`](#010--the-engine--20260725-1527) on 20260725;
+  [`0.20.0`](#0200--adopting-the-change-after-you-have-seen-it--20260808-0541) on 20260808.
+- **Latest on PyPI: `0.20.0`.** Every release from `0.2.2` on is published
   ([STATUS § Published on PyPI](STATUS.md#published-on-pypi)).
 - **Two of the four named releases have shipped** — the links release across
   [`0.5.0`](#050--links-you-can-walk--20260731-1127)–[`0.6.0`](#060--links-you-can-write--20260801-1051),
   the graph release in [`0.11.0`](#the-graph-release--shipped-0110). The template release is
-  **part-shipped** — T1, T2 and T3 across 0.17.0–0.19.0, cutting more than once by D-9. The deep
+  **part-shipped** — T1 to T4 across 0.17.0–0.20.0, cutting more than once by D-9. The deep
   release is unbuilt.
 - **Is document metadata retrieval context? Measured, and the answer was no — on one corpus, through
   one channel**
@@ -106,10 +106,11 @@ number belongs to a release only when it is cut
 | **[0.17.0](#0170--a-template-version-that-means-something--20260807-2055)** | 20260807 20:55 | A template version that means something | • `notes` 1.0 → **1.1**; **every existing KB now WARNs** in `pnk doctor`<br>• A check live since 0.1 that could never fire<br>• Template content archived under `_versions/`, SHA-256 ledger<br>• `tools/template_drift_gate.py` — seven legs, `check.sh` + CI<br>• `pnk init --template` refuses a non-single-component name<br>• *The template release, interim cut (D-9)* |
 | **[0.18.0](#0180--the-drift-warning-says-something-you-can-act-on--20260807-2237)** | 20260807 22:37 | The drift warning says something you can act on | • Drift reported as a **computed line count**, both sides rendered<br>• Template against template — your own tuning cannot appear<br>• `cannot compare` on every KB that exists, with an honest remedy<br>• `same manifest` instead of a misleading `0 lines differ`<br>• An unsupplied variable is a message, not a traceback<br>• *The template release, interim cut (D-9)* |
 | **[0.19.0](#0190--what-the-template-changed-in-your-own-file--20260808-0418)** | 20260808 04:18 | What the template changed, in your own file | • `pnk upgrade` — the diff itself, hunk by hunk<br>• **applies cleanly / already applied / conflicts**, and *already applied* is why a later `--apply` cannot duplicate a key<br>• Writes nothing; exit **`3`** is new and means *no baseline*<br>• `cannot compare` on every KB that exists, same wording as `pnk doctor`<br>• Five adversarial passes: 30 → 22 → 13 → 6 → 1<br>• *The template release, interim cut (D-9)* |
-| | | **[Open corrections](#open-corrections--four-live)** | • **Four live** — two from building 2d, two from T3's review<br>• Building and reading find different classes; neither finds the other's<br>• None blocking |
+| **[0.20.0](#0200--adopting-the-change-after-you-have-seen-it--20260808-0541)** | 20260808 05:41 | Adopting the change, after you have seen it | • `pnk upgrade --apply` — writes the hunks that fit, refuses the whole run if any conflicts<br>• The **only** thing that rewrites a `pinakes.toml` after `pnk init`<br>• A `[budget]` cap applies like any other change — and both commands print it first, with both values (D-10)<br>• Never writes `[kb] requires_pinakes`; it names the keys and leaves the floor to you (D-11)<br>• A conflict now carries two codes: `0` reporting, `1` applying<br>• Five adversarial passes: 5 → 2 → 2 → 3 → 0<br>• *The template release, interim cut (D-9)* |
+| | | **[Open corrections](#open-corrections--four-live)** | • **Four live** — two from building 2d, one from T3's review, one from T4's<br>• CRLF closed by T4; the same-manifest gap opened by it<br>• Building and reading find different classes; neither finds the other's<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
-| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0, T2 in 0.18.0, T3 in 0.19.0**; T4, T7 to come<br>• Cuts more than once (D-9), so the name stays here |
+| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0, T2 in 0.18.0, T3 in 0.19.0, T4 in 0.20.0**; T5, T7 to come<br>• Cuts more than once (D-9), so the name stays here |
 
 ---
 
@@ -809,6 +810,49 @@ the classes ranked by what they cost.
 
 No `schema_version` bump, so no rebuild.
 
+## 0.20.0 — Adopting the change, after you have seen it · 20260808 05:41
+
+- **`pnk upgrade --apply` writes the hunks that fit.** 0.19.0 printed what the template changed;
+  this adopts it. Every hunk that *applies cleanly* is written, every one that is *already applied*
+  is skipped and counted, and **one conflicting hunk refuses the whole run** — a half-upgraded
+  manifest with no record of which half is worse than an unupgraded one.
+- **It is the only thing in Pinakes that rewrites a `pinakes.toml` after `pnk init`**, and stating
+  the count is the rule: a reviewer checks it by counting write sites. What makes the exception
+  narrow enough to hold is that the write is bounded by the report — **nothing reaches the file
+  that was not on screen first**.
+- **A `[budget]` default applies like any other change (D-10), and the consent path is what pays
+  for it.** A spending cap that would move is printed with the old value *and* the new one, under
+  its own heading, by `pnk upgrade` and `pnk upgrade --apply` alike — and **only** when one really
+  would move, so its absence is information too. The applier has no `[budget]` predicate and no
+  second flag; a later reader who adds one has reversed a decision rather than tightened a rule.
+- **It never writes `[kb] requires_pinakes` (D-11).** When applied hunks introduce keys it names
+  them and says you may want a floor. It suggests no number: nothing in the repository maps a
+  manifest key to the release that introduced it, so a printed `>=x.y.z` would be a guess wearing a
+  decimal point.
+- **The recoveries, each of which is a refusal before the first byte:** the previous manifest goes
+  to `pinakes.toml.orig`, named in the output with the warning that nothing ignores it; the result
+  is re-read and the original restored if it will not load; a held sync lock, a manifest whose line
+  endings disagree, and an existing backup are each refused, leaving the KB byte-identical. A
+  symlinked manifest is written **through**, not replaced — `sidecar.write` had learned that first
+  and the new writer had not inherited it.
+- **A conflict now carries two exit codes and that is the point.** `0` from `pnk upgrade`, which
+  writes nothing and so has nothing to fail at; `1` from `pnk upgrade --apply`, which was asked for
+  a write it could not make.
+- **Nothing changes for a KB recording `notes@1.0`** — still `cannot compare`, still exit `3`,
+  still nothing written. Adoption starts working at the *next* template bump.
+
+**Five adversarial passes, finding 5 → 2 → 2 → 3 → 0**, and what they found is the part worth
+keeping: **every defect in pass 1 was a property of the *write*** — line-splitting, symlinks,
+permissions, a dotted key named by its first segment — because the test surface had been built from
+a plan about placement and consent, and none of those notice what happens to a file's inode. Pass 2
+found a *correct* function reused one scope too wide: `Hunk.section` is the table a hunk **starts**
+in, so a hunk adding a new table had every one of its keys credited to the preceding one — after
+`[budget]`, that is a false spending-cap heading, and every consent test passed. Pass 3 found the
+first two fixes unfinished; pass 4 found nothing in the code and three false claims in documents the
+increment never opened.
+
+No `schema_version` bump, so no rebuild.
+
 ---
 
 # Part 5 · What is not built
@@ -1006,16 +1050,20 @@ shipped in [`0.2.2`](#022--the-silent-skip-named--20260728-1849) appears in no K
 [`0.6.0`](#060--links-you-can-write--20260801-1051)'s `requires_pinakes` closed the *diagnosis*;
 **0.17.0 makes the divergence detectable** and **0.18.0 makes it measurable** — though not on a KB
 recording `notes@1.0`, whose content was never archived, which is every KB that exists today.
-`pnk upgrade` (T3) prints the lines themselves. What is still missing is **adoption**: no command
-writes a template change into a manifest, so the last step is the user's own edit.
+`pnk upgrade` (T3) prints the lines themselves and **`--apply` (T4) adopts them** — the hunks that
+fit, after printing every one of them, refusing the whole run if any conflicts. **What remains
+missing is not adoption but a baseline**: a KB recording `notes@1.0` has no archived content to
+adopt against, so for every KB that exists today the last step is still the user's own edit, and
+will be until the next template bump.
 
 **State:** the plan
 ([`plans/20260804_1016-template-release.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1016-template-release.md))
 is written, adversarially reviewed (36 findings), and its four open decisions were taken by the user
-on 20260804. **T1, T2 and T3 are done.** T4 is next: `pnk upgrade --apply`. It inherits three
-things its predecessors found — a comparison with no hunks must not read as agreement, a remedy must
-not promise what an unarchived version makes impossible, and the *already applied* rule asks about a
-hunk's **before image**, never about its removed lines on their own.
+on 20260804. **T1 to T4 are done.** T5 (`vector_tier = "sqlite-vec"` stops being accepted silently)
+and T7 (`pnk templates`) remain. T4 in turn left two things behind: it **created** an open
+correction — `--apply` writes nothing on the *same manifest* outcome, so that KB can never record
+the new reference — and it found two of the plan's own test specifications unable to measure what
+they named.
 
 ⚠️ Its measurements are recorded *as of a named commit*, not as properties — `main` moved twice
 during the session that wrote it. **Re-run its Baseline block before trusting any line number in
