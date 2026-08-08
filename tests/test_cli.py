@@ -342,10 +342,12 @@ def test_pnk_templates_reports_a_damaged_template_without_hiding_the_good_ones(
 ) -> None:
     """One unreadable template must not cost the user the answer about every other one.
 
-    The general defect — `template.describe` raising a bare `OSError` on a damaged install — is an
-    open correction that reaches `init`, `doctor` and `upgrade` too, and is deliberately **not**
-    fixed here. What is fixed is the blast radius this command introduced: a listing that aborts on
-    the first bad directory reports nothing about the good ones, and does it as a traceback.
+    Two separable properties, and the one asserted here belongs to *this command*: a listing that
+    aborts on the first bad directory reports nothing about the good ones. The general defect —
+    `template.describe` raising a bare `OSError` on a damaged install, which reached `init`,
+    `doctor` and `upgrade` too — was open when this test was written and is closed by
+    open-corrections item 3. **That closure changed the exception this command catches and not one
+    assertion below**, which is the evidence the two properties really were separable.
     """
     from pinakes import template as template_module
 

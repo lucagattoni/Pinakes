@@ -14,7 +14,7 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any, cast
 
-from jinja2 import StrictUndefined, Template, UndefinedError
+from jinja2 import StrictUndefined, Template, TemplateSyntaxError, UndefinedError
 
 from pinakes.errors import TemplateError
 from pinakes.manifest import Manifest
@@ -97,9 +97,61 @@ def available() -> list[str]:
     )
 
 
+def _read_text(source: Traversable, *, reference: str, file: str) -> str:
+    """Read one of a template's own files, turning a damaged install into a message.
+
+    **Every read of a template's own files goes through here, and that is the point.** None of
+    these exceptions is a `PinakesError`, so `cli.main` prints a stack trace instead of a remedy:
+    a `_versions/<v>/` without its `pinakes.toml.j2` gives `FileNotFoundError`, an unreadable file
+    `PermissionError`, a non-UTF-8 one `UnicodeDecodeError`. `pnk doctor` and `pnk upgrade` both
+    reach every one of them, and neither is a command a user runs when things are going well.
+
+    **Unreachable from a wheel this project ships** — `tools/template_drift_gate.py` would be red
+    first — so this is message quality on a damaged or third-party install, not correctness. That
+    is also why the remedy names reinstalling rather than a repair: a template's own files are not
+    the user's to fix.
+
+    `FileNotFoundError` is caught before `OSError` because it is one, and absence rather than state
+    is the fact worth printing. `UnicodeDecodeError` is a `ValueError` and needs its own arm.
+    """
+    try:
+        return source.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise TemplateError(
+            f"template {reference} is missing {file}.",
+            remedy="Its install is incomplete. Reinstall pinakes, or the template it came from.",
+        ) from exc
+    except UnicodeDecodeError as exc:
+        raise TemplateError(
+            f"template {reference}'s {file} is not valid UTF-8.",
+            remedy="Its install is damaged. Reinstall pinakes, or the template it came from.",
+        ) from exc
+    except OSError as exc:
+        raise TemplateError(
+            f"template {reference}'s {file} cannot be read: {exc.strerror or exc}.",
+            remedy="Check the file's permissions, or reinstall pinakes.",
+        ) from exc
+
+
+def _declaration(name: str) -> dict[str, Any]:
+    """`template.toml`, parsed. Shared so `describe` and `declared_files` cannot disagree about it.
+
+    Two readers of one file is two chances to handle a malformed one differently, and
+    `tomllib.TOMLDecodeError` is not a `PinakesError` either — a stray bracket in a third-party
+    template's declaration reached `cli.main` as a traceback from whichever of the two ran first.
+    """
+    raw = _read_text(_root(name).joinpath("template.toml"), reference=name, file="template.toml")
+    try:
+        return tomllib.loads(raw)
+    except tomllib.TOMLDecodeError as exc:
+        raise TemplateError(
+            f"template {name}'s template.toml is not valid TOML: {exc}.",
+            remedy="Its install is damaged. Reinstall pinakes, or the template it came from.",
+        ) from exc
+
+
 def describe(name: str) -> TemplateInfo:
-    raw = _root(name).joinpath("template.toml").read_text(encoding="utf-8")
-    data: dict[str, Any] = tomllib.loads(raw)
+    data = _declaration(name)
     return TemplateInfo(
         name=str(data.get("name", name)),
         version=str(data.get("version", "0")),
@@ -159,6 +211,16 @@ def _render(source: str, context: dict[str, Any], *, name: str, version: str | N
         return Template(source, undefined=StrictUndefined, keep_trailing_newline=True).render(
             **context
         )
+    except TemplateSyntaxError as exc:
+        # Raised by `Template(...)`, not by `render` — an unclosed `{{` is a fact about the file
+        # rather than about the context, so it says the file is damaged rather than that a variable
+        # is missing. Caught here because the compile and the render are one expression, and
+        # splitting them to give each its own `try` would buy nothing.
+        reference = f"{name}@{version}" if version is not None else name
+        raise TemplateError(
+            f"template {reference} is not valid Jinja: {exc.message} (line {exc.lineno}).",
+            remedy="Its install is damaged. Reinstall pinakes, or the template it came from.",
+        ) from exc
     except UndefinedError as exc:
         reference = f"{name}@{describe(name).version if version is None else version}"
         raise TemplateError(
@@ -171,7 +233,9 @@ def _render(source: str, context: dict[str, Any], *, name: str, version: str | N
 
 def render_manifest(name: str, context: dict[str, Any]) -> str:
     """Render `pinakes.toml`. `StrictUndefined`: a missing variable fails here, not at read time."""
-    source = _root(name).joinpath(MANIFEST_TEMPLATE).read_text(encoding="utf-8")
+    source = _read_text(
+        _root(name).joinpath(MANIFEST_TEMPLATE), reference=name, file=MANIFEST_TEMPLATE
+    )
     return _render(source, context, name=name)
 
 
@@ -229,7 +293,11 @@ def render_archived(name: str, version: str, context: dict[str, Any]) -> str:
     Rendered rather than read, because the archived file is a template too: comparing a rendered
     manifest against an unrendered `.j2` would report every `{{ variable }}` as a difference.
     """
-    source = archived_root(name, version).joinpath(MANIFEST_TEMPLATE).read_text(encoding="utf-8")
+    source = _read_text(
+        archived_root(name, version).joinpath(MANIFEST_TEMPLATE),
+        reference=f"{name}@{version}",
+        file=MANIFEST_TEMPLATE,
+    )
     return _render(source, context, name=name, version=version)
 
 
@@ -293,8 +361,7 @@ def declared_files(name: str) -> tuple[str, ...]:
     archived version is the frozen record of what a reference once meant, so copying it into a KB
     would stamp content from a version nobody released under the name of one they did.
     """
-    raw = _root(name).joinpath("template.toml").read_text(encoding="utf-8")
-    data: dict[str, Any] = tomllib.loads(raw)
+    data = _declaration(name)
     if "files" not in data:
         return HISTORICAL_FILES
 
@@ -402,6 +469,7 @@ def copy_extras(name: str, target: Path) -> tuple[list[Path], list[Path]]:
             adopted.append(destination)
             continue
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+        body = _read_text(source, reference=name, file=relative)
+        destination.write_text(body, encoding="utf-8")
         written.append(destination)
     return written, adopted

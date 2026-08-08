@@ -144,17 +144,20 @@ def run_templates(args: argparse.Namespace) -> int:
     machine state from outside the served KBs — which `docs/DESIGN.md` §4.7 states as a boundary
     rather than a convenience.
 
-    **One damaged template does not hide the rest, and that is this command's problem alone.** A
-    template directory with no `template.toml` makes `describe` raise a bare `OSError` — the open
-    correction recorded from T3, which is about `describe` and belongs to whoever closes it. What
-    is *new* here is the blast radius: before this command, a damaged template broke only the run
-    that named it, and a listing that aborts on the first bad one would report nothing about the
-    good ones while telling the user their install has no templates. So the failure is caught per
-    template and shown as a row. `describe` is deliberately left as it is: fixing it here would
-    settle a correction that is still open for `init`, `doctor` and `upgrade` too.
+    **One damaged template does not hide the rest, and that is this command's problem alone.**
+    Before this command, a damaged template broke only the run that named it; a listing that
+    aborted on the first bad one would report nothing about the good ones while telling the user
+    their install has no templates. So the failure is caught per template and shown as a row.
+
+    That is still this command's own concern after open-corrections item 3 closed. **The item made
+    the failure a `TemplateError` instead of a bare `OSError`, which changes what to catch and
+    nothing about why to catch it**: `cli.main` now prints a message rather than a traceback for
+    the *single*-template commands, but a listing has no message to print — it has a row per
+    template, and the run must continue to the next one.
     """
     import json as json_module
 
+    from pinakes.errors import TemplateError
     from pinakes.template import TemplateInfo, available, describe
 
     # `str` in the second slot is the failure. Keyed by the *directory* name rather than the
@@ -163,10 +166,14 @@ def run_templates(args: argparse.Namespace) -> int:
     for name in available():
         try:
             rows.append((name, describe(name)))
-        except (OSError, ValueError) as exc:
-            # `ValueError` covers `tomllib.TOMLDecodeError`: a `template.toml` that exists but does
-            # not parse is the same class of damage as one that is missing.
-            rows.append((name, str(exc)))
+        except TemplateError as exc:
+            # One type, because `describe` now raises exactly one. This caught `(OSError,
+            # ValueError)` while the reads underneath were unguarded — a missing `template.toml`
+            # arrived as `FileNotFoundError`, a malformed one as `tomllib.TOMLDecodeError`. Both
+            # are `TemplateError` now, so those arms would be dead, and a dead arm here is not
+            # harmless: it would keep this listing green if `describe` ever started raising raw
+            # again, which is the whole property the guard exists to hold.
+            rows.append((name, exc.message))
 
     damaged = [name for name, entry in rows if isinstance(entry, str)]
 

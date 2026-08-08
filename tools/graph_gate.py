@@ -178,7 +178,19 @@ def check_identity(before: Leg, without: Leg, with_authored: Leg) -> list[str]:
     # deliberately varies the last — so an arm accidentally passed as the headline's `--after-with`
     # would otherwise be scored against a before leg it shares no configuration with. Same
     # argument as the structural-kind check above, and it was missing.
-    for field_ in ("k", "embedding", "rerank", "ranking", "retrieval"):
+    #
+    # `chunking` is here for a sharper version of that reason, and `5993521` added it to
+    # `eval.header` precisely so a leg could say what it was built under. A rechunk between legs
+    # does not merely add noise — it changes *which texts exist*, so rows paired on `id` were
+    # produced by searching two different corpora. Measured: `max_tokens` 510 against 480 moves
+    # 63 of 1 858 chunk texts on one RFC, and `tools/eval_reproducibility_gate.py` exists because
+    # one question in 41 moved across a plain rebuild. Whatever the gate was asked to measure, a
+    # rechunk between its legs is reported as that.
+    #
+    # The whole block, with nothing excepted — unlike `tools/two_leg_gate.py`, which excepts
+    # `chunking.metadata` because there that key *is* the independent variable. Nothing under
+    # `chunking` is this gate's independent variable; `graph_channel` is, and it is checked above.
+    for field_ in ("k", "embedding", "rerank", "ranking", "retrieval", "chunking"):
         values = [leg.header.get(field_) for leg in (before, without, with_authored)]
         if any(value != values[0] for value in values):
             problems.append(

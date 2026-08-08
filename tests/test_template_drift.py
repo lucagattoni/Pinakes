@@ -728,6 +728,167 @@ def test_an_archived_version_with_a_path_separator_is_refused(version: str) -> N
 
 
 # --------------------------------------------------------------------------------------------
+# A damaged install is a message, never a traceback
+# --------------------------------------------------------------------------------------------
+#
+# Open-corrections item 3. Every read of a template's own files was unguarded, so a damaged or
+# third-party install raised something that is not a `PinakesError` and `cli.main` printed a stack
+# trace: `FileNotFoundError`, `PermissionError`, `UnicodeDecodeError`, `tomllib.TOMLDecodeError`
+# and `jinja2.TemplateSyntaxError`, across `describe`, `declared_files`, `render_manifest`,
+# `render_archived` and `copy_extras`. The item named two of those five functions; the other three
+# hold the same defect and are fixed with them.
+#
+# **Unreachable from a wheel this project ships** — `template_drift_gate.py` would be red first —
+# so these assert message quality, not correctness. They damage a *synthetic* template for that
+# reason, and because damaging the real one would be a mutation of `src/`.
+#
+# Each asserts `PinakesError` rather than `TemplateError`: what the item is about is the type
+# `cli.main` catches, and asserting the narrower one would stay green if the handler above it
+# stopped catching the wider.
+
+
+def damaged(tmp_path: Path, name: str) -> Path:
+    """The synthetic template's own directory, so a test can break one of its files.
+
+    `synthetic_template` monkeypatches `template.PACKAGE` to the package it built under `tmp_path`,
+    which is what makes the real `importlib.resources` path run — so the directory is derivable
+    rather than needing the fixture to hand it back."""
+    return tmp_path / template.PACKAGE / name
+
+
+def test_a_template_with_no_declaration_is_a_message(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """`pnk templates` and `pnk init` both call `describe` before anything else, so this is the
+    first thing a damaged install hits."""
+    from pinakes.errors import PinakesError
+
+    synthetic_template("synth", versions={"1.0": "name = 'x'\n"}, current="1.0")
+    damaged(tmp_path, "synth").joinpath("template.toml").unlink()
+
+    with pytest.raises(PinakesError) as caught:
+        template.describe("synth")
+    assert "synth" in str(caught.value) and "template.toml" in str(caught.value)
+    assert caught.value.remedy
+
+
+def test_a_declaration_that_is_not_toml_is_a_message(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """`tomllib.TOMLDecodeError` is a `ValueError`, so it escaped an `OSError` arm as well as every
+    caller. Both readers of this file go through one parse, so neither can miss it."""
+    from pinakes.errors import PinakesError
+
+    synthetic_template("synth", versions={"1.0": "name = 'x'\n"}, current="1.0")
+    damaged(tmp_path, "synth").joinpath("template.toml").write_text("files = [", encoding="utf-8")
+
+    for read in (template.describe, template.declared_files):
+        with pytest.raises(PinakesError) as caught:
+            read("synth")
+        assert "not valid TOML" in str(caught.value)
+
+
+def test_a_template_whose_manifest_is_not_utf8_is_a_message(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """`UnicodeDecodeError` needs its own arm for the same reason as the case above — it is a
+    `ValueError`, not an `OSError`."""
+    from pinakes.errors import PinakesError
+
+    synthetic_template("synth", versions={"1.0": "name = 'x'\n"}, current="1.0")
+    damaged(tmp_path, "synth").joinpath(template.MANIFEST_TEMPLATE).write_bytes(b"\xff\xfe\x00")
+
+    with pytest.raises(PinakesError) as caught:
+        template.render_manifest("synth", {})
+    assert "not valid UTF-8" in str(caught.value)
+
+
+def test_an_archived_version_missing_its_manifest_names_the_version(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The reference, not just the template — `pnk upgrade` reads an archived version *because*
+    the live one is a different thing, so a message naming only `synth` would not say which of the
+    two is broken. This is the surface `pnk doctor` and `pnk upgrade` share."""
+    from pinakes.errors import PinakesError
+
+    synthetic_template(
+        "synth", versions={"1.0": "name = 'x'\n", "2.0": "name = 'y'\n"}, current="2.0"
+    )
+    archived = damaged(tmp_path, "synth") / template.VERSIONS_DIR / "1.0"
+    archived.joinpath(template.MANIFEST_TEMPLATE).unlink()
+
+    with pytest.raises(PinakesError) as caught:
+        template.render_archived("synth", "1.0", {})
+    assert "synth@1.0" in str(caught.value)
+    assert template.MANIFEST_TEMPLATE in str(caught.value)
+
+
+def test_a_template_that_is_not_valid_jinja_is_a_message(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """`jinja2.TemplateSyntaxError` is raised by `Template(...)`, not by `render`, so `_render`'s
+    existing `UndefinedError` arm never saw it. The item named it, and it was two lines from a
+    handler that already existed."""
+    from pinakes.errors import PinakesError
+
+    synthetic_template("synth", versions={"1.0": "name = {{ unclosed\n"}, current="1.0")
+
+    with pytest.raises(PinakesError) as caught:
+        template.render_manifest("synth", {})
+    assert "not valid Jinja" in str(caught.value)
+
+
+def test_an_unreadable_declared_file_is_a_message(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """`copy_extras` reads a file the template declares, which `declared_files` has validated as a
+    *declaration* — a legal entry naming an unreadable file passes every check before this one.
+
+    `PermissionError` is an `OSError`, so this is the arm that also covers a directory in place of
+    a file and a dangling symlink."""
+    from pinakes.errors import PinakesError
+
+    synthetic_template(
+        "synth",
+        versions={"1.0": "name = 'x'\n"},
+        current="1.0",
+        files=["README.md"],
+        extras={"README.md": "hello\n"},
+    )
+    unreadable = damaged(tmp_path, "synth") / "README.md"
+    unreadable.chmod(0o000)
+    try:
+        with pytest.raises(PinakesError) as caught:
+            template.copy_extras("synth", tmp_path / "kb")
+        assert "README.md" in str(caught.value)
+    finally:
+        unreadable.chmod(0o644)
+
+
+def test_an_intact_synthetic_template_still_reads(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The negative control. Without it every test above is green against guards that raise
+    unconditionally — and the guards sit on the path `pnk init` takes on a healthy install."""
+    synthetic_template(
+        "synth",
+        versions={"1.0": "name = 'ok'\n"},
+        current="1.0",
+        files=["README.md"],
+        extras={"README.md": "hello\n"},
+    )
+    target = tmp_path / "kb"
+    target.mkdir()
+
+    assert template.describe("synth").version == "1.0"
+    assert template.declared_files("synth") == ("README.md",)
+    assert template.render_manifest("synth", {}) == "name = 'ok'\n"
+    assert template.render_archived("synth", "1.0", {}) == "name = 'ok'\n"
+    written, adopted = template.copy_extras("synth", target)
+    assert [path.name for path in written] == ["README.md"] and adopted == []
+
+
+# --------------------------------------------------------------------------------------------
 # The hash itself
 # --------------------------------------------------------------------------------------------
 

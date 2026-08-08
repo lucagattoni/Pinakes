@@ -126,10 +126,15 @@ def test_no_answer_questions_are_excluded(tmp_path: Path) -> None:
 
 
 def test_it_refuses_two_legs_chunked_differently(tmp_path: Path) -> None:
-    """The gap this tool exists to close. `graph_gate.check_identity` checks `k`, `embedding`,
-    `rerank`, `ranking` and `retrieval` — not `chunking` — so two legs chunked at different
-    `max_tokens` compared clean, and measured on one RFC that is 63 of 1 858 chunk texts differing
-    between 510 and 480. The rechunk would be reported as the effect under test."""
+    """The gap this tool exists to close, and it was the general one: nothing compared `chunking`,
+    so two legs chunked at different `max_tokens` compared clean — measured on one RFC, 63 of
+    1 858 chunk texts differ between 510 and 480 — and the rechunk was reported as the effect under
+    test.
+
+    `graph_gate.check_identity` had the same hole and no longer does (open-corrections item 1). The
+    two tools now differ only in what they except: this one excepts `chunking.metadata`, because
+    here that key **is** the independent variable, and the graph gate excepts nothing under
+    `chunking`, because there the independent variable is `graph_channel`."""
     before = leg(tmp_path / "before.json", PAIR, metadata="off")
     after = leg(tmp_path / "after.json", PAIR, metadata="prefix")
     rechunked = json.loads(after.read_text(encoding="utf-8"))

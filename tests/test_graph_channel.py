@@ -28,7 +28,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -1092,12 +1092,28 @@ def test_dropping_authored_is_every_links_row_regardless_of_origin(tmp_path: Pat
 # The gate itself, on synthetic artifacts
 
 
+CHUNKING: dict[str, Any] = {
+    "max_tokens": 510,
+    "overlap": 64,
+    "headings": "none",
+    "metadata": "off",
+}
+"""The `chunking` block `eval.header` writes, in the shape it writes it.
+
+Written into every synthetic artifact rather than left out, because the gate compares this block
+and a field absent from all three legs compares equal — so a fixture omitting it would leave the
+comparison green whatever the gate did, which is the assertion-satisfied-by-nothing failure this
+module's own docstring is written against.
+"""
+
+
 def artifact(
     path: Path,
     *,
     graph_channel: str,
     dropped: Sequence[str] = (),
     rows: Sequence[dict[str, Any]],
+    chunking: Mapping[str, Any] | None = None,
 ) -> Path:
     path.write_text(
         json.dumps(
@@ -1107,6 +1123,7 @@ def artifact(
                 "graph_channel": graph_channel,
                 "edge_kinds": sorted(set(ALL_KINDS) - set(dropped)),
                 "dropped": sorted(dropped),
+                "chunking": dict(CHUNKING if chunking is None else chunking),
                 "questions": list(rows),
             },
             indent=2,
@@ -1392,6 +1409,65 @@ def test_a_without_authored_leg_that_kept_authored_edges_is_refused(tmp_path: Pa
     verdict = run_gate(tmp_path, before, without, with_authored)
     assert not verdict["passed"]
     assert any(AUTHORED in problem for problem in verdict["problems"])
+
+
+def test_three_legs_chunked_differently_are_refused(tmp_path: Path) -> None:
+    """A rechunk between legs is not noise — it is two corpora, so rows paired on `id` were
+    produced by searching different texts. Measured on one RFC: `max_tokens` 510 against 480 moves
+    63 of 1 858 chunk texts. The gate compared `k`, `embedding`, `rerank`, `ranking` and
+    `retrieval` and not this, so a rechunk was reported as whatever was under test — and this gate
+    is the one that licensed the graph channel's default."""
+    rows = [*multihop(12, hits=0), *no_answer(8)]
+    after = [*multihop(12, hits=5), *no_answer(8)]
+    before = artifact(tmp_path / "off.json", graph_channel="off", rows=rows)
+    without = artifact(
+        tmp_path / "without.json", graph_channel="expand", dropped=[AUTHORED], rows=after
+    )
+    with_authored = artifact(
+        tmp_path / "with.json",
+        graph_channel="expand",
+        rows=after,
+        chunking={**CHUNKING, "max_tokens": 480},
+    )
+
+    verdict = run_gate(tmp_path, before, without, with_authored)
+
+    assert not verdict["passed"]
+    assert any("chunking" in problem for problem in verdict["problems"])
+    assert any("480" in problem for problem in verdict["problems"]), (
+        "the value that moved is what tells a reader which leg to rebuild"
+    )
+    assert verdict["runs"] == [], "no clause is scored against a leg that is not what it claims"
+
+
+def test_a_leg_injected_differently_is_refused_here_even_though_two_leg_gate_excepts_it(
+    tmp_path: Path,
+) -> None:
+    """`chunking.metadata` is excepted by `tools/two_leg_gate.py` and must **not** be excepted
+    here, and the two tools are right for opposite reasons. There, `metadata` is the independent
+    variable — the before and after legs of the injection screen are *defined* by differing on it,
+    so refusing that difference would refuse every valid comparison. Here the independent variable
+    is `graph_channel`; a leg embedded with a `title > heading_path` prefix and one without are two
+    embedding runs, and the difference would land on the graph channel's account.
+
+    Without this test the fix is satisfied by copying `two_leg_gate`'s exception list across."""
+    rows = [*multihop(12, hits=0), *no_answer(8)]
+    after = [*multihop(12, hits=5), *no_answer(8)]
+    before = artifact(tmp_path / "off.json", graph_channel="off", rows=rows)
+    without = artifact(
+        tmp_path / "without.json", graph_channel="expand", dropped=[AUTHORED], rows=after
+    )
+    with_authored = artifact(
+        tmp_path / "with.json",
+        graph_channel="expand",
+        rows=after,
+        chunking={**CHUNKING, "metadata": "prefix"},
+    )
+
+    verdict = run_gate(tmp_path, before, without, with_authored)
+
+    assert not verdict["passed"]
+    assert any("chunking" in problem for problem in verdict["problems"])
 
 
 def test_a_gate_that_passes_reports_that_it_passes(tmp_path: Path) -> None:
