@@ -110,7 +110,7 @@ number belongs to a release only when it is cut
 | | | **[Open corrections](#open-corrections--four-live)** | • **Four live** — two from building 2d, one from T3's review, one from T4's<br>• CRLF closed by T4; the same-manifest gap opened by it<br>• Building and reading find different classes; neither finds the other's<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
-| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0, T2 in 0.18.0, T3 in 0.19.0, T4 in 0.20.0**; T5, T7 to come<br>• Cuts more than once (D-9), so the name stays here |
+| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0, T2 in 0.18.0, T3 in 0.19.0, T4 in 0.20.0, T5 in 0.20.1**; T7 to come<br>• Cuts more than once (D-9), so the name stays here |
 
 ---
 
@@ -1059,11 +1059,13 @@ will be until the next template bump.
 **State:** the plan
 ([`plans/20260804_1016-template-release.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1016-template-release.md))
 is written, adversarially reviewed (36 findings), and its four open decisions were taken by the user
-on 20260804. **T1 to T4 are done.** T5 (`vector_tier = "sqlite-vec"` stops being accepted silently)
-and T7 (`pnk templates`) remain. T4 in turn left two things behind: it **created** an open
-correction — `--apply` writes nothing on the *same manifest* outcome, so that KB can never record
-the new reference — and it found two of the plan's own test specifications unable to measure what
-they named.
+on 20260804. **T1 to T5 are done** — T5 shipped in 0.20.1, refusing `vector_tier = "sqlite-vec"`
+instead of accepting and ignoring it, and taking D-4 as option A. **T7 (`pnk templates`) remains.**
+T4 in turn left two things behind: it **created** an open correction — `--apply` writes nothing on
+the *same manifest* outcome, so that KB can never record the new reference — and it found two of the
+plan's own test specifications unable to measure what they named. T5 found an eighth: the plan asks
+that both `sync` and `search` call the tier resolver *and* admits two paragraphs later that with one
+tier there is nothing to discriminate.
 
 ⚠️ Its measurements are recorded *as of a named commit*, not as properties — `main` moved twice
 during the session that wrote it. **Re-run its Baseline block before trusting any line number in

@@ -15,14 +15,16 @@ the planner's, and this file held six. They were closed as part of that ownershi
 implementer. What remains below is code and tooling.
 
 **It was empty on 20260805 22:18, for the first time since 20260731. It refilled on 20260807, and
-again on 20260808 — four live items, and the four arrived three different ways.** Items 1 and 2
+again on 20260808 — five live items, and the five arrived four different ways.** Items 1 and 2
 came out of *building* 2d and are invisible from reading the code that contains them, which is the
 pattern every entry this list had ever held until 20260808. **Item 3 broke it**: found by T3's
 adversarial review, by reading, on a surface T3 only inherited. **Item 4 is a third way again** —
 it was not found, it was *created*, by the increment that closed the item standing here before it.
 T4 resolved the CRLF item (preserve a uniform convention, refuse a mixed one — closed below) and
-opened this one in the same breath. Building, reading and shipping each find a different class, and
-none of them finds the others'.
+opened this one in the same breath. **Item 5 is a fourth**: T5 fixed a defect in one file and then
+asked where else that defect class lives, which found it two files away in code T5 never touched.
+Building, reading, shipping, and generalising from a fix each find a different class, and none of
+them finds the others'.
 
 The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
 finished. Note what is **not** here: **both releases in
@@ -111,6 +113,30 @@ the printed report must then say so — or `pnk upgrade` gains a way to record a
 applying anything, or the case is accepted and documented. This is the planner's to take.
 
 **Recorded 20260808 by T4's third review pass**, in the increment that created it.
+
+### 5 · An eval outcome records the vector tier it was *configured* with, not the one that ran
+
+**File:** `src/pinakes/eval.py` (`"vector_tier": settings.vector_tier` in the outcomes header) and
+`tools/reachable_ceiling_probe.py`, which copies the line.
+**Current:** the header records the manifest's string, so a KB on the default writes
+`"vector_tier": "auto"` — which `tools/rfc_corpus/outcomes.json` does today. `auto` is a request to
+choose, not a tier, so the field does not answer the question a measurement artifact exists to
+answer: *which tier produced these numbers?* T5 fixed exactly this in the index's `meta`, where the
+literal is now `search.resolve_tier(manifest)`'s return.
+
+**It bites at T6, not now.** T6's gate compares NumPy-tier and `sqlite-vec`-tier latency and memory
+at ≥ 100k chunks. Two such runs on a manifest set to `auto` would produce headers identical in the
+one field that distinguishes them.
+
+**Required: a decision, and it is small but genuinely two-sided.** Recording the *configuration* is
+a defensible thing for a header to do — it is what the user wrote — and switching to the resolved
+tier makes a re-run of an existing artifact show a changed field where no measurement moved
+(`rfc_corpus/outcomes.json` would go `auto` → `numpy`). The alternative is recording both. Not
+fixed inside T5 because it is a choice rather than a correction, and because nothing reads the
+field today — verified: no test asserts it and no tool consumes it.
+
+**Recorded 20260808 by T5's first review pass**, which found it by asking where else the same
+defect class lives.
 
 
 ---

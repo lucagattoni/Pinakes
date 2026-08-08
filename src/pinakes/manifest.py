@@ -27,7 +27,7 @@ died and the good error is unreachable (docs/KB-UPDATES.md §7).
 """
 
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -61,7 +61,7 @@ Same reasoning as `GRAPH_CHANNELS` and `"ppr"` below, applied to a value that ha
 a manifest that can ask for something the code does not implement is a manifest whose setting
 silently does nothing.
 """
-UNBUILT_VECTOR_TIERS = {
+UNBUILT_VECTOR_TIERS: Mapping[str, str] = {
     "sqlite-vec": (
         "The sqlite-vec tier is not built yet — see docs/STATUS.md. Setting it never selected it; "
         'use `vector_tier = "auto"` (the default) or `"numpy"`, which is what such a KB was '
