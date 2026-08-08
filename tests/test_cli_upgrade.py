@@ -70,6 +70,10 @@ def _source(
     low_below: str = "0.31",
     tail_note: bool = False,
     tight: bool = False,
+    budget_note: str = "caps on the paid extractor.",
+    max_tokens: str = "510",
+    final_k: str = "8",
+    adjacent_k: str | None = None,
 ) -> str:
     """A manifest template shaped like the shipped one: identity block, rendered values, literals.
 
@@ -83,15 +87,41 @@ def _source(
     | `low_below` | one line inside a *commented-out* block | replacement, in comments |
     | `tail_note` | a comment at the end of the file | pure addition, **no trailing context** |
     | `tight` | the blank line before `[budget]` | pure **deletion** of a line the file repeats |
+    | `budget_note` | a **comment** inside `[budget]` | replacement moving no money |
+    | `max_tokens` | one `[chunking]` value | replacement of a key the index was built under |
+    | `final_k` | one `[retrieval]` value | replacement, neither money nor index-invalidating |
+    | `adjacent_k` | a key `[retrieval]` did not have | pure addition **of a key**, not a comment |
 
     `tail_note` is the one that looks redundant beside `pdf_note` and is not: with nothing after
     the added lines, the hunk's *before* image (its context alone) is still present once the change
     has been applied, so both placement predicates match and their order decides the answer.
+
+    **`budget_note` is T4's counterpart to it, and it defaults to *on*.** The shipped template's
+    only `[budget]` drift (M3) rewrote three comment lines *as well as* two caps, so a `[budget]`
+    hunk carrying comments is the ordinary case and not a corner. It defaults on so that every
+    money test runs against that shape rather than against a bare `key = value` pair — and changing
+    it *alone* produces the one hunk that is inside `[budget]`, applies cleanly, and moves nothing.
+
+    **`adjacent_k` is a real manifest key, deliberately.** `--apply` re-parses what it wrote through
+    `manifest.load`, and an unknown key is a hard error there, so a fixture inventing a key would
+    exercise the rollback path while claiming to test the recommendation.
     """
     sources = ["[sources]", 'roots   = ["docs/"]', 'include = ["**/*.md", "**/*.txt"]']
     sources.append('exclude = ["**/drafts/**"]')
     if pdf_note:
         sources.append(PDF_NOTE)
+
+    retrieval = [
+        "[retrieval]",
+        "candidates_per_source = 50",
+        'fusion                = "rrf"',
+        "fusion_top_k          = 20",
+        f"final_k               = {final_k}",
+        'rerank                = "local"',
+        'vector_tier           = "auto"',
+    ]
+    if adjacent_k is not None:
+        retrieval.append(f"adjacent_k            = {adjacent_k}")
 
     body = [
         "[kb]",
@@ -109,16 +139,10 @@ def _source(
         "",
         "[chunking]",
         'strategy   = "structural"',
-        "max_tokens = 510",
+        f"max_tokens = {max_tokens}",
         "overlap    = 64",
         "",
-        "[retrieval]",
-        "candidates_per_source = 50",
-        'fusion                = "rrf"',
-        "fusion_top_k          = 20",
-        "final_k               = 8",
-        'rerank                = "local"',
-        'vector_tier           = "auto"',
+        "\n".join(retrieval),
         "",
         CONFIDENCE_BLOCK.replace("0.31", low_below),
         "",
@@ -127,6 +151,7 @@ def _source(
         'model    = "{{ rerank_model }}"',
         *([] if tight else [""]),
         "[budget]",
+        f"# {budget_note}",
         "confirm_above_eur = 0.01",
         f"per_operation_eur = {per_operation}",
         "monthly_eur       = 5.00",
@@ -1075,7 +1100,19 @@ def test_the_json_payload_is_a_wire_contract_written_out_in_full(
         "diff",
         "hunks",
         "counts",
+        # T4's three. `spend` is on **every** payload, `--apply` or not: a consumer must be able to
+        # ask *would this move money* without parsing a heading out of prose, and a key that
+        # appears only sometimes is one every consumer has to guard.
+        "spend",
+        "applied",
+        "refused",
     }
+    assert payload["applied"] is None and payload["refused"] is None, (
+        "a report that was not asked to write has nothing to say about writing"
+    )
+    assert payload["spend"] == [
+        {"key": "budget.per_operation_eur", "before": "0.05", "after": "0.30"}
+    ]
     assert payload["outcome"] == "drifted"
     assert payload["template"] == "synth"
     assert payload["recorded"] == "synth@1.0"
@@ -1095,10 +1132,14 @@ def test_the_json_payload_is_a_wire_contract_written_out_in_full(
     assert refusal["counts"] == {"clean": 0, "already-applied": 0, "conflict": 0}
 
 
-def test_the_help_line_says_the_command_writes_nothing() -> None:
-    """`pnk upgrade`'s entire contract is that it reports and does not write, and the one-line help
-    is where most users meet it. Rewording it to *"Apply what your template changed"* left the whole
-    suite green — a promise reversed in the place it is most read, with nothing to notice."""
+def test_the_help_line_says_the_command_writes_nothing_without_apply() -> None:
+    """The one-line help is where most users meet this command's contract, and T4 changed it.
+
+    Rewording it to *"Apply what your template changed"* left the whole suite green — a promise
+    reversed in the place it is most read, with nothing to notice. **T4 makes the promise
+    conditional rather than dropping it**, and the qualifier is the load-bearing half: a help line
+    still reading *writes nothing*, flat, is now false for the flag printed directly beneath it.
+    """
     import contextlib
     import io
 
@@ -1107,7 +1148,7 @@ def test_the_help_line_says_the_command_writes_nothing() -> None:
     captured = io.StringIO()
     with contextlib.redirect_stdout(captured), contextlib.suppress(SystemExit):
         build_parser().parse_args(["--help"])
-    assert "writes nothing" in captured.getvalue()
+    assert "writes nothing without --apply" in captured.getvalue()
 
 
 def test_no_line_of_the_report_runs_past_the_wrap(
@@ -1169,3 +1210,794 @@ def test_a_report_with_no_conflict_does_not_explain_conflicts(
     assert "A conflict is not a fault" not in clean
     # ...and the summary names only the outcomes that occurred.
     assert "0 conflicting" not in clean and "0 already applied" not in clean
+
+
+# --- T4: `--apply` ------------------------------------------------------------------------------
+#
+# **Every positive path here runs against a synthetic template, for the reason in this module's
+# docstring**, and every one of them writes: these are the only tests in the suite that let a
+# command touch a `pinakes.toml`. The shipped `notes` reaches exactly one of them — the
+# cannot-compare refusal — and that one is here deliberately, because it is what 100% of real KBs
+# get today.
+
+
+def _run2(root: Path, *flags: str) -> tuple[int, str, str]:
+    """`_run`, plus stderr — which is where a refusal's message goes.
+
+    A refusal is a `PinakesError` caught in `cli.main`, so a test that captured only stdout would
+    assert the *report* printed before the write and call that the refusal message. The two are
+    different strings and only one of them names which guard fired.
+    """
+    import io
+    from contextlib import redirect_stderr, redirect_stdout
+
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        code = main(["upgrade", "--kb", str(root), *flags])
+    return code, out.getvalue(), err.getvalue()
+
+
+def _backup(root: Path) -> Path:
+    return root / "pinakes.toml.orig"
+
+
+def _manifest(root: Path) -> Path:
+    return root / "pinakes.toml"
+
+
+def _spend_pair(synthetic_template: Callable[..., str]) -> str:
+    """The default drift, whose `[budget]` hunk moves exactly one cap: `0.05 → 0.30`."""
+    return _two_versions(synthetic_template)
+
+
+def test_apply_writes_only_the_cleanly_applying_hunks(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The rule in the one shape that can tell it from *apply everything*: a KB that already has
+    one of the two changes.
+
+    A writer with no notion of *already applied* re-inserts the comment block the user adopted by
+    hand, and the manifest ends up carrying it twice. Asserting the count — not merely presence —
+    is what makes that visible; `PDF_NOTE in text` is true either way.
+    """
+    name = synthetic_template(
+        "synth",
+        versions={
+            "1.0": _source(),
+            "1.5": _source(pdf_note=True),
+            "2.0": _source(pdf_note=True, per_operation="0.30"),
+        },
+        current="2.0",
+    )
+    root = _stamp(tmp_path / "kb", name, "1.5", records="synth@1.0")
+
+    code, out, err = _run2(root, "--apply")
+    text = _manifest(root).read_text(encoding="utf-8")
+
+    assert code == 0, err
+    assert "1 applied, 1 already applied and skipped." in out
+    assert text.count("to `include` above to index PDFs") == 1, "the skipped hunk was re-applied"
+    assert "per_operation_eur = 0.30" in text
+    assert '\ntemplate = "synth@2.0"' in text
+
+
+def test_apply_refuses_entirely_when_any_hunk_conflicts(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """All-or-nothing, asserted on all three of the things that make it all-or-nothing.
+
+    The `.orig` assertion is not tidiness: a backup left by a refused run makes the **next** run
+    refuse on the `.orig` rule instead of on the conflict, which is a non-zero exit delivered by
+    the wrong guard, and the user never learns why the first one stopped.
+
+    The clean `[budget]` hunk in this fixture is what the byte-identity assertion is really about.
+    D-10 B has no exception and the conflict rule is all-or-nothing, so the correct outcome is that
+    the cap does **not** move either.
+    """
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    edited = (
+        _manifest(root)
+        .read_text(encoding="utf-8")
+        .replace('exclude = ["**/drafts/**"]', 'exclude = ["**/drafts/**"]  # mine')
+    )
+    _manifest(root).write_text(edited, encoding="utf-8")
+    before = _manifest(root).read_bytes()
+
+    code, _out, err = _run2(root, "--apply")
+
+    assert code == 1
+    assert _manifest(root).read_bytes() == before
+    assert "per_operation_eur = 0.05" in before.decode("utf-8")
+    assert not _backup(root).exists()
+    # The region, named **on the same line as the word**. Two greps that each pass on a different
+    # line of a diff that prints `[sources]` anyway establish nothing.
+    naming = [line for line in err.splitlines() if "conflict" in line.lower()]
+    assert naming and any("[sources]" in line for line in naming), err
+
+
+def test_apply_leaves_an_orig_and_refuses_to_overwrite_an_existing_one(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """D-5 A, and the half that matters: the backup holds the state **before** the write.
+
+    A backup written after the change would satisfy "a file exists" and be worthless — it is the
+    only way a user who did not want a raised cap gets the old numbers back without an editor and
+    a memory, which is exactly what D-10 makes it responsible for.
+    """
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    original = _manifest(root).read_bytes()
+
+    assert _run2(root, "--apply")[0] == 0
+    assert _backup(root).read_bytes() == original
+    assert "per_operation_eur = 0.05" in _backup(root).read_text(encoding="utf-8")
+    assert "per_operation_eur = 0.30" in _manifest(root).read_text(encoding="utf-8")
+
+    # A second KB, drifted, with a `.orig` already beside it. Never a re-run of the first: that KB
+    # now records the installed version, so it is *up to date* and never reaches the guard at all.
+    second = _stamp(tmp_path / "kb2", name, "1.0")
+    _backup(second).write_text("something the user is keeping\n", encoding="utf-8")
+    untouched = _manifest(second).read_bytes()
+
+    code, _out, err = _run2(second, "--apply")
+
+    assert code == 1
+    assert "pinakes.toml.orig" in err
+    assert _backup(second).read_text(encoding="utf-8") == "something the user is keeping\n"
+    assert _manifest(second).read_bytes() == untouched
+
+
+def test_apply_prints_that_the_orig_is_untracked(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """`init` writes a `.gitignore` covering `.pinakes/` only, so in a KB under git the backup shows
+    up in `git status` and can be committed by accident. The printed line is the whole mitigation —
+    a `.gitignore` line added at `init` time would help no KB that already exists."""
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    out = _run2(root, "--apply")[1]
+
+    assert "pinakes.toml.orig" in out
+    assert "git status" in out and "nothing ignores it" in out
+
+
+def test_apply_refuses_while_the_sync_lock_is_held(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """Read the lock, never claim it — and the assertion that the check left no trace is the point.
+
+    Claiming it would write a file under `.pinakes/`, which contradicts this command's own
+    never-touches-`.pinakes/` rule. So the check is `read_holder`, it is advisory and racy, and
+    what it converts is the common case: a sync running right now goes from silent corruption to a
+    message naming who holds it.
+    """
+    import json as json_module
+
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    state = root / ".pinakes"
+    state.mkdir()
+    (state / "sync.lock").write_text(
+        json_module.dumps({"pid": 4242, "host": "somewhere", "started": "20260808 04:00"}),
+        encoding="utf-8",
+    )
+    before_state = _tree(state)
+    before_manifest = _manifest(root).read_bytes()
+
+    code, _out, err = _run2(root, "--apply")
+
+    assert code == 1
+    assert "4242" in err and "somewhere" in err
+    assert _manifest(root).read_bytes() == before_manifest
+    assert not _backup(root).exists()
+    assert _tree(state) == before_state, "reading the lock must leave `.pinakes/` untouched"
+
+
+def test_a_write_that_produces_an_unloadable_manifest_is_rolled_back(
+    tmp_path: Path, synthetic_template: Callable[..., str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The re-parse guard, driven at `apply` rather than through the CLI — deliberately.
+
+    `cli.run_upgrade` calls `manifest.discover`, which calls `manifest.load`; monkeypatching `load`
+    before the command runs would make it fail on the *read*, and the test would pass while the
+    rollback it names never executed. So the report is built first, with the real loader, and only
+    the loader `apply` reaches afterwards is replaced.
+    """
+    from pinakes import manifest as manifest_module
+    from pinakes import upgrade
+    from pinakes.errors import ManifestError, UpgradeError
+
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    loaded = manifest_module.load(root)
+    report = upgrade.plan(loaded)
+    original = _manifest(root).read_bytes()
+
+    def refuse(root_: Path) -> object:
+        raise ManifestError(root_ / "pinakes.toml", table=None, message="invented, for this path")
+
+    monkeypatch.setattr(manifest_module, "load", refuse)
+
+    with pytest.raises(UpgradeError) as raised:
+        upgrade.apply(loaded, report)
+
+    assert _manifest(root).read_bytes() == original, "the bad write survived the rollback"
+    assert not _backup(root).exists(), "a rollback that leaves a backup blocks the next run"
+    assert "would not load" in raised.value.message
+
+
+def test_the_template_key_is_rewritten_only_inside_the_kb_table() -> None:
+    """`_restamp` as a unit, because the corrupting case is **unreachable through the product**.
+
+    A whole-file `^template =` substitution corrupts a `template = …` line in a later table — and no
+    manifest can carry one, since an unknown key is a hard error in `manifest.load`. So the fixture
+    is fed to the function directly rather than through a KB that could not exist. That is the
+    honest form of this test; driving it end to end would silently assert nothing.
+
+    The second half is reachable and is asserted beside it: a **commented** `template =` line
+    inside `[kb]` must not be counted as the key, or an ordinary annotated manifest is refused for
+    occurring twice.
+    """
+    from pinakes.upgrade import restamp
+
+    content = [
+        "[kb]",
+        '# template = "synth@0.1"  # what it used to be',
+        'template = "synth@1.0"  # stamped at init',
+        "",
+        "[elsewhere]",
+        'template = "not this one"',
+    ]
+
+    out = restamp(content, "synth@2.0")
+
+    assert out[2] == 'template = "synth@2.0"  # stamped at init', "alignment or comment destroyed"
+    assert out[1] == content[1], "a commented-out line was rewritten"
+    assert out[5] == content[5], "a `template =` line in a later table was rewritten"
+
+
+def test_restamp_refuses_rather_than_appending_a_key_it_cannot_find() -> None:
+    """Guessing where a key belongs in a file the user owns is the thing this command exists not to
+    do, so an absent or duplicated `[kb] template` is a refusal and never an append."""
+    from pinakes.errors import UpgradeError
+    from pinakes.upgrade import restamp
+
+    with pytest.raises(UpgradeError, match="occurs 0 times"):
+        restamp(["[kb]", 'name = "x"', "", "[sources]"], "synth@2.0")
+
+    with pytest.raises(UpgradeError, match="not a quoted value"):
+        restamp(["[kb]", "template = 3", "", "[sources]"], "synth@2.0")
+
+
+# --- D-10's consent path: four tests that only work as a set ------------------------------------
+#
+# Each of the first three is satisfiable by something other than the property it names unless the
+# negative controls are there too. A heading printed unconditionally passes every positive
+# assertion anyone can write about it — which is this project's recurring defect shape, with money
+# attached.
+
+
+def _index(out: str, needle: str) -> int:
+    for number, line in enumerate(out.splitlines()):
+        if needle in line:
+            return number
+    raise AssertionError(f"{needle!r} is in no line of the output — the assertion would be void")
+
+
+def test_a_budget_hunk_is_applied_like_any_other_hunk(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """D-10 B, stated as an assertion: the cap **moves**.
+
+    The applier has no `[budget]` predicate, no exclusion and no second flag, and this is the test
+    that fails if a later reader adds one. Assert the **value**, never the key's presence:
+    `per_operation_eur` is in every manifest ever written.
+    """
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    assert _run2(root, "--apply")[0] == 0
+    assert "per_operation_eur = 0.30" in _manifest(root).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("flags", [(), ("--apply",)])
+def test_a_budget_change_is_printed_with_both_values(
+    tmp_path: Path, synthetic_template: Callable[..., str], flags: tuple[str, ...]
+) -> None:
+    """Both values, under a heading that names spending — in **both** commands.
+
+    The report is where a user decides, so it must not be the weaker of the two outputs; the
+    parametrisation is the whole assertion, not a convenience.
+
+    **What the old value rules out, and what it does not.** It rules out an implementation that
+    printed only the resulting state, only the new value, or a bare list of changed keys. It does
+    **not** rule out writing before printing — the diff carries the old value whenever it is
+    printed at all — and claiming otherwise would be this project's recurring defect committed
+    inside the test meant to prevent it. Ordering is the next test's job.
+    """
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    out = _run2(root, *flags)[1]
+    heading = out.splitlines()[_index(out, "spending cap")]
+    under = out[out.index(heading) + len(heading) :]
+
+    assert "spending cap" in heading
+    # Under the heading, not merely somewhere in the output: the diff body carries both numbers on
+    # its own `-`/`+` lines, so an output-wide assertion is satisfied by a heading with nothing
+    # beneath it at all.
+    assert "per_operation_eur: 0.05 → 0.30" in under
+
+
+def test_the_budget_heading_precedes_the_first_write(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """Ordering by line position, not membership.
+
+    "Both strings appear" is equally true of an implementation that writes first and explains
+    afterwards. The write anchor is the `.orig` path and **not** a word like *applied*: that word
+    also names the *already applied* outcome further up, so anchoring on it compares against
+    whichever line happened to use it first.
+    """
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    out = _run2(root, "--apply")[1]
+
+    assert _index(out, "spending cap") < _index(out, "pinakes.toml.orig")
+
+
+def test_no_budget_heading_when_no_hunk_touches_budget(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """**The one that makes the other three mean anything.**
+
+    Without it, a heading printed unconditionally passes every positive assertion above. The
+    negative is asserted on `spending cap` and never on the word `budget`: the diff prints
+    `[budget]` as a table header whatever else happens, so a negative on that fails for a reason
+    with nothing to do with the heading.
+    """
+    name = synthetic_template(
+        "synth",
+        versions={"1.0": _source(), "2.0": _source(final_k="4")},
+        current="2.0",
+    )
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    code, out, err = _run2(root, "--apply")
+
+    assert code == 0, err
+    assert "final_k               = 4" in _manifest(root).read_text(encoding="utf-8")
+    assert "spending cap" not in out
+
+
+def test_no_budget_heading_when_the_budget_hunk_is_already_applied(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """No money moves, because the KB already carries the value. A heading here announces a change
+    that is not happening — and a user trained to skip it skips the one that matters."""
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "2.0", records="synth@1.0")
+
+    code, out, err = _run2(root, "--apply")
+
+    assert code == 0, err
+    assert "already applied" in out
+    assert "spending cap" not in out
+
+
+def test_no_budget_heading_when_the_run_refuses_on_a_conflict(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The `[budget]` hunk here applies cleanly and is still not written: the rule is
+    all-or-nothing. Nothing moves, so nothing is announced — in the report **and** under
+    `--apply`, since the predicate is one predicate."""
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    _manifest(root).write_text(
+        _manifest(root)
+        .read_text(encoding="utf-8")
+        .replace('exclude = ["**/drafts/**"]', 'exclude = ["**/drafts/**"]  # mine'),
+        encoding="utf-8",
+    )
+
+    assert "spending cap" not in _run2(root)[1]
+    assert "spending cap" not in _run2(root, "--apply")[1]
+
+
+def test_no_budget_heading_when_the_budget_hunk_changes_only_comments(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The fourth near-miss, which the plan's positional predicate does not exclude.
+
+    The shipped template's own `[budget]` drift (M3) rewrote three comment lines beside the two
+    caps, so a hunk *inside* `[budget]` that moves no key is the ordinary case rather than a
+    corner. Under a purely positional rule it prints a spending-cap heading with nothing under it.
+    """
+    name = synthetic_template(
+        "synth",
+        versions={
+            "1.0": _source(budget_note="caps on the paid extractor."),
+            "2.0": _source(budget_note="caps on the one thing that can spend."),
+        },
+        current="2.0",
+    )
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    code, out, err = _run2(root, "--apply")
+
+    assert code == 0, err
+    assert _listed(out) == [("applies cleanly", "[budget]")], "the fixture must place in [budget]"
+    assert "one thing that can spend" in _manifest(root).read_text(encoding="utf-8")
+    assert "spending cap" not in out
+
+
+# --- D-11: the recommendation, and the operands that are easy to get wrong ----------------------
+
+
+def test_requires_pinakes_is_never_written(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """D-11 A in its strongest form: run `--apply` over a bump that **does** add a key, and assert
+    the key is absent from the **file**. Absence from the diff would not be it — a write that
+    appended `requires_pinakes` outside every hunk is exactly what this forbids."""
+    name = synthetic_template(
+        "synth",
+        versions={"1.0": _source(), "2.0": _source(adjacent_k="2")},
+        current="2.0",
+    )
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    code, _out, err = _run2(root, "--apply")
+
+    assert code == 0, err
+    assert "requires_pinakes" not in _manifest(root).read_text(encoding="utf-8")
+
+
+def test_a_key_adding_hunk_prints_a_requires_pinakes_recommendation(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The positive half. Assert the printed line **names the added key**, not merely that the
+    string `requires_pinakes` appears: that word is in `docs/MANIFEST.md`, in `--help` and
+    plausibly in the diff, so its presence alone discriminates nothing."""
+    name = synthetic_template(
+        "synth",
+        versions={"1.0": _source(), "2.0": _source(adjacent_k="2")},
+        current="2.0",
+    )
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    out = _run2(root, "--apply")[1]
+
+    assert "retrieval.adjacent_k" in out
+    assert "requires_pinakes" in out
+    # No number is suggested and none is written: nothing in the repository maps a manifest key to
+    # the release that introduced it (D-11 option C), so a printed floor would be a guess.
+    assert ">=" not in out.split("requires_pinakes")[1]
+
+
+def test_no_recommendation_when_no_applied_hunk_adds_a_key(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The negative control, and **today it is the only case a real template can reach**: no
+    template change has ever added a key (F2)."""
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    assert "requires_pinakes" not in _run2(root, "--apply")[1]
+
+
+def test_a_key_carried_only_by_a_skipped_hunk_is_not_recommended(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The operand test — `parse(base + applied)` minus `parse(base)`, never `parse(ours)` minus
+    `parse(base)`. The natural wrong implementation passes both tests above and fails only this one.
+
+    **Renamed from the plan's `…_by_a_conflicting_hunk_…`, because that form cannot discriminate.**
+    Under the all-or-nothing rule a conflicting run refuses and prints no recommendation at all, so
+    both operand choices produce the same observable: nothing. The case that actually separates
+    them is an **already applied** hunk — skipped, its key already in the file, and therefore not
+    something this run introduced.
+    """
+    name = synthetic_template(
+        "synth",
+        versions={
+            "1.0": _source(),
+            "1.5": _source(adjacent_k="2"),
+            "2.0": _source(adjacent_k="2", per_operation="0.30"),
+        },
+        current="2.0",
+    )
+    root = _stamp(tmp_path / "kb", name, "1.5", records="synth@1.0")
+
+    code, out, err = _run2(root, "--apply")
+
+    assert code == 0, err
+    assert "already applied and skipped" in out, "the fixture must produce a skipped hunk"
+    assert "adjacent_k" not in out.split("applied")[-1]
+    assert "requires_pinakes" not in out
+
+
+def test_an_existing_requires_pinakes_is_left_byte_identical(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """It is a key the user owns and `--apply` has no opinion about it — not raised, not lowered,
+    not reformatted.
+
+    **Only the lower-floor direction is reachable, and the higher one needs no test.** A floor above
+    the running build makes the manifest unreadable to it, so `pnk upgrade` fails at `discover`
+    before `--apply` exists as a question. That is a stronger guarantee than being left alone, and
+    it is `manifest.py`'s to hold, not this command's.
+    """
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    line = 'requires_pinakes = ">=0.6.0"   # mine, do not touch'
+    _manifest(root).write_text(
+        _manifest(root)
+        .read_text(encoding="utf-8")
+        .replace('created  = "20260725 09:14"', f'created  = "20260725 09:14"\n{line}'),
+        encoding="utf-8",
+    )
+
+    code, _out, err = _run2(root, "--apply")
+
+    assert code == 0, err
+    assert line in _manifest(root).read_text(encoding="utf-8")
+
+
+# --- What `--apply` must leave alone, and the endings it must preserve ---------------------------
+
+
+def test_apply_names_the_rebuild_when_an_applied_hunk_changes_an_index_invalidating_key(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """Refusing to sync without saying so leaves the user holding exactly the state they cannot
+    search — `::test_apply_does_not_run_a_sync` would otherwise pin that as correct. The pair is
+    the point; neither test is honest on its own."""
+    name = synthetic_template(
+        "synth",
+        versions={"1.0": _source(), "2.0": _source(max_tokens="480")},
+        current="2.0",
+    )
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    code, out, err = _run2(root, "--apply")
+
+    assert code == 0, err
+    assert "chunking.max_tokens" in out
+    assert "pnk sync --rebuild" in out
+
+
+def test_apply_writes_nothing_under_docs_or_pinakes_state(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """`docs/` belongs to the user and `.pinakes/` is disposable by invariant. `--apply` writes the
+    manifest and its backup, and a snapshot of both trees is what says so — `_tree` compares the
+    path set, the bytes **and** the mtimes, because each is blind to a different write."""
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    (root / "docs" / "note.md").write_text("mine\n", encoding="utf-8")
+    (root / ".pinakes").mkdir()
+    (root / ".pinakes" / "keep.json").write_text("{}\n", encoding="utf-8")
+    docs_before, state_before = _tree(root / "docs"), _tree(root / ".pinakes")
+
+    assert _run2(root, "--apply")[0] == 0
+
+    assert _tree(root / "docs") == docs_before
+    assert _tree(root / ".pinakes") == state_before
+
+
+def test_apply_does_not_run_a_sync(tmp_path: Path, synthetic_template: Callable[..., str]) -> None:
+    """A changed `include` means new documents exist to index, and that is `pnk sync`'s job. This
+    test is only honest alongside the rebuild-naming test above; on its own it pins the state a
+    user cannot search."""
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    assert _run2(root, "--apply")[0] == 0
+
+    assert not (root / ".pinakes" / "index.db").exists()
+    assert sorted(path.name for path in root.iterdir()) == [
+        "docs",
+        "pinakes.toml",
+        "pinakes.toml.orig",
+    ]
+
+
+def test_the_comment_the_template_added_is_present_after_apply(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The end-to-end case, and the one that proves the mechanism addresses the drift that exists.
+
+    Asserted by **content** and never by a line count. A key-level implementation — one that
+    reconciled `key = value` pairs instead of applying text — fails it, which is the point: F2
+    measured that no template change has ever added or removed a key, so the entire drift history
+    of the shipped template is comments and two values.
+    """
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    assert _run2(root, "--apply")[0] == 0
+
+    assert "to `include` above to index PDFs" in _manifest(root).read_text(encoding="utf-8")
+
+
+def test_a_crlf_manifest_keeps_its_line_endings(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """`Path.read_text` opens in universal-newline mode, so a CRLF manifest is already `\\n`-only by
+    the time the placement predicate sees it — correct for a *report*, and silently wrong for a
+    write, which would put LF lines into a CRLF file and leave the endings mixed.
+
+    Asserted on the whole file rather than on the changed lines: a writer that preserved the
+    convention only where it spliced would pass a narrower check and still produce a mixture.
+    """
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    original = _manifest(root).read_bytes().replace(b"\n", b"\r\n")
+    _manifest(root).write_bytes(original)
+
+    code, _out, err = _run2(root, "--apply")
+    written = _manifest(root).read_bytes()
+
+    assert code == 0, err
+    assert written.count(b"\r\n") == written.count(b"\n"), "an LF line was written into a CRLF file"
+    assert b"per_operation_eur = 0.30" in written
+    assert b"to `include` above to index PDFs" in written
+    assert _backup(root).read_bytes() == original, "the backup must be the bytes that were there"
+
+
+def test_a_manifest_with_mixed_line_endings_is_refused(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """Refuse rather than repair, which is the fork this open correction left to T4.
+
+    A mixed-ending manifest is already the product of two tools disagreeing, and picking one for
+    the user silently rewrites lines they did not ask to be touched — in the one file every other
+    rule in Pinakes exists not to touch. The **report** still works, because reporting reads.
+    """
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    mixed = _manifest(root).read_text(encoding="utf-8").replace("[budget]", "[budget]\r", 1)
+    _manifest(root).write_text(mixed, encoding="utf-8", newline="")
+    before = _manifest(root).read_bytes()
+
+    assert _run2(root)[0] == 0, "a report reads, so it works on any file that parses"
+
+    code, _out, err = _run2(root, "--apply")
+
+    assert code == 1
+    assert "line ending" in err
+    assert _manifest(root).read_bytes() == before
+    assert not _backup(root).exists()
+
+
+# --- Exit codes: `--apply` adds `1` and changes neither `0` nor `3` ------------------------------
+
+
+def test_a_conflict_is_zero_as_a_report_and_one_under_apply(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The same finding, two codes, and the discriminator is whether a write was asked for.
+
+    A report has nothing to fail at, so a conflicting report exits `0` and stays usable beside
+    `pnk doctor` in one script. Once `--apply` is passed the command was asked to do something it
+    could not do, and *something is wrong and it is yours to fix* is exactly what `1` already means
+    everywhere else in this CLI.
+    """
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    _manifest(root).write_text(
+        _manifest(root)
+        .read_text(encoding="utf-8")
+        .replace('exclude = ["**/drafts/**"]', 'exclude = ["**/drafts/**"]  # mine'),
+        encoding="utf-8",
+    )
+
+    assert _run2(root)[0] == 0
+    assert _run2(root, "--apply")[0] == 1
+
+
+def test_cannot_compare_under_apply_still_exits_three_and_writes_nothing(
+    tmp_path: Path,
+) -> None:
+    """Against the shipped `notes`, because this is what a real KB gets today and will get forever:
+    `notes@1.0` is unarchived by decision, so there is no baseline to apply anything against.
+
+    `3` means *the comparison could not be made and no action of yours would make it possible* —
+    `--apply` does not change that, and turning it into `1` would tell 100% of users that something
+    of theirs is broken.
+    """
+    from pinakes.init import init
+
+    root = init(tmp_path / "kb", now="20260725 09:14").root
+    edited, count = re.subn(
+        r'^template = ".+"$',
+        'template = "notes@1.0"',
+        _manifest(root).read_text(encoding="utf-8"),
+        count=1,
+        flags=re.MULTILINE,
+    )
+    assert count == 1, "the manifest's template line has changed shape"
+    _manifest(root).write_text(edited, encoding="utf-8")
+    before = _manifest(root).read_bytes()
+
+    code, out, _err = _run2(root, "--apply")
+
+    assert code == 3
+    assert "cannot compare" in out
+    assert _manifest(root).read_bytes() == before
+    assert not _backup(root).exists()
+
+
+def test_up_to_date_under_apply_writes_nothing(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The shape the free-path run exercises: a KB `pnk init` just created records the installed
+    reference, so `--apply` takes the *up to date* path. It proves the flag imports and parses on
+    the free path — it does **not** exercise the writer, and a later reader who assumes it does
+    will delete a test that matters."""
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "2.0")
+    before = _tree(root)
+
+    code, out, err = _run2(root, "--apply")
+
+    assert code == 0, err
+    assert out.startswith("up to date: synth@2.0")
+    assert _tree(root) == before
+
+
+# --- `--json --apply`: one document, whatever happened ------------------------------------------
+
+
+def test_json_apply_emits_one_document_carrying_the_result(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """Two JSON documents on one stdout is not JSON, so the report is not printed separately under
+    `--json --apply`. Nothing is lost: the ordering the consent path needs is a property of the
+    human output, where a person is the one deciding."""
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    code, out, err = _run2(root, "--json", "--apply")
+    payload = json.loads(out)
+
+    assert code == 0, err
+    assert payload["refused"] is None
+    assert payload["applied"] == {
+        "written": 2,
+        "skipped": 0,
+        "backup": str(_backup(root)),
+        "template": "synth@2.0",
+        "invalidates": [],
+        "introduced": [],
+    }
+    assert payload["spend"] == [
+        {"key": "budget.per_operation_eur", "before": "0.05", "after": "0.30"}
+    ]
+
+
+def test_json_apply_emits_the_refusal_as_json_rather_than_a_traceback(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """A caller who asked for machine-readable output should not have to parse a message off stderr
+    to learn that nothing was written."""
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    _manifest(root).write_text(
+        _manifest(root)
+        .read_text(encoding="utf-8")
+        .replace('exclude = ["**/drafts/**"]', 'exclude = ["**/drafts/**"]  # mine'),
+        encoding="utf-8",
+    )
+
+    code, out, _err = _run2(root, "--json", "--apply")
+    payload = json.loads(out)
+
+    assert code == 1
+    assert payload["applied"] is None
+    assert "[sources]" in payload["refused"]["message"]
+    assert payload["spend"] == [], "nothing is written, so no money moves"

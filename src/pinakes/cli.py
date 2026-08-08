@@ -943,7 +943,8 @@ COMMANDS: tuple[Command, ...] = (
     ),
     Command(
         "upgrade",
-        "Show what your template changed since this KB was stamped (writes nothing)",
+        "Show what your template changed since this KB was stamped "
+        "(writes nothing without --apply)",
         "T3",
         runner=lambda args: run_upgrade(args),
         arguments=_upgrade_arguments,

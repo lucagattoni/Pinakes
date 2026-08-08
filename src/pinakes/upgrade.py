@@ -921,9 +921,14 @@ def _spliced(content: Sequence[str], splices: Sequence[Splice]) -> list[str]:
     return out
 
 
-def _restamp(content: Sequence[str], reference: str) -> list[str]:
+def restamp(content: Sequence[str], reference: str) -> list[str]:
     """Rewrite `[kb] template`, **in place, inside `[kb]` only** — the one key `--apply` writes
     outside the applied hunks (D-11 leaves `requires_pinakes` to the user).
+
+    Public because it is the unit its own tests have to reach, the same reason `fill` is: the case
+    that would corrupt a file — a `template = …` line in a *later* table — is unreachable through
+    the product, since an unknown manifest key is a hard error in `manifest.load`. A test driving
+    it end to end would silently assert nothing.
 
     Bounded on purpose, and the bound is what pays for there being no `tomlkit` in the core
     dependencies: one line, one known shape, refusing rather than inventing. A whole-file
@@ -1048,7 +1053,7 @@ def apply(manifest: Manifest, report: Report) -> Applied:
             "this host automatically.",
         )
 
-    updated = _restamp(_spliced(source.content, _splices(report, source.content)), reference)
+    updated = restamp(_spliced(source.content, _splices(report, source.content)), reference)
     payload = source.render(updated)
 
     # ---- everything above decided; the first byte lands here -------------------------------
@@ -1089,8 +1094,8 @@ def applied_lines(result: Applied) -> list[str]:
     counted = [f"{len(result.written)} applied"]
     if result.skipped:
         counted.append(f"{len(result.skipped)} already applied and skipped")
-    out = ["", ", ".join(counted) + "."]
-    out.append(f"  {result.backup.name} holds your previous {MANIFEST_NAME}.")
+    out = ["", ", ".join(counted) + ".", ""]
+    out.append(f"{result.backup.name} holds your previous {MANIFEST_NAME}, byte for byte.")
     out.append(
         fill(
             "It is a new file in your KB and nothing ignores it — `pnk init` writes a "
