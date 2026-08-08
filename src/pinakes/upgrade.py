@@ -29,6 +29,7 @@ import difflib
 import itertools
 import os
 import re
+import stat
 import tempfile
 import textwrap
 import tomllib
@@ -240,7 +241,14 @@ def _key_value(line: str) -> tuple[str, str] | None:
         return None
     if len(parsed) != 1:
         return None
-    return next(iter(parsed)), _literal(stripped)
+    # A **dotted** key parses to nested tables, so `next(iter(parsed))` alone would report
+    # `budget.monthly_eur = 30.00` as a key called `budget` — and the spending-cap heading would
+    # name a table instead of the cap. Walk down to the leaf and rejoin.
+    key, value = next(iter(parsed.items()))
+    while isinstance(value, dict) and len(cast(Mapping[str, Any], value)) == 1:
+        inner, value = next(iter(cast(Mapping[str, Any], value).items()))
+        key = f"{key}.{inner}"
+    return key, _literal(stripped)
 
 
 def _path_of(section: str | None) -> str | None:
@@ -850,11 +858,30 @@ def read_source(path: Path) -> Source:
             "disagree would leave a mixture nobody chose. Normalise the file to one convention "
             "and run it again; `pnk upgrade` without `--apply` reports either way.",
         )
-    parts = text.replace("\r\n", "\n").split("\n")
+    normalised = text.replace("\r\n", "\n")
+    parts = normalised.split("\n")
     trailing = bool(parts) and parts[-1] == ""
+    content = parts[:-1] if trailing else parts
+    # **The report splits lines one way and this splits them another, so they are checked against
+    # each other rather than assumed equal.** `hunks()` reaches `str.splitlines()`, which breaks on
+    # `\u2028`, `\u2029` and `\x85`; `split("\n")` breaks on none of them. All three are `non-ascii`
+    # under TOML's own comment grammar, so a manifest can legally carry one and still load — and it
+    # would then be a different list of lines on each side, so a hunk the report called *unique*
+    # could match somewhere else here, or nowhere. Rejoining on `\n` instead would silently turn
+    # that character into a newline in a file the user owns, which is worse than refusing.
+    # (A form feed cannot get here: TOML forbids control characters in a comment, so `manifest.load`
+    # refuses it one guard earlier.)
+    if normalised.splitlines() != content:
+        raise UpgradeError(
+            f"{path.name} contains a character Python breaks lines on that is not a newline "
+            "(a Unicode line separator, or U+0085).",
+            remedy="`--apply` writes lines back, and that character makes *which lines* an "
+            "ambiguous question. Remove it and run this again; `pnk upgrade` without `--apply` "
+            "reports either way.",
+        )
     return Source(
         raw=raw,
-        content=tuple(parts[:-1] if trailing else parts),
+        content=tuple(content),
         trailing=trailing,
         newline="\r\n" if crlf else "\n",
     )
@@ -973,12 +1000,30 @@ def restamp(content: Sequence[str], reference: str) -> list[str]:
     return out
 
 
+def through_symlink(path: Path) -> Path:
+    """Where a write to *path* must actually land.
+
+    **`os.replace` onto a symlink destroys the link** and leaves a regular file, with the real
+    manifest untouched somewhere else still holding the old text — the user's own arrangement
+    dismantled silently. `sidecar.write` learned this first and resolves the same way; a KB whose
+    `pinakes.toml` is a link into a shared config directory is exactly the arrangement a portable
+    tool should not break.
+    """
+    return path.resolve() if path.is_symlink() else path
+
+
 def _write_atomic(path: Path, payload: bytes) -> None:
-    """Rename-atomic, and `newline=""` so nothing translates the endings `Source` just preserved."""
+    """Rename-atomic, preserving the target's own permissions.
+
+    `mkstemp` creates its file `0600`, so renaming it into place would silently narrow a manifest
+    the user had made group- or world-readable. The mode is copied from the file being replaced,
+    which is the only place the intended value exists.
+    """
     descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=".pnk-upgrade-", suffix=".tmp")
     try:
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(payload)
+        os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
         os.replace(temporary, path)
     except BaseException:  # pragma: no cover — a failing write is not reproducible in-process
         Path(temporary).unlink(missing_ok=True)
@@ -1032,9 +1077,10 @@ def apply(manifest: Manifest, report: Report) -> Applied:
             "is what to apply by hand.",
         )
 
-    source = read_source(manifest.path)
+    target = through_symlink(manifest.path)
+    source = read_source(target)
 
-    backup = manifest.path.with_name(manifest.path.name + BACKUP_SUFFIX)
+    backup = target.with_name(target.name + BACKUP_SUFFIX)
     if backup.exists():
         raise UpgradeError(
             f"cannot apply: {backup.name} is already there.",
@@ -1058,14 +1104,16 @@ def apply(manifest: Manifest, report: Report) -> Applied:
 
     # ---- everything above decided; the first byte lands here -------------------------------
     backup.write_bytes(source.raw)
-    _write_atomic(manifest.path, payload)
+    _write_atomic(target, payload)
 
     try:
         from pinakes import manifest as manifest_module
 
         manifest_module.load(manifest.root)
     except ManifestError as exc:
-        manifest.path.write_bytes(source.raw)
+        # Atomically, and the backup is removed only afterwards: until the restore has landed, that
+        # file is the only copy of the state being restored.
+        _write_atomic(target, source.raw)
         backup.unlink(missing_ok=True)
         raise UpgradeError(
             f"cannot apply: the result would not load as a manifest — {exc.message}",

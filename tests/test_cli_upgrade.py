@@ -2001,3 +2001,97 @@ def test_json_apply_emits_the_refusal_as_json_rather_than_a_traceback(
     assert payload["applied"] is None
     assert "[sources]" in payload["refused"]["message"]
     assert payload["spend"] == [], "nothing is written, so no money moves"
+
+
+# --- What the first adversarial pass found, each with the mutant it kills ------------------------
+
+
+def test_a_manifest_with_a_unicode_line_separator_is_refused_rather_than_rewritten(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The report and the writer split lines differently, and this is where that bites.
+
+    `hunks()` reaches `str.splitlines()`, which breaks on a form feed, `\\x85`, `\\u2028` and half a
+    dozen more; the writer's `split("\\n")` breaks on none of them. A manifest carrying one — legal
+    inside a TOML comment — is a **different list of lines** on each side, so a hunk the report
+    called unique can match elsewhere here, or nowhere. Rejoining on `\\n` would turn that character
+    into a newline in a file the user owns, so it is refused instead.
+    """
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    _manifest(root).write_text(
+        _manifest(root).read_text(encoding="utf-8").replace("[budget]", "# a\u2028b\n[budget]", 1),
+        encoding="utf-8",
+    )
+    before = _manifest(root).read_bytes()
+
+    assert _run2(root)[0] == 0, "the report reads, so it still works"
+
+    code, _out, err = _run2(root, "--apply")
+
+    assert code == 1
+    assert "breaks lines on" in err
+    assert _manifest(root).read_bytes() == before
+    assert not _backup(root).exists()
+
+
+def test_a_symlinked_manifest_is_written_through_not_replaced(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """`os.replace` onto a symlink destroys the link and leaves a regular file, with the real
+    manifest untouched somewhere else still holding the old text — the user's own arrangement
+    dismantled silently. `sidecar.write` learned this first; this is the same resolve."""
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    elsewhere = tmp_path / "shared" / "pinakes.toml"
+    elsewhere.parent.mkdir()
+    elsewhere.write_bytes(_manifest(root).read_bytes())
+    _manifest(root).unlink()
+    _manifest(root).symlink_to(elsewhere)
+
+    code, _out, err = _run2(root, "--apply")
+
+    assert code == 0, err
+    assert _manifest(root).is_symlink(), "the link was replaced by a regular file"
+    assert "per_operation_eur = 0.30" in elsewhere.read_text(encoding="utf-8"), (
+        "the real manifest was left holding the old text"
+    )
+
+
+def test_apply_keeps_the_manifests_own_permissions(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """`mkstemp` creates its file `0600`, so renaming it into place would silently narrow a manifest
+    the user had made group- or world-readable. The mode is copied from the file being replaced,
+    which is the only place the intended value exists."""
+    import stat
+
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    _manifest(root).chmod(0o644)
+
+    assert _run2(root, "--apply")[0] == 0
+
+    assert stat.S_IMODE(_manifest(root).stat().st_mode) == 0o644
+
+
+def test_a_dotted_key_is_named_in_full_not_by_its_first_segment() -> None:
+    """A dotted key parses to nested tables, so reading the single top-level name reports
+    `budget.monthly_eur = 30.00` as a key called `budget` — and the spending-cap heading would name
+    a table rather than the cap that moved.
+
+    Driven at `changes()` because that is the unit: no template ships a dotted key today, so a
+    fixture-driven test would assert nothing about the branch it claims to cover.
+    """
+    from pinakes.upgrade import Hunk, Placement, changes
+
+    hunk = Hunk(
+        header="@@ -1,3 +1,3 @@",
+        section=None,
+        lines=(" # caps", "-budget.monthly_eur = 5.00", "+budget.monthly_eur = 30.00"),
+        placement=Placement.CLEAN,
+    )
+
+    assert [(change.key, change.before, change.after) for change in changes(hunk)] == [
+        ("budget.monthly_eur", "5.00", "30.00")
+    ]
