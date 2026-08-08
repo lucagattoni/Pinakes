@@ -2095,3 +2095,87 @@ def test_a_dotted_key_is_named_in_full_not_by_its_first_segment() -> None:
     assert [(change.key, change.before, change.after) for change in changes(hunk)] == [
         ("budget.monthly_eur", "5.00", "30.00")
     ]
+
+
+def test_a_table_added_inside_a_hunk_moves_the_section_from_there_on() -> None:
+    """`hunk.section` is the table the hunk *starts* in, read backwards out of `base` — so a hunk
+    that adds a whole new table carries keys belonging to a table `base` does not have.
+
+    Attributing those to the preceding table is not a cosmetic mislabel. The fixture here adds a
+    table directly after `[budget]`; under the old attribution every one of its keys was a
+    **spending cap**, announced under the heading whose entire job is naming what money is moving.
+    The same mistake in `[chunking]`'s neighbourhood invents an index rebuild.
+    """
+    from pinakes.upgrade import Hunk, Placement, changes
+
+    hunk = Hunk(
+        header="@@ -40,4 +40,7 @@",
+        section="[budget]",
+        lines=(
+            " monthly_eur       = 30.00",
+            '-timezone          = "UTC"',
+            '+timezone          = "CET"',
+            "+",
+            "+[extraction]",
+            '+backend = "pdfium"',
+        ),
+        placement=Placement.CLEAN,
+    )
+
+    assert [(change.path, change.after) for change in changes(hunk)] == [
+        ("budget.timezone", '"CET"'),
+        ("extraction.backend", '"pdfium"'),
+    ]
+
+
+def test_splices_refuses_two_hunks_that_land_on_top_of_each_other() -> None:
+    """`difflib` yields hunks disjoint in `base`; nothing makes their **placements in `theirs`**
+    disjoint, and overlapping edits have no defined result — which is what a conflict is.
+
+    Driven at `splices` because no fixture reaches it: `_placement` classifies each hunk on its own,
+    so producing two clean hunks that collide needs a `theirs` built for the purpose. The guard
+    would otherwise ship untested, and an untested refusal is a refusal nobody has seen fire.
+    """
+    from pinakes.errors import UpgradeError
+    from pinakes.upgrade import Hunk, Placement, Report, splices
+
+    content = ["a", "b", "c", "d"]
+    overlapping = Report(
+        outcome=Outcome.DRIFTED,
+        detail="x",
+        hunks=(
+            Hunk("@@ 1 @@", None, (" a", " b", "+x"), Placement.CLEAN),
+            Hunk("@@ 2 @@", None, (" b", " c", "+y"), Placement.CLEAN),
+        ),
+    )
+
+    with pytest.raises(UpgradeError, match="land on top of each other"):
+        splices(overlapping, content)
+
+    # ...and the control: the same two hunks over regions that do not touch are planned, not refused.
+    apart = Report(
+        outcome=Outcome.DRIFTED,
+        detail="x",
+        hunks=(
+            Hunk("@@ 1 @@", None, (" a", "+x"), Placement.CLEAN),
+            Hunk("@@ 2 @@", None, (" d", "+y"), Placement.CLEAN),
+        ),
+    )
+    assert [(one.start, one.stop) for one in splices(apart, content)] == [(0, 1), (3, 4)]
+
+
+def test_splices_refuses_a_hunk_that_no_longer_places_uniquely() -> None:
+    """Unreachable through the command — `_placement` established uniqueness over the same text a
+    moment earlier — and pinned anyway, because the alternative to refusing is writing at a guessed
+    position in a file the user owns."""
+    from pinakes.errors import UpgradeError
+    from pinakes.upgrade import Hunk, Placement, Report, splices
+
+    twice = Report(
+        outcome=Outcome.DRIFTED,
+        detail="x",
+        hunks=(Hunk("@@ 1 @@", None, (" a", "+x"), Placement.CLEAN),),
+    )
+
+    with pytest.raises(UpgradeError, match="single position"):
+        splices(twice, ["a", "b", "a"])

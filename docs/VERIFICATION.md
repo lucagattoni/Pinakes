@@ -881,3 +881,6 @@ that runs against `notes` says so.
 | the manifest keeps its own permissions across the rename-atomic write | T4 | `tests/test_cli_upgrade.py::test_apply_keeps_the_manifests_own_permissions` |
 | a dotted key is named in full, so a spending cap is not reported as its table | T4 | `tests/test_cli_upgrade.py::test_a_dotted_key_is_named_in_full_not_by_its_first_segment` |
 | the rollback restores through the same rename-atomic write | T4 | **none** — behaviourally identical to a direct write except under a crash mid-restore, which no in-process test can stage. Recorded rather than claimed |
+| a table header **inside** a hunk moves the section from there on, so keys of a newly added table are not attributed to the preceding one — which would announce them as spending caps | T4 | `tests/test_cli_upgrade.py::test_a_table_added_inside_a_hunk_moves_the_section_from_there_on` |
+| two clean hunks whose regions overlap in the manifest are refused as a conflict, and two that do not touch are planned | T4 | `tests/test_cli_upgrade.py::test_splices_refuses_two_hunks_that_land_on_top_of_each_other` |
+| a hunk that no longer places uniquely is refused rather than written at a guessed position | T4 | `tests/test_cli_upgrade.py::test_splices_refuses_a_hunk_that_no_longer_places_uniquely` |

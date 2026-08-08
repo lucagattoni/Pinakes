@@ -272,24 +272,36 @@ def changes(hunk: Hunk) -> tuple[Change, ...]:
     rewrites the comments around a value and difflib pairs the untouched line into the replacement.
     """
     section = _path_of(hunk.section)
-    removed: dict[str, str] = {}
-    added: dict[str, str] = {}
-    order: list[str] = []
+    removed: dict[tuple[str | None, str], str] = {}
+    added: dict[tuple[str | None, str], str] = {}
+    order: list[tuple[str | None, str]] = []
     for line in hunk.lines:
         marker, text = line[:1], line[1:]
+        # **A table header inside the hunk moves the section from there on.** `hunk.section` is read
+        # out of `base` by scanning *backwards* from the first changed line, so it is the table the
+        # hunk *starts* in — and a hunk that adds a whole new table carries keys belonging to a
+        # table `base` does not have. Attributing those to the preceding table is not a cosmetic
+        # mislabel: a new table stamped directly after `[budget]` would have every one of its keys
+        # announced as a spending cap, which is precisely the false alarm D-10's requirement 2
+        # exists to prevent. Context lines count too — that is how the header usually arrives.
+        if _TABLE.match(text):
+            section = _path_of(text.strip())
+            continue
         if marker not in ("-", "+"):
             continue
         pair = _key_value(text)
         if pair is None:
             continue
         key, value = pair
-        (removed if marker == "-" else added)[key] = value
-        if key not in order:
-            order.append(key)
+        (removed if marker == "-" else added)[(section, key)] = value
+        if (section, key) not in order:
+            order.append((section, key))
     return tuple(
-        Change(section=section, key=key, before=removed.get(key), after=added.get(key))
-        for key in order
-        if removed.get(key) != added.get(key)
+        Change(
+            section=where, key=key, before=removed.get((where, key)), after=added.get((where, key))
+        )
+        for where, key in order
+        if removed.get((where, key)) != added.get((where, key))
     )
 
 
@@ -368,8 +380,8 @@ def budget_changes(report: Report) -> tuple[Change, ...]:
     return tuple(
         change
         for hunk in report.placed(Placement.CLEAN)
-        if _path_of(hunk.section) == BUDGET
         for change in changes(hunk)
+        if change.section == BUDGET
     )
 
 
@@ -385,7 +397,7 @@ def invalidating(report: Report) -> tuple[Change, ...]:
         change
         for hunk in report.placed(Placement.CLEAN)
         for change in changes(hunk)
-        if change.key in INVALIDATES.get(_path_of(hunk.section) or "", frozenset())
+        if change.key in INVALIDATES.get(change.section or "", frozenset())
     )
 
 
@@ -897,8 +909,14 @@ class Splice:
     replacement: tuple[str, ...]
 
 
-def _splices(report: Report, content: Sequence[str]) -> tuple[Splice, ...]:
+def splices(report: Report, content: Sequence[str]) -> tuple[Splice, ...]:
     """Where every clean hunk lands, all of it decided before anything is written.
+
+    Public for the same reason `fill` and `restamp` are: **both of its refusals are unreachable
+    from any fixture that drives the command**, so a test has to reach the function itself or the
+    two guards ship untested. One is unreachable by construction (`_placement` already established
+    uniqueness over the same text) and the other needs a manifest repeating a region in a shape
+    `difflib` will still call two hunks.
 
     Positions are resolved against the **unmodified** manifest and applied last-to-first, so no
     splice shifts the coordinates of another. Two guards, and both are refusals rather than
@@ -1099,7 +1117,7 @@ def apply(manifest: Manifest, report: Report) -> Applied:
             "this host automatically.",
         )
 
-    updated = restamp(_spliced(source.content, _splices(report, source.content)), reference)
+    updated = restamp(_spliced(source.content, splices(report, source.content)), reference)
     payload = source.render(updated)
 
     # ---- everything above decided; the first byte lands here -------------------------------
