@@ -9,6 +9,9 @@ Exit codes are a contract, not an accident:
     0  success
     1  operational failure — a `PinakesError`; message and remedy printed to stderr
     2  usage error — argparse's own code for a malformed invocation
+    3  no baseline — `pnk upgrade` alone: the comparison could not be made, and no action of the
+       user's would make it possible. Distinct from 1 because nothing is wrong and nothing is
+       theirs to fix; distinct from 0 because a script reads 0 as "up to date".
 
 The framework is stdlib `argparse`: v0.1's flag surface is small and a dependency would buy
 nothing (plans/20260725_1317-v0.1.md, decisions table).
@@ -32,6 +35,7 @@ DESIGN_URL = "https://github.com/lucagattoni/pinakes/blob/main/docs/DESIGN.md"
 EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_USAGE = 2
+EXIT_NO_BASELINE = 3
 
 # Where the dispatch target is stashed on the parsed namespace. Underscore-prefixed so it can never
 # collide with a future command's own option: argparse would silently let `--runner` overwrite the
@@ -300,6 +304,40 @@ def run_doctor(args: argparse.Namespace) -> int:
             print(f"removed {len(removed)}.")
 
     return EXIT_FAILURE if report.worst is Status.FAIL else EXIT_OK
+
+
+def _upgrade_arguments(parser: argparse.ArgumentParser) -> None:
+    _kb_argument(parser)
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
+
+
+def run_upgrade(args: argparse.Namespace) -> int:
+    """`pnk upgrade`. Prints what the template changed and how it fits. Writes nothing.
+
+    **Three exit codes, and the third is the one worth knowing about.** `0` says the comparison was
+    made and reported — including a report whose every hunk conflicts, because this command writes
+    nothing and so has nothing to fail at. `3` says the comparison could not be made at all: the
+    version a KB records is not one whose content this build ships, which is true of every KB
+    created before the archive existed. `1` stays what it is everywhere else — an operational
+    failure, raised as a `PinakesError` and handled in `main`.
+    """
+    import json as json_module
+
+    from pinakes import manifest as manifest_module
+    from pinakes.upgrade import Outcome, as_json, lines, plan
+
+    loaded = manifest_module.discover(args.kb)
+    report = plan(loaded)
+
+    if args.json:
+        # JSON on every path, the refusal included: a caller promised machine-readable output and
+        # handed a traceback instead has been given the worst of both.
+        print(json_module.dumps(as_json(report), indent=2))
+    else:
+        for line in lines(report):
+            print(line)
+
+    return EXIT_NO_BASELINE if report.outcome is Outcome.NO_BASELINE else EXIT_OK
 
 
 def _install_hooks_arguments(parser: argparse.ArgumentParser) -> None:
@@ -867,6 +905,13 @@ COMMANDS: tuple[Command, ...] = (
         "I11",
         runner=lambda args: run_doctor(args),
         arguments=_doctor_arguments,
+    ),
+    Command(
+        "upgrade",
+        "Show what your template changed since this KB was stamped (writes nothing)",
+        "T3",
+        runner=lambda args: run_upgrade(args),
+        arguments=_upgrade_arguments,
     ),
     Command(
         "install-hooks",

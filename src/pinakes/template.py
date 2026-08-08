@@ -7,6 +7,7 @@ nothing depends on the source tree being present.
 
 import re
 import tomllib
+from collections.abc import Sequence
 from dataclasses import dataclass
 from importlib import resources
 from importlib.resources.abc import Traversable
@@ -229,6 +230,39 @@ def render_archived(name: str, version: str, context: dict[str, Any]) -> str:
     """
     source = archived_root(name, version).joinpath(MANIFEST_TEMPLATE).read_text(encoding="utf-8")
     return _render(source, context, name=name, version=version)
+
+
+def cannot_compare(missing: Sequence[str], name: str, archived: Sequence[str]) -> tuple[str, str]:
+    """The `(detail, remedy)` every surface prints when a version's content is not in the archive.
+
+    **Here rather than in either caller, because two surfaces say it and they must say the same
+    thing.** `pnk doctor` reports it as a `WARN` row and `pnk upgrade` as its own outcome; the two
+    lived as byte-identical copies for one increment, with nothing that would notice if one were
+    reworded. Two surfaces disagreeing about one KB is the defect class this release exists to
+    remove, so the wording is a fact with one home like any other.
+
+    **It is the path 100% of today's KBs take, so it is written for someone who did nothing
+    wrong.** `notes@1.0` is deliberately not archived — it denotes eleven different template
+    contents, and a diff computed from the wrong base is worse than no diff — and this is what they
+    get instead. It promises nothing a release *cannot* keep: an unarchived version's content
+    is gone, not pending.
+    """
+    shipped = ", ".join(f"{name}@{version}" for version in archived)
+    return (
+        f"cannot compare: {' and '.join(missing)} "
+        f"{'is' if len(missing) == 1 else 'are'} not in this build's archive",
+        f"Nothing is wrong with your KB and nothing needs changing. A manifest records a version "
+        f"string, never the content that version meant, and this build ships the content of "
+        f"{shipped or 'no version of this template'} — so there is no baseline to diff against, "
+        f"and there will not be a later one: an unarchived version's content is gone, not pending. "
+        f"To see what moved, compare it by hand: run `pnk init` on a throwaway directory and diff "
+        f"its pinakes.toml against yours. A KB stamped from "
+        # `archived[0]`, the **oldest** archived version, because the sentence says *or later*.
+        # `[-1]` names the newest and reads as a promise that excludes every version between —
+        # true while one version is archived, false and user-facing from the next bump onward.
+        f"{f'{name}@{archived[0]}' if archived else 'an archived version'} or later is compared "
+        f"automatically.",
+    )
 
 
 def copy_extras(name: str, target: Path) -> tuple[list[Path], list[Path]]:

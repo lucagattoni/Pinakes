@@ -705,14 +705,28 @@ templates/research-papers/
 not implicitly change a KB's blueprint.
 
 `pnk upgrade` **diffs** the KB's recorded template version against the installed one and prints a
-proposed migration. It never applies changes automatically — a template bump that silently re-chunks
-someone's corpus is a data-loss event in slow motion.
+**template diff** — never a *migration*, a word this design reserves for index schema and
+deliberately does not reuse here, because the two obey opposite rules and every reader who has to be
+told they are different has already paid the cost. It never applies changes automatically: a
+template bump that silently re-chunks someone's corpus is a data-loss event in slow motion.
 
-**This is one of four drift axes, and the only one with no mechanism.** An index, an embedding model
+**That comparison needs the old version's *content*, and a manifest records only a reference.** A
+wheel ships one copy of each template — the current one — so for most of this project's life the
+sentence above described something unimplementable: at runtime, the content the recorded reference
+named did not exist. The only diff available without it is *the KB's own manifest against a fresh
+render*, and that cannot tell a template change from a user's deliberate tuning; reporting the
+second as the first is the failure this design refuses everywhere else. **The fix is an archive, not
+a cleverer diff.** A template's released versions are frozen inside the wheel, so both sides of the
+comparison are generated and neither is the user's file — a value they tuned that the template
+renders cancels, and a literal they edited never enters either side. A version whose content was
+never archived is reported as *cannot compare*, rather than diffed from a reconstructed base: the
+reconstruction is what would make the report wrong in the one direction nobody can check.
+
+**This is one of four drift axes, and the last to get a mechanism.** An index, an embedding model
 and a PDF extractor each drift detectably and are remedied by rebuilding derived state, which is
 free. A manifest and a template drift *silently*, and the remedy touches a file the user owns — so
-it cannot borrow the same shape. [KB-UPDATES.md](KB-UPDATES.md) works the problem through and
-records what has been decided; none of it is built.
+it cannot borrow the same shape: what is built reports, and leaves the writing to the user.
+[KB-UPDATES.md](KB-UPDATES.md) works the problem through and records what has been decided.
 
 ### 6.2 Cross-KB links
 
@@ -1192,7 +1206,7 @@ returned, identified, and marked unreachable, because omitting it would hide a l
 | **Confidence heuristic** | Uncalibrated abstention would be worse than none. Mitigated by golden-set calibration, `unknown` as an honest default, and a measured false-abstain rate. **Measured on the demo KB (20260801 12:14, the `[light]` models, 74 questions): false-abstain 0.015, false-confidence 0.25** ([STATUS § Measured numbers](STATUS.md#measured-numbers), which is where the current figures live). One no-answer question in four still gets a confident answer — the score distributions genuinely overlap. The number is small (8 no-answer questions) and the thresholds are fitted on the same set they are scored against, so treat it as a floor. This is the cost §4.2 said would be measured rather than assumed |
 | **`sqlite-vec` maturity** | Pre-v1, breaking changes expected. Contained: only reached above 50k chunks, deferred to the template release, NumPy tier remains a supported override |
 | **torch install weight** | ~2GB for the default backend, plus ~1.4GB of model weights (embedding + reranker). Contained by the extras split and the CI `HF_HOME` cache (§4.5); CI's `check` job is a three-leg matrix over `[light]`, `[light,pdf]` and `[light,pdf,claude]`, never `[st]` |
-| **Template versioning** | Migrations are shown, never auto-applied (§6.1); templates version independently of the package |
+| **Template versioning** | Template diffs are shown, never auto-applied (§6.1); templates version independently of the package |
 | **Scope creep via `--deep`** | The paid loop is where this design could grow a second, worse agent framework. Bounded by: same tools as MCP, hard caps, and no orchestration the free path doesn't have |
 | **Environment assumptions** | FTS5 and (for the template release) loadable extensions are not universal in system Pythons. Probed by `pnk doctor` with a named remedy; uv-managed CPython is the supported baseline (§3.1) |
 | **Accidental publication** | Publishing a KB repo exposes `docs/` and every sidecar, provenance URLs included (§4.7). Mitigated by shipped `.gitignore`, an index/ledger that never leaves the machine, and explicit docs — not by anything the engine can enforce |

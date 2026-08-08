@@ -90,6 +90,7 @@ pnk init my-kb                        # stamp a KB
 pnk sync                              # index what changed (git-hook friendly)
 pnk search "hybrid retrieval"         # free: BM25 + vector + rerank
 pnk doctor                            # environment, coherence, orphans, link coverage
+pnk upgrade                           # what your template changed; writes nothing
 
 uvx --from "pinakes[st]" pnk serve    # MCP server, nothing installed
 ```

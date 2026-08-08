@@ -14,6 +14,7 @@ For the flag-by-flag reference see [CLI.md](CLI.md); for every manifest and side
 - [Keeping the index fresh](#keeping-the-index-fresh)
 - [Using it from an agent](#using-it-from-an-agent)
 - [Health checks](#health-checks)
+- [Adopting a template change](#adopting-a-template-change)
 - [Moving, sharing and publishing a KB](#moving-sharing-and-publishing-a-kb)
 - [Troubleshooting](#troubleshooting)
 
@@ -439,6 +440,45 @@ duplicate IDs, dangling links and link coverage, recorded failures, the extracti
 
 Every non-OK check carries a remedy. `--prune` is the only thing that changes anything, and it
 prints every path before removing it.
+
+## Adopting a template change
+
+Your KB was stamped from a template, and `pinakes.toml` is yours from that moment on. Templates
+move on: a comment gets clearer, a default gets raised. `pnk doctor` tells you *that* happened;
+`pnk upgrade` tells you *what*.
+
+```bash
+pnk upgrade --kb my-kb
+```
+
+It writes nothing. It prints the diff between the template version your KB records and the one
+installed, then says, hunk by hunk, whether each change still fits your file: **applies cleanly**,
+**already applied** (you adopted it by hand, or a newer `pnk init` wrote it), or **conflicts** —
+the lines it expects are not in your file the way it expects them, so nothing can be placed there
+mechanically. Adopting a change is your own edit, against the diff it printed.
+
+**On every KB that exists today it says this instead** — run 20260807 23:52, on a KB created
+before the version archive existed:
+
+```
+cannot compare: notes@1.0 is not in this build's archive
+
+Nothing is wrong with your KB and nothing needs changing. A manifest records a version
+string, never the content that version meant, and this build ships the content of notes@1.1
+— so there is no baseline to diff against, and there will not be a later one: an unarchived
+version's content is gone, not pending. To see what moved, compare it by hand: run
+`pnk init` on a throwaway directory and diff its pinakes.toml against yours. A KB stamped
+from notes@1.1 or later is compared automatically.
+```
+
+That is not a fault in your KB and there is nothing to fix. A manifest records `notes@1.0` — a
+*name*. The content behind that name changed ten times while the name stayed the same, so no
+build can say which of the eleven different contents yours came from, and diffing against a guess
+would report changes you never received. KBs created from `notes@1.1` onward are compared automatically.
+
+**It exits `3` on that path** — not `0`, which a script reads as *up to date*, and not `1`, which
+means something is wrong. A conflict, by contrast, exits `0`: the command did its job, and what it
+found is your answer.
 
 ## Moving, sharing and publishing a KB
 

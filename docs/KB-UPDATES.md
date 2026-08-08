@@ -5,8 +5,10 @@
 [`plans/20260729_0256-links-and-graph.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260729_0256-links-and-graph.md); every field rule is in
 [MANIFEST.md](MANIFEST.md) and the reasoning in [DESIGN §2.1](DESIGN.md#21-the-manifest--pinakestoml).
 **The template-drift gate (§6) shipped in 0.17.0**, along with the version bump §9 puts ahead of it,
-so the `doctor` check this note calls dead now fires. `pnk upgrade` and doctor reporting drift *as a
-diff* remain proposals and stay template-release work. [STATUS.md](STATUS.md) is the authority on
+so the `doctor` check this note calls dead now fires. **0.18.0 made `pnk doctor` report *how far*
+a template has drifted — a computed line count, not a diff — and `pnk upgrade`, which prints the
+lines themselves, is merged.** What remains a proposal
+is `--apply`: adopting a change into a manifest. Template-release work either way. [STATUS.md](STATUS.md) is the authority on
 what exists.
 
 This note answers one question the build plans had not asked: **when Pinakes changes, what happens
@@ -21,8 +23,9 @@ rebuild, free and deterministic. `pinakes.toml`, `docs/` and the sidecars are **
 edited, and belong to the user; nothing may rewrite them casually.
 
 The design handles derived state well and committed state not at all. Every mechanism below exists
-for the first category. For the second there is one deferred command (`pnk upgrade`, the template release) and no
-detection at all — while v0.2 is actively changing what the template ships.
+for the first category. For the second, **detection shipped in 0.17.0 and `pnk upgrade` is
+merged** (see the header above); what is still deferred is *adoption* — `--apply`, the template
+release. This section was written when neither existed.
 
 ## 2. The four drift axes
 
@@ -57,8 +60,9 @@ Two live cases on `main` today, and one this note got wrong:
    (`doctor.py:205`, comparing at `:219`) compares declared version strings only — which was
    worthless while `notes` declared `version = "1.0"` through eleven releases of changing content.
    `notes` is now `1.1` and §6's gate makes the next bump impossible to forget, so the check
-   discriminates. **The comparison is still a version string, not a diff**: `pnk doctor` reports
-   *that* a KB is behind, never *what changed*. That is the next increment.
+   discriminates. **The comparison is no longer a version string.** 0.18.0 renders both archived
+   versions and reports how many lines separate them; `pnk upgrade` prints the lines themselves.
+   What no command does yet is *adopt* one.
 
 ## 4. Compatibility posture
 
@@ -166,7 +170,7 @@ full clone, and **says so when it has been skipped** — a skip is not a pass.
   floor reflects the last write. That is honest but means the field is a lower bound, not a promise.
 - ~~**Should `doctor` report available template upgrades?**~~ **Answered yes, shipped 0.17.0** —
   detection was cheap and report-only, and it makes the gap visible without waiting for
-  `pnk upgrade`. What it reports is still only a version string; reporting the *diff* is next.
+  `pnk upgrade`. It reported only a version string until 0.18.0, and `pnk upgrade` now prints the diff itself.
 - **Multi-template ecosystem** (the template release) multiplies all of this by the number of templates.
 - Small follow-up: the unknown-key remedy still points at `docs/DESIGN.md §2.1`, whose field tables
   moved to [MANIFEST.md](MANIFEST.md) in 0.2.1.
@@ -179,7 +183,7 @@ Deliberately not assigned. The cheapest useful subset, in dependency order:
 |---|---|---|
 | ~~Bump the `notes` template version whenever its content changes~~ | one line | **Built (0.17.0).** Makes the shipped `doctor` check fire at all |
 | ~~The template-drift CI gate (§6)~~ | small | **Built (0.17.0).** Makes that bump impossible to forget |
-| `doctor` reports *what* changed, not just that something did | small | Makes the WARN actionable without writing to anyone's config |
+| ~~`doctor` reports *what* changed, not just that something did~~ | small | **Built (0.18.0, and `pnk upgrade` for the lines themselves).** Makes the WARN actionable without writing to anyone's config |
 | ~~`requires_pinakes` + pre-pass read (§4)~~ | small | **Built (G4).** Turns a misleading refusal into an actionable one |
 | `pnk upgrade` + `--apply` + `tomlkit` (§5) | medium | Existing KBs actually adopt new defaults |
 

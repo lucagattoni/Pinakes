@@ -643,7 +643,7 @@ four ✅ above.
 | # | Open question | Where it bites | State |
 |---|---|---|---|
 | **O-1** ✅ | **ACCEPTED 20260804 10:30.** `pnk templates` is a decided surface: `docs/CLI.md`'s *Planned — not built yet* table carries its row as of this decision, **before** T7 lands, so the repository never holds a command with no decision record. The rejected alternatives and why: dropping it leaves discovery reachable only by triggering an error, which is the defect; folding it into `pnk init --list-templates` puts a non-initialising flag on `init` and splits the answer to *"which template is my KB on?"* across two commands. **T7 additionally owes an MCP answer** — whether the listing needs a `pinakes_*` tool or is CLI-only — which nothing has decided and T7 must not invent. Original wording: **`pnk templates` (T7) has no prior decision record anywhere in the repository.** `grep -rn 'pnk templates' docs/ plans/ README.md src/` returned nothing; `docs/CLI.md`'s *Planned — not built yet* table lists only `pnk ask --deep` and `pnk upgrade` | T7's existence | **Not decided, and this document does not decide it.** T7 invents a CLI surface. If it is accepted, `docs/CLI.md`'s planned table gains the row **before** the increment lands, so the repository never contains a command with no prior decision record. If it is rejected, T7's second half (`files = [...]` in `template.toml`) still stands on its own and can be re-homed |
-| **O-2** ✅ | **DECIDED 20260804 10:30 — a distinct exit code `3`**, against both the draft's recommendation (non-zero `1`) and the planner's (`0`). What this obliges T3 to do, because the cost is real and chosen: **`docs/CLI.md`'s exit-code table becomes four codes, and gains its row when T3 lands — not before**, since documenting a code nothing returns is the defect this project fixed in that same table on 20260804. `3` must mean exactly *"no baseline exists to compare against"* and nothing else, or it becomes a second `1`. Every consumer learns a new code for one path; that is the accepted price of not overloading `1` (published as *operational failure*, which this is not) and not returning `0` (which a script may read as *up to date*). **T3 owes a test that `3` is returned only on that path**, and that a genuine operational failure during `pnk upgrade` still returns `1`. Original question: **What exit code does `pnk upgrade` return on the *cannot compare* path?** | T3's exit-code contract | Raised **by** D-2b: under the taken answer this is not an edge case, it is **every KB in existence**. T3 recommends non-zero (the command could not do what was asked; `pnk doctor`'s WARN is the scriptable signal) and says so in `docs/CLI.md` § Exit codes. **The planner should confirm**, because "`pnk upgrade` exits non-zero on 100% of today's KBs" is a support surface, not a detail |
+| **O-2** ✅ | **DECIDED 20260804 10:30 — a distinct exit code `3`**, against both the draft's recommendation (non-zero `1`) and the planner's (`0`). What this obliges T3 to do, because the cost is real and chosen: **`docs/CLI.md`'s exit-code table becomes four codes, and gains its row when T3 lands — not before**, since documenting a code nothing returns is the defect this project fixed in that same table on 20260804. `3` must mean exactly *"no baseline exists to compare against"* and nothing else, or it becomes a second `1`. Every consumer learns a new code for one path; that is the accepted price of not overloading `1` (published as *operational failure*, which this is not) and not returning `0` (which a script may read as *up to date*). **T3 owes a test that `3` is returned only on that path**, and that a genuine operational failure during `pnk upgrade` still returns `1`. Original question: **What exit code does `pnk upgrade` return on the *cannot compare* path?** | T3's exit-code contract | Raised **by** D-2b: under the taken answer this is not an edge case, it is **every KB in existence**. T3 recommends non-zero (the command could not do what was asked; `pnk doctor`'s WARN is the scriptable signal) and says so in `docs/CLI.md` § Exit codes. **The planner should confirm**, because "`pnk upgrade` exits non-zero on 100% of today's KBs" is a support surface, not a detail. ✅ **CONFIRMED AND APPLIED 20260807 23:25 — see T3's *exit-code contract* block**, which supersedes the `EXIT_FAILURE (1) on a refusal` sentence T3's own body still carried: that sentence predated this decision and contradicted it, which is what a reader would have built |
 | **O-3** | **Does T4's demonstrable end-to-end wait for the next template change?** | T4's exit criteria | A consequence of D-2b, not a defect of it: with one archived version, no diff is reachable from `notes`, so T4's positive paths are exercised against a synthetic two-version template. The alternative — landing a *real* `notes` content change plus a second bump inside this release, purely to make the machinery demonstrable — is available and is **not** taken here, because inventing a template change to exercise a tool is the tail wagging the dog. Flagged so the planner chooses deliberately |
 | **O-4** | D-1, D-2 | recorded above as settled *by implication* | They are consequences of D-10/D-11 and D-2b rather than answers the user gave in their own right. If the planner disagrees with either, say so before T1 starts — T1 builds D-2 = A's archive on day one |
 | **O-5** | D-3, D-4, D-5, D-6, D-7, D-8, D-9 | as tabled above | Recommendations only. D-4 and D-9 are the two that touch a release cut |
@@ -1240,9 +1240,22 @@ set. Given `theirs`:
 
 | # | Outcome | Predicate |
 |---|---|---|
-| 1 | **already applied** | the hunk's context **and** *added* lines occur in `theirs`, contiguously, in order, byte-for-byte, at **exactly one** position, and its removed lines do not — the user (or a newer `init`) already has this change |
+| 1 | **already applied** | the hunk's context **and** *added* lines occur in `theirs`, contiguously, in order, byte-for-byte, at **exactly one** position, and its ***before* image** occurs at none — the user (or a newer `init`) already has this change |
 | 2 | **clean** | the hunk's context **and** removed lines occur in `theirs` that way |
 | 3 | **conflict** | anything else: no match, **more than one** match, a partial match, or a match whose lines are in a different order |
+
+> ⚠️ **CORRECTED 20260808 by T3's own review. Row 1 says *before image* where it said *removed
+> lines*, and the difference is a misclassification.** "Do the removed lines occur anywhere in the
+> file" is a whole-file question, and a manifest repeats blank lines and bare `#` throughout — so a
+> hunk deleting one could **never** be *already applied*, and the user who adopted that change by
+> hand was told `conflicts`. Under T4's all-or-nothing rule that refuses their entire `--apply`
+> run. **T4 must build the corrected rule**, which is what `upgrade.py`'s `_placement` now
+> implements: a hunk removing nothing satisfies the clause vacuously, and that is what keeps rule 1
+> ahead of rule 2 for a pure addition.
+>
+> **The correction was first written *between* rows 1 and 2**, which closed the table: rows 2 and 3
+> rendered as literal text inside this blockquote, so the predicate T4 must build appeared as a
+> one-row table on the published site. A blockquote goes below a table, never inside one.
 
 **Test 1 before test 2, or a pure-addition hunk is classified wrong.** A hunk that only adds lines
 has an empty removed set, so predicate 2 reduces to "the context is present" — which is *also* true
@@ -1251,10 +1264,22 @@ Every hunk in M3's `[sources]` component is a pure addition, so this is the ordi
 corner. `::test_a_pure_addition_already_present_is_already_applied_not_clean` pins the order.
 
 **"Found, unmodified, in `theirs`" is not the predicate**, and an earlier draft said it was. It is
-satisfied by a manifest whose `[budget]` block the user moved above `[retrieval]` — every context
-line is present, so the loose rule says *clean* while the hunk's offsets are meaningless. It is also
-satisfied twice over by `pinakes.toml`'s repeated blank lines and repeated comment shapes. **Uniqueness
-and order are part of the predicate, not a refinement of it.**
+satisfied twice over by `pinakes.toml`'s repeated blank lines and repeated comment shapes, and two
+places a hunk could belong is not one. **Uniqueness and order are part of the predicate, not a
+refinement of it.**
+
+> ⚠️ **One example was withdrawn 20260808, having been measured rather than argued.** This
+> paragraph offered *"a manifest whose `[budget]` block the user moved above `[retrieval]`"* as a
+> case the loose rule gets wrong. It is not one: placement here is **content-addressed, not
+> offset-addressed**, so a table moved intact still matches contiguously, uniquely and in order,
+> and *clean* is the correct answer. What a reordering has to disturb to be a conflict is the order
+> **inside a hunk's own window**, which is what `::test_a_reordered_manifest_is_a_conflict…` does.
+>
+> **T4 needs the rule stated precisely, because it is narrower than "a table may move".** What must
+> move intact is the hunk's **before image** — the changed lines plus three of context on each side
+> — not the table. A `[budget]` of two lines has a window reaching into `[rerank]` above it and
+> whatever follows below, so moving *that* table is a conflict while moving a longer one is not.
+> The unit is the window, and the window does not respect table boundaries.
 
 **Why "already applied" is a first-class outcome and not a curiosity.** A user who read `pnk doctor`'s
 report and hand-adopted the change is the ordinary case this command is *for*. Reporting it as
@@ -1282,27 +1307,54 @@ each of which must report a **conflict**:
 questions to deliver a comment. Say so in `docs/CLI.md`, so the omission is a stated boundary rather
 than a gap a later agent "fixes".
 
-`--json` emits the same three parts. Exit code `EXIT_OK` (0, `cli.py:32`) when there is nothing to
-adopt and `0` when there is — this is a report, not a check, and a non-zero exit would make
-`pnk upgrade` unusable in a script that also runs `pnk doctor`. `EXIT_FAILURE` (1) on a refusal.
-**State the choice in `docs/CLI.md` § Exit codes**, because "prints a difference" and "fails" are
-exactly the two readings a caller will guess between.
+`--json` emits the same three parts.
 
-**Refusals, each with its own message and test:** the recorded version is not archived; the template
-is not installed; `[kb] template` is absent; the recorded and installed versions are equal (print
-`up to date` and stop — this one is **0**, it is not a refusal).
-
-> **O-2 — the one exit code D-2b turned into a support surface, and the planner should confirm it.**
-> *Recorded version not archived* is `notes@1.0`, i.e. **every KB in existence**. Returning
-> `EXIT_FAILURE` there means `pnk upgrade` exits non-zero for 100% of today's users on its first
-> run, which is a different thing from a rare refusal.
+> ### ✅ **The exit-code contract — O-2 applied, 20260807 23:25. This supersedes what this section said.**
 >
-> **This plan takes non-zero**, on the grounds that the command could not do what was asked and
-> silently exiting 0 with a "cannot compare" line is how a scripted caller learns nothing; `pnk
-> doctor`'s `WARN` is the signal for a caller that wants a status rather than an action. **The
-> alternative is defensible**: treat *cannot compare* as a report outcome (0) and reserve non-zero
-> for a KB that is malformed. It is one line of code and one row in `docs/CLI.md`; it is flagged
-> rather than buried because it is not recoverable once users have scripts.
+> **The paragraph that stood here said `EXIT_FAILURE` (1) on a refusal, and listed *the recorded
+> version is not archived* among the refusals. That is the `cannot compare` path, and O-2 decided
+> it as `3` on 20260804 10:30.** The text was written before that decision and was never
+> reconciled with it; the decision wins. Nothing else in T3 changes.
+>
+> | Code | Means | The cases |
+> |---|---|---|
+> | `0` | **The comparison was made and reported.** A report, not a check | `up to date`; `same manifest`; a diff — whatever mix of *clean*, *already applied* and *conflict* it contains. **A conflict is not a failure**: this command writes nothing, so it has nothing to fail at, and a non-zero exit here would make `pnk upgrade` unusable beside `pnk doctor` in one script |
+> | `3` | **This build cannot produce both sides of the comparison.** Nothing is wrong with the KB and there is nothing the user can fix | the recorded version is not archived (`notes@1.0` — **every KB in existence**); the installed version is not archived; the template is not installed here; the KB records no template at all; an archived version needs a variable this build cannot supply |
+> | `1` | **Operational failure** — a `PinakesError` reaching `cli.main` | no KB found; the manifest does not load |
+> | `2` | Usage error, from argparse | unchanged |
+>
+> **The discriminator, in one sentence, because "3 must mean exactly one thing or it becomes a
+> second 1" is O-2's own condition:** `3` says *the comparison could not be made, and no action of
+> yours would make it possible*; `1` says *something is wrong and it is yours to fix*. Every case
+> in the `3` row satisfies the first and none satisfies the second — `pnk doctor` reports every one
+> of them as `WARN` or `OK`, never `FAIL`, which is the same judgement arriving from the other
+> surface.
+>
+> **Two cases moved out of the old "refusals" list by that discriminator**, and the move is the
+> point rather than a detail. *The template is not installed here* and *the KB records no template*
+> were both `1`; both are `3`, because a KB `pnk doctor` calls `OK` is not an operational failure.
+> *An archived version needs a variable this build cannot supply* is a `TemplateError` that would
+> otherwise reach `cli.main` and become `1`; T3 catches it, because `doctor` already reports that
+> case as `cannot compare` and two surfaces disagreeing about the same fact is the defect class
+> this release exists to remove.
+>
+> **What O-2 obliges T3 to do, and it is not optional:**
+> 1. **`docs/CLI.md`'s exit-code table becomes four codes, in the commit that lands T3** — never
+>    before, because documenting a code nothing returns is the defect fixed in that same table on
+>    20260804. The `3` row says it is `pnk upgrade`'s alone.
+> 2. **A test that `3` is returned on that path and only on it**, and
+> 3. **a test that a genuine operational failure during `pnk upgrade` still returns `1`** — running
+>    it outside any KB is the case that cannot be argued away.
+>
+> **The accepted cost, stated rather than softened:** `pnk upgrade` exits non-zero on 100% of the
+> KBs that exist today, on its first run, forever — `1.0` is unarchived and stays unarchived
+> (D-2b). Every consumer learns a new code for one path. That is the price of not overloading `1`
+> (published as *operational failure*, which this is not) and not returning `0` (which a script
+> reads as *up to date*).
+
+**Outcomes, each with its own message and test:** the recorded version is not archived (`3`); the
+template is not installed (`3`); `[kb] template` is absent (`3`); the recorded and installed
+versions are equal (print `up to date` and stop — **`0`**, and it is not a refusal).
 
 **Nothing here is a migration.** Per the tension resolution above, the word does not appear in the
 command's output, its `--help`, or its docs.
@@ -1337,9 +1389,17 @@ counterpart, so a later pass does not make every real KB a conflict;
 `::test_nothing_under_the_kb_is_written` — snapshot every file's bytes **and** the set of paths under
 the KB root before and after, assert both identical. **Snapshot the whole tree, not `pinakes.toml`
 alone**: the claim is "writes nothing", and a test that watched one file would be satisfied by a
-command that wrote a different one. Compare **bytes and the path set**, not mtimes — an mtime-only
-comparison passes for a rewrite of identical content;
-`::test_json_and_human_output_report_the_same_hunks`.
+command that wrote a different one. Compare the path set, the bytes **and** `st_mtime_ns`, over
+files *and* directories. **⚠️ CORRECTED 20260808: this said "bytes and the path set, not mtimes —
+an mtime-only comparison passes for a rewrite of identical content", which is backwards.** Bytes are
+what miss a rewrite of identical content; mtime is what catches it. Built as written, the test
+survived this increment's own named mutation — *open the manifest for writing* — and `mkdir` besides;
+`::test_json_and_human_output_report_the_same_hunks`;
+`::test_cannot_compare_exits_three_and_nothing_else_does` and
+`::test_an_operational_failure_still_exits_one` — **O-2's two obligations**, added 20260807 23:25
+with the exit-code contract above. The first is only worth writing in the form that names *every*
+other outcome's code: a test asserting `3` on the `cannot compare` path alone is satisfied by a
+command that returns `3` for everything.
 
 **Exit criteria.**
 
@@ -1354,19 +1414,23 @@ before=$(cd /tmp/t3kb && find . -type f -exec shasum {} \; | sort)
 # outcome `notes` can reach. The diff path has NO exit criterion reachable from the shipped
 # template; it is block (2) below, against the synthetic template in the tests.
 rc=0; uv run --frozen pnk upgrade --kb /tmp/t3kb >/tmp/t3.out 2>&1 || rc=$?
-echo "cannot-compare exit code: $rc"
-# ⚠ RECORDED, NOT ASSERTED — O-2 is open. This plan takes non-zero; once the planner confirms,
-# replace the echo with `[ "$rc" -ne 0 ]` (or `-eq 0`) and make docs/CLI.md § Exit codes agree in
-# the same commit. Leaving it recorded is deliberate: asserting a code this document chose on its
-# own would make the criterion pass for a contract nobody agreed to.
+[ "$rc" -eq 3 ]   # ✅ ASSERTED since 20260807 23:25 — O-2's `3`, applied above. It was an `echo`
+                  # while the contract was unconfirmed, because asserting a code this document had
+                  # chosen on its own would have made the criterion pass for an agreement nobody
+                  # made. `-ne 0` would not do: `1`, `2` and `3` are all non-zero and only one is this.
 test -s /tmp/t3.out    # NOT optional. `before = after` is also true of a command that printed
                        # nothing and did nothing, so the snapshot alone is satisfied by failure.
 grep -qiF 'cannot compare' /tmp/t3.out   # and it is THAT refusal, not another guard: "non-zero"
                                           # is available from four refusals in this command
-rc=0; uv run --frozen pnk upgrade --kb /tmp/t3kb --json >/tmp/t3.json 2>&1 || rc=$?
+rc=0; uv run --frozen pnk upgrade --kb /tmp/t3kb --json >/tmp/t3.json 2>/dev/null || rc=$?
 python3 -m json.tool </tmp/t3.json >/dev/null   # --json emits JSON on the refusal path too, or a
                                                  # scripted caller gets a traceback where a
-                                                 # machine-readable outcome was promised
+                                                 # machine-readable outcome was promised.
+                                                 # ⚠️ `2>/dev/null`, never `2>&1`: this said `2>&1`
+                                                 # and failed on a stray `uv` warning about
+                                                 # VIRTUAL_ENV — a criterion red for a reason that
+                                                 # has nothing to do with the command. Only stdout
+                                                 # is the document.
 after=$(cd /tmp/t3kb && find . -type f -exec shasum {} \; | sort)
 [ "$before" = "$after" ] && echo "wrote nothing"
 ./check.sh

@@ -314,6 +314,9 @@ def _free_path_modules(tmp_path: Path, prelude: str = "") -> set[str]:
         # definition — and this gate's *coverage* is extended per increment rather than assumed
         # to follow from the increment being free.
         "pinakes.graph.edges",
+        # `pnk upgrade` (T3), for that same reason. Without this row the free-path run could stop
+        # calling the command and every "no paid import" assertion below would still pass.
+        "pinakes.upgrade",
     ):
         assert surface in modules, f"the free-path run never reached {surface}"
     return modules

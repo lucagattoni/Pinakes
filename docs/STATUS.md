@@ -1,6 +1,6 @@
 # Status — what ships today
 
-**Latest release: 0.18.0** · last reviewed 20260807 22:37
+**Latest release: 0.19.0** · last reviewed 20260808 04:18
 
 > **This file is the only place in the repo that says what is built.** Every other doc describes
 > *how* something works or *why* it was designed that way, and links here for whether you can use it
@@ -25,6 +25,7 @@
 | `pnk budget` | shipped 0.3.0 | I6b. Day/month/operation spend, `--resolve` for an unknown outcome |
 | `pnk links` | shipped 0.5.0 | L4. What a document connects to and what connects to it: `--rel`, `--direction`, `--depth`, `--query`, `--json` |
 | `pnk link` | shipped 0.6.0 | L6. Writes one `links[]` entry into the source document's own sidecar. Targets: a `pnk://` URI, `<alias>:<path>`, or a path in this KB |
+| `pnk upgrade` | shipped 0.19.0 | T3. Prints the template diff and says, hunk by hunk, whether each change still fits your manifest. Writes nothing. Exits `3` — *no baseline* — on every KB that predates the version archive, which today is all of them |
 | `pnk ask --deep` | **not built** | the deep release |
 
 | Capability | State | Notes |
@@ -120,9 +121,12 @@ in 0.17.0**: `notes` moved to `1.1`, a CI gate keeps its version honest, and `pn
 on every KB recording an older reference. **Measurement followed in T2**: where both versions are
 archived, `pnk doctor` renders them both and reports how many lines separate them — but on a KB
 recording `notes@1.0` it reports `cannot compare`, because that version's content was never
-archived and never will be, so the KB in front of you is not one it can measure. What is still
-missing is the part that closes *this* caveat: nothing shows *which* lines differ, and nothing
-adopts a new default into an existing manifest. Both are template-release work.
+archived and never will be, so the KB in front of you is not one it can measure. **`pnk upgrade` shipped in
+0.19.0** — it prints *which* lines differ and says, hunk by hunk, whether each change still
+fits your manifest, writing nothing. On a KB recording `notes@1.0` it says `cannot compare` for the
+same reason `pnk doctor` does, and exits `3`. What is still missing is the last part of this
+caveat: nothing **adopts** a new default into an existing manifest. That is `--apply`, and it is
+template-release work.
 
 ### Caveat: the `[light]` backend needs a manifest edit
 
@@ -312,7 +316,7 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **the graph release** ✅ **shipped 0.11.0** | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. All six increments landed: **G1** and **G4** in 0.6.0, **G2** in 0.7.0, **G3**, **G5** and **G6** in 0.11.0. **Its gate ran and did not pass, so `expand` ships `off`** ([the numbers](#did-the-expansion-channel-earn-its-default--no-measured-20260804-2252)) — an eval-gated feature that is built, measured and off by construction, which is the structure working rather than failing. What would change it is a corpus or a different channel design, never a more expensive one ([decision](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1442-decision-g3-go.md)) |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
 | *the deep release* | `pnk ask --deep` |
-| *the template release* | Template ecosystem, `pnk upgrade` migrations, the `sqlite-vec` tier |
+| *the template release* | Template ecosystem, `pnk upgrade`, the `sqlite-vec` tier |
 
 The order is a dependency order, not a schedule. Anything unreleased may be resequenced; only the
 ✅ rows are facts.
@@ -627,7 +631,7 @@ occasional one.
 
 | | |
 |---|---|
-| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.1, 0.8.0, 0.9.0, 0.10.0, 0.11.0, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.15.1, 0.16.0, 0.17.0 and 0.18.0** — twenty. **0.17.0 bumps the `notes` template to 1.1**, so `pnk doctor` WARNs on every KB created before it: a report, not a fault, and there is nothing to do about it until `pnk upgrade` ships. **0.18.0 makes that WARN say `cannot compare`** with a remedy naming the manual comparison, because `1.0`'s content was never archived — the message is the whole of what changed for an existing KB. **0.11.0 bumps `schema_version` to 3**, so the first `pnk sync` after upgrading rebuilds the whole index — free, and `pnk sync --rebuild` is what the refusal prints. 0.9.0's upload was refused on first attempt — renaming the repository broke PyPI trusted publishing, which matches on the exact repository name — and succeeded once the publisher was corrected. **0.8.0 renames the paid extractor's API key** to `PINAKES_ANTHROPIC_API_KEY`, so a KB driving the paid path from an older `.env` refuses until the variable is renamed. 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
+| Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.1, 0.8.0, 0.9.0, 0.10.0, 0.11.0, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.15.1, 0.16.0, 0.17.0, 0.18.0 and 0.19.0** — twenty-one. **0.19.0 adds `pnk upgrade`**, which prints what a template changed and writes nothing; on every KB that predates the version archive it says `cannot compare` and exits `3`. **0.17.0 bumps the `notes` template to 1.1**, so `pnk doctor` WARNs on every KB created before it: a report, not a fault, and `pnk upgrade` (0.19.0) is what reads it — though on a KB recording `notes@1.0` it says `cannot compare` too, because that content was never archived. **0.18.0 makes that WARN say `cannot compare`** with a remedy naming the manual comparison, because `1.0`'s content was never archived — the message is the whole of what changed for an existing KB. **0.11.0 bumps `schema_version` to 3**, so the first `pnk sync` after upgrading rebuilds the whole index — free, and `pnk sync --rebuild` is what the refusal prints. 0.9.0's upload was refused on first attempt — renaming the repository broke PyPI trusted publishing, which matches on the exact repository name — and succeeded once the publisher was corrected. **0.8.0 renames the paid extractor's API key** to `PINAKES_ANTHROPIC_API_KEY`, so a KB driving the paid path from an older `.env` refuses until the variable is renamed. 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
 | First upload | 20260728 17:16 UTC · latest 20260807 21:20 UTC (0.17.0) |
 | Extras available | `st`, `light`, `pdf`, `claude` — all four |
 | `requires-python` | `>=3.13` |
