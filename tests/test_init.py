@@ -391,3 +391,36 @@ def test_a_template_file_entry_that_reads_outside_the_template_is_refused(
     assert "borrowed/id_rsa" in exc_info.value.message
     assert "outside the template" in exc_info.value.message
     assert not (target / "borrowed").exists()
+
+
+def test_init_stamps_the_files_a_template_declares(
+    synthetic_template: Callable[..., str], tmp_path: Path
+) -> None:
+    """End to end, because every other `files` test calls `copy_extras` directly.
+
+    Those prove the rules; this proves `pnk init` reaches them and hands them the KB root it just
+    created. Without it, `copy_extras` could be passed the wrong target — or stop being called at
+    all — and the unit tests above would every one of them still pass.
+    """
+    name = synthetic_template(
+        "declaring",
+        versions={"1.0": MINIMAL_MANIFEST},
+        current="1.0",
+        files=["README.md", "reference/GLOSSARY.md"],
+        extras={
+            "README.md": "declared readme\n",
+            "reference/GLOSSARY.md": "declared, and nested\n",
+            "NOT-DECLARED.md": "never asked for\n",
+        },
+    )
+
+    result = init(tmp_path / "kb", template_name=name, now="20260808 09:31")
+
+    assert (result.root / "README.md").read_text(encoding="utf-8") == "declared readme\n"
+    # Nested, so the writer must create the intermediate directory rather than skipping the entry.
+    assert (result.root / "reference" / "GLOSSARY.md").read_text(encoding="utf-8") == (
+        "declared, and nested\n"
+    )
+    assert not (result.root / "NOT-DECLARED.md").exists()
+    # The historical pair is *not* implied once a template declares its own list.
+    assert not (result.root / "eval" / "questions.yaml").exists()
