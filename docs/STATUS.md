@@ -648,6 +648,21 @@ first attempt to verify the new command's exit code piped it through `grep`, so 
 **grep's** status and printed `exit: 0` for a path that returns `3`. Re-measured without the pipe
 against the published wheel: `cannot compare` → **3**, `up to date` → **0**, outside a KB → **1**.
 
+**0.20.0, same standard, 20260808 05:52.** The `Publish to PyPI` step log prints `Uploading
+pinakes-0.20.0-py3-none-any.whl (354.2KiB)` and `Uploaded pinakes-0.20.0.tar.gz`;
+`uvx --no-cache --refresh --from "pinakes==0.20.0" pnk --version` → `pinakes 0.20.0`, on the second
+attempt — the first, seconds after the workflow ended, reported the version *unsatisfiable*, which
+is the ~90 s index lag and not a failed upload. Verified against the published wheel rather than the
+repo: a KB stamped `notes@1.0` under `--apply` → `cannot compare`, exit **`3`**, manifest
+byte-identical, **no `pinakes.toml.orig`**; `pnk upgrade --help` carries `--apply` and the
+*writes nothing without --apply* qualifier.
+
+**The manual-release step recurred, for the third time on record**: `Release` green, both files on
+PyPI, `gh release view v0.20.0` → *release not found*. Created by hand and re-verified. Twice in
+consecutive releases and three times since 20260804 is no longer a caution — **treat "create the
+GitHub release" as a step of the procedure that the workflow has never once performed**, and check
+it every time before writing anything that says a release shipped.
+
 | | |
 |---|---|
 | Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.1, 0.8.0, 0.9.0, 0.10.0, 0.11.0, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.15.1, 0.16.0, 0.17.0, 0.18.0, 0.19.0 and 0.20.0** — twenty-two. **0.20.0 adds `pnk upgrade --apply`**, the only thing in Pinakes that rewrites a `pinakes.toml` after `pnk init` — it writes the hunks that fit after printing them, backs the file up to `pinakes.toml.orig`, and refuses the whole run if any hunk conflicts. It changes nothing for a KB recording `notes@1.0`, which still gets `cannot compare` and exit `3`. **0.19.0 adds `pnk upgrade`**, which prints what a template changed and wrote nothing; on every KB that predates the version archive it says `cannot compare` and exits `3`. **0.17.0 bumps the `notes` template to 1.1**, so `pnk doctor` WARNs on every KB created before it: a report, not a fault, and `pnk upgrade` (0.19.0) is what reads it — though on a KB recording `notes@1.0` it says `cannot compare` too, because that content was never archived. **0.18.0 makes that WARN say `cannot compare`** with a remedy naming the manual comparison, because `1.0`'s content was never archived — the message is the whole of what changed for an existing KB. **0.11.0 bumps `schema_version` to 3**, so the first `pnk sync` after upgrading rebuilds the whole index — free, and `pnk sync --rebuild` is what the refusal prints. 0.9.0's upload was refused on first attempt — renaming the repository broke PyPI trusted publishing, which matches on the exact repository name — and succeeded once the publisher was corrected. **0.8.0 renames the paid extractor's API key** to `PINAKES_ANTHROPIC_API_KEY`, so a KB driving the paid path from an older `.env` refuses until the variable is renamed. 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
