@@ -10,8 +10,9 @@
   *applies cleanly* — the lines it expects are there, contiguous, in order, at exactly one place.
   *already applied* — the change is already in your file, because you adopted it by hand or a newer
   `pnk init` wrote it; reporting that as "clean" is what would make a later `--apply` duplicate a
-  key. *conflicts* — you edited that region, the lines are in a different order, or they match in
-  two places, so nothing can be placed mechanically and the diff is what to apply by hand.
+  key. *conflicts* — the lines it expects are not in your file the way it expects them (you edited
+  that region, they are in a different order, or they match in two places), so nothing can be
+  placed mechanically and the diff is what to apply by hand.
 - **A conflict is not a failure and exits `0`.** The command writes nothing, so it has nothing to
   fail at, and exiting non-zero there would make `pnk upgrade` unusable beside `pnk doctor` in one
   script. One code is new and it is this command's alone: **`3` means no baseline** — the comparison could

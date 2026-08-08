@@ -61,9 +61,9 @@ precision nobody measured.
   has drifted rather than only that it has, and **T3 merged `pnk upgrade`**, which prints the lines
   themselves. T4 and T7 remain; `main` has moved far enough that
   the plan's Baseline block must be re-run before any `file:line` in it is trusted.
-- **[Two open corrections](#open-corrections--two-live)** — the list emptied on 20260805 and
-  refilled on 20260807 from a single increment. It refills from *use*: both entries came from
-  **building** 2d, and neither is visible from reading the code that holds it.
+- **[Four open corrections](#open-corrections--four-live)** — the list emptied on 20260805 and
+  refilled on 20260807 and 20260808. It refills from *use*: two entries came from **building** 2d
+  and are invisible from reading the code, and two from **reading** it under adversarial review.
 
 ---
 
@@ -104,7 +104,7 @@ number belongs to a release only when it is cut
 | **[0.16.0](#0160--metadata-injection-measured-and-answered--20260807-1139)** | 20260807 11:39 | Metadata injection, measured and answered | • **6 improved, 6 regressed, 84 unchanged** — no-go<br>• `schema_version` stays 3; PDF layout heuristics and paid title inference stay unapproved<br>• `[chunking] metadata`, default `off`<br>• `tools/two_leg_gate.py`<br>• Five silent-failure fixes its own review found |
 | **[0.17.0](#0170--a-template-version-that-means-something--20260807-2055)** | 20260807 20:55 | A template version that means something | • `notes` 1.0 → **1.1**; **every existing KB now WARNs** in `pnk doctor`<br>• A check live since 0.1 that could never fire<br>• Template content archived under `_versions/`, SHA-256 ledger<br>• `tools/template_drift_gate.py` — seven legs, `check.sh` + CI<br>• `pnk init --template` refuses a non-single-component name<br>• *The template release, interim cut (D-9)* |
 | **[0.18.0](#0180--the-drift-warning-says-something-you-can-act-on--20260807-2237)** | 20260807 22:37 | The drift warning says something you can act on | • Drift reported as a **computed line count**, both sides rendered<br>• Template against template — your own tuning cannot appear<br>• `cannot compare` on every KB that exists, with an honest remedy<br>• `same manifest` instead of a misleading `0 lines differ`<br>• An unsupplied variable is a message, not a traceback<br>• *The template release, interim cut (D-9)* |
-| | | **[Open corrections](#open-corrections--two-live)** | • **Two live**, both from building 2d<br>• **Every one** came from *building* something, not from reading code<br>• Neither blocking |
+| | | **[Open corrections](#open-corrections--four-live)** | • **Four live** — two from building 2d, two from T3's review<br>• Building and reading find different classes; neither finds the other's<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
 | | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0, T2 in 0.18.0, T3 merged**; T4, T7 to come<br>• Cuts more than once (D-9), so the name stays here |
@@ -778,13 +778,15 @@ No `schema_version` bump, so no rebuild.
 
 # Part 5 · What is not built
 
-## Open corrections — two live
+## Open corrections — four live
 
-**It emptied on 20260805 22:18 and refilled on 20260807, from one increment.** Owned by
+**It emptied on 20260805 22:18, refilled on 20260807 from one increment, and again on 20260808 from
+T3's review.** Owned by
 [`plans/20260731_1202-open-corrections.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md).
 
-**Both live items came from *building* 2d, and neither is visible from reading the code that holds
-it** — which is the pattern every entry this list has ever held:
+**Items 1 and 2 came from *building* 2d, and neither is visible from reading the code that holds
+it** — the pattern every entry had followed until 20260808, when items 3 and 4 arrived from an
+adversarial *reading* instead:
 
 * **`graph_gate.check_identity` is blind to `chunking`.** It compares `k`, `embedding`, `rerank`,
   `ranking` and `retrieval` across its three legs, and not the block that says what a leg was
@@ -975,9 +977,10 @@ writes a template change into a manifest, so the last step is the user's own edi
 **State:** the plan
 ([`plans/20260804_1016-template-release.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1016-template-release.md))
 is written, adversarially reviewed (36 findings), and its four open decisions were taken by the user
-on 20260804. **T1 and T2 are done.** T3 is next: `pnk upgrade`, print only. It inherits two things
-T2 found — a comparison with no hunks must not read as agreement, and a remedy must not promise what
-an unarchived version makes impossible.
+on 20260804. **T1, T2 and T3 are done.** T4 is next: `pnk upgrade --apply`. It inherits three
+things its predecessors found — a comparison with no hunks must not read as agreement, a remedy must
+not promise what an unarchived version makes impossible, and the *already applied* rule asks about a
+hunk's **before image**, never about its removed lines on their own.
 
 ⚠️ Its measurements are recorded *as of a named commit*, not as properties — `main` moved twice
 during the session that wrote it. **Re-run its Baseline block before trusting any line number in

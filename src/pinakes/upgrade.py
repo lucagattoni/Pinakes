@@ -47,7 +47,13 @@ WRAP = 92
 # `[budget]  # caps` is legal TOML; a pattern tight enough to reject an array element but not
 # these two labels the hunk with the *preceding* table instead — silently wrong, which is worse
 # than the array element it was tightened to reject.
-_TABLE = re.compile(r"\s*\[\[?[^]\[]+\]\]?\s*(#.*)?\Z")
+#
+# **No comma inside the brackets**, which is what separates a table header from the last element
+# of a wrapped array: `["r", "s"]` closing an array carries no trailing comma, so the shape
+# alone cannot tell it from `[a.b]`. A dotted key may legally contain a comma inside quotes
+# (`[a."b,c"]`) and would be missed; that is a label on a table nobody has written, against a
+# mislabel on an array anyone may wrap.
+_TABLE = re.compile(r"\s*\[\[?[^]\[,]+\]\]?\s*(#.*)?\Z")
 _CODE_SPAN = re.compile(r"`[^`]+`")
 _GLUE = "\ue000"
 """A private-use codepoint standing in for a space inside a `code span` while the text is wrapped.

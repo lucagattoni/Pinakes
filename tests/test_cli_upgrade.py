@@ -290,7 +290,9 @@ def test_a_drifted_kb_prints_the_template_diff(
     assert "to `include` above to index PDFs" in out
     assert "-per_operation_eur = 0.05" in out
     assert "+per_operation_eur = 0.30" in out
-    assert "synth@1.0" in out and "synth@2.0" in out
+    # Recorded → installed, in that order. "both strings appear" is order-blind, and a reversed
+    # headline tells the user their KB is on the newer of the two.
+    assert "synth@1.0 → synth@2.0" in out
 
 
 def test_a_hunk_already_present_in_theirs_is_reported_as_already_applied(
@@ -955,10 +957,19 @@ def test_which_line_counts_as_the_table_a_hunk_falls_in() -> None:
         body = f"[first]\nx = 1\ny = 2\nz = 3\n{header}\nkey = 4\nlast = 5\n"
         assert section_of(body, body.replace("key = 4", "key = 9")) == [header.strip()], header
 
+    # The **last** element of a wrapped array closes without a trailing comma, so its shape is a
+    # bracketed thing on a line of its own — indistinguishable from a header by brackets alone. The
+    # comma inside is what separates them.
+    assert section_of(nested, nested.replace('["r", "s"],', '["r", "s"]')) == ["[sources]"]
+
     # An insertion changes nothing in `base`, so the scan starts one line earlier: text landing
     # *before* a table header belongs to the table above it, not to the one it is about to open.
     spaced = "[first]\na = 1\nb = 2\nc = 3\n[second]\nd = 4\ne = 5\nf = 6\n"
     assert section_of(spaced, spaced.replace("[second]", "new = 0\n[second]")) == ["[first]"]
+
+    # A hunk that **renames** a table header is inside that table, not the one above it — the same
+    # offset the insert case moves back by, which must not move back here.
+    assert section_of(spaced, spaced.replace("[second]", "[segundo]")) == ["[second]"]
 
 
 def test_doctor_and_upgrade_say_the_same_thing_about_an_unarchived_version(
@@ -985,3 +996,84 @@ def test_doctor_and_upgrade_say_the_same_thing_about_an_unarchived_version(
     assert report.detail == check.detail
     assert report.remedy == check.remedy
     assert "cannot compare" in check.detail
+
+
+def test_the_json_payload_is_a_wire_contract_written_out_in_full(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """Every key and every string value, as literals — **not** derived from the enums that produce
+    them.
+
+    Three earlier assertions compared `payload["outcome"]` against `Outcome.X.value` and the
+    listing labels against `Placement(...).value`. Those are self-referential: renaming both sides
+    together keeps them green, and a consumer's parser breaks. Eight mutants lived in that gap —
+    every outcome and placement string renameable, `recorded`/`installed` swappable, `section` and
+    `template` droppable to `None`, `detail` blankable, and two of the three `counts` keys
+    removable.
+
+    Written out here once, for one drifted report, so a rename is a visible diff in a test rather
+    than a silent break in somebody's script.
+    """
+    name = _two_versions(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    payload = json.loads(_run(root, "--json")[1])
+
+    assert set(payload) == {
+        "outcome",
+        "detail",
+        "remedy",
+        "template",
+        "recorded",
+        "installed",
+        "diff",
+        "hunks",
+        "counts",
+    }
+    assert payload["outcome"] == "drifted"
+    assert payload["template"] == "synth"
+    assert payload["recorded"] == "synth@1.0"
+    assert payload["installed"] == "synth@2.0"
+    assert payload["detail"] == "synth@1.0 → synth@2.0"
+    assert payload["remedy"] is None
+    assert payload["counts"] == {"clean": 2, "already-applied": 0, "conflict": 0}
+    assert [hunk["section"] for hunk in payload["hunks"]] == ["[sources]", "[budget]"]
+    assert [hunk["placement"] for hunk in payload["hunks"]] == ["clean", "clean"]
+    assert set(payload["hunks"][0]) == {"header", "section", "placement", "removed", "added"}
+
+    refusal = json.loads(
+        _run(_stamp(tmp_path / "old", name, "1.0", records="synth@0.9"), "--json")[1]
+    )
+    assert refusal["outcome"] == "no-baseline"
+    assert refusal["hunks"] == [] and refusal["diff"] == ""
+    assert refusal["counts"] == {"clean": 0, "already-applied": 0, "conflict": 0}
+
+
+def test_the_help_line_says_the_command_writes_nothing() -> None:
+    """`pnk upgrade`'s entire contract is that it reports and does not write, and the one-line help
+    is where most users meet it. Rewording it to *"Apply what your template changed"* left the whole
+    suite green — a promise reversed in the place it is most read, with nothing to notice."""
+    import contextlib
+    import io
+
+    from pinakes.cli import build_parser
+
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured), contextlib.suppress(SystemExit):
+        build_parser().parse_args(["--help"])
+    assert "writes nothing" in captured.getvalue()
+
+
+def test_no_line_of_the_report_runs_past_the_wrap(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The remedy is wrapped for a terminal, and dropping `textwrap.fill` entirely left the suite
+    green. A diff line may be any length — it is content, and wrapping one would corrupt it — so
+    the bound is asserted over the prose the command writes itself."""
+    from pinakes.upgrade import WRAP
+
+    name = _two_versions(synthetic_template)
+    refusal = _run(_stamp(tmp_path / "kb", name, "1.0", records="synth@0.9"))[1]
+
+    assert refusal.splitlines()
+    assert max(len(line) for line in refusal.splitlines()) <= WRAP

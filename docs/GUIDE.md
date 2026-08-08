@@ -455,8 +455,7 @@ It writes nothing. It prints the diff between the template version your KB recor
 installed, then says, hunk by hunk, whether each change still fits your file: **applies cleanly**,
 **already applied** (you adopted it by hand, or a newer `pnk init` wrote it), or **conflicts** —
 the lines it expects are not in your file the way it expects them, so nothing can be placed there
-mechanically. Adopting a change is your edit to
-make, against the diff it printed.
+mechanically. Adopting a change is your own edit, against the diff it printed.
 
 **On every KB that exists today it says this instead** — run 20260807 23:52, on a KB created
 before the version archive existed:

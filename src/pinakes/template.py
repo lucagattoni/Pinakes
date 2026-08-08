@@ -257,7 +257,10 @@ def cannot_compare(missing: Sequence[str], name: str, archived: Sequence[str]) -
         f"and there will not be a later one: an unarchived version's content is gone, not pending. "
         f"To see what moved, compare it by hand: run `pnk init` on a throwaway directory and diff "
         f"its pinakes.toml against yours. A KB stamped from "
-        f"{f'{name}@{archived[-1]}' if archived else 'an archived version'} or later is compared "
+        # `archived[0]`, the **oldest** archived version, because the sentence says *or later*.
+        # `[-1]` names the newest and reads as a promise that excludes every version between —
+        # true while one version is archived, false and user-facing from the next bump onward.
+        f"{f'{name}@{archived[0]}' if archived else 'an archived version'} or later is compared "
         f"automatically.",
     )
 

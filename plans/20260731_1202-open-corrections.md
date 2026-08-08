@@ -14,9 +14,12 @@ the closed ones are a table.
 the planner's, and this file held six. They were closed as part of that ownership, not by an
 implementer. What remains below is code and tooling.
 
-**It was empty on 20260805 22:18, for the first time since 20260731. It refilled on 20260807, from
-one increment.** Both items below came out of *building* 2d — neither is visible from reading the
-code that contains it — which is the pattern every entry this list has ever held.
+**It was empty on 20260805 22:18, for the first time since 20260731. It refilled on 20260807, and
+again on 20260808 — four live items.** Items 1 and 2 came out of *building* 2d and are invisible
+from reading the code that contains them, which is the pattern every entry this list had ever held
+until now. **Items 3 and 4 broke it**: both were found by T3's adversarial review, by reading — one
+on a surface T3 only inherited. Reading finds a different class than building does, and neither
+finds the other's.
 
 The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
 finished. Note what is **not** here: **both releases in
@@ -68,7 +71,8 @@ remains, and it predates the injection option by three releases.
 
 ### 3 · A damaged template install escapes as a traceback, on two surfaces
 
-**File:** `src/pinakes/template.py`, `describe` (`:99`) and `render_archived` (`:230`).
+**File:** `src/pinakes/template.py`, `describe` (`:99`) and `render_archived` (`:225`, whose
+unguarded read is `:231`).
 **Current:** every read of a template's own files is unguarded, so a damaged install raises
 something that is **not** a `PinakesError` and `cli.main` prints a stack trace instead of a
 message: `_versions/<v>/` without its `pinakes.toml.j2` gives `FileNotFoundError`, an unreadable
@@ -85,10 +89,15 @@ is a message-quality defect on a damaged or third-party install, not a correctne
 
 ### 4 · CRLF is invisible to the placement predicate, and only `--apply` can be hurt by it
 
-**File:** `src/pinakes/upgrade.py`, `hunks` (`str.splitlines()`).
-**Current:** `splitlines()` strips `\r`, so a hunk generated from LF-rendered templates is reported
-as placeable against a **CRLF** manifest. For a report that is correct — the change genuinely does
-belong there.
+**File:** `src/pinakes/upgrade.py`, `plan` (`manifest.path.read_text()`).
+**Current:** `Path.read_text` opens in text mode with **universal newlines**, so a CRLF manifest is
+already `\n`-only by the time `hunks` sees it — verified: `read_text` on bytes `b"[a]\r\nb = 1\r\n"`
+returns `'[a]\nb = 1\n'`. A hunk generated from LF-rendered templates therefore places against a
+CRLF manifest, and for a *report* that is correct: the change genuinely does belong there.
+
+> ⚠️ An earlier wording named `str.splitlines()` as the mechanism. It is not — the translation has
+> already happened one call earlier, in the read. The conclusion below is unchanged; the cause is
+> not where it said, which matters because T4 will go looking.
 **Required, in T4 and not before:** `--apply` writes lines back, so it would write LF lines into a
 CRLF file and leave a mixed-ending manifest. Either preserve each line's ending or refuse a
 manifest whose endings are not uniform, and say which.

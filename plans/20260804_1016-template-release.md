@@ -1241,17 +1241,21 @@ set. Given `theirs`:
 | # | Outcome | Predicate |
 |---|---|---|
 | 1 | **already applied** | the hunk's context **and** *added* lines occur in `theirs`, contiguously, in order, byte-for-byte, at **exactly one** position, and its ***before* image** occurs at none — the user (or a newer `init`) already has this change |
-
-> ⚠️ **CORRECTED 20260808 by T3's own review; the row above says *before image* where it said
-> *removed lines*, and the difference is a misclassification.** "Do the removed lines occur
-> anywhere in the file" is a whole-file question, and a manifest repeats blank lines and bare
-> `#` throughout — so a hunk deleting one could **never** be *already applied*, and the user
-> who adopted that change by hand was told `conflicts`. Under T4's all-or-nothing rule that
-> refuses their entire `--apply` run. **T4 must build the corrected rule**, which is what
-> `upgrade.py`'s `_placement` now implements: a hunk removing nothing satisfies the clause
-> vacuously, which is what keeps rule 1 ahead of rule 2 for a pure addition.
 | 2 | **clean** | the hunk's context **and** removed lines occur in `theirs` that way |
 | 3 | **conflict** | anything else: no match, **more than one** match, a partial match, or a match whose lines are in a different order |
+
+> ⚠️ **CORRECTED 20260808 by T3's own review. Row 1 says *before image* where it said *removed
+> lines*, and the difference is a misclassification.** "Do the removed lines occur anywhere in the
+> file" is a whole-file question, and a manifest repeats blank lines and bare `#` throughout — so a
+> hunk deleting one could **never** be *already applied*, and the user who adopted that change by
+> hand was told `conflicts`. Under T4's all-or-nothing rule that refuses their entire `--apply`
+> run. **T4 must build the corrected rule**, which is what `upgrade.py`'s `_placement` now
+> implements: a hunk removing nothing satisfies the clause vacuously, and that is what keeps rule 1
+> ahead of rule 2 for a pure addition.
+>
+> **The correction was first written *between* rows 1 and 2**, which closed the table: rows 2 and 3
+> rendered as literal text inside this blockquote, so the predicate T4 must build appeared as a
+> one-row table on the published site. A blockquote goes below a table, never inside one.
 
 **Test 1 before test 2, or a pure-addition hunk is classified wrong.** A hunk that only adds lines
 has an empty removed set, so predicate 2 reduces to "the context is present" — which is *also* true

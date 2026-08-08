@@ -535,7 +535,7 @@ Each hunk is then placed against your manifest, and there are three answers:
 |---|---|
 | **applies cleanly** | the lines the change expects are in your file, contiguous, in order, at exactly one place |
 | **already applied** | the change is *already* there — you adopted it by hand, or a newer `pnk init` wrote it. Not "clean": a later `--apply` would insert the lines a second time — which duplicates a key where the change carries one, and that is a TOML error rather than a mess you can tidy |
-| **conflicts** | anything else — you edited that region, the lines are there but in a different order, or they match in two places. Nothing is placed, and the diff above is what to apply by hand |
+| **conflicts** | the lines the change expects are not in your file the way it expects them — you edited that region, they are there in a different order, or they match in two places. The command does not guess which; nothing is placed, and the diff above is what to apply by hand |
 
 **A conflict is not a failure and does not change the exit code.** This command writes nothing, so
 it has nothing to fail at; `pnk upgrade` exiting non-zero on a conflict would make it unusable
