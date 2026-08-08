@@ -629,6 +629,20 @@ cache-busting query string reported `latest: 0.17.0` and **zero files for 0.18.0
 both of the above were already true. It is now the most reliably wrong of the three caches, not an
 occasional one.
 
+**0.19.0, same standard, 20260808 04:25:** `uvx --no-cache --refresh --from "pinakes==0.19.0" pnk
+--version` → `pinakes 0.19.0`. The `Publish to PyPI` step log prints `Uploading
+pinakes-0.19.0-py3-none-any.whl (341.9KiB)` and `Uploaded pinakes-0.19.0.tar.gz`; the install
+resolves. **The `json` endpoint reported `latest: 0.18.0` and zero files for 0.19.0 while both were
+already true** — the fifth release running, so it is no longer worth consulting.
+
+**Two things this release adds to the standard, because both were nearly missed.** First, the
+**GitHub release is a manual step and the workflow's success does not create one**: `Release` went
+green, PyPI had both files, and `gh release view v0.19.0` said *release not found* until it was
+created by hand. A green workflow is evidence about the upload and about nothing else. Second, the
+first attempt to verify the new command's exit code piped it through `grep`, so the shell reported
+**grep's** status and printed `exit: 0` for a path that returns `3`. Re-measured without the pipe
+against the published wheel: `cannot compare` → **3**, `up to date` → **0**, outside a KB → **1**.
+
 | | |
 |---|---|
 | Published versions | **0.2.2, 0.3.0, 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.1, 0.8.0, 0.9.0, 0.10.0, 0.11.0, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.15.1, 0.16.0, 0.17.0, 0.18.0 and 0.19.0** — twenty-one. **0.19.0 adds `pnk upgrade`**, which prints what a template changed and writes nothing; on every KB that predates the version archive it says `cannot compare` and exits `3`. **0.17.0 bumps the `notes` template to 1.1**, so `pnk doctor` WARNs on every KB created before it: a report, not a fault, and `pnk upgrade` (0.19.0) is what reads it — though on a KB recording `notes@1.0` it says `cannot compare` too, because that content was never archived. **0.18.0 makes that WARN say `cannot compare`** with a remedy naming the manual comparison, because `1.0`'s content was never archived — the message is the whole of what changed for an existing KB. **0.11.0 bumps `schema_version` to 3**, so the first `pnk sync` after upgrading rebuilds the whole index — free, and `pnk sync --rebuild` is what the refusal prints. 0.9.0's upload was refused on first attempt — renaming the repository broke PyPI trusted publishing, which matches on the exact repository name — and succeeded once the publisher was corrected. **0.8.0 renames the paid extractor's API key** to `PINAKES_ANTHROPIC_API_KEY`, so a KB driving the paid path from an older `.env` refuses until the variable is renamed. 0.2.0 and 0.2.1 predate publishing and are **not** on PyPI, so pinning either fails. **0.4.0 and earlier can destroy a sidecar's permanent ULID** (see 0.4.1) — 0.4.1 is the first release without it |
