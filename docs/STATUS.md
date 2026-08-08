@@ -25,7 +25,7 @@
 | `pnk budget` | shipped 0.3.0 | I6b. Day/month/operation spend, `--resolve` for an unknown outcome |
 | `pnk links` | shipped 0.5.0 | L4. What a document connects to and what connects to it: `--rel`, `--direction`, `--depth`, `--query`, `--json` |
 | `pnk link` | shipped 0.6.0 | L6. Writes one `links[]` entry into the source document's own sidecar. Targets: a `pnk://` URI, `<alias>:<path>`, or a path in this KB |
-| `pnk upgrade` | merged to `main`, not yet released | T3. Prints the template diff and says, hunk by hunk, whether each change still fits your manifest. Writes nothing. Exits `3` — *no baseline* — on every KB that predates the version archive, which today is all of them |
+| `pnk upgrade` | on `main`, unreleased | T3. Prints the template diff and says, hunk by hunk, whether each change still fits your manifest. Writes nothing. Exits `3` — *no baseline* — on every KB that predates the version archive, which today is all of them |
 | `pnk ask --deep` | **not built** | the deep release |
 
 | Capability | State | Notes |

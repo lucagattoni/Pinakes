@@ -137,21 +137,11 @@ class Hunk:
 
     @property
     def removed(self) -> tuple[str, ...]:
-        return tuple(line[1:] for line in self.lines if line[:1] == "-")
+        return image(self.lines, "-")
 
     @property
     def added(self) -> tuple[str, ...]:
-        return tuple(line[1:] for line in self.lines if line[:1] == "+")
-
-    @property
-    def before(self) -> tuple[str, ...]:
-        """The *before* image — context and removed lines. What the hunk expects to find."""
-        return tuple(line[1:] for line in self.lines if line[:1] in (" ", "-"))
-
-    @property
-    def after(self) -> tuple[str, ...]:
-        """The hunk's *after* image — context and added lines. What is there once it is applied."""
-        return tuple(line[1:] for line in self.lines if line[:1] in (" ", "+"))
+        return image(self.lines, "+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +159,16 @@ class Report:
 
     def counted(self, placement: Placement) -> int:
         return sum(1 for hunk in self.hunks if hunk.placement is placement)
+
+
+def image(lines: Sequence[str], *markers: str) -> tuple[str, ...]:
+    """The unified-diff lines carrying any of *markers*, with the marker stripped.
+
+    One derivation, three uses. `_placement` needs the *before* and *after* images before a `Hunk`
+    exists to hold them, so a second copy on the dataclass had gone unused while the two could
+    silently disagree — the shape this project keeps finding (see `template.cannot_compare`).
+    """
+    return tuple(line[1:] for line in lines if line[:1] in markers)
 
 
 def _occurrences(lines: Sequence[str], block: Sequence[str]) -> int:
@@ -218,9 +218,9 @@ def _placement(hunk_lines: Sequence[str], theirs: Sequence[str]) -> Placement:
     placement here is content-addressed rather than offset-addressed, so a moved-but-unbroken
     region still places, correctly. The plan's own text used it as one, and it does not hold.)
     """
-    removed = tuple(line[1:] for line in hunk_lines if line[:1] == "-")
-    after = tuple(line[1:] for line in hunk_lines if line[:1] in (" ", "+"))
-    before = tuple(line[1:] for line in hunk_lines if line[:1] in (" ", "-"))
+    removed = image(hunk_lines, "-")
+    after = image(hunk_lines, " ", "+")
+    before = image(hunk_lines, " ", "-")
     if _occurrences(theirs, after) == 1 and (not removed or _occurrences(theirs, before) == 0):
         return Placement.ALREADY_APPLIED
     if _occurrences(theirs, before) == 1:

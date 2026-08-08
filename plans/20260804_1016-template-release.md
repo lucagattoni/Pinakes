@@ -1274,6 +1274,12 @@ refinement of it.**
 > offset-addressed**, so a table moved intact still matches contiguously, uniquely and in order,
 > and *clean* is the correct answer. What a reordering has to disturb to be a conflict is the order
 > **inside a hunk's own window**, which is what `::test_a_reordered_manifest_is_a_conflict…` does.
+>
+> **T4 needs the rule stated precisely, because it is narrower than "a table may move".** What must
+> move intact is the hunk's **before image** — the changed lines plus three of context on each side
+> — not the table. A `[budget]` of two lines has a window reaching into `[rerank]` above it and
+> whatever follows below, so moving *that* table is a conflict while moving a longer one is not.
+> The unit is the window, and the window does not respect table boundaries.
 
 **Why "already applied" is a first-class outcome and not a curiosity.** A user who read `pnk doctor`'s
 report and hand-adopted the change is the ordinary case this command is *for*. Reporting it as
@@ -1416,10 +1422,15 @@ test -s /tmp/t3.out    # NOT optional. `before = after` is also true of a comman
                        # nothing and did nothing, so the snapshot alone is satisfied by failure.
 grep -qiF 'cannot compare' /tmp/t3.out   # and it is THAT refusal, not another guard: "non-zero"
                                           # is available from four refusals in this command
-rc=0; uv run --frozen pnk upgrade --kb /tmp/t3kb --json >/tmp/t3.json 2>&1 || rc=$?
+rc=0; uv run --frozen pnk upgrade --kb /tmp/t3kb --json >/tmp/t3.json 2>/dev/null || rc=$?
 python3 -m json.tool </tmp/t3.json >/dev/null   # --json emits JSON on the refusal path too, or a
                                                  # scripted caller gets a traceback where a
-                                                 # machine-readable outcome was promised
+                                                 # machine-readable outcome was promised.
+                                                 # ⚠️ `2>/dev/null`, never `2>&1`: this said `2>&1`
+                                                 # and failed on a stray `uv` warning about
+                                                 # VIRTUAL_ENV — a criterion red for a reason that
+                                                 # has nothing to do with the command. Only stdout
+                                                 # is the document.
 after=$(cd /tmp/t3kb && find . -type f -exec shasum {} \; | sort)
 [ "$before" = "$after" ] && echo "wrote nothing"
 ./check.sh

@@ -16,6 +16,7 @@ Seven legs run over the same tree, so "the gate failed" is evidence for none of 
 looks correct from the exit code.
 """
 
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -873,3 +874,29 @@ def test_cannot_compare_reads_correctly_for_one_missing_version_and_for_two(
     _, empty_remedy = template.cannot_compare(["t@0.9"], "t", [])
     assert "ships the content of no version of this template" in empty_remedy
     assert "A KB stamped from an archived version or later" in empty_remedy
+
+
+def test_archived_versions_is_empty_rather_than_raising_when_there_is_no_archive(
+    synthetic_template: Callable[..., str],
+) -> None:
+    """A third-party template need not carry an archive, and `archived_versions` says so with an
+    empty list rather than raising. Without the guard it raises a bare `FileNotFoundError` — not a
+    `PinakesError`, so `cli.main` prints a traceback, which is open-corrections item 3's whole
+    class.
+
+    The second half is the neighbouring guard: `_versions/` holds one directory per version, and a
+    stray file beside them is not one.
+    """
+    from importlib import resources
+
+    name = synthetic_template("bare", versions={"1.0": 'name = "x"\n'}, current="1.0")
+    archive = pathlib.Path(
+        str(resources.files(template.PACKAGE).joinpath(name).joinpath(template.VERSIONS_DIR))
+    )
+    assert template.archived_versions(name) == ["1.0"]
+
+    (archive / "README.txt").write_text("not a version", encoding="utf-8")
+    assert template.archived_versions(name) == ["1.0"], "a file beside the versions is not one"
+
+    shutil.rmtree(archive)
+    assert template.archived_versions(name) == []

@@ -993,9 +993,20 @@ def test_which_line_counts_as_the_table_a_hunk_falls_in() -> None:
     anchored = "[t]\nq = [\n  1,\n  2\n]\n[budget] = 1\nr = 3\ns = 4\n"
     assert section_of(anchored, anchored.replace("r = 3", "r = 9")) == ["[t]"]
 
-    # And with no table above the first changed line at all, there is no section to name.
+    # And with no table above the first changed line at all, there is no section to name — even
+    # when a table exists further down. Naming *that* one would attribute a change to a table it
+    # sits above.
     headless = "x = 0\ny = 0\nz = 0\nw = 0\n"
     assert section_of(headless, headless.replace("x = 0", "x = 1")) == [None]
+    later = "x = 0\ny = 0\nz = 0\n[t]\np = 0\n"
+    assert section_of(later, later.replace("x = 0", "x = 1")) == [None]
+
+    # And when the *same hunk* also changes a line that does sit under a table, the answer is still
+    # the first changed line's — the search stops there rather than walking on to whichever table
+    # some later change happens to fall in. Both changes must be inside one hunk for this to
+    # discriminate, which three lines of context between them guarantees.
+    two = later.replace("x = 0", "x = 1").replace("p = 0", "p = 1")
+    assert section_of(later, two) == [None]
 
     # An insertion changes nothing in `base`, so the scan starts one line earlier: text landing
     # *before* a table header belongs to the table above it, not to the one it is about to open.
@@ -1140,3 +1151,21 @@ def test_a_code_span_is_never_broken_across_two_lines() -> None:
     # line run over. A command a reader is meant to copy is worth an over-long line.
     long_span = "`pnk sync " + "--force " * 20 + "--rebuild`"
     assert long_span in fill(f"before it {long_span} after it")
+
+
+def test_a_report_with_no_conflict_does_not_explain_conflicts(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The trailer that says a conflict is not a fault is printed **only** when there is one.
+
+    Its guard was unpinned, and an explanation attached to a report that has nothing to explain is
+    how a reader learns to skip the paragraph that will one day matter — the same argument T4's
+    plan makes for the `[budget]` heading it must print exactly when money moves.
+    """
+    name = _two_versions(synthetic_template)
+
+    clean = _run(_stamp(tmp_path / "clean", name, "1.0"))[1]
+    assert "applies cleanly" in clean
+    assert "A conflict is not a fault" not in clean
+    # ...and the summary names only the outcomes that occurred.
+    assert "0 conflicting" not in clean and "0 already applied" not in clean
