@@ -576,6 +576,10 @@ def _check_include_containment(section: SourcesSection, path: Path) -> None:
     copied a second time. What stays here is the part that is about *globs* rather than about
     landing:
 
+    * **Not "resolve the fixed prefix before the first glob component"** — `*/../../../outside/**`
+      has an empty prefix, so it passes unconditionally and then runs its `..` inside `glob`. This
+      is the one failed attempt of the four that is about globbing rather than about landing, which
+      is why it stayed here when the other three moved.
     * **`**` is dropped from the probe**, because it matches *zero* or more components while
       `Path.parts` counts it as one. Keeping it let a following `..` cancel it, so the probe landed
       one level below where the walk actually goes. Dropping it is exact, not merely conservative:

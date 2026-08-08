@@ -13,8 +13,10 @@ from pathlib import Path
 def lands_inside(anchor: Path, base: Path, relative: str) -> bool:
     """Does `relative`, joined onto `base`, land inside `anchor`?
 
-    **The parent is resolved and the final component is not**, which is the whole of it. The three
-    simpler tests each fail on a case the callers really meet:
+    **The parent is resolved and the final component is not**, which is the whole of it. Three of
+    the four recorded failed attempts are here; the fourth — resolving the fixed prefix before the
+    first glob component — is about globbing rather than landing and stayed with
+    `manifest._check_include_containment`. Each of these fails on a case the callers really meet:
 
     * **Not "does it contain `..`"** — `../notes/x.md` from `docs/` lands *inside* and is a
       legitimate thing to write. What matters is where the path lands, never whether `..` occurs in
