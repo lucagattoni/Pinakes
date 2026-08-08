@@ -309,35 +309,70 @@ def run_doctor(args: argparse.Namespace) -> int:
 def _upgrade_arguments(parser: argparse.ArgumentParser) -> None:
     _kb_argument(parser)
     parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="write the hunks that apply cleanly — [budget] included — after printing them; "
+        "refuses entirely if any hunk conflicts, and backs the manifest up first",
+    )
 
 
 def run_upgrade(args: argparse.Namespace) -> int:
-    """`pnk upgrade`. Prints what the template changed and how it fits. Writes nothing.
+    """`pnk upgrade`. Prints what the template changed and how it fits; `--apply` also writes it.
 
-    **Three exit codes, and the third is the one worth knowing about.** `0` says the comparison was
-    made and reported — including a report whose every hunk conflicts, because this command writes
-    nothing and so has nothing to fail at. `3` says the comparison could not be made at all: the
-    version a KB records is not one whose content this build ships, which is true of every KB
-    created before the archive existed. `1` stays what it is everywhere else — an operational
-    failure, raised as a `PinakesError` and handled in `main`.
+    **The exit codes, and the third is the one worth knowing about.** `0` says the comparison was
+    made and reported — including, without `--apply`, a report whose every hunk conflicts, because
+    a report writes nothing and so has nothing to fail at. `3` says the comparison could not be made
+    at all: the version a KB records is not one whose content this build ships, which is true of
+    every KB created before the archive existed. **`--apply` changes neither of them**; what it adds
+    is `1` for a refusal, which is what `1` already means everywhere else — *something is wrong and
+    it is yours to fix*. A conflict is exactly that once a write was asked for, and is not that in
+    a report, which is why the same finding carries two codes under the two invocations.
+
+    **The report is printed before anything is written, and the spending-cap heading is part of
+    it.** That is the consent path D-10 rests on. It is a property of the order of this function,
+    which is why a test asserts it by line position rather than by reading the code.
     """
     import json as json_module
 
     from pinakes import manifest as manifest_module
-    from pinakes.upgrade import Outcome, as_json, lines, plan
+    from pinakes.errors import UpgradeError
+    from pinakes.upgrade import Outcome, applied_lines, apply, as_json, lines, plan
 
     loaded = manifest_module.discover(args.kb)
     report = plan(loaded)
+    applying = args.apply and report.outcome is Outcome.DRIFTED
 
-    if args.json:
-        # JSON on every path, the refusal included: a caller promised machine-readable output and
-        # handed a traceback instead has been given the worst of both.
-        print(json_module.dumps(as_json(report), indent=2))
-    else:
-        for line in lines(report):
+    if not args.json:
+        for line in lines(report, applying=applying):
             print(line)
 
-    return EXIT_NO_BASELINE if report.outcome is Outcome.NO_BASELINE else EXIT_OK
+    if not applying:
+        if args.json:
+            # JSON on every path, the refusal included: a caller promised machine-readable output
+            # and handed a traceback instead has been given the worst of both.
+            print(json_module.dumps(as_json(report), indent=2))
+        return EXIT_NO_BASELINE if report.outcome is Outcome.NO_BASELINE else EXIT_OK
+
+    # `--json --apply` emits **one** document, after the attempt, and emits it whether the attempt
+    # wrote or refused: two JSON documents on one stdout is not JSON, and a consumer that asked for
+    # machine-readable output should not have to parse a message off stderr to learn what happened.
+    # Nothing is lost by printing late — the ordering the consent path needs is a property of the
+    # human output, where a person is the one deciding.
+    try:
+        result = apply(loaded, report)
+    except UpgradeError as exc:
+        if not args.json:
+            raise
+        print(json_module.dumps(as_json(report, refused=exc), indent=2))
+        return EXIT_FAILURE
+
+    if args.json:
+        print(json_module.dumps(as_json(report, applied=result), indent=2))
+    else:
+        for line in applied_lines(result):
+            print(line)
+    return EXIT_OK
 
 
 def _install_hooks_arguments(parser: argparse.ArgumentParser) -> None:

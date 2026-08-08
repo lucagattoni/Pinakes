@@ -113,6 +113,17 @@ class StoreError(PinakesError):
     """The index cannot be used as asked."""
 
 
+class UpgradeError(PinakesError):
+    """`pnk upgrade --apply` decided not to write, and every reason it has is one of these.
+
+    The whole family is *refusals*, which is why it is one class rather than six: the command
+    decides everything before it writes anything, so by construction there is no partially-applied
+    state for a caller to distinguish. The rollback after an unloadable write raises it too, having
+    first restored the file — the KB is back where it started on every path, and which guard fired
+    is what the message says.
+    """
+
+
 class IndexSchemaError(PinakesError):
     """The index was built by a different schema version. There is no migration, by design."""
 
