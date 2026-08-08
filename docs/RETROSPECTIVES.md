@@ -4856,7 +4856,7 @@ had tested the rule that was actually adopted. **A refutation kills a proposed f
 the finding** — the two have to be judged separately, and the second reviewer's evidence is what
 made the third option obviously correct.
 
-## T2 — Reporting template drift as a diff (20260807 22:28)
+## T2 — Reporting template drift as a line count (20260807 22:28)
 
 **HIGH — A test that never calls the function under test cannot kill a mutant inside it.**
 `test_the_kb_identity_block_never_produces_a_hunk` was written for the mutant the plan called the

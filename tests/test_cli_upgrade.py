@@ -266,8 +266,12 @@ def test_a_current_kb_prints_up_to_date_and_writes_nothing(
     code, out = _run(root)
 
     assert code == 0
-    assert "up to date" in out
+    assert out.startswith("up to date: synth@2.0")  # docs/CLI.md publishes this line verbatim
     assert "@@" not in out, "there is no diff to print when the versions agree"
+    # Not merely "no hunks": the whole diff scaffolding belongs to the drifted branch, and routing
+    # an up-to-date KB through it prints two empty section headings and a bare "." beneath them.
+    assert "what the template changed" not in out
+    assert "how it fits" not in out
     assert _tree(root) == before
 
 
@@ -614,6 +618,9 @@ def test_a_version_bump_with_no_manifest_change_says_same_manifest(
     assert code == 0
     assert "identical" in out
     assert "@@" not in out
+    assert "what the template changed" not in out
+    # The remedy is the whole value of this outcome: it says where the change *did* land.
+    assert "README" in out and "golden set" in out
     # The human line rides on `detail`, so `Outcome.SAME_MANIFEST` -> `UP_TO_DATE` changes nothing
     # a reader sees and everything a JSON consumer sees. Only this assertion notices.
     assert json.loads(_run(root, "--json")[1])["outcome"] == Outcome.SAME_MANIFEST.value
@@ -638,7 +645,15 @@ def test_an_unarchived_recorded_version_refuses_with_a_remedy(
     # cannot break the span, then swaps them back. Losing the restore leaks U+E000 into the one
     # message every KB in existence prints.
     assert "\ue000" not in out
-    assert "`pnk init` on a throwaway directory" in out.replace("\n", " ")
+    # On the **raw** output, because `.replace("\n", " ")` undoes exactly the damage the wrapper
+    # exists to prevent. This holds today because the remedy's spans happen not to straddle the
+    # wrap column; `::test_a_code_span_is_never_broken_across_two_lines` is what pins the
+    # mechanism, since a reworded remedy could make this assertion true either way.
+    assert "`pnk init` on a throwaway directory" in out
+    # "stamped from X **or later**" must name the **oldest** archived version. Naming the newest
+    # reads as a promise excluding every version between: true while one version is archived, and
+    # user-facing nonsense from the next bump onward. This fixture archives two.
+    assert "A KB stamped from synth@1.0 or later" in out.replace("\n", " ")
 
 
 def test_the_shipped_template_reaches_the_cannot_compare_path(tmp_path: Path) -> None:
@@ -664,6 +679,9 @@ def test_the_shipped_template_reaches_the_cannot_compare_path(tmp_path: Path) ->
 
     assert code == 3
     assert "notes@1.0 is not in this build's archive" in out
+    assert out.startswith(
+        "cannot compare:"
+    )  # ...including on the shipped template, the path every real KB takes
 
 
 def test_a_template_not_installed_here_cannot_compare(
@@ -678,6 +696,7 @@ def test_a_template_not_installed_here_cannot_compare(
 
     assert code == 3
     assert "elsewhere@1.0 is not installed here" in out
+    assert out.startswith("cannot compare:")  # docs/CLI.md publishes this opening for every cause
 
 
 def test_a_kb_recording_no_template_cannot_compare(
@@ -721,6 +740,7 @@ def test_an_archived_version_this_build_cannot_render_cannot_compare(
     assert code == 3
     assert "cannot compare" in out
     assert "a_variable_no_build_supplies" in out
+    assert out.startswith("cannot compare:")  # ...and on the one cause that arrives as an exception
 
 
 def test_cannot_compare_exits_three_and_nothing_else_does(
@@ -960,7 +980,22 @@ def test_which_line_counts_as_the_table_a_hunk_falls_in() -> None:
     # The **last** element of a wrapped array closes without a trailing comma, so its shape is a
     # bracketed thing on a line of its own — indistinguishable from a header by brackets alone. The
     # comma inside is what separates them.
-    assert section_of(nested, nested.replace('["r", "s"],', '["r", "s"]')) == ["[sources]"]
+    #
+    # **The comma-less element has to be in `base`, and the change below it.** `_section` reads
+    # `base` and never `ours`, so a fixture that puts the interesting line on the other side tests
+    # nothing — the first version of this assertion did exactly that, which is the same defect the
+    # retro records for the test before it.
+    closing = '[sources]\nmatrix = [\n  ["p", "q"],\n  ["r", "s"]\n]\ntail = 1\nmore = 2\n'
+    assert section_of(closing, closing.replace("tail = 1", "tail = 9")) == ["[sources]"]
+
+    # A key whose *value* opens a bracket is not a header either, and neither is an element that
+    # only looks like one — both need the end-of-line anchor as well as the comma rule.
+    anchored = "[t]\nq = [\n  1,\n  2\n]\n[budget] = 1\nr = 3\ns = 4\n"
+    assert section_of(anchored, anchored.replace("r = 3", "r = 9")) == ["[t]"]
+
+    # And with no table above the first changed line at all, there is no section to name.
+    headless = "x = 0\ny = 0\nz = 0\nw = 0\n"
+    assert section_of(headless, headless.replace("x = 0", "x = 1")) == [None]
 
     # An insertion changes nothing in `base`, so the scan starts one line earlier: text landing
     # *before* a table header belongs to the table above it, not to the one it is about to open.
@@ -1077,3 +1112,31 @@ def test_no_line_of_the_report_runs_past_the_wrap(
 
     assert refusal.splitlines()
     assert max(len(line) for line in refusal.splitlines()) <= WRAP
+
+
+def test_a_code_span_is_never_broken_across_two_lines() -> None:
+    """`_fill` as a unit, at the width where the break actually happens.
+
+    Asserting this through a real report does not work and the reason is worth stating: whether a
+    span straddles the wrap column depends on every word before it, so the assertion is green under
+    a broken wrapper whenever the current remedy's wording happens to be kind. The property is
+    about the wrapper, so it is tested against the wrapper — with an input built so that plain
+    `textwrap` provably splits the span, which the second assertion checks rather than assumes.
+    """
+    import textwrap
+
+    from pinakes.upgrade import WRAP, fill
+
+    text = "x" * (WRAP - 6) + " `pnk sync --rebuild` finishes the job"
+
+    assert "`pnk sync --rebuild`" in fill(text)
+    assert "`pnk sync --rebuild`" not in textwrap.fill(text, width=WRAP, break_long_words=False), (
+        "the fixture must be one plain textwrap actually breaks, or this test proves nothing"
+    )
+    assert "\ue000" not in fill(text)
+
+    # A span **longer than the wrap column** is the case `break_long_words=False` exists for:
+    # glued into one unbreakable token, the default would cut it in half rather than let the
+    # line run over. A command a reader is meant to copy is worth an over-long line.
+    long_span = "`pnk sync " + "--force " * 20 + "--rebuild`"
+    assert long_span in fill(f"before it {long_span} after it")

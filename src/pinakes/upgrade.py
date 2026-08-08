@@ -68,8 +68,13 @@ what a reviewer cannot see, and this file's whole job is being read.
 """
 
 
-def _fill(text: str) -> str:
-    """Wrap a paragraph for a terminal without splitting a `code span` across two lines."""
+def fill(text: str) -> str:
+    """Wrap a paragraph for a terminal without splitting a `code span` across two lines.
+
+    Public because it is the unit its own tests have to reach: whether a span straddles the
+    wrap column depends on every word before it, so a test driving a real report is green
+    under a broken wrapper whenever the current wording happens to be kind.
+    """
     glued = _CODE_SPAN.sub(lambda span: span.group(0).replace(" ", _GLUE), text)
     # `break_long_words=False`: a span longer than the width overflows its line rather than being
     # cut in half, which is the lesser of two wrongs for something meant to be copied.
@@ -451,7 +456,7 @@ def lines(report: Report) -> list[str]:
             # On this path the remedy *is* the output — a KB recording an unarchived version has
             # nothing else to show — and a 600-character paragraph in one terminal line is a
             # remedy nobody reads.
-            out += ["", _fill(report.remedy)]
+            out += ["", fill(report.remedy)]
         return out
 
     out = [report.detail, "", "what the template changed:", ""]
@@ -470,7 +475,7 @@ def lines(report: Report) -> list[str]:
     out += ["", counts + "."]
     if report.counted(Placement.CONFLICT):
         out.append(
-            _fill(
+            fill(
                 "A conflict is not a fault. It means the lines a change expects are not in your "
                 "file the way it expects them — edited, reordered, or present in two places — so "
                 "nothing can be placed there mechanically and the diff above is what to apply by "

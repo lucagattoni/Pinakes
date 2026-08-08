@@ -19,9 +19,12 @@ looks correct from the exit code.
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+
+from pinakes import template
 
 REPO = Path(__file__).parent.parent
 TOOL = REPO / "tools" / "template_drift_gate.py"
@@ -822,3 +825,51 @@ def test_an_archived_version_declaring_a_different_version_fails(tmp_path: Path)
     result = run(templates)
     assert result.returncode == 1
     assert "declares 9.9" in result.stderr
+
+
+def test_archived_versions_orders_by_version_and_not_by_string(
+    synthetic_template: Callable[..., str],
+) -> None:
+    """**Oldest first, by magnitude** — and asserted against `archived_versions` itself.
+
+    The test that claimed this asserted `sorted([...], key=version_key)`, which exercises
+    `version_key` and never calls the function whose contract it names. Both a dropped `key=` and a
+    reversed result survived it.
+
+    It is not cosmetic. `template.cannot_compare` says *"a KB stamped from `archived[0]` or later is
+    compared automatically"*, so an ordering that puts `1.10` before `1.9` makes that sentence name
+    the **newest** archived version — the exact defect the review found in the indexing, arriving a
+    second time by a route no surface would show.
+    """
+    source = 'name = "x"\n'
+    name = synthetic_template(
+        "ordered",
+        versions={"1.2": source, "1.9": source + "# a\n", "1.10": source + "# b\n"},
+        current="1.10",
+    )
+
+    assert template.archived_versions(name) == ["1.2", "1.9", "1.10"]
+    assert sorted(["1.2", "1.9", "1.10"]) == ["1.10", "1.2", "1.9"], "a plain sort is the trap"
+
+
+def test_cannot_compare_reads_correctly_for_one_missing_version_and_for_two(
+    synthetic_template: Callable[..., str],
+) -> None:
+    """The message every KB in existence receives, in each of the three shapes it has.
+
+    Its plural agreement, its `and`-join and its empty-archive fallback were all unreached: the one
+    caller a test exercised passes a single missing version against a non-empty archive. The empty
+    archive is the one that matters — the fallback branch is what stands between a third-party
+    template and an `IndexError` reaching `cli.main` as a traceback.
+    """
+    one_detail, one_remedy = template.cannot_compare(["t@0.9"], "t", ["1.0", "2.0"])
+    assert one_detail == "cannot compare: t@0.9 is not in this build's archive"
+    assert "this build ships the content of t@1.0, t@2.0" in one_remedy
+    assert "A KB stamped from t@1.0 or later" in one_remedy
+
+    two_detail, _ = template.cannot_compare(["t@0.9", "t@3.0"], "t", ["1.0"])
+    assert two_detail == "cannot compare: t@0.9 and t@3.0 are not in this build's archive"
+
+    _, empty_remedy = template.cannot_compare(["t@0.9"], "t", [])
+    assert "ships the content of no version of this template" in empty_remedy
+    assert "A KB stamped from an archived version or later" in empty_remedy

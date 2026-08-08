@@ -23,8 +23,9 @@ rebuild, free and deterministic. `pinakes.toml`, `docs/` and the sidecars are **
 edited, and belong to the user; nothing may rewrite them casually.
 
 The design handles derived state well and committed state not at all. Every mechanism below exists
-for the first category. For the second there is one deferred command (`pnk upgrade`, the template release) and no
-detection at all — while v0.2 is actively changing what the template ships.
+for the first category. For the second, **detection shipped in 0.17.0 and `pnk upgrade` is
+merged** (see the header above); what is still deferred is *adoption* — `--apply`, the template
+release. This section was written when neither existed.
 
 ## 2. The four drift axes
 

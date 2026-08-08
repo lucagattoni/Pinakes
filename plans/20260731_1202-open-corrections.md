@@ -98,6 +98,7 @@ CRLF manifest, and for a *report* that is correct: the change genuinely does bel
 > ⚠️ An earlier wording named `str.splitlines()` as the mechanism. It is not — the translation has
 > already happened one call earlier, in the read. The conclusion below is unchanged; the cause is
 > not where it said, which matters because T4 will go looking.
+
 **Required, in T4 and not before:** `--apply` writes lines back, so it would write LF lines into a
 CRLF file and leave a mixed-ending manifest. Either preserve each line's ending or refuse a
 manifest whose endings are not uniform, and say which.
