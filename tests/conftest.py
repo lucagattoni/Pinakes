@@ -6,6 +6,7 @@ the documented example drift apart, these tests are where it shows up.
 
 import importlib
 import itertools
+import json
 import os
 import re
 import sys
@@ -264,7 +265,11 @@ def synthetic_template(
         def declaration(version: str) -> str:
             body = f'name = "{name}"\nversion = "{version}"\ndescription = "synthetic"\n'
             if files is not None and version == current:
-                rendered = ", ".join(f'"{entry}"' for entry in files)
+                # `json.dumps` rather than f-string quoting: a TOML basic string escapes like a
+                # JSON one, and a path may legally contain a quote or a backslash. Interpolating
+                # raw would turn a test *about* such an entry into a TOML parse error somewhere
+                # else, which reads as the fixture being broken rather than the case being made.
+                rendered = ", ".join(json.dumps(entry) for entry in files)
                 body += f"files = [{rendered}]\n"
             return body
 
