@@ -448,6 +448,33 @@ def test_a_hunk_whose_context_matches_twice_is_a_conflict(
     assert [placement for placement, _ in _placements(out)] == ["conflicts"]
 
 
+def test_an_already_applied_hunk_matching_twice_is_a_conflict_too(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """Uniqueness binds **both** branches of the predicate, not just the clean one.
+
+    Found by mutation testing rather than by reading: relaxing the *already applied* branch from
+    "at exactly one position" to "somewhere" killed no test at all, while the same relaxation on
+    the clean branch was caught immediately. The sibling below covered one half of the rule and
+    read as though it covered the rule.
+
+    The shape is a user who adopted the change **and** kept a second copy of the block. Two places
+    the hunk could belong is not one, and the command does not pick.
+    """
+    name = _two_versions(synthetic_template, old=_source(), new=_source(low_below="0.35"))
+    root = _stamp(tmp_path / "kb", name, "2.0", records="synth@1.0")
+    path = root / "pinakes.toml"
+    body = path.read_text(encoding="utf-8")
+    adopted = CONFIDENCE_BLOCK.replace("0.31", "0.35")
+    assert body.count(adopted) == 1, "the fixture is meant to start already applied, exactly once"
+    path.write_text(body + "\n" + adopted + "\n", encoding="utf-8")
+
+    code, out = _run(root)
+
+    assert code == 0
+    assert [placement for placement, _ in _placements(out)] == ["conflicts"]
+
+
 def test_a_manifest_with_extra_tables_still_places_unambiguous_hunks(
     tmp_path: Path, synthetic_template: Callable[..., str]
 ) -> None:

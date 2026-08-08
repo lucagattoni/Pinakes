@@ -824,6 +824,7 @@ that runs against `notes` says so.
 | a user-edited region is a conflict, while the untouched hunk still places | T3 | `tests/test_cli_upgrade.py::test_a_user_edited_region_is_reported_as_a_conflict_not_applied` |
 | reordering inside a hunk's own window is a conflict, not a silent success | T3 | `tests/test_cli_upgrade.py::test_a_reordered_manifest_is_a_conflict_not_a_silent_success` |
 | a context matching twice is a conflict — uniqueness is part of the predicate | T3 | `tests/test_cli_upgrade.py::test_a_hunk_whose_context_matches_twice_is_a_conflict` |
+| ...on **both** of its branches, not only the clean one — a gap mutation testing found and reading had not | T3 | `tests/test_cli_upgrade.py::test_an_already_applied_hunk_matching_twice_is_a_conflict_too` |
 | a calibrated KB, which has uncommented `[retrieval.confidence]`, conflicts on that region | T3 | `tests/test_cli_upgrade.py::test_a_kb_with_an_uncommented_retrieval_confidence_table_conflicts_on_that_region` |
 | `[[links.kb]]` entries and tables the template never stamped do **not** stop a hunk placing | T3 | `tests/test_cli_upgrade.py::test_a_kb_with_links_kb_entries_still_places_unambiguous_hunks`, `tests/test_cli_upgrade.py::test_a_manifest_with_extra_tables_still_places_unambiguous_hunks` |
 | nothing under the KB is written — bytes **and** the path set, over the whole tree | T3 | `tests/test_cli_upgrade.py::test_nothing_under_the_kb_is_written`, `tests/test_cli_upgrade.py::test_a_current_kb_prints_up_to_date_and_writes_nothing` |
