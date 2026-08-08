@@ -10,6 +10,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.21.0] — 20260808 10:15
+
+### Added
+
+- **`pnk templates` — what this build can stamp a KB from.** Name, version and description for
+  every installed template, with `--json`. It takes no `--kb`: the answer is a property of the
+  install, not of a KB. Until now `template.available()` was reachable only through the error raised
+  by `pnk init --template` naming something that does not exist, so the way to discover what was
+  installed was to get something wrong first. **CLI-only, decided 20260808** — there is no
+  `pinakes_*` tool for it: the MCP server answers about the KBs it was pointed at, and creation has
+  no MCP surface, so such a tool would list templates its caller has no way to use.
+
+- **A template declares the files it writes into a KB.** `template.toml` gains
+  `files = [...]`, replacing the hardcoded `README.md` / `eval/questions.yaml` pair. **An absent key
+  still means exactly those two**, so `notes` and every third-party template written against an
+  earlier build are unchanged. Each entry is refused if it names the `_versions/` archive, if it
+  would write outside the KB, or if it would read outside the template — and every entry is checked
+  before any entry is written, so a bad declaration leaves no half-stamped KB behind.
+
+### Fixed
+
+- **A damaged template no longer hides the healthy ones.** `pnk templates` lists what it can read
+  and names what it cannot, on both the human and `--json` surfaces, exiting non-zero when anything
+  is unreadable. Previously — and still, for `pnk init --template` — a template directory missing
+  its `template.toml` escaped as a traceback; a listing that aborted on the first bad one would have
+  reported nothing about the rest.
+
+- **A template cannot change the files it stamps without bumping its version.** The template drift
+  gate folds `template.toml`'s new `files` list into its content hash. That file is otherwise
+  excluded — deliberately, so that "a version bumped with no content change" can still be detected —
+  which would have left the one key deciding *what a KB is stamped with* outside the check the
+  archive exists to provide. Only the list is hashed; `name`, `version` and `description` stay out.
+  An absent key contributes nothing, so every hash published before this release is unchanged.
+
 ## [0.20.1] — 20260808 06:41
 
 ### Fixed
@@ -2975,7 +3009,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.20.1...HEAD
+[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.21.0
 [0.20.1]: https://github.com/lucagattoni/pinakes/releases/tag/v0.20.1
 [0.20.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.20.0
 [0.19.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.19.0

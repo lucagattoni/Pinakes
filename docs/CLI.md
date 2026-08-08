@@ -43,9 +43,11 @@ Stamps a new KB and mints its **permanent** KB ULID.
 | `--template TEMPLATE` | `notes` | The blueprint. `notes` is the only one shipped. **A single path component** — `[A-Za-z0-9][A-Za-z0-9_-]*` — refused before any directory is created, so `notes/../notes` and `notes/_versions/1.1` both print `no template named` and write nothing |
 | `--ci` | off | Also write `.github/workflows/pinakes.yml`, which syncs and caches `.pinakes/`. Refuses to overwrite an existing one |
 
-Writes `pinakes.toml`, `docs/`, a `.gitignore` covering `.pinakes/`, and the template's `README.md`
-and `eval/questions.yaml` — each skipped, never overwritten, when it is already there. It does
-**not** create an index — the first `pnk sync` does that.
+Writes `pinakes.toml`, `docs/`, a `.gitignore` covering `.pinakes/`, and **the files the template
+declares** — `README.md` and `eval/questions.yaml` unless it says otherwise
+([KB-UPDATES § `files`](KB-UPDATES.md#61-what-a-template-declares--files)). Each is skipped, never
+overwritten, when it is already there.
+It does **not** create an index — the first `pnk sync` does that.
 
 **It adopts a directory that already has content, and never overwrites a file it finds there.**
 Creating a repository, cloning it, then running `pnk init` inside it is the normal way to start a
@@ -71,6 +73,33 @@ time too.
 Two things `init` cannot know, both needing a manual manifest edit afterwards
 ([GUIDE](GUIDE.md#choosing-a-backend)): it always stamps the `sentence-transformers` provider, and
 it does not include `**/*.pdf` in `[sources]`.
+
+## `pnk templates`
+
+```
+pnk templates [--json]
+```
+
+Lists the templates this build can stamp a KB from — the names `pnk init --template` accepts.
+
+    notes  1.1  Plain Markdown notes: the smallest useful knowledge base.
+
+**It takes no `--kb`, and that is not an omission.** The answer is a property of the *install*, not
+of any KB, and it is the same wherever you run it from. To ask which template a given KB is on and
+what has changed since, use [`pnk upgrade`](#pnk-upgrade).
+
+`--json` emits the same rows with a `reference` field — `notes@1.1`, the string a manifest records —
+so a consumer never has to reassemble it from the name and version.
+
+**A template that cannot be read is named, not skipped.** A damaged install — a template directory
+with no `template.toml`, or one that does not parse — prints as an `unreadable` row beside the
+templates that are fine, followed by a line naming what to reinstall, and exits `1`. The healthy
+rows are still printed: the question you asked is still answered.
+
+| Exit | Means |
+|---|---|
+| `0` | every installed template was listed |
+| `1` | at least one could not be read; the rest were still listed |
 
 ## `pnk sync`
 
@@ -616,4 +645,3 @@ Listed so the shape is known in advance; each names the increment that lands it
 | Surface | Increment | Adds |
 |---|---|---|
 | `pnk ask --deep` | the deep release | Bounded, budgeted synthesis for CLI and cron use, where no agent is present |
-| `pnk templates` | the template release | Lists every installed template with its version and description, `--json` available. Accepted 20260804 10:30 — today `template.available()` is reachable only by naming a template that does not exist, so discovery works by triggering an error |

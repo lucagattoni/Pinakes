@@ -158,6 +158,47 @@ prose: `copy_extras` copies it into every KB, so it is a consumed file, and exem
 the copy in a user's KB drift with no bump to say so. Held by
 `tests/test_template_drift.py::test_editing_the_template_readme_fails_the_gate`.
 
+**One key of `template.toml` is folded back in: `files`.** The exclusion above was scoped to what
+that file held when it was written — a name, a version and a description, none of which change what
+a KB is stamped with. `files` (below) does exactly that, so leaving it out would let a template
+change the set of files written into every new KB with no version bump: the property this gate
+exists to enforce, defeated by a key sitting one file to the side of it. Only the list is hashed —
+`name`, `version` and `description` stay out, so *a version bumped with no content change* remains
+detectable. An absent key contributes nothing, so every hash published before this rule is unchanged
+and no ledger row needed migrating.
+
+## 6.1 What a template declares — `files`
+
+`template.toml` may list the files the template writes into a new KB:
+
+```toml
+name        = "notes"
+version     = "1.1"
+description = "Plain Markdown notes: the smallest useful knowledge base."
+files       = ["README.md", "eval/questions.yaml"]
+```
+
+**An absent `files` means `["README.md", "eval/questions.yaml"]` — never none.** That is what
+`copy_extras` copied before the key existed, and every template shipped so far declares nothing, so
+absent has to keep meaning what it always did. An explicit `files = []` is a different statement and
+copies nothing.
+
+Entries are relative to the KB root, and each is refused — before *any* file is written, so a bad
+declaration never leaves a half-stamped KB — when it:
+
+| Refusal | Why |
+|---|---|
+| names `_versions` as a path component | An archived version is the frozen record of what a reference *meant*. Copying one into a KB stamps content from a version nobody released under the name of one they did. Containment cannot catch this: the path lands *inside* the KB |
+| is absolute, or empty | Entries are relative to the KB root |
+| lands outside the KB | `../../evil.md`, and a symlinked directory in the target — which is what adopting an existing directory can present |
+| reads outside the template | A symlinked directory in the *template* tree lands its destination inside the KB while its source escapes, copying a file the template does not own into a KB that is then committed and published |
+
+The last two are separate layers and neither covers the other: an escaping destination reads from
+inside the template, and an escaping source writes to inside the target.
+
+A template is packaged data, which is not the same as trusted data — `pnk init --template` names
+whatever is installed, and that can have arrived from anywhere.
+
 The gate runs at commit time, so it produces no warnings in any user's KB. Its history leg needs a
 full clone, and **says so when it has been skipped** — a skip is not a pass.
 

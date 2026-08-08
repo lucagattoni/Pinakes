@@ -15,7 +15,7 @@ the planner's, and this file held six. They were closed as part of that ownershi
 implementer. What remains below is code and tooling.
 
 **It was empty on 20260805 22:18, for the first time since 20260731. It refilled on 20260807, and
-again on 20260808 — five live items, and the five arrived four different ways.** Items 1 and 2
+again on 20260808 — six live items, and the six arrived five different ways.** Items 1 and 2
 came out of *building* 2d and are invisible from reading the code that contains them, which is the
 pattern every entry this list had ever held until 20260808. **Item 3 broke it**: found by T3's
 adversarial review, by reading, on a surface T3 only inherited. **Item 4 is a third way again** —
@@ -23,8 +23,11 @@ it was not found, it was *created*, by the increment that closed the item standi
 T4 resolved the CRLF item (preserve a uniform convention, refuse a mixed one — closed below) and
 opened this one in the same breath. **Item 5 is a fourth**: T5 fixed a defect in one file and then
 asked where else that defect class lives, which found it two files away in code T5 never touched.
-Building, reading, shipping, and generalising from a fix each find a different class, and none of
-them finds the others'.
+**Item 6 is a fifth**: T7 built a new surface and asked what it *inherited* rather than what it
+introduced — which surfaced a half-created KB that `pnk init` has been capable of leaving since it
+existed, and that no increment had reason to look at until one added a new way to trigger it.
+Building, reading, shipping, generalising from a fix, and reviewing what a new surface inherits each
+find a different class, and none of them finds the others'.
 
 The list refills from use, so an empty one means nobody has run Pinakes lately, never that it is
 finished. Note what is **not** here: **both releases in
@@ -137,6 +140,33 @@ field today — verified: no test asserts it and no tool consumes it.
 
 **Recorded 20260808 by T5's first review pass**, which found it by asking where else the same
 defect class lives.
+
+
+### 6 · `pnk init` writes the manifest before it knows the template's files are legal
+
+**File:** `src/pinakes/init.py` — `pinakes.toml` is written at line 88, `copy_extras` is called at
+line 99.
+**Current:** a template whose `files = [...]` declaration is refused — it names `_versions/`, writes
+outside the KB, or reads outside the template — raises after the manifest, `docs/` and `.gitignore`
+already exist. The user is left with a directory that is *almost* a KB, and a second `pnk init`
+then refuses it as one.
+
+**Required: a decision, not a correction.** Two defensible answers. Validate everything before
+writing anything, which `init` already does for one case —
+`test_ci_refuses_an_existing_workflow_before_creating_anything` pins exactly that property for
+`--ci`, and its docstring records that the refusal *"left a half-made KB"* until it was moved. Or
+accept it and say so in the error, since the remedy is `rm -rf` on a directory the user just asked
+to have created.
+
+**Why it is an item rather than something T7 fixed.** It is not T7's defect: **any** failure after
+line 88 produces the same state, and that has been true since `init` existed. T7 only adds one more
+way to reach it. Fixing it properly means deciding whether `init` is transactional, which is a
+question about `init` rather than about templates — and the narrow version (hoist only the
+declaration check, which needs no target) would leave the containment checks behind and make the
+guarantee half-true, which is worse than the current honest failure.
+
+**Recorded 20260808 by T7's third review pass**, which found it by asking what a new surface
+inherits rather than what it introduces.
 
 
 ---
