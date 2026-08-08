@@ -246,12 +246,34 @@ def synthetic_template(
     monkeypatch.setattr(template, "PACKAGE", package)
     importlib.invalidate_caches()
 
-    def _make(name: str, *, versions: Mapping[str, str], current: str) -> str:
+    def _make(
+        name: str,
+        *,
+        versions: Mapping[str, str],
+        current: str,
+        files: Sequence[str] | None = None,
+        extras: Mapping[str, str] | None = None,
+    ) -> str:
+        """`files` declares the template's `files = [...]`; `extras` writes files into its tree.
+
+        Both are optional and default to absent, so every caller written before T7 keeps building
+        exactly the template it built before — an absent `files` key is itself the thing T7's
+        historical-two test asserts on, and it must stay reachable from this fixture.
+        """
+
         def declaration(version: str) -> str:
-            return f'name = "{name}"\nversion = "{version}"\ndescription = "synthetic"\n'
+            body = f'name = "{name}"\nversion = "{version}"\ndescription = "synthetic"\n'
+            if files is not None and version == current:
+                rendered = ", ".join(f'"{entry}"' for entry in files)
+                body += f"files = [{rendered}]\n"
+            return body
 
         directory = root / name
         directory.mkdir()
+        for relative, content in (extras or {}).items():
+            destination = directory / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(content, encoding="utf-8")
         (directory / "template.toml").write_text(declaration(current), encoding="utf-8")
         (directory / "pinakes.toml.j2").write_text(versions[current], encoding="utf-8")
         for version, source in versions.items():

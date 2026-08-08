@@ -1,6 +1,7 @@
 """`pnk init`: a directory that is already correct, and an id that is never minted twice."""
 
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -205,3 +206,170 @@ def test_created_is_utc_even_where_the_machine_clock_is_not(
         f"({before:%Y%m%d %H:%M}..{after:%Y%m%d %H:%M}) — a naive clock would read "
         f"{datetime.now().strftime('%Y%m%d %H:%M')}"
     )
+
+
+# --- T7: a template declares the files it writes -------------------------------------------------
+#
+# **Every one of these needs a filesystem-backed template, not the packaged one.** `notes` declares
+# no `files` key at all (which is what the historical-two test below asserts), and the symlink cases
+# need something `resolve()` can follow — `importlib.resources` hands back a `Traversable`, which
+# for a zip-imported package has neither symlinks nor a `resolve()`. `synthetic_template` builds a
+# real directory in a real importable package, so `_root` runs its actual `importlib.resources`
+# path against it.
+
+MINIMAL_MANIFEST = '[kb]\nname = "{{ name }}"\nid = "{{ kb_id }}"\n'
+
+
+def test_a_template_without_a_files_key_still_copies_the_historical_two(tmp_path: Path) -> None:
+    """Absent means the two files that were hardcoded before T7 — never none.
+
+    Every template in existence declares nothing, `notes` included, so reading an absent key as an
+    empty list would silently stop stamping a README and a starter golden set into every new KB.
+    """
+    target = tmp_path / "kb"
+    target.mkdir()
+
+    written, adopted = template.copy_extras("notes", target)
+
+    assert adopted == []
+    assert {path.relative_to(target).as_posix() for path in written} == {
+        "README.md",
+        "eval/questions.yaml",
+    }
+
+
+def test_a_declared_file_list_is_copied_and_an_undeclared_file_is_not(
+    synthetic_template: Callable[..., str], tmp_path: Path
+) -> None:
+    """Three files in the tree, two declared. The third is the discriminator.
+
+    Without it the test would pass under an implementation that ignores `files` entirely and copies
+    whatever it finds.
+    """
+    name = synthetic_template(
+        "declared",
+        versions={"1.0": MINIMAL_MANIFEST},
+        current="1.0",
+        files=["README.md", "eval/questions.yaml"],
+        extras={
+            "README.md": "the template's readme\n",
+            "eval/questions.yaml": "questions: []\n",
+            "UNDECLARED.md": "never asked for\n",
+        },
+    )
+    target = tmp_path / "kb"
+    target.mkdir()
+
+    written, _ = template.copy_extras(name, target)
+
+    assert {path.relative_to(target).as_posix() for path in written} == {
+        "README.md",
+        "eval/questions.yaml",
+    }
+    assert not (target / "UNDECLARED.md").exists()
+    assert (target / "README.md").read_text(encoding="utf-8") == "the template's readme\n"
+
+
+def test_a_files_entry_naming_the_version_archive_is_refused(
+    synthetic_template: Callable[..., str], tmp_path: Path
+) -> None:
+    """The property that moved here from T1, where it could not fail.
+
+    While `copy_extras` iterated a hardcoded pair, no `_versions/` path was reachable whatever the
+    archive held, so an assertion there was satisfied by the hardcoding rather than by any rule.
+
+    **Asserted on the archive rule's own words, not merely on a raise.** Containment would let this
+    entry through — it lands *inside* the target — so a test satisfied by any `TemplateError` would
+    stay green under an implementation that has no archive rule at all.
+    """
+    name = synthetic_template(
+        "archived",
+        versions={"1.0": MINIMAL_MANIFEST},
+        current="1.0",
+        files=["_versions/1.0/README.md"],
+    )
+    target = tmp_path / "kb"
+    target.mkdir()
+
+    with pytest.raises(TemplateError) as exc_info:
+        template.copy_extras(name, target)
+
+    assert "_versions/1.0/README.md" in exc_info.value.message
+    assert "version archive" in exc_info.value.message
+    assert not (target / "_versions").exists()
+
+
+def test_a_template_file_entry_that_escapes_the_target_is_refused(
+    synthetic_template: Callable[..., str], tmp_path: Path
+) -> None:
+    """Both layers of the write side, because neither covers the other.
+
+    `../../evil.md` is caught statically. A symlinked directory *in the target* has no `..`, no
+    absolute path and exists only on disk — the case a KB adopted from an existing directory really
+    presents, since `copy_extras` runs against whatever is already there.
+    """
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    lexical = synthetic_template(
+        "lexical-escape",
+        versions={"1.0": MINIMAL_MANIFEST},
+        current="1.0",
+        files=["../../evil.md"],
+        extras={"README.md": "unused\n"},
+    )
+    target = tmp_path / "kb"
+    target.mkdir()
+    with pytest.raises(TemplateError) as exc_info:
+        template.copy_extras(lexical, target)
+    assert "../../evil.md" in exc_info.value.message
+    assert "outside the KB" in exc_info.value.message
+
+    symlinked = synthetic_template(
+        "symlinked-target",
+        versions={"1.0": MINIMAL_MANIFEST},
+        current="1.0",
+        files=["escape/evil.md"],
+        extras={"escape/evil.md": "the template's own copy\n"},
+    )
+    adopted = tmp_path / "adopted"
+    adopted.mkdir()
+    (adopted / "escape").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(TemplateError) as exc_info:
+        template.copy_extras(symlinked, adopted)
+    assert "outside the KB" in exc_info.value.message
+    assert not (outside / "evil.md").exists(), "the write happened before the refusal"
+
+
+def test_a_template_file_entry_that_reads_outside_the_template_is_refused(
+    synthetic_template: Callable[..., str], tmp_path: Path
+) -> None:
+    """The read side, which the write-side check cannot catch — it is a second layer.
+
+    A symlinked directory in the *template* tree lands its destination perfectly inside the KB;
+    what escapes is the source. The file it names is then copied **into** the KB and published with
+    it, which for a repo meant to be committed is the more expensive direction of the two.
+    """
+    secret = tmp_path / "elsewhere"
+    secret.mkdir()
+    (secret / "id_rsa").write_text("not the template's to give away\n", encoding="utf-8")
+
+    name = synthetic_template(
+        "reads-out",
+        versions={"1.0": MINIMAL_MANIFEST},
+        current="1.0",
+        files=["borrowed/id_rsa"],
+    )
+    root = template._root(name)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(root, Path), "the fixture must build a real directory for a symlink to exist"
+    root.joinpath("borrowed").symlink_to(secret, target_is_directory=True)
+
+    target = tmp_path / "kb"
+    target.mkdir()
+
+    with pytest.raises(TemplateError) as exc_info:
+        template.copy_extras(name, target)
+
+    assert "borrowed/id_rsa" in exc_info.value.message
+    assert "outside the template" in exc_info.value.message
+    assert not (target / "borrowed").exists()

@@ -122,6 +122,67 @@ def run_init(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _templates_arguments(parser: argparse.ArgumentParser) -> None:
+    # **No `--kb`, deliberately.** This lists what *this build* has installed, which is the same
+    # answer wherever it is run from — a `--kb` would imply the listing varies per KB and invite a
+    # later reader to "fix" its absence. Which template a given KB is on is a different question,
+    # and `pnk upgrade` is the command that answers it.
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
+
+
+def run_templates(args: argparse.Namespace) -> int:
+    """`pnk templates`. What this build can stamp a KB from.
+
+    **The listing exists because the information did not.** `template.available()` was reachable
+    only by naming a template that does not exist and reading the error, so the way to find out what
+    was installed was to get something wrong first.
+
+    **CLI-only, decided 20260808 — there is no `pinakes_*` tool for this.** The MCP server answers
+    about the KBs it was pointed at, and a template is not one of them: it is package data consumed
+    at *creation* time, and creation has no MCP surface at all. A tool listing templates would name
+    things the caller has no way to act on, and it would be the first tool on that surface reporting
+    machine state from outside the served KBs — which `docs/DESIGN.md` §4.7 states as a boundary
+    rather than a convenience.
+    """
+    import json as json_module
+
+    from pinakes.template import available, describe
+
+    installed = [describe(name) for name in available()]
+
+    if args.json:
+        print(
+            json_module.dumps(
+                [
+                    {
+                        "name": info.name,
+                        "version": info.version,
+                        # The string a manifest records, emitted rather than left to be
+                        # reassembled: `name@version` is `TemplateInfo.reference`'s format, and a
+                        # consumer joining the two fields itself would be a second definition of it.
+                        "reference": info.reference,
+                        "description": info.description,
+                    }
+                    for info in installed
+                ],
+                indent=2,
+            )
+        )
+        return EXIT_OK
+
+    if not installed:
+        # Reachable only if the package data is damaged, which is exactly when a silent empty
+        # listing is worst: it reads as "you have no templates" rather than "this install is
+        # broken".
+        print("no templates are installed — this build's package data is incomplete.")
+        return EXIT_OK
+
+    width = max(len(info.name) for info in installed)
+    for info in installed:
+        print(f"{info.name.ljust(width)}  {info.version}  {info.description}")
+    return EXIT_OK
+
+
 def _search_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("query", help="what to search for")
     _kb_argument(parser)
@@ -905,6 +966,13 @@ COMMANDS: tuple[Command, ...] = (
         "I10",
         runner=lambda args: run_init(args),
         arguments=_init_arguments,
+    ),
+    Command(
+        "templates",
+        "List the templates this build can stamp a KB from",
+        "T7",
+        runner=lambda args: run_templates(args),
+        arguments=_templates_arguments,
     ),
     Command(
         "sync",

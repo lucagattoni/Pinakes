@@ -12,12 +12,13 @@ from dataclasses import dataclass
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from jinja2 import StrictUndefined, Template, UndefinedError
 
 from pinakes.errors import TemplateError
 from pinakes.manifest import Manifest
+from pinakes.paths import lands_inside
 
 PACKAGE = "pinakes.templates"
 MANIFEST_TEMPLATE = "pinakes.toml.j2"
@@ -265,6 +266,73 @@ def cannot_compare(missing: Sequence[str], name: str, archived: Sequence[str]) -
     )
 
 
+HISTORICAL_FILES: tuple[str, ...] = ("README.md", "eval/questions.yaml")
+"""What `copy_extras` copied before a template could declare it, and what an absent `files` means.
+
+**Absent is these two, never none.** Every template that exists today declares nothing — `notes`
+included — so reading an absent key as an empty list would stop stamping a README and a starter
+golden set into every new KB, and would do it silently. It also means no third-party template
+written against an earlier build changes behaviour by standing still.
+"""
+
+
+def declared_files(name: str) -> tuple[str, ...]:
+    """The files `name` says it writes into a KB, validated as a declaration rather than as a path.
+
+    **What is checked here is what can be judged without a target**: the shape of the value, and the
+    version archive. Whether an entry *lands* inside a KB depends on the KB — a symlinked directory
+    in the target is a fact about the target, not about the template — so `copy_extras` checks that
+    against the real one.
+
+    **`_versions` is refused as a path component, and this is the increment where such a rule can
+    first fail.** While `copy_extras` iterated a hardcoded pair, no archive path was reachable
+    whatever the archive held, and a test asserting otherwise was satisfied by the hardcoding rather
+    than by any rule. The moment the list is read from `template.toml`, a template can declare
+    `_versions/1.0/README.md` — and containment would **pass** it, because it lands inside the
+    target. Containment is the wrong instrument here: it measures escape, not provenance. An
+    archived version is the frozen record of what a reference once meant, so copying it into a KB
+    would stamp content from a version nobody released under the name of one they did.
+    """
+    raw = _root(name).joinpath("template.toml").read_text(encoding="utf-8")
+    data: dict[str, Any] = tomllib.loads(raw)
+    if "files" not in data:
+        return HISTORICAL_FILES
+
+    # Narrowed element by element rather than with `all(isinstance(...))`: `tomllib` returns `Any`,
+    # so the comprehension's item type stays unknown under pyright strict and the list would be
+    # `list[str]` only by assertion. Building the typed list is the narrowing.
+    declared: object = data["files"]
+    shape = TemplateError(
+        f"template {name} declares a `files` that is not a list of strings.",
+        remedy='`files = ["README.md", "eval/questions.yaml"]` — paths relative to the KB.',
+    )
+    if not isinstance(declared, list):
+        raise shape
+
+    entries: list[str] = []
+    for item in cast(list[object], declared):
+        if not isinstance(item, str):
+            raise shape
+        entries.append(item)
+
+    for entry in entries:
+        if not entry or Path(entry).is_absolute():
+            raise TemplateError(
+                f"template {name} declares {entry!r}, which is not a relative path.",
+                remedy="Every `files` entry is relative to the KB root.",
+            )
+        if VERSIONS_DIR in Path(entry).parts:
+            raise TemplateError(
+                f"template {name} declares {entry!r}, which names the version archive.",
+                remedy=(
+                    f"A template cannot copy anything out of {VERSIONS_DIR}/. What is archived "
+                    "there is the frozen content of a released version, kept so `pnk upgrade` can "
+                    "say what a recorded reference meant — never content to stamp into a KB."
+                ),
+            )
+    return tuple(entries)
+
+
 def copy_extras(name: str, target: Path) -> tuple[list[Path], list[Path]]:
     """Copy everything a KB should own: the template's README and its starter golden set.
 
@@ -272,14 +340,60 @@ def copy_extras(name: str, target: Path) -> tuple[list[Path], list[Path]]:
     exactly as they are**. A directory worth adopting usually has a `README.md` already, and it is
     the user's; replacing it with a template's would be destroying the thing they wrote to make
     room for boilerplate.
+
+    **Every entry is checked before any entry is written.** A template whose second declaration
+    escapes would otherwise leave the first one written into a KB that then fails to be created —
+    the partial state `pnk init` has no way to describe and no user has a reason to expect.
+
+    **A template is packaged data, which is not the same as trusted data.** `pnk init --template`
+    names whatever is installed, and that can have arrived from anywhere, so the declaration is
+    checked against the target it will actually be written into rather than assumed well-formed.
     """
+    root = _root(name)
+    anchor = target.resolve()
+    entries = declared_files(name)
+
+    for relative in entries:
+        try:
+            inside = lands_inside(anchor, target, relative)
+        except (ValueError, OSError) as exc:
+            raise TemplateError(
+                f"template {name} declares {relative!r}, which cannot be written: {exc}",
+                remedy="Correct the template's `files`.",
+            ) from exc
+        if not inside:
+            raise TemplateError(
+                f"template {name} declares {relative!r}, which writes outside the KB.",
+                remedy=(
+                    "Every `files` entry must land inside the KB being created. An entry that "
+                    "walks out writes into a directory the user never pointed pinakes at."
+                ),
+            )
+        # **The source side of the same question, and it is a second layer rather than the same one
+        # twice.** The check above stops an entry *writing* outside the KB; this one stops it
+        # *reading* outside the template. A symlinked directory in the template tree points wherever
+        # it likes on the machine, and the file it names would be copied **into** the KB — which for
+        # a KB that is then committed and published is the more expensive direction of the two.
+        # Neither layer catches the other's case: an escaping destination lands inside the template,
+        # and an escaping source lands inside the target.
+        #
+        # Guarded on `Path` because `importlib.resources` hands back a `Traversable`, which for a
+        # zip-imported package has no symlinks to follow and no `resolve()` to follow them with. A
+        # wheel installs unpacked, so the real path is the one users get.
+        if isinstance(root, Path) and not lands_inside(root.resolve(), root, relative):
+            raise TemplateError(
+                f"template {name} declares {relative!r}, which reads outside the template.",
+                remedy=(
+                    "Every `files` entry must name a file inside the template's own directory. An "
+                    "entry that walks out copies something the template does not own into the KB."
+                ),
+            )
+
     written: list[Path] = []
     adopted: list[Path] = []
-    root = _root(name)
-
-    for relative in ("README.md", "eval/questions.yaml"):
+    for relative in entries:
         source = root
-        for part in relative.split("/"):
+        for part in Path(relative).parts:
             source = source.joinpath(part)
         if not source.is_file():
             continue
