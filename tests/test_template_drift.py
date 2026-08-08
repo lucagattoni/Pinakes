@@ -206,6 +206,58 @@ def test_a_new_consumed_file_is_covered_without_editing_the_gate(tmp_path: Path)
     assert "PROMPTS.md is live-only" in result.stderr
 
 
+def test_declaring_a_files_list_without_bumping_the_version_fails_the_gate(tmp_path: Path) -> None:
+    """T7 put a behaviour-bearing key inside the one file the hash excludes.
+
+    `template.toml` is outside the content hash so that leg (ii) — a bump with no content change —
+    can fail at all. Before T7 the only editable thing in it was the description. `files = [...]`
+    decides *which* files a KB is stamped with, so leaving it out entirely would let a template
+    change what it writes into every new KB with no version bump: the property the archive exists
+    to hold, defeated by a key living one file to the side of it.
+    """
+    templates = copy_real(tmp_path)
+    declaration = templates / "notes" / "template.toml"
+    declaration.write_text(
+        declaration.read_text(encoding="utf-8") + 'files = ["README.md"]\n', encoding="utf-8"
+    )
+    result = run(templates)
+    assert result.returncode == 1
+    assert "differ from archived 1.1" in result.stderr
+
+
+def test_the_rest_of_template_toml_stays_outside_the_hash(tmp_path: Path) -> None:
+    """The negative control for the test above, and it is what keeps leg (ii) able to fail.
+
+    Only `files` is folded in. Hashing the whole declaration would put `version` in the digest,
+    making every bump change the hash by construction — and "a version bumped with no content
+    change" could then never be detected. The description is limit (b), unchanged.
+    """
+    templates = copy_real(tmp_path)
+    before = content_hash(templates / "notes")
+    declaration = templates / "notes" / "template.toml"
+    body = declaration.read_text(encoding="utf-8")
+    assert "description" in body, "the key this test edits moved; re-aim it"
+    declaration.write_text(
+        body.replace('description = "', 'description = "edited: '), encoding="utf-8"
+    )
+    assert content_hash(templates / "notes") == before
+
+
+def test_an_absent_files_key_hashes_differently_from_an_empty_one(tmp_path: Path) -> None:
+    """Absent means the historical two files; `[]` means none. They must not hash alike.
+
+    This is also what keeps every hash written before T7 valid: no template declares the key, so
+    the absent case contributes nothing and the published `_versions.toml` rows still match.
+    """
+    templates = copy_real(tmp_path)
+    absent = content_hash(templates / "notes")
+    declaration = templates / "notes" / "template.toml"
+    declaration.write_text(
+        declaration.read_text(encoding="utf-8") + "files = []\n", encoding="utf-8"
+    )
+    assert content_hash(templates / "notes") != absent
+
+
 def test_the_archive_itself_is_outside_the_hash(tmp_path: Path) -> None:
     """`_versions/` is excluded from the live hash, or archiving version N would change the
     content hashed for version N+1 and every bump would invalidate every earlier one."""
