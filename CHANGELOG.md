@@ -8,6 +8,27 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.20.1] — 20260808 06:41
+
+### Fixed
+
+- **Breaking, and deliberately in a patch: `vector_tier = "sqlite-vec"` is now refused, and a KB
+  whose `pinakes.toml` sets it stops loading entirely — every command, not only search.** The fix is
+  one line, `vector_tier = "auto"`, and it changes nothing about how that KB behaves: the value was
+  accepted and then ignored, so such a KB was already getting the NumPy tier. `sync` stamped `numpy`
+  into the index's `meta` whatever the manifest said and `search` never read the field, so the
+  setting was silent on all four surfaces — `sync`, `search`, the index's own record, and
+  `pnk doctor`. The error names the tiers that are built and points at `docs/STATUS.md`. The value
+  returns when the tier it names is built, in the template release; its removal is a fix, not a
+  decision against it. The precedent for hard-erroring a manifest that previously loaded is this
+  project's own 0.7.1, on the same reasoning: the previous behaviour *was* the defect.
+- **The index's `vector_tier` is written from the resolver that decides it, not from a literal.**
+  `sync.py` hardcoded `"numpy"` while `[retrieval] vector_tier` was a parsed field nothing consumed,
+  so `meta`'s claim and the code path had no reason to agree beyond there being one tier.
+  `search.resolve_tier()` is now the single answer to which tier ran.
+
 ## [0.20.0] — 20260808 05:41
 
 ### Added
@@ -2954,7 +2975,8 @@ Not in this release, by design: PDF ingest (v0.2), cross-KB links (v0.3), `pnk a
 budget ledger (v0.4), the `sqlite-vec` tier and template ecosystem (v0.5). Their schema ships now
 where it could not be retrofitted — ULIDs, sidecars for every document, `[[links.kb]]`, `[budget]`.
 
-[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/lucagattoni/pinakes/compare/v0.20.1...HEAD
+[0.20.1]: https://github.com/lucagattoni/pinakes/releases/tag/v0.20.1
 [0.20.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.20.0
 [0.19.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.19.0
 [0.18.0]: https://github.com/lucagattoni/pinakes/releases/tag/v0.18.0
