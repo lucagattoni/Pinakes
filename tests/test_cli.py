@@ -2,6 +2,7 @@
 
 import argparse
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,12 @@ from pinakes.manifest import Manifest
 DESIGN_V01_COMMANDS = frozenset({"init", "sync", "search", "doctor", "install-hooks", "serve"})
 # `budget` lands in I6b (v0.2); `links` in L4 and `link` in L6 (the links release); `upgrade` in T3
 # (the template release), declared by docs/DESIGN.md §6.1 rather than §8.
-DESIGN_COMMANDS = DESIGN_V01_COMMANDS | frozenset({"budget", "links", "link", "upgrade"})
+# `templates` in T7, on the same footing as `upgrade`: its declaration is docs/CLI.md's row, added
+# when decision O-1 accepted the surface (20260804 10:30) and **before** the command existed, so
+# that the repository never held a command with no prior decision record.
+DESIGN_COMMANDS = DESIGN_V01_COMMANDS | frozenset(
+    {"budget", "links", "link", "upgrade", "templates"}
+)
 
 
 def test_version_is_set() -> None:
@@ -52,6 +58,11 @@ IMPLEMENTED = frozenset(
         "links",
         "link",
         "upgrade",
+        # T7. Deliberately **not** added to `DESIGN_COMMANDS` above: that set is docs/DESIGN.md
+        # §8's list, hard-coded so a dropped command fails loudly, and §8 does not name this one —
+        # `pnk templates` was decided by O-1 of the template release plan and is carried by
+        # docs/CLI.md. Adding it here says it is built; adding it there would claim §8 says so.
+        "templates",
     }
 )
 
@@ -268,3 +279,114 @@ def test_run_sync_wires_progress_only_for_a_quiet_free_tty(
         cli_module.main(args)
         has_progress = captured.get("progress") is not None
         assert has_progress is expect_progress, (isatty, quiet, expect_progress)
+
+
+def test_pnk_templates_lists_notes_with_its_version(capsys: pytest.CaptureFixture[str]) -> None:
+    """The listing exists because the information was reachable only by getting something wrong.
+
+    Before T7, `template.available()` was called from one place: the error raised when
+    `pnk init --template` names something that does not exist. Asserted against the *shipped*
+    template rather than a synthetic one, because what a user needs the command to prove is that
+    this build can stamp `notes` — a synthetic fixture would prove the formatting and nothing else.
+    """
+    from pinakes.template import describe
+
+    assert main(["templates"]) == EXIT_OK
+    out = capsys.readouterr().out
+
+    installed = describe("notes")
+    assert "notes" in out
+    # The version, not merely the name: a listing that omits it cannot answer "which one am I on",
+    # which is half of why the command was accepted.
+    assert installed.version in out
+    assert installed.description in out
+
+
+def test_pnk_templates_json_matches_the_human_output(capsys: pytest.CaptureFixture[str]) -> None:
+    """Two renderings of one answer, so neither can drift into being the honest one on its own."""
+    import json
+
+    assert main(["templates", "--json"]) == EXIT_OK
+    payload = json.loads(capsys.readouterr().out)
+
+    assert main(["templates"]) == EXIT_OK
+    human = capsys.readouterr().out
+
+    assert payload, "`--json` listed no templates at all"
+    for row in payload:
+        assert set(row) == {"name", "version", "reference", "description"}
+        # `reference` is emitted rather than left to be reassembled — assert it agrees with the
+        # parts, or a consumer joining them itself would be a second definition of the format.
+        assert row["reference"] == f"{row['name']}@{row['version']}"
+        assert row["name"] in human
+        assert row["version"] in human
+    assert len(payload) == len([line for line in human.splitlines() if line.strip()])
+
+
+def test_pnk_templates_takes_no_kb_flag() -> None:
+    """It lists what this *build* installed, which does not vary by KB.
+
+    Pinned because the omission looks like an oversight beside every other command here, and the
+    obvious "fix" would make the answer look KB-dependent when it is not.
+    """
+    from pinakes.cli import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["templates", "--kb", "."])
+
+
+def test_pnk_templates_reports_a_damaged_template_without_hiding_the_good_ones(
+    synthetic_template: Callable[..., str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """One unreadable template must not cost the user the answer about every other one.
+
+    The general defect — `template.describe` raising a bare `OSError` on a damaged install — is an
+    open correction that reaches `init`, `doctor` and `upgrade` too, and is deliberately **not**
+    fixed here. What is fixed is the blast radius this command introduced: a listing that aborts on
+    the first bad directory reports nothing about the good ones, and does it as a traceback.
+    """
+    from pinakes import template as template_module
+
+    good = synthetic_template("good", versions={"1.0": "[kb]\n"}, current="1.0")
+    root = template_module._root(good)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(root, Path)
+    # A sibling directory with no `template.toml` at all — the shape a half-finished install leaves.
+    (root.parent / "broken").mkdir()
+
+    assert main(["templates"]) == EXIT_FAILURE
+    out = capsys.readouterr().out
+
+    assert "good" in out, "a damaged sibling hid a template that reads perfectly"
+    assert "broken" in out
+    assert "unreadable" in out
+    assert "reinstall" in out
+    assert "Traceback" not in out
+
+
+def test_pnk_templates_json_reports_the_damaged_one_too(
+    synthetic_template: Callable[..., str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--json` carries the same finding.
+
+    A consumer must not be able to read a silently short list as a healthy one.
+    """
+    import json
+
+    from pinakes import template as template_module
+
+    good = synthetic_template("good", versions={"1.0": "[kb]\n"}, current="1.0")
+    root = template_module._root(good)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(root, Path)
+    (root.parent / "broken").mkdir()
+
+    assert main(["templates", "--json"]) == EXIT_FAILURE
+    payload = json.loads(capsys.readouterr().out)
+
+    by_name = {row["name"]: row for row in payload}
+    assert by_name["good"]["version"] == "1.0"
+    assert "unreadable" in by_name["broken"]
+    assert "version" not in by_name["broken"], "a damaged template must not claim a version"

@@ -41,6 +41,7 @@ from pinakes.errors import InvalidIdError, ManifestError, NoKbFoundError
 from pinakes.extract import registered_extractors
 from pinakes.graph.traverse import DEFAULT_ADJACENT_K, MAX_ADJACENT_K
 from pinakes.ids import KbId, parse_kb_id
+from pinakes.paths import lands_inside
 
 MANIFEST_NAME = "pinakes.toml"
 STATE_DIR = ".pinakes"
@@ -569,24 +570,24 @@ def _check_include_containment(section: SourcesSection, path: Path) -> None:
     into *your* tree. So this is a hard error at load, matching the `roots` precedent — the manifest
     is the user's own, unlike the partner manifests `linkscan.sidecars_under` merely reports on.
 
-    **The predicate is `linkscan`'s, copied rather than re-derived.** Four attempts there each got
-    it wrong differently, and mirroring the survivor is cheaper than repeating that sequence:
+    **The predicate is `paths.lands_inside`, which is where the four failed attempts at it are
+    recorded.** It was `linkscan`'s, copied here rather than re-derived; a template's declared
+    `files` needed the same test, so it moved into one function with two callers rather than being
+    copied a second time. What stays here is the part that is about *globs* rather than about
+    landing:
 
-    * **Not "does the pattern contain `..`"** — `../notes/*.md` from `docs/` lands *inside* the KB
-      and is a legitimate thing to write. What matters is where the path lands, never whether `..`
-      occurs in it. Refusing a valid manifest is the same defect as accepting an invalid one.
     * **Not "resolve the fixed prefix before the first glob component"** — `*/../../../outside/**`
-      has an empty prefix, so it passes unconditionally and runs its `..` inside `glob`.
-    * **Not "resolve the whole path"** — with no glob component the probe *is* the file, and
-      resolving it whole follows a final symlink, so `include = ["alpha.md"]` would be refused as an
-      escape while `include = ["*.md"]`, naming the same file, is accepted. Parent resolved, final
-      component left alone: `..` collapses and a symlinked *ancestor* is caught, while a symlinked
-      *document* stays readable.
+      has an empty prefix, so it passes unconditionally and then runs its `..` inside `glob`. This
+      is the one failed attempt of the four that is about globbing rather than about landing, which
+      is why it stayed here when the other three moved.
     * **`**` is dropped from the probe**, because it matches *zero* or more components while
       `Path.parts` counts it as one. Keeping it let a following `..` cancel it, so the probe landed
       one level below where the walk actually goes. Dropping it is exact, not merely conservative:
       every component `**` expands to is one a following `..` then pops, so the zero-expansion is
       the highest the walk can reach, and that is what must be inside the KB.
+    * **The remaining glob metacharacters are left in the probe.** `*` and `?` match within one
+      component, so they cannot change how many components deep the probe lands — which is the only
+      thing the predicate measures.
 
     **This is the bound, and it is not the whole guard.** A symlinked *directory* inside the KB is
     invisible to any static check — no `..`, no absolute path, and the escape only exists on disk —
@@ -611,17 +612,15 @@ def _check_include_containment(section: SourcesSection, path: Path) -> None:
                     "absolute pattern at all, wherever it points."
                 ),
             )
+        # Dropped before the predicate sees it, for the reason the docstring gives — `**` is glob
+        # syntax, and `lands_inside` is about landing. Re-joining the surviving parts is lossless
+        # here: a `parts` element never contains a separator, and an absolute pattern was refused
+        # above, so nothing that would change meaning survives the round trip.
+        literal = "/".join(part for part in Path(pattern).parts if part != "**")
         for name in section.roots:
             base = (root / name).resolve()
             try:
-                probe = base.joinpath(*(part for part in Path(pattern).parts if part != "**"))
-                # The final component is resolved too when it is `..`, which leaving the last one
-                # alone otherwise lets through: `Path("/kb/..").is_relative_to("/kb")` is *true*
-                # lexically. The exemption exists so a symlinked document stays readable, and `..`
-                # is never one.
-                landing = (
-                    probe.resolve() if probe.name == ".." else probe.parent.resolve() / probe.name
-                )
+                inside = lands_inside(anchor, base, literal)
             except (ValueError, OSError) as exc:
                 # `resolve()` raises on an embedded NUL, which `tomllib` accepts.
                 raise ManifestError(
@@ -630,7 +629,7 @@ def _check_include_containment(section: SourcesSection, path: Path) -> None:
                     message=f"`include` pattern {pattern!r} cannot be walked: {exc}",
                     remedy="Remove or correct the pattern.",
                 ) from exc
-            if not landing.is_relative_to(anchor):
+            if not inside:
                 raise ManifestError(
                     path,
                     table="sources",

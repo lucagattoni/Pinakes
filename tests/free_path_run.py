@@ -189,6 +189,16 @@ def _run_free_surfaces(root: Path) -> None:
     on a WARN (an unpinned revision, a missing extra), and gate 4's claim is about the import graph,
     never about the health of a throwaway KB.
     """
+    # `pnk templates` (T7) — first, because it is the one command here that takes no KB at all and
+    # so cannot depend on anything the rest of this function does.
+    #
+    # **No row is added for it in `test_paid_path.py`'s surface list, and that is deliberate.** The
+    # plan asked for one, but there is no module a row could name that would discriminate:
+    # `run_templates` lives in `pinakes.cli`, and `pinakes.template` is already imported by the
+    # `pnk init` in `_build` above — so a `"pinakes.template"` row would stay green with this call
+    # deleted, which is the one thing a coverage row must never do.
+    if main(["templates"]) != 0:
+        raise SystemExit("free-path run: `pnk templates` failed")
     if main(["sync", "--kb", str(root)]) != 0:
         raise SystemExit(f"free-path run: `pnk sync` failed on {root}")
     if not (root / ".pinakes" / "index.db").is_file():

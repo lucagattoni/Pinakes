@@ -122,6 +122,105 @@ def run_init(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _templates_arguments(parser: argparse.ArgumentParser) -> None:
+    # **No `--kb`, deliberately.** This lists what *this build* has installed, which is the same
+    # answer wherever it is run from — a `--kb` would imply the listing varies per KB and invite a
+    # later reader to "fix" its absence. Which template a given KB is on is a different question,
+    # and `pnk upgrade` is the command that answers it.
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
+
+
+def run_templates(args: argparse.Namespace) -> int:
+    """`pnk templates`. What this build can stamp a KB from.
+
+    **The listing exists because the information did not.** `template.available()` was reachable
+    only by naming a template that does not exist and reading the error, so the way to find out what
+    was installed was to get something wrong first.
+
+    **CLI-only, decided 20260808 — there is no `pinakes_*` tool for this.** The MCP server answers
+    about the KBs it was pointed at, and a template is not one of them: it is package data consumed
+    at *creation* time, and creation has no MCP surface at all. A tool listing templates would name
+    things the caller has no way to act on, and it would be the first tool on that surface reporting
+    machine state from outside the served KBs — which `docs/DESIGN.md` §4.7 states as a boundary
+    rather than a convenience.
+
+    **One damaged template does not hide the rest, and that is this command's problem alone.** A
+    template directory with no `template.toml` makes `describe` raise a bare `OSError` — the open
+    correction recorded from T3, which is about `describe` and belongs to whoever closes it. What
+    is *new* here is the blast radius: before this command, a damaged template broke only the run
+    that named it, and a listing that aborts on the first bad one would report nothing about the
+    good ones while telling the user their install has no templates. So the failure is caught per
+    template and shown as a row. `describe` is deliberately left as it is: fixing it here would
+    settle a correction that is still open for `init`, `doctor` and `upgrade` too.
+    """
+    import json as json_module
+
+    from pinakes.template import TemplateInfo, available, describe
+
+    # `str` in the second slot is the failure. Keyed by the *directory* name rather than the
+    # declared one, because a template that cannot be read has no declared name to key it by.
+    rows: list[tuple[str, TemplateInfo | str]] = []
+    for name in available():
+        try:
+            rows.append((name, describe(name)))
+        except (OSError, ValueError) as exc:
+            # `ValueError` covers `tomllib.TOMLDecodeError`: a `template.toml` that exists but does
+            # not parse is the same class of damage as one that is missing.
+            rows.append((name, str(exc)))
+
+    damaged = [name for name, entry in rows if isinstance(entry, str)]
+
+    if args.json:
+        print(
+            json_module.dumps(
+                [
+                    {
+                        "name": entry.name,
+                        "version": entry.version,
+                        # The string a manifest records, emitted rather than left to be
+                        # reassembled: `name@version` is `TemplateInfo.reference`'s format, and a
+                        # consumer joining the two fields itself would be a second definition of it.
+                        "reference": entry.reference,
+                        "description": entry.description,
+                    }
+                    if isinstance(entry, TemplateInfo)
+                    else {"name": name, "unreadable": entry}
+                    for name, entry in rows
+                ],
+                indent=2,
+            )
+        )
+        return EXIT_FAILURE if damaged else EXIT_OK
+
+    if not rows:
+        # Reachable only if the package data is damaged, which is exactly when a silent empty
+        # listing is worst: it reads as "you have no templates" rather than "this install is
+        # broken".
+        print("no templates are installed — this build's package data is incomplete.")
+        return EXIT_FAILURE
+
+    # The declared name where there is one, the directory name where there is not — which is the
+    # same string for every template that parses, and the only one available for a template that
+    # does not. Both surfaces use it, so the human listing and `--json` never name a template
+    # differently.
+    display = {
+        name: entry.name if isinstance(entry, TemplateInfo) else name for name, entry in rows
+    }
+    width = max(len(shown) for shown in display.values())
+    for name, entry in rows:
+        if isinstance(entry, TemplateInfo):
+            print(f"{display[name].ljust(width)}  {entry.version}  {entry.description}")
+        else:
+            print(f"{display[name].ljust(width)}  ?      unreadable: {entry}")
+    if damaged:
+        print(f"\nreinstall pinakes: {', '.join(damaged)} could not be read.")
+    # Non-zero because something *is* wrong and it is the user's to fix. The good rows are still
+    # printed: naming what broke *and* answering the question asked beats doing neither, which is
+    # what the traceback did.
+    return EXIT_FAILURE if damaged else EXIT_OK
+    return EXIT_OK
+
+
 def _search_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("query", help="what to search for")
     _kb_argument(parser)
@@ -905,6 +1004,13 @@ COMMANDS: tuple[Command, ...] = (
         "I10",
         runner=lambda args: run_init(args),
         arguments=_init_arguments,
+    ),
+    Command(
+        "templates",
+        "List the templates this build can stamp a KB from",
+        "T7",
+        runner=lambda args: run_templates(args),
+        arguments=_templates_arguments,
     ),
     Command(
         "sync",

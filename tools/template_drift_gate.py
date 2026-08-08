@@ -38,7 +38,9 @@ by construction, so "a version bumped with no content change" could never be det
     the stronger one silently.
 (b) An archived `template.toml` is outside the content hash, so its *description* could be edited
     without (i)-(iv) noticing. Its presence and its declared version are checked against the
-    directory name; nothing else in it is. Leg (vii) covers the rest once the version is published.
+    directory name; **its `files` list is folded into the content hash** (T7 made that key decide
+    what a KB is stamped with, so leaving it out would let a template change what it writes with no
+    version bump); nothing else in it is. Leg (vii) covers the rest once the version is published.
 (c) **Leg (vii) reads history, and history can be rewritten.** Squashing or amending the commits
     that added an archived version, then editing it, leaves one commit and content identical to
     the published ref — and passes. That is unavoidable for anything that reasons about git, and it
@@ -198,6 +200,18 @@ def content_hash(directory: Path) -> str:
     ambiguous**: a path cannot hold a NUL but file content can, so one file containing `y\\0z\\0`
     and the two files `y` and `z` containing nothing produced the same digest. Length-framing
     removes the collision instead of resting on template files never holding a NUL byte.
+
+    **`template.toml`'s `files` list is folded in, and it is the one part of that file that is.**
+    T7 made `files = [...]` decide *which* files a KB is stamped with, which put a behaviour-bearing
+    key inside the one file this hash excludes — so a template could change what it writes into
+    every new KB without any version bump being required, which is the property the archive exists
+    to hold. Only the list is hashed: `name`, `version` and `description` stay out, so leg (ii) can
+    still fail (hashing the version would make every bump change the hash by construction) and
+    limit (b) still holds for the description.
+
+    **An absent key contributes nothing, so every hash written before T7 is unchanged** and the
+    `_versions.toml` rows already published still match. An *empty* list is not absent and does
+    change the hash — correctly: absent means the historical two files, `[]` means none.
     """
     digest = hashlib.sha256()
     for relative, path in _hashed_files(directory):
@@ -207,7 +221,43 @@ def content_hash(directory: Path) -> str:
         digest.update(str(len(data)).encode("ascii"))
         digest.update(b"\0")
         digest.update(data)
+
+    declared = _declared_files(directory)
+    if declared is not None:
+        # A leading NUL opens the block, which no file entry can produce: an entry starts with its
+        # relative path, and a path cannot hold a NUL. So a template with a real file named `files`
+        # cannot collide with a template declaring that list.
+        digest.update(b"\0files\0")
+        for entry in declared:
+            data = entry.encode("utf-8")
+            digest.update(str(len(data)).encode("ascii"))
+            digest.update(b"\0")
+            digest.update(data)
     return digest.hexdigest()
+
+
+def _declared_files(directory: Path) -> list[str] | None:
+    """A version's declared `files` list, or `None` when the key is absent.
+
+    `None` rather than `[]` for absent, because the two mean different things to `copy_extras` and
+    must therefore hash differently.
+    """
+    declaration = directory / DECLARATION
+    if not declaration.is_file():
+        return None
+    data: dict[str, Any] = tomllib.loads(declaration.read_text(encoding="utf-8"))
+    if "files" not in data:
+        return None
+
+    declared: object = data["files"]
+    if not isinstance(declared, list):
+        raise GateFailureError(f"{declaration} declares a `files` that is not a list.")
+    entries: list[str] = []
+    for item in cast(list[object], declared):
+        if not isinstance(item, str):
+            raise GateFailureError(f"{declaration} declares a `files` entry that is not a string.")
+        entries.append(item)
+    return entries
 
 
 def declared_version(directory: Path) -> str:
