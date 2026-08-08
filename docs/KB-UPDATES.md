@@ -23,9 +23,12 @@ rebuild, free and deterministic. `pinakes.toml`, `docs/` and the sidecars are **
 edited, and belong to the user; nothing may rewrite them casually.
 
 The design handles derived state well and committed state not at all. Every mechanism below exists
-for the first category. For the second, **detection shipped in 0.17.0 and `pnk upgrade` is
-merged** (see the header above); what is still deferred is *adoption* — `--apply`, the template
-release. This section was written when neither existed.
+for the first category. For the second, **detection shipped in 0.17.0, `pnk upgrade` in 0.19.0, and
+adoption — `--apply` — is merged** (see the header above). This section was written when none of
+them existed. **What adoption does *not* reach is still the honest gap**: it writes `pinakes.toml`
+and nothing else, so a template's `README.md` and its starter `eval/questions.yaml` remain yours to
+refresh by hand, and a KB recording a version whose content was never archived has no baseline to
+adopt against.
 
 ## 2. The four drift axes
 
@@ -34,7 +37,7 @@ release. This section was written when neither existed.
 | 1 | **Index schema** | `schema_version` mismatch → refuse to open, name `pnk sync --rebuild`. No migrations, by design (`store.py:205`) | ✅ shipped |
 | 2 | **Embedding model** | Index built by another model/revision → queries refuse rather than return garbage | ✅ shipped |
 | 3 | **PDF extractor** | Fingerprint mismatch → free backend refuses; paid marks `stale_extraction` and warns | ✅ shipped (I5) |
-| 4 | **Manifest + template** | `[kb] requires_pinakes`: a version floor read in a pre-pass, so a refusal can name the version needed (G4, shipped 0.6.0). **Detecting** template drift shipped in 0.17.0 — a bumped `notes@1.1`, a CI gate that makes the bump impossible to forget, and a `pnk doctor` WARN that now fires. **Adopting** it is still absent: nothing writes the change into a user's manifest | ◐ **detection closed, adoption open** |
+| 4 | **Manifest + template** | `[kb] requires_pinakes`: a version floor read in a pre-pass, so a refusal can name the version needed (G4, shipped 0.6.0). **Detecting** template drift shipped in 0.17.0 — a bumped `notes@1.1`, a CI gate that makes the bump impossible to forget, and a `pnk doctor` WARN that now fires. **Adopting** it landed in T4: `pnk upgrade --apply` writes the hunks that fit into the user's manifest, after printing every one of them, and refuses the whole run if any conflicts | ● **closed for `pinakes.toml`** — a template's other three files are still the user's to refresh by hand |
 
 Axes 1–3 share a shape: *detect, refuse, and point at a free remedy.* That works because the remedy
 is always "rebuild derived state", which costs nothing and destroys nothing.
