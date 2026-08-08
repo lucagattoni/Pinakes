@@ -2152,7 +2152,8 @@ def test_splices_refuses_two_hunks_that_land_on_top_of_each_other() -> None:
     with pytest.raises(UpgradeError, match="land on top of each other"):
         splices(overlapping, content)
 
-    # ...and the control: the same two hunks over regions that do not touch are planned, not refused.
+    # ...and the control: the same two hunks over regions that do not touch are planned, not
+    # refused. A guard that fires on everything passes the assertion above just as well.
     apart = Report(
         outcome=Outcome.DRIFTED,
         detail="x",
