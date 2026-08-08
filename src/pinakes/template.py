@@ -244,8 +244,8 @@ def cannot_compare(missing: Sequence[str], name: str, archived: Sequence[str]) -
     **It is the path 100% of today's KBs take, so it is written for someone who did nothing
     wrong.** `notes@1.0` is deliberately not archived — it denotes eleven different template
     contents, and a diff computed from the wrong base is worse than no diff — and this is what they
-    get instead. It promises nothing a release can keep: an unarchived version's content is gone,
-    not pending.
+    get instead. It promises nothing a release *cannot* keep: an unarchived version's content
+    is gone, not pending.
     """
     shipped = ", ".join(f"{name}@{version}" for version in archived)
     return (

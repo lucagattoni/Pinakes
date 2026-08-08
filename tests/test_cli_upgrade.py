@@ -138,8 +138,21 @@ def _source(
     return "\n".join(body) + "\n"
 
 
-def _stamp(root: Path, name: str, version: str, *, records: str | None = None) -> Path:
+def _stamp(
+    root: Path,
+    name: str,
+    version: str,
+    *,
+    records: str | None = None,
+    provider: str = "sentence-transformers",
+) -> Path:
     """Write the KB that `pnk init` from *version* would have written.
+
+    *provider* is the real backend name by default, because that is what a stamped KB carries and
+    every test here reads only text. One test runs the **whole** `pnk doctor` report and must not:
+    `sentence-transformers` would load model weights, and its `FutureWarning` is an error under
+    this suite's `filterwarnings`. A provider no backend registers keeps that report offline and
+    instant, and the check under test does not read it.
 
     *records* overrides what `[kb] template` says, which is how the two interesting shapes are
     built: a KB stamped from an old version (the ordinary case), and a KB carrying the **new**
@@ -154,10 +167,10 @@ def _stamp(root: Path, name: str, version: str, *, records: str | None = None) -
         "kb_id": str(mint_kb_id()),
         "template": records or f"{name}@{version}",
         "created": "20260725 09:14",
-        "embedding_provider": "sentence-transformers",
+        "embedding_provider": provider,
         "embedding_model": "BAAI/bge-small-en-v1.5",
         "embedding_dim": 384,
-        "rerank_provider": "sentence-transformers",
+        "rerank_provider": provider,
         "rerank_model": "BAAI/bge-reranker-base",
     }
     (root / "pinakes.toml").write_text(
@@ -353,6 +366,10 @@ def test_a_user_edited_region_is_reported_as_a_conflict_not_applied(
         "applies cleanly",
         "conflicts",
     ]
+    # A conflict has four possible causes and this command cannot know which — the trailer says so
+    # rather than telling the user they edited something.
+    assert "A conflict is not a fault" in out
+    assert "you have edited" not in out
     # The *listing* names the region, which `"[budget]" in out` does not assert: the diff body
     # carries that string as a context line whatever the listing says.
     assert ("conflicts", "[budget]") in _listed(out)
@@ -549,6 +566,8 @@ def test_nothing_under_the_kb_is_written(
     assert _tree(root) == before
     # docs/CLI.md and docs/GUIDE.md both promise the report says so in as many words.
     assert "Nothing was written" in out
+    # The summary counts read as nouns. Reusing the listing's verb phrase gives "2 applies cleanly".
+    assert "2 clean" in out
 
 
 def test_json_and_human_output_report_the_same_hunks(
@@ -568,6 +587,14 @@ def test_json_and_human_output_report_the_same_hunks(
     ]
     assert payload["diff"] in human
     assert payload["counts"]["clean"] == 2
+    # Which side is which. Flattening `(*removed, *added)` — as the invariance test does, for its
+    # own reasons — cannot see the two swapped, and a consumer that applied them would undo the
+    # template's change instead of adopting it.
+    budget = payload["hunks"][1]
+    assert budget["removed"] == ["per_operation_eur = 0.05"]
+    assert budget["added"] == ["per_operation_eur = 0.30"]
+    # And the `diff` field is a diff, headers included — not a bag of lines `patch` cannot read.
+    assert payload["diff"].startswith("@@")
 
 
 def test_a_version_bump_with_no_manifest_change_says_same_manifest(
@@ -594,8 +621,8 @@ def test_an_unarchived_recorded_version_refuses_with_a_remedy(
     tmp_path: Path, synthetic_template: Callable[..., str]
 ) -> None:
     """The remedy is the part a user acts on, and `cannot compare` alone does not prove one was
-    printed. It must also promise nothing a release can keep: an unarchived version's content is
-    gone, not pending."""
+    printed. It must also promise nothing a release *cannot* keep: an unarchived version's
+    content is gone, not pending."""
     name = _two_versions(synthetic_template)
     root = _stamp(tmp_path / "kb", name, "1.0", records="synth@0.9")
 
@@ -605,6 +632,11 @@ def test_an_unarchived_recorded_version_refuses_with_a_remedy(
     assert "cannot compare" in out and "synth@0.9" in out
     assert "compare it by hand" in out.replace("\n", " ")
     assert "there will not be a later one" in out.replace("\n", " ")
+    # The wrapper swaps the spaces inside a `code span` for a private-use codepoint so `textwrap`
+    # cannot break the span, then swaps them back. Losing the restore leaks U+E000 into the one
+    # message every KB in existence prints.
+    assert "\ue000" not in out
+    assert "`pnk init` on a throwaway directory" in out.replace("\n", " ")
 
 
 def test_the_shipped_template_reaches_the_cannot_compare_path(tmp_path: Path) -> None:
@@ -664,6 +696,9 @@ def test_a_kb_recording_no_template_cannot_compare(
 
     assert code == 3
     assert "records no template" in out
+    # `docs/CLI.md` promises every `3` opens with this, so one match finds the whole class. It is a
+    # published contract, and it was a bare sentence outside that family until the review.
+    assert out.startswith("cannot compare:")
 
 
 def test_an_archived_version_this_build_cannot_render_cannot_compare(
@@ -895,27 +930,35 @@ def test_the_listing_names_the_table_each_hunk_falls_in(
     assert _listed(out) == [("applies cleanly", "[sources]"), ("applies cleanly", "[budget]")]
 
 
-def test_a_multi_line_array_is_not_reported_as_a_table(
-    tmp_path: Path, synthetic_template: Callable[..., str]
-) -> None:
-    """A continuation line of a multi-line array opens with `[`, and the first `_section` pattern
-    matched it — reporting `["b", "c"],` as the enclosing table. Not reachable from the shipped
-    template, whose arrays are one-liners, and reachable from any template that wraps one."""
-    spread = _source().replace(
-        'include = ["**/*.md", "**/*.txt"]',
-        'include = [\n  "**/*.md",\n  "**/*.txt",\n]',
-    )
-    name = _two_versions(
-        synthetic_template,
-        old=spread,
-        new=spread.replace('"**/*.txt",', '"**/*.txt",\n  "**/*.rst",'),
-    )
-    root = _stamp(tmp_path / "kb", name, "1.0")
+def test_which_line_counts_as_the_table_a_hunk_falls_in() -> None:
+    """`_section` as a unit, because the end-to-end fixture could not fail.
 
-    code, out = _run(root)
+    The first version of this test wrapped `include` over three lines and asserted the section was
+    `[sources]` — but a wrapped array of *strings* has continuation lines opening with `"`, so the
+    loose pattern it was written to reject returned `[sources]` too. It passed under both. The
+    shape that discriminates is an array element that is itself an array.
 
-    assert code == 0
-    assert [section for _, section in _listed(out)] == ["[sources]"]
+    The two rows after it are the other half, and they are why tightening a pattern needs its own
+    test: `[[links.kb]]` is a table any linked KB has, and `[budget]  # caps` is legal TOML. A
+    pattern tight enough to reject an array element and no tighter labels a hunk in either of those
+    with the *preceding* table, which is wrong without looking wrong.
+    """
+    from pinakes.upgrade import hunks
+
+    def section_of(base: str, ours: str) -> list[str | None]:
+        return [hunk.section for hunk in hunks(base, ours, "")]
+
+    nested = '[sources]\nmatrix = [\n  ["p", "q"],\n  ["r", "s"],\n]\ntail = 1\nmore = 2\n'
+    assert section_of(nested, nested.replace('["r", "s"],', '["r", "t"],')) == ["[sources]"]
+
+    for header in ("[[links.kb]]", "[budget]  # caps on the one thing that can spend", "  [a.b]"):
+        body = f"[first]\nx = 1\ny = 2\nz = 3\n{header}\nkey = 4\nlast = 5\n"
+        assert section_of(body, body.replace("key = 4", "key = 9")) == [header.strip()], header
+
+    # An insertion changes nothing in `base`, so the scan starts one line earlier: text landing
+    # *before* a table header belongs to the table above it, not to the one it is about to open.
+    spaced = "[first]\na = 1\nb = 2\nc = 3\n[second]\nd = 4\ne = 5\nf = 6\n"
+    assert section_of(spaced, spaced.replace("[second]", "new = 0\n[second]")) == ["[first]"]
 
 
 def test_doctor_and_upgrade_say_the_same_thing_about_an_unarchived_version(
@@ -928,8 +971,13 @@ def test_doctor_and_upgrade_say_the_same_thing_about_an_unarchived_version(
     from pinakes.manifest import load
     from pinakes.upgrade import plan
 
+    # The provider is deliberately one nothing registers. `diagnose()` runs every check, and with
+    # the real `sentence-transformers` name it loads model weights on any checkout carrying
+    # `pinakes[st]` — three seconds, and a `FutureWarning` that this suite's `filterwarnings =
+    # ["error"]` turns into a failure. CI never installs `[st]`, so it would have been green there
+    # and red on a contributor's machine.
     name = _two_versions(synthetic_template)
-    root = _stamp(tmp_path / "kb", name, "1.0", records="synth@0.9")
+    root = _stamp(tmp_path / "kb", name, "1.0", records="synth@0.9", provider="no-such-backend")
 
     report = plan(load(root))
     check = next(c for c in diagnose(load(root)).checks if c.name == "template")

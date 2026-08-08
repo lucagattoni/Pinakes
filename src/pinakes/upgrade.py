@@ -43,7 +43,11 @@ WRAP = 92
 
 # A TOML table header and nothing else. `\s*\[` alone also matched a multi-line array's
 # continuation line, so a hunk inside `include = [` reported its section as `["p", "q"],`.
-_TABLE = re.compile(r"\s*\[[^]\[]+\]\s*\Z")
+# **Both bracket forms, and a trailing comment.** `[[links.kb]]` is a table a real KB has and
+# `[budget]  # caps` is legal TOML; a pattern tight enough to reject an array element but not
+# these two labels the hunk with the *preceding* table instead — silently wrong, which is worse
+# than the array element it was tightened to reject.
+_TABLE = re.compile(r"\s*\[\[?[^]\[]+\]\]?\s*(#.*)?\Z")
 _CODE_SPAN = re.compile(r"`[^`]+`")
 _GLUE = "\ue000"
 """A private-use codepoint standing in for a space inside a `code span` while the text is wrapped.

@@ -453,8 +453,9 @@ pnk upgrade --kb my-kb
 
 It writes nothing. It prints the diff between the template version your KB records and the one
 installed, then says, hunk by hunk, whether each change still fits your file: **applies cleanly**,
-**already applied** (you adopted it by hand, or a newer `pnk init` wrote it), or **conflicts** (you
-edited that region, so nothing can be placed there mechanically). Adopting a change is your edit to
+**already applied** (you adopted it by hand, or a newer `pnk init` wrote it), or **conflicts** —
+the lines it expects are not in your file the way it expects them, so nothing can be placed there
+mechanically. Adopting a change is your edit to
 make, against the diff it printed.
 
 **On every KB that exists today it says this instead** — run 20260807 23:52, on a KB created
@@ -473,8 +474,8 @@ from notes@1.1 or later is compared automatically.
 
 That is not a fault in your KB and there is nothing to fix. A manifest records `notes@1.0` — a
 *name*. The content behind that name changed ten times while the name stayed the same, so no
-build can say which of the eleven different contents yours came from, and diffing against a guess would report changes
-you never received. KBs created from `notes@1.1` onward are compared automatically.
+build can say which of the eleven different contents yours came from, and diffing against a guess
+would report changes you never received. KBs created from `notes@1.1` onward are compared automatically.
 
 **It exits `3` on that path** — not `0`, which a script reads as *up to date*, and not `1`, which
 means something is wrong. A conflict, by contrast, exits `0`: the command did its job, and what it

@@ -1240,7 +1240,16 @@ set. Given `theirs`:
 
 | # | Outcome | Predicate |
 |---|---|---|
-| 1 | **already applied** | the hunk's context **and** *added* lines occur in `theirs`, contiguously, in order, byte-for-byte, at **exactly one** position, and its removed lines do not — the user (or a newer `init`) already has this change |
+| 1 | **already applied** | the hunk's context **and** *added* lines occur in `theirs`, contiguously, in order, byte-for-byte, at **exactly one** position, and its ***before* image** occurs at none — the user (or a newer `init`) already has this change |
+
+> ⚠️ **CORRECTED 20260808 by T3's own review; the row above says *before image* where it said
+> *removed lines*, and the difference is a misclassification.** "Do the removed lines occur
+> anywhere in the file" is a whole-file question, and a manifest repeats blank lines and bare
+> `#` throughout — so a hunk deleting one could **never** be *already applied*, and the user
+> who adopted that change by hand was told `conflicts`. Under T4's all-or-nothing rule that
+> refuses their entire `--apply` run. **T4 must build the corrected rule**, which is what
+> `upgrade.py`'s `_placement` now implements: a hunk removing nothing satisfies the clause
+> vacuously, which is what keeps rule 1 ahead of rule 2 for a pure addition.
 | 2 | **clean** | the hunk's context **and** removed lines occur in `theirs` that way |
 | 3 | **conflict** | anything else: no match, **more than one** match, a partial match, or a match whose lines are in a different order |
 
@@ -1251,10 +1260,16 @@ Every hunk in M3's `[sources]` component is a pure addition, so this is the ordi
 corner. `::test_a_pure_addition_already_present_is_already_applied_not_clean` pins the order.
 
 **"Found, unmodified, in `theirs`" is not the predicate**, and an earlier draft said it was. It is
-satisfied by a manifest whose `[budget]` block the user moved above `[retrieval]` — every context
-line is present, so the loose rule says *clean* while the hunk's offsets are meaningless. It is also
-satisfied twice over by `pinakes.toml`'s repeated blank lines and repeated comment shapes. **Uniqueness
-and order are part of the predicate, not a refinement of it.**
+satisfied twice over by `pinakes.toml`'s repeated blank lines and repeated comment shapes, and two
+places a hunk could belong is not one. **Uniqueness and order are part of the predicate, not a
+refinement of it.**
+
+> ⚠️ **One example was withdrawn 20260808, having been measured rather than argued.** This
+> paragraph offered *"a manifest whose `[budget]` block the user moved above `[retrieval]`"* as a
+> case the loose rule gets wrong. It is not one: placement here is **content-addressed, not
+> offset-addressed**, so a table moved intact still matches contiguously, uniquely and in order,
+> and *clean* is the correct answer. What a reordering has to disturb to be a conflict is the order
+> **inside a hunk's own window**, which is what `::test_a_reordered_manifest_is_a_conflict…` does.
 
 **Why "already applied" is a first-class outcome and not a curiosity.** A user who read `pnk doctor`'s
 report and hand-adopted the change is the ordinary case this command is *for*. Reporting it as
@@ -1364,8 +1379,11 @@ counterpart, so a later pass does not make every real KB a conflict;
 `::test_nothing_under_the_kb_is_written` — snapshot every file's bytes **and** the set of paths under
 the KB root before and after, assert both identical. **Snapshot the whole tree, not `pinakes.toml`
 alone**: the claim is "writes nothing", and a test that watched one file would be satisfied by a
-command that wrote a different one. Compare **bytes and the path set**, not mtimes — an mtime-only
-comparison passes for a rewrite of identical content;
+command that wrote a different one. Compare the path set, the bytes **and** `st_mtime_ns`, over
+files *and* directories. **⚠️ CORRECTED 20260808: this said "bytes and the path set, not mtimes —
+an mtime-only comparison passes for a rewrite of identical content", which is backwards.** Bytes are
+what miss a rewrite of identical content; mtime is what catches it. Built as written, the test
+survived this increment's own named mutation — *open the manifest for writing* — and `mkdir` besides;
 `::test_json_and_human_output_report_the_same_hunks`;
 `::test_cannot_compare_exits_three_and_nothing_else_does` and
 `::test_an_operational_failure_still_exits_one` — **O-2's two obligations**, added 20260807 23:25
@@ -1389,7 +1407,7 @@ rc=0; uv run --frozen pnk upgrade --kb /tmp/t3kb >/tmp/t3.out 2>&1 || rc=$?
 [ "$rc" -eq 3 ]   # ✅ ASSERTED since 20260807 23:25 — O-2's `3`, applied above. It was an `echo`
                   # while the contract was unconfirmed, because asserting a code this document had
                   # chosen on its own would have made the criterion pass for an agreement nobody
-                  # made. `-ne 0` would not do: four outcomes are non-zero and only one is this one.
+                  # made. `-ne 0` would not do: `1`, `2` and `3` are all non-zero and only one is this.
 test -s /tmp/t3.out    # NOT optional. `before = after` is also true of a command that printed
                        # nothing and did nothing, so the snapshot alone is satisfied by failure.
 grep -qiF 'cannot compare' /tmp/t3.out   # and it is THAT refusal, not another guard: "non-zero"

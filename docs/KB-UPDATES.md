@@ -5,8 +5,9 @@
 [`plans/20260729_0256-links-and-graph.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260729_0256-links-and-graph.md); every field rule is in
 [MANIFEST.md](MANIFEST.md) and the reasoning in [DESIGN §2.1](DESIGN.md#21-the-manifest--pinakestoml).
 **The template-drift gate (§6) shipped in 0.17.0**, along with the version bump §9 puts ahead of it,
-so the `doctor` check this note calls dead now fires. **Doctor reporting drift *as a diff* shipped
-in 0.18.0, and `pnk upgrade` — the diff itself, hunk by hunk — is merged.** What remains a proposal
+so the `doctor` check this note calls dead now fires. **0.18.0 made `pnk doctor` report *how far*
+a template has drifted — a computed line count, not a diff — and `pnk upgrade`, which prints the
+lines themselves, is merged.** What remains a proposal
 is `--apply`: adopting a change into a manifest. Template-release work either way. [STATUS.md](STATUS.md) is the authority on
 what exists.
 

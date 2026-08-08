@@ -25,7 +25,7 @@ anyway.
 | [**BUILDING.md**](BUILDING.md) | *How do I build one increment?* Worktree, tests, `check.sh`, mutation, adversarial review, fragments, `land.py` — the procedure that runs before [RELEASING.md](RELEASING.md) |
 | [**DESIGN.md**](DESIGN.md) | *Why is it built this way?* Architecture, storage, sync semantics, concurrency, trade-offs |
 | [**RETROSPECTIVES.md**](RETROSPECTIVES.md) | *What did we learn?* Per-increment findings, and the design's own review passes |
-| [**KB-UPDATES.md**](KB-UPDATES.md) | *What happens to a KB somebody already has when Pinakes changes?* Design note — **part built**: `requires_pinakes` (G4, 0.6.0) and template-drift **detection** (§6's gate, 0.17.0), reporting drift **as a diff** (T2, 0.18.0) and **`pnk upgrade`** itself (T3, merged). What is still a proposal is `--apply` — adopting a change into a manifest |
+| [**KB-UPDATES.md**](KB-UPDATES.md) | *What happens to a KB somebody already has when Pinakes changes?* Design note — **part built**: `requires_pinakes` (G4, 0.6.0) and template-drift **detection** (§6's gate, 0.17.0), `pnk doctor` reporting **how far** a template has drifted (T2, 0.18.0) and **`pnk upgrade`**, which prints the lines themselves (T3, merged). What is still a proposal is `--apply` — adopting a change into a manifest |
 | [**graph/**](graph/) | Graph-retrieval research shaping the links and graph releases — thirteen investigations plus the synthesis |
 
 Build plans live in [`plans/`](../plans/); the release history is [`CHANGELOG.md`](../CHANGELOG.md).

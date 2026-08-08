@@ -15,7 +15,7 @@ A contract, not an accident:
 | `0` | Success — including a no-op, and including a sync that found a live lock held by this host |
 | `1` | Operational failure — one or more documents failed, a check refused, a lock could not be taken |
 | `2` | Usage error, raised by argument parsing itself — an unknown flag, a missing argument, a value outside a flag's `choices`. An unknown **backend name** is not one of these: it is caught after parsing and exits `1`, like every other `PinakesError` |
-| `3` | **No baseline — [`pnk upgrade`](#pnk-upgrade) and nothing else.** The comparison could not be made, and no action of yours would make it possible: the KB records a template version whose content this build does not ship. Distinct from `1` because nothing is wrong and nothing is yours to fix; distinct from `0` because a script reads `0` as *up to date*. **Every KB created before the version archive gets it, on every run** |
+| `3` | **No baseline — [`pnk upgrade`](#pnk-upgrade) and nothing else.** The comparison could not be made, and no action of yours would make it possible — most often because the KB records a template version whose content this build does not ship. The [`pnk upgrade`](#pnk-upgrade) section lists every cause; all of them print a line opening `cannot compare:`. Distinct from `1` because nothing is wrong and nothing is yours to fix; distinct from `0` because a script reads `0` as *up to date*. **Every KB created before the version archive gets it, on every run** |
 
 Every error carries a **remedy**, not just a message. If one doesn't, that's a bug worth filing.
 

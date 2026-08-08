@@ -58,7 +58,8 @@ precision nobody measured.
 - **[The template release](#the-template-release--t1-shipped-in-0170) has started** — plan written,
   reviewed, four decisions taken, **T1 shipped as `0.17.0`** and **T2 as `0.18.0`**: template
   versions now mean something, a gate keeps them meaning it, and `pnk doctor` reports how far a KB
-  has drifted rather than only that it has. T3, T4 and T7 remain; `main` has moved far enough that
+  has drifted rather than only that it has, and **T3 merged `pnk upgrade`**, which prints the lines
+  themselves. T4 and T7 remain; `main` has moved far enough that
   the plan's Baseline block must be re-run before any `file:line` in it is trusted.
 - **[Two open corrections](#open-corrections--two-live)** — the list emptied on 20260805 and
   refilled on 20260807 from a single increment. It refills from *use*: both entries came from
@@ -955,12 +956,12 @@ placeholder in the CLI: [CLI § Planned — not built yet](CLI.md#planned--not-b
 
 ▶ **Started.** T1 shipped as
 [`0.17.0`](#0170--a-template-version-that-means-something--20260807-2055) and T2 as
-[`0.18.0`](#0180--the-drift-warning-says-something-you-can-act-on--20260807-2237); **T3, T4 and T7
-are still to come.** Per D-9 the release cuts more than once, so the name stays here until the final
+[`0.18.0`](#0180--the-drift-warning-says-something-you-can-act-on--20260807-2237), with **T3
+merged**; **T4 and T7 are still to come.** Per D-9 the release cuts more than once, so the name stays here until the final
 cut. *(The heading above still says T1 because renaming it would move this section's anchor, which
 three links and the published site resolve.)*
 
-**What it adds:** the template ecosystem, `pnk upgrade` migrations, and the `sqlite-vec` tier.
+**What it adds:** the template ecosystem, `pnk upgrade`, and the `sqlite-vec` tier.
 
 **The problem it solves:** a template change reaches **new KBs only**. The PDF-glob explanation
 shipped in [`0.2.2`](#022--the-silent-skip-named--20260728-1849) appears in no KB created before it
@@ -968,8 +969,8 @@ shipped in [`0.2.2`](#022--the-silent-skip-named--20260728-1849) appears in no K
 [`0.6.0`](#060--links-you-can-write--20260801-1051)'s `requires_pinakes` closed the *diagnosis*;
 **0.17.0 makes the divergence detectable** and **0.18.0 makes it measurable** — though not on a KB
 recording `notes@1.0`, whose content was never archived, which is every KB that exists today.
-`pnk upgrade` (T3) prints the lines themselves; what still closes nothing on its own is adoption —
-no command writes a template change into a manifest.
+`pnk upgrade` (T3) prints the lines themselves. What is still missing is **adoption**: no command
+writes a template change into a manifest, so the last step is the user's own edit.
 
 **State:** the plan
 ([`plans/20260804_1016-template-release.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1016-template-release.md))
