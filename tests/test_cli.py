@@ -2,6 +2,7 @@
 
 import argparse
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -332,3 +333,60 @@ def test_pnk_templates_takes_no_kb_flag() -> None:
 
     with pytest.raises(SystemExit):
         build_parser().parse_args(["templates", "--kb", "."])
+
+
+def test_pnk_templates_reports_a_damaged_template_without_hiding_the_good_ones(
+    synthetic_template: Callable[..., str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """One unreadable template must not cost the user the answer about every other one.
+
+    The general defect — `template.describe` raising a bare `OSError` on a damaged install — is an
+    open correction that reaches `init`, `doctor` and `upgrade` too, and is deliberately **not**
+    fixed here. What is fixed is the blast radius this command introduced: a listing that aborts on
+    the first bad directory reports nothing about the good ones, and does it as a traceback.
+    """
+    from pinakes import template as template_module
+
+    good = synthetic_template("good", versions={"1.0": "[kb]\n"}, current="1.0")
+    root = template_module._root(good)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(root, Path)
+    # A sibling directory with no `template.toml` at all — the shape a half-finished install leaves.
+    (root.parent / "broken").mkdir()
+
+    assert main(["templates"]) == EXIT_FAILURE
+    out = capsys.readouterr().out
+
+    assert "good" in out, "a damaged sibling hid a template that reads perfectly"
+    assert "broken" in out
+    assert "unreadable" in out
+    assert "reinstall" in out
+    assert "Traceback" not in out
+
+
+def test_pnk_templates_json_reports_the_damaged_one_too(
+    synthetic_template: Callable[..., str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--json` carries the same finding.
+
+    A consumer must not be able to read a silently short list as a healthy one.
+    """
+    import json
+
+    from pinakes import template as template_module
+
+    good = synthetic_template("good", versions={"1.0": "[kb]\n"}, current="1.0")
+    root = template_module._root(good)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(root, Path)
+    (root.parent / "broken").mkdir()
+
+    assert main(["templates", "--json"]) == EXIT_FAILURE
+    payload = json.loads(capsys.readouterr().out)
+
+    by_name = {row["name"]: row for row in payload}
+    assert by_name["good"]["version"] == "1.0"
+    assert "unreadable" in by_name["broken"]
+    assert "version" not in by_name["broken"], "a damaged template must not claim a version"

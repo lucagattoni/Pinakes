@@ -143,43 +143,81 @@ def run_templates(args: argparse.Namespace) -> int:
     things the caller has no way to act on, and it would be the first tool on that surface reporting
     machine state from outside the served KBs — which `docs/DESIGN.md` §4.7 states as a boundary
     rather than a convenience.
+
+    **One damaged template does not hide the rest, and that is this command's problem alone.** A
+    template directory with no `template.toml` makes `describe` raise a bare `OSError` — the open
+    correction recorded from T3, which is about `describe` and belongs to whoever closes it. What
+    is *new* here is the blast radius: before this command, a damaged template broke only the run
+    that named it, and a listing that aborts on the first bad one would report nothing about the
+    good ones while telling the user their install has no templates. So the failure is caught per
+    template and shown as a row. `describe` is deliberately left as it is: fixing it here would
+    settle a correction that is still open for `init`, `doctor` and `upgrade` too.
     """
     import json as json_module
 
-    from pinakes.template import available, describe
+    from pinakes.template import TemplateInfo, available, describe
 
-    installed = [describe(name) for name in available()]
+    # `str` in the second slot is the failure. Keyed by the *directory* name rather than the
+    # declared one, because a template that cannot be read has no declared name to key it by.
+    rows: list[tuple[str, TemplateInfo | str]] = []
+    for name in available():
+        try:
+            rows.append((name, describe(name)))
+        except (OSError, ValueError) as exc:
+            # `ValueError` covers `tomllib.TOMLDecodeError`: a `template.toml` that exists but does
+            # not parse is the same class of damage as one that is missing.
+            rows.append((name, str(exc)))
+
+    damaged = [name for name, entry in rows if isinstance(entry, str)]
 
     if args.json:
         print(
             json_module.dumps(
                 [
                     {
-                        "name": info.name,
-                        "version": info.version,
+                        "name": entry.name,
+                        "version": entry.version,
                         # The string a manifest records, emitted rather than left to be
                         # reassembled: `name@version` is `TemplateInfo.reference`'s format, and a
                         # consumer joining the two fields itself would be a second definition of it.
-                        "reference": info.reference,
-                        "description": info.description,
+                        "reference": entry.reference,
+                        "description": entry.description,
                     }
-                    for info in installed
+                    if isinstance(entry, TemplateInfo)
+                    else {"name": name, "unreadable": entry}
+                    for name, entry in rows
                 ],
                 indent=2,
             )
         )
-        return EXIT_OK
+        return EXIT_FAILURE if damaged else EXIT_OK
 
-    if not installed:
+    if not rows:
         # Reachable only if the package data is damaged, which is exactly when a silent empty
         # listing is worst: it reads as "you have no templates" rather than "this install is
         # broken".
         print("no templates are installed — this build's package data is incomplete.")
-        return EXIT_OK
+        return EXIT_FAILURE
 
-    width = max(len(info.name) for info in installed)
-    for info in installed:
-        print(f"{info.name.ljust(width)}  {info.version}  {info.description}")
+    # The declared name where there is one, the directory name where there is not — which is the
+    # same string for every template that parses, and the only one available for a template that
+    # does not. Both surfaces use it, so the human listing and `--json` never name a template
+    # differently.
+    display = {
+        name: entry.name if isinstance(entry, TemplateInfo) else name for name, entry in rows
+    }
+    width = max(len(shown) for shown in display.values())
+    for name, entry in rows:
+        if isinstance(entry, TemplateInfo):
+            print(f"{display[name].ljust(width)}  {entry.version}  {entry.description}")
+        else:
+            print(f"{display[name].ljust(width)}  ?      unreadable: {entry}")
+    if damaged:
+        print(f"\nreinstall pinakes: {', '.join(damaged)} could not be read.")
+    # Non-zero because something *is* wrong and it is the user's to fix. The good rows are still
+    # printed: naming what broke *and* answering the question asked beats doing neither, which is
+    # what the traceback did.
+    return EXIT_FAILURE if damaged else EXIT_OK
     return EXIT_OK
 
 

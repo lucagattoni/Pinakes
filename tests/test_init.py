@@ -302,15 +302,15 @@ def test_a_files_entry_naming_the_version_archive_is_refused(
 def test_a_template_file_entry_that_escapes_the_target_is_refused(
     synthetic_template: Callable[..., str], tmp_path: Path
 ) -> None:
-    """Both layers of the write side, because neither covers the other.
+    """The lexical case: an entry that walks out of the KB with `..`.
 
-    `../../evil.md` is caught statically. A symlinked directory *in the target* has no `..`, no
-    absolute path and exists only on disk — the case a KB adopted from an existing directory really
-    presents, since `copy_extras` runs against whatever is already there.
+    **The symlink case is a separate test below, and the mutation pass is why.** Both cases lived
+    here at first. Removing the destination check then turned this test red on its *first*
+    assertion — `../../evil.md` escapes the template as well as the target, so the source-side check
+    caught it with a different message — and the run stopped before the symlink case, the one only
+    the destination check can catch, ever executed. A test whose later half never runs under the
+    mutation it exists to detect is not holding that half.
     """
-    outside = tmp_path / "outside"
-    outside.mkdir()
-
     lexical = synthetic_template(
         "lexical-escape",
         versions={"1.0": MINIMAL_MANIFEST},
@@ -320,10 +320,25 @@ def test_a_template_file_entry_that_escapes_the_target_is_refused(
     )
     target = tmp_path / "kb"
     target.mkdir()
+
     with pytest.raises(TemplateError) as exc_info:
         template.copy_extras(lexical, target)
+
     assert "../../evil.md" in exc_info.value.message
     assert "outside the KB" in exc_info.value.message
+
+
+def test_a_symlinked_directory_in_the_target_is_refused(
+    synthetic_template: Callable[..., str], tmp_path: Path
+) -> None:
+    """The case only the destination check can catch, and the one a real KB presents.
+
+    No `..`, no absolute path — the escape exists only on disk. It is not exotic: `copy_extras`
+    runs against whatever directory is being adopted, and the entry it declares is a perfectly
+    ordinary relative path that the template really owns, so the source-side check passes it.
+    """
+    outside = tmp_path / "outside"
+    outside.mkdir()
 
     symlinked = synthetic_template(
         "symlinked-target",
@@ -335,8 +350,11 @@ def test_a_template_file_entry_that_escapes_the_target_is_refused(
     adopted = tmp_path / "adopted"
     adopted.mkdir()
     (adopted / "escape").symlink_to(outside, target_is_directory=True)
+
     with pytest.raises(TemplateError) as exc_info:
         template.copy_extras(symlinked, adopted)
+
+    assert "escape/evil.md" in exc_info.value.message
     assert "outside the KB" in exc_info.value.message
     assert not (outside / "evil.md").exists(), "the write happened before the refusal"
 
