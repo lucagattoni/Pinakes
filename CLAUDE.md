@@ -26,6 +26,21 @@ removes the worktree *and* both copies of the branch, since deleting one leaves 
 **This is the only rule here with an executable guard, because it is the only one that fails
 silently.** Everything else fails loudly or is caught by `./check.sh`.
 
+## Working mode — autonomous by default
+
+Set by the user 20260808 04:39. It **overrides the global default of stopping to check in.**
+
+- **Run to completion.** Pick the next increment from `plans/`, build it, land it, cut the release,
+  pick the next. Stop when the user takes control back — not at increment boundaries.
+- **A choice you can take, you take** — after weighing each option's real pros and cons in the open
+  and saying which you chose and why. Needing an answer in order to proceed is the bar for asking;
+  "the user might have preferred otherwise" is not.
+- **Never assume what the plans have not decided.** An undecided question is a stop, not a guess —
+  ask it. This does not soften the rule above, it bounds it: choosing *how* to build what a plan
+  specifies is yours, choosing *what* it should have specified is not.
+- **Iterate: build → adversarially review → fix → re-review, until a pass finds nothing**, with a
+  commit per pass. This is the default shape of an increment, not a debugging-only move.
+
 ## This repository is PUBLIC
 
 - **Never commit real knowledge-base content.** The repo is the engine. The only KBs here are the
