@@ -17,16 +17,17 @@ precision nobody measured.
 
 ---
 
-## Where things stand right now — 20260806 20:41 UTC
+## Where things stand right now — 20260808 04:18 UTC
 
-- **24 releases in 12 days.** [`0.1.0`](#010--the-engine--20260725-1527) on 20260725;
-  [`0.15.1`](#0151--one-clock--20260806-0051) on 20260806.
-- **Latest on PyPI: `0.15.1`.** Every release from `0.2.2` on is published
+- **28 releases in 14 days.** [`0.1.0`](#010--the-engine--20260725-1527) on 20260725;
+  [`0.19.0`](#0190--what-the-template-changed-in-your-own-file--20260808-0418) on 20260808.
+- **Latest on PyPI: `0.19.0`.** Every release from `0.2.2` on is published
   ([STATUS § Published on PyPI](STATUS.md#published-on-pypi)).
 - **Two of the four named releases have shipped** — the links release across
   [`0.5.0`](#050--links-you-can-walk--20260731-1127)–[`0.6.0`](#060--links-you-can-write--20260801-1051),
-  the graph release in [`0.11.0`](#the-graph-release--shipped-0110). The deep and template releases
-  are unbuilt.
+  the graph release in [`0.11.0`](#the-graph-release--shipped-0110). The template release is
+  **part-shipped** — T1, T2 and T3 across 0.17.0–0.19.0, cutting more than once by D-9. The deep
+  release is unbuilt.
 - **Is document metadata retrieval context? Measured, and the answer was no — on one corpus, through
   one channel**
   ([`plans/20260805_1721-metadata-as-retrieval-context.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260805_1721-metadata-as-retrieval-context.md),
@@ -104,10 +105,11 @@ number belongs to a release only when it is cut
 | **[0.16.0](#0160--metadata-injection-measured-and-answered--20260807-1139)** | 20260807 11:39 | Metadata injection, measured and answered | • **6 improved, 6 regressed, 84 unchanged** — no-go<br>• `schema_version` stays 3; PDF layout heuristics and paid title inference stay unapproved<br>• `[chunking] metadata`, default `off`<br>• `tools/two_leg_gate.py`<br>• Five silent-failure fixes its own review found |
 | **[0.17.0](#0170--a-template-version-that-means-something--20260807-2055)** | 20260807 20:55 | A template version that means something | • `notes` 1.0 → **1.1**; **every existing KB now WARNs** in `pnk doctor`<br>• A check live since 0.1 that could never fire<br>• Template content archived under `_versions/`, SHA-256 ledger<br>• `tools/template_drift_gate.py` — seven legs, `check.sh` + CI<br>• `pnk init --template` refuses a non-single-component name<br>• *The template release, interim cut (D-9)* |
 | **[0.18.0](#0180--the-drift-warning-says-something-you-can-act-on--20260807-2237)** | 20260807 22:37 | The drift warning says something you can act on | • Drift reported as a **computed line count**, both sides rendered<br>• Template against template — your own tuning cannot appear<br>• `cannot compare` on every KB that exists, with an honest remedy<br>• `same manifest` instead of a misleading `0 lines differ`<br>• An unsupplied variable is a message, not a traceback<br>• *The template release, interim cut (D-9)* |
+| **[0.19.0](#0190--what-the-template-changed-in-your-own-file--20260808-0418)** | 20260808 04:18 | What the template changed, in your own file | • `pnk upgrade` — the diff itself, hunk by hunk<br>• **applies cleanly / already applied / conflicts**, and *already applied* is why a later `--apply` cannot duplicate a key<br>• Writes nothing; exit **`3`** is new and means *no baseline*<br>• `cannot compare` on every KB that exists, same wording as `pnk doctor`<br>• Five adversarial passes: 30 → 22 → 13 → 6 → 1<br>• *The template release, interim cut (D-9)* |
 | | | **[Open corrections](#open-corrections--four-live)** | • **Four live** — two from building 2d, two from T3's review<br>• Building and reading find different classes; neither finds the other's<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
-| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0, T2 in 0.18.0, T3 merged**; T4, T7 to come<br>• Cuts more than once (D-9), so the name stays here |
+| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0, T2 in 0.18.0, T3 in 0.19.0**; T4, T7 to come<br>• Cuts more than once (D-9), so the name stays here |
 
 ---
 
@@ -771,6 +773,39 @@ the name stays in the unbuilt-work table until the final cut.*
   substitution edits, and one line replaced by another is still one line on each side of a diff — so
   it was invariant under the very implementation it existed to reject. Both are recorded in
   [RETROSPECTIVES.md](RETROSPECTIVES.md).
+
+No `schema_version` bump, so no rebuild.
+
+## 0.19.0 — What the template changed, in your own file · 20260808 04:18
+
+*The template release, interim cut — T3 of T1–T4, T7. Per D-9 the release cuts more than once, so
+the name stays in the unbuilt-work table until the final cut.*
+
+- **`pnk upgrade` prints the lines themselves.** 0.17.0 made every KB warn, 0.18.0 said how far it
+  had drifted; this says *what changed* — the diff between the template version your KB records and
+  the one installed, both rendered from the archive through one context, so nothing you wrote
+  appears in it as a change.
+- **Each change is then placed against your manifest, and there are three answers, not two.**
+  *applies cleanly*, *already applied* — you adopted it by hand, or a newer `pnk init` wrote it —
+  and *conflicts*. The middle one is not a curiosity: calling it "clean" is what would make a later
+  `--apply` insert lines that are already there, duplicating a key and failing the file's own
+  re-parse.
+- **It writes nothing**, and the test that says so compares the path set, the bytes and the mtimes
+  of every file *and directory* under the KB. The first version compared bytes alone and the
+  increment's own named mutation survived it.
+- **Exit `3` is new and means *no baseline*** — the comparison could not be made and no action of
+  yours would make it possible. Distinct from `1`, which means something is wrong and it is yours to
+  fix, and from `0`, which a script reads as *up to date*. **Every KB in existence gets `3`**,
+  because `notes@1.0`'s content was never archived; the message is `pnk doctor`'s, to the word,
+  because two surfaces disagreeing about one KB is worse than either wording.
+- A conflict exits `0`. The command writes nothing, so it has nothing to fail at.
+
+**Five adversarial passes, finding 30 → 22 → 13 → 6 → 1**, and the shape of that curve is the
+finding worth keeping. Passes 2 and 3 each found that a *previous pass's fixes* were wrong or
+untested; pass 4 found the tooling that had silently lost six of them. Four separate fixes were
+described as "pinned by test X" while reverting them left the suite green. **A claim that a fix is
+pinned is a claim about a failing test** — recorded in [RETROSPECTIVES.md](RETROSPECTIVES.md), with
+the classes ranked by what they cost.
 
 No `schema_version` bump, so no rebuild.
 

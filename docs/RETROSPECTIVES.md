@@ -4902,6 +4902,224 @@ written out in the gate. The product now renders both sides of a comparison unde
 renders under a context nothing uses. The gate now builds its keys from `template.CONTEXT_KEYS`,
 and `test_render_context_supplies_exactly_the_declared_union` pins the remaining seam.
 
+## T3 — `pnk upgrade`, print only (20260808 00:02)
+
+**HIGH — a same-length mutant is invisible to Python's bytecode cache, so a mutation run can report
+the exact false negative it exists to prevent.** Two of T3's eight mutants — `== 1` → `>= 1` on each
+branch of the placement predicate — came back **SURVIVED**. Applying one of them by hand and running
+the same test killed it immediately. The harness was mutating `src/`, and CPython invalidates a
+`.pyc` on the source's **(mtime truncated to the second, size)**: `== 1` → `>= 1` changes neither, so
+a mutation written and reverted inside one second was executed from stale bytecode. Every mutant that
+*did* die changed the file's length.
+
+Two things follow, and neither is about this increment.
+
+* **A mutation harness must invalidate bytecode explicitly** — delete the module's `__pycache__`
+  entry after writing and after restoring. Without it, "mutation-verified" is a claim the harness
+  cannot support for precisely the smallest, most surgical mutants, which are the ones worth running.
+* **The failure was silent and reported success.** `SURVIVED` and *"this code path has no test"* are
+  the same string, and only one of them was true. What caught it was disbelief — the surviving mutant
+  looked like it should have been caught by a test that named uniqueness in its own title — not the
+  tooling.
+
+**And the disbelief was half right, which is the second finding.** Once the cache was cleared, one
+mutant still survived: relaxing *already applied* from "at exactly one position" to "somewhere"
+killed nothing, while the same relaxation on the *clean* branch was caught at once.
+`::test_a_hunk_whose_context_matches_twice_is_a_conflict` covered one branch of a two-branch rule and
+read, from its name, as though it covered the rule.
+`::test_an_already_applied_hunk_matching_twice_is_a_conflict_too` is the missing half — a user who
+adopted a change *and* kept a second copy of the block — and it was written because a mutant demanded
+it, not because anyone re-read the predicate.
+
+**MEDIUM — the invariance test demanded the wrong property, and passing would have been worse than
+failing.** *"A user's edit never appears in the report"* was written as "the two outputs are
+byte-identical", and it failed: a user's `provider = "fastembed"` **does** appear, as unchanged
+*context*, because the context is what their own manifest renders to. The property that matters is
+narrower — their edit never appears as a `+`/`-` line — and the first version would have forced the
+implementation to hide context lines to satisfy a test, which is the tail wagging the dog. The
+distinction is now in the test's docstring: the context lines are the user's, the changed lines are
+the template's.
+
+**MEDIUM — `textwrap` broke a command across two lines, and the wrap was added for readability.**
+The first wrapped remedy printed ``run `pnk`` at the end of one line and ``init` on a throwaway
+directory`` at the start of the next — a remedy naming a command nobody can copy, produced by the
+change meant to make remedies easier to read. `_fill` now glues the spaces inside a `code span`
+before wrapping. Worth remembering wherever prose meant for a terminal contains something meant to
+be typed.
+
+**LOW — the plan predicted a mutant would kill two tests and it killed one, because the
+implementation is stronger than the plan assumed.** Dropping uniqueness was expected to fail both the
+twice-matching test *and* the reordered-manifest one. It fails only the first: reordering is caught
+by matching the hunk's lines **contiguously and in order**, which is a different clause. A separate
+mutant — every line merely has to be present *somewhere* — kills the reordering test. The plan's
+prediction assumed a looser predicate than the one built; the two tests assert two properties, which
+is what it was really asking for.
+
+**HIGH — the "writes nothing" test could not see a write, and its docstring stated the reason
+backwards.** T3's central claim is that the command writes nothing, and the plan names the mutation
+that proves it: *open the manifest for writing and confirm `::test_nothing_under_the_kb_is_written`
+fails*. It did not fail. The snapshot compared **the bytes of the files** only, so a rewrite of
+identical content was invisible, and directories were filtered out, so `mkdir(".pinakes")` was too.
+Both mutants survived and the suite was green.
+
+Two things made it hard to see, and the second is the lesson.
+
+* **The mutation run had reported this mutant as KILLED**, because the mutant *I* wrote also
+  dropped a stray file — a strictly stronger mutation than the plan's. A mutant that does two
+  things cannot tell you which one the test caught.
+* **The helper's docstring asserted the opposite of the truth**: *"Bytes rather than mtimes: an
+  mtime comparison passes for a rewrite of identical content."* Mtime is precisely what catches
+  that; bytes are what miss it. It read as a considered trade-off, which is why nobody re-derived
+  it. A wrong reason stated confidently is worse than no reason, because it ends the inquiry.
+
+The snapshot now compares the path set, the bytes **and** `st_mtime_ns`, over files and directories
+alike, with a table naming what each of the three is blind to on its own.
+
+**HIGH — the *already applied* predicate asked a whole-file question about a per-hunk fact.** It
+tested whether the hunk's removed lines occur *anywhere* in the manifest. A manifest is
+comment-dense and repeats blank lines and bare `#` everywhere, so any hunk deleting one could never
+be *already applied*: the user who adopted that change by hand was told **conflicts** — and under
+T4's all-or-nothing rule, that refuses their whole `--apply` run. It now asks whether the hunk's
+*before image* is still there, which is the same question scoped to the hunk's own region, with the
+pure-addition case carried by an explicit `not removed` guard where a reader can see it.
+
+**MEDIUM — a control test passed under the very mutant it was written to kill.** The first version
+of *"a deletion not yet applied is still clean"* deleted a line **in the middle** of the file. With
+trailing context, removing a line breaks the after image's contiguity on its own, so the first half
+of the predicate answered and the half under test was never consulted. Only a deletion at the
+**end** of the file — where there is no trailing context — reaches it. The shape of a fixture is
+part of what it tests, and "it deletes a line" was not specific enough to be a test of anything.
+
+**MEDIUM — `_range` and `_section` were written by hand and asserted by nothing.** Six mutants
+across them survived: emitting a two-number range where a one-line range is bare, dropping the
+empty-range back-off, an off-by-one on the start, `_section` returning `None` for everything,
+reading the wrong side, and dropping the column from the listing. The diff is the part of this
+command a user may paste into `patch`, and its numbers had no test. What looked like coverage was
+`assert "[budget]" in out` — satisfied by the diff body's own context line, whatever the listing
+said. The range check is now a property test against `difflib.unified_diff` rather than literals,
+so it cannot drift with the fixture.
+
+**MEDIUM — one message, two copies, nothing watching.** `cannot compare` was byte-identical in
+`doctor.py` and `upgrade.py`, with a docstring in the second saying *"deliberately the same message
+`pnk doctor` prints"* — a convention with no gate, which is the shape F1 already is in this same
+plan. It now lives in `template.py` beside the archive it describes, with a test that calls both
+surfaces and compares.
+
+**METHOD — a scratch copy of this repo that includes `.venv` runs the *original* worktree's code.**
+Reported by the reviewer against its own first attempt: `rsync`ing the tree and running `pytest` in
+the copy reported **all 29 mutants surviving**, including *"always return CLEAN"*. `uv run python3
+-c` resolved the copy's source correctly while `pytest` did not, so a spot-check of one mutant
+would not have exposed it. `rm -rf .venv && uv sync --frozen --all-extras` in the copy is what makes
+the harness honest. Together with the `__pycache__` finding above, the rule is one rule: **a
+mutation harness must prove it can kill something before its silence means anything** — run a known
+mutant first, and treat a run with no kills as a broken harness rather than a clean bill.
+
+**MEDIUM — three of the first review's own fixes shipped with no test, in a commit whose message
+said each had one.** The second pass reverted them one at a time and the suite stayed green: the
+summary line's nouns, the `cannot compare:` prefix on the no-template path — which `docs/CLI.md`
+publishes as a scriptable contract, *"every one of them opens with `cannot compare:`"* — and the
+conflict trailer that had just been rewritten to stop asserting a cause it cannot know. **A fix
+applied under review inherits the confidence of the review and none of its scrutiny.** The rule
+that follows: a review's fixes get the same treatment as the code they fix, mutation included.
+
+The same pass found the wrapper's glue restore untested — dropping `.replace(_GLUE, " ")` printed a
+private-use codepoint into the middle of ``run `pnk init` `` on the one message every KB in
+existence receives, with 31 tests green.
+
+**MEDIUM — a test written to hold a fix could not fail.** `_TABLE` was tightened to stop a
+multi-line array's continuation line being reported as a table, and the test written with it
+wrapped `include = [` over three lines. A wrapped array of *strings* has continuation lines opening
+with `"`, so both the loose and the tight pattern answered `[sources]` and the test passed under
+either. It is now a unit test whose fixture is an array **of arrays**, which is the only shape that
+discriminates — and the tightening turned out to have lost `[[links.kb]]` and `[budget]  # caps`,
+two legitimate headers, which nothing had noticed either.
+
+**MEDIUM — a new test loaded real model weights, and CI could never have told us.** The test
+comparing `pnk doctor` and `pnk upgrade` called the whole `diagnose()` on a fixture naming the real
+`sentence-transformers` provider. On a checkout with `pinakes[st]` it downloads weights, takes
+three seconds and dies on a `FutureWarning` that `filterwarnings = ["error"]` turns into a failure.
+**CI's matrix is `[light]`, `[light,pdf]` and `[light,pdf,claude]` — it never installs `[st]`**, so
+this would have been green on every run and red on the machine of anyone who had the default extra
+the README recommends. Naming a provider nothing registers keeps the report offline and instant.
+
+**And the plan is a document a later increment builds from, so its errors are not cosmetic.** The
+second pass found T3's own specification still carrying the whole-file predicate this increment had
+just proved wrong, and the exit-criteria block still instructing *"compare bytes and the path set,
+**not** mtimes"* — the inverted sentence whose implementation let this increment's named mutation
+survive. **T4 reads that page next.** Both now carry a dated correction rather than a silent edit,
+because the wrong version had already been built once from the words as written.
+
+**MEDIUM — the remedy named the newest archived version where the sentence means the oldest, and
+one archived version is why nobody saw it.** *"A KB stamped from X **or later** is compared
+automatically"* printed `archived[-1]`. With a single archived version `[-1]` and `[0]` are the same
+string, so the message read correctly on every KB that exists — and would have started telling
+covered users they are not covered at the next template bump, on **both** surfaces, in the message
+this project calls the path 100% of KBs take. **A one-element collection makes two different
+intentions indistinguishable**, which is the same reason T1's gate leg (ii) is vacuous today and
+says so out loud. The test that pins it uses the fixture that archives two.
+
+**MEDIUM — the correction broke the thing it was correcting.** Pass 2's ⚠ blockquote about the
+placement predicate was inserted **between rows 1 and 2** of the predicate table. In Markdown a
+table block ends at the first non-row line, so rows *clean* and *conflict* rendered as literal text
+inside the blockquote: the rule T4 must build appeared on the published site as a one-row table. It
+was caught by rendering the file, not by reading the diff — and the diff looked right, because the
+words were all correct and in a sensible order. **A correction to a document is a change to that
+document and needs the same reading**; the fact that it is a correction is why it gets less.
+
+**LOW — three assertions compared a payload against the enum that produced it.**
+`payload["outcome"] == Outcome.NO_BASELINE.value` is green under any rename of both sides, which is
+exactly the rename that breaks a consumer's parser. Eight JSON strings lived in that gap. The
+replacement writes the keys and values out as literals, once, so a wire change is a visible diff in
+a test rather than a silent break in somebody's script. **A test that derives its expectation from
+the code under test is a tautology wearing an assertion's clothes** — the same shape as the
+`"[budget]" in out` assertion two passes earlier, which the diff body satisfied.
+
+**HIGH — three edit batches aborted partway and I reported all three as landed.** The fixes were
+applied by scripts that walked a list of `(file, old, new)` and wrote each file as they went. When
+an anchor failed to match — because an earlier edit in the same run had already changed the text —
+the script raised, leaving the files *before* the failure written and the files *after* it
+untouched. Six edits were lost that way: the assertion pinning the oldest-archived-version fix, the
+`up to date` branch assertions, three of the four `cannot compare:` prefix assertions, a
+`docs/KB-UPDATES.md` contradiction and a `docs/RETROSPECTIVES.md` heading. **Two of them were the
+headline fixes of the commit that claimed them**, and the commit message, the retro fragment and
+`docs/VERIFICATION.md` all said they were pinned by a named test. The next pass found the test
+asserted nothing of the kind.
+
+Three rules came out of it, and the third is the one that would have caught this on its own.
+
+* **An edit batch is all-or-nothing.** Resolve every anchor first, write nothing until all of them
+  match, and name the file and the anchor when one does not.
+* **Never let one batch depend on text an earlier edit in the same batch produced.**
+* **A claim that a fix is pinned is a claim about a *failing* test.** Revert the fix and watch the
+  suite go red, or do not write the word "pinned". Four separate fixes across three passes were
+  described as pinned by tests that were green without them — and each was found by the next
+  reviewer doing the revert I had not.
+
+**MEDIUM — an assertion can be true because the current wording is kind.** *"`pnk init` appears
+unbroken in the output"* passed with the code-span protection removed, because at this width the
+remedy's spans happen not to straddle the wrap column. It was a real assertion of a real property
+that simply could not fail on this input. The property belongs to the wrapper, so it is now tested
+against the wrapper, with a fixture built so that plain `textwrap` **provably** splits the span —
+and a second assertion that checks the fixture still has that property, because otherwise the test
+degrades into the one it replaced the moment someone edits the string.
+
+**Where the review loop stopped, and what each pass cost.** Five adversarial passes, finding
+**30 → 22 → 13 → 6 → 1**. The fifth found no defect in shipped behaviour — one documentation
+overstatement and seven coverage gaps in code that was correct — which is the signal the loop was
+waiting for. What the shape of that curve says is worth more than any single finding: **the first
+pass over an increment is not the expensive one.** Passes 2 and 3 each found that a *previous
+pass's fixes* were wrong or untested, and pass 4 found the tooling that had lost them. A review that
+stops at one pass stops before it has reviewed anything it changed.
+
+**The classes, in the order they cost the most:**
+
+| Class | Instances | Why it survives a careful reading |
+|---|---|---|
+| A fix claimed as "pinned" whose test is green without it | 4 | The claim is about a *failing* test, and nobody runs the failure |
+| A test that cannot fail on its own fixture | 3 | It asserts a real property of a real surface; only the input is wrong |
+| A correction that broke what it corrected | 2 | The words are right, so the diff reads right |
+| A whole-file question standing in for a per-hunk one | 1 | Both are true on the fixture that motivated the feature |
+
 ## Design review passes 1–7 (pre-implementation)
 
 Seven adversarial passes over [`DESIGN.md`](DESIGN.md) **before any code was written** — 58 findings
