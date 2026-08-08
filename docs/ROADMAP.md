@@ -20,8 +20,8 @@ precision nobody measured.
 ## Where things stand right now — 20260808 06:41 UTC
 
 - **30 releases in 14 days.** [`0.1.0`](#010--the-engine--20260725-1527) on 20260725;
-  [`0.20.1`](#0201--a-tier-that-is-not-built-stops-being-accepted--20260808-0641) on 20260808.
-- **Latest on PyPI: `0.20.1`.** Every release from `0.2.2` on is published
+  [`0.21.0`](#0210--a-template-says-what-it-installs--20260808-1015) on 20260808.
+- **Latest on PyPI: `0.21.0`.** Every release from `0.2.2` on is published
   ([STATUS § Published on PyPI](STATUS.md#published-on-pypi)).
 - **Two of the four named releases have shipped** — the links release across
   [`0.5.0`](#050--links-you-can-walk--20260731-1127)–[`0.6.0`](#060--links-you-can-write--20260801-1051),
@@ -64,7 +64,7 @@ precision nobody measured.
   shipped as `0.20.1`**, refusing a vector tier that is not built rather than accepting it silently.
   **T7 remains**; `main` has moved far enough that the plan's Baseline block must be re-run before
   any `file:line` in it is trusted.
-- **[Five open corrections](#open-corrections--five-live)** — the list emptied on 20260805 and
+- **[Six open corrections](#open-corrections--six-live)** — the list emptied on 20260805 and
   refilled on 20260807 and 20260808. It refills from *use*, and by four different routes: two
   entries came from **building** 2d and are invisible from reading the code, one from **reading**
   under adversarial review, one was **created** by the increment that closed another, and one came
@@ -111,11 +111,12 @@ number belongs to a release only when it is cut
 | **[0.18.0](#0180--the-drift-warning-says-something-you-can-act-on--20260807-2237)** | 20260807 22:37 | The drift warning says something you can act on | • Drift reported as a **computed line count**, both sides rendered<br>• Template against template — your own tuning cannot appear<br>• `cannot compare` on every KB that exists, with an honest remedy<br>• `same manifest` instead of a misleading `0 lines differ`<br>• An unsupplied variable is a message, not a traceback<br>• *The template release, interim cut (D-9)* |
 | **[0.19.0](#0190--what-the-template-changed-in-your-own-file--20260808-0418)** | 20260808 04:18 | What the template changed, in your own file | • `pnk upgrade` — the diff itself, hunk by hunk<br>• **applies cleanly / already applied / conflicts**, and *already applied* is why a later `--apply` cannot duplicate a key<br>• Writes nothing; exit **`3`** is new and means *no baseline*<br>• `cannot compare` on every KB that exists, same wording as `pnk doctor`<br>• Five adversarial passes: 30 → 22 → 13 → 6 → 1<br>• *The template release, interim cut (D-9)* |
 | **[0.20.0](#0200--adopting-the-change-after-you-have-seen-it--20260808-0541)** | 20260808 05:41 | Adopting the change, after you have seen it | • `pnk upgrade --apply` — writes the hunks that fit, refuses the whole run if any conflicts<br>• The **only** thing that rewrites a `pinakes.toml` after `pnk init`<br>• A `[budget]` cap applies like any other change — and both commands print it first, with both values (D-10)<br>• Never writes `[kb] requires_pinakes`; it names the keys and leaves the floor to you (D-11)<br>• A conflict now carries two codes: `0` reporting, `1` applying<br>• Five adversarial passes: 5 → 2 → 2 → 3 → 0<br>• *The template release, interim cut (D-9)* |
+| **[0.21.0](#0210--a-template-says-what-it-installs--20260808-1015)** | 20260808 10:15 | A template says what it installs | • `pnk templates` — name, version, description, `--json`; **no `--kb`**, the answer is a property of the install<br>• **CLI-only, decided 20260808** — no `pinakes_*` tool: creation has no MCP surface, so it would list templates its caller cannot use<br>• `template.toml` gains `files = [...]`; **absent still means the historical two**<br>• An entry naming `_versions/`, writing outside the KB, or reading outside the template is refused — all checked before anything is written<br>• The drift gate folds `files` into its hash, closing a hole this increment opened; every hash published before 0.21.0 is unchanged<br>• A damaged template is an `unreadable` row, not a traceback<br>• *The template release, interim cut (D-9)* |
 | **[0.20.1](#0201--a-tier-that-is-not-built-stops-being-accepted--20260808-0641)** | 20260808 06:41 | A tier that is not built stops being accepted | • `vector_tier = "sqlite-vec"` is **refused at load time** — it was accepted and silently ignored<br>• A KB setting it **stops loading entirely**, on every command; the fix is `vector_tier = "auto"` and changes nothing else<br>• Silent on all four surfaces before this: `sync`, `search`, the index's `meta`, `pnk doctor`<br>• A **PATCH with a documented config break**, deliberately (D-12), on 0.7.1's precedent<br>• The value returns when the tier does — D-4 taken as option A (T5)<br>• `meta`'s tier now comes from `search.resolve_tier()`, not a literal<br>• *The template release, interim cut (D-9)* |
-| | | **[Open corrections](#open-corrections--five-live)** | • **Five live** — two from building 2d, one from T3's review, one from T4's, one from T5's<br>• CRLF closed by T4; the same-manifest gap opened by it<br>• Four routes in: building, reading, shipping, generalising a fix — none finds the others'<br>• None blocking |
+| | | **[Open corrections](#open-corrections--six-live)** | • **Six live** — two from building 2d, one from T3's review, one from T4's, one from T5's, one from T7's<br>• CRLF closed by T4; the same-manifest gap opened by it<br>• Five routes in: building, reading, shipping, generalising a fix, and reviewing a new surface — none finds the others'<br>• None blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
-| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0, T2 in 0.18.0, T3 in 0.19.0, T4 in 0.20.0, T5 in 0.20.1**; T7 to come<br>• Cuts more than once (D-9), so the name stays here |
+| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0, T2 in 0.18.0, T3 in 0.19.0, T4 in 0.20.0, T5 in 0.20.1, T7 in 0.21.0**<br>• Only the gated T6 (`sqlite-vec`) and T8 (a second template) remain, neither scheduled<br>• Cuts more than once (D-9), so the name stays here |
 
 ---
 
@@ -860,6 +861,51 @@ No `schema_version` bump, so no rebuild.
 
 ---
 
+## 0.21.0 — A template says what it installs · 20260808 10:15
+
+- **`pnk templates` lists what this build can stamp a KB from.** Name, version, description, and
+  `--json` carrying the `notes@1.1` reference a manifest records. Until now `template.available()`
+  was reachable from exactly one place — the error raised when `pnk init --template` names something
+  that does not exist — so the way to discover what was installed was to get something wrong first.
+- **It takes no `--kb`, and that is a decision rather than an omission.** The listing is a property
+  of the *install*, identical wherever it runs. Which template a given KB is on is a different
+  question, and `pnk upgrade` answers it.
+- **CLI-only — the MCP question O-1 left open, decided 20260808.** There is no `pinakes_*` tool for
+  the listing. The server's four tools all answer about content in a KB it was pointed at; there is
+  no `init`, no mutation, no KB-creation path at all. A template tool would therefore name things
+  its caller cannot act on, and would be the first tool on that surface reporting machine state from
+  *outside* the served KBs — which `docs/DESIGN.md` §4.7 states as a boundary, not a convenience.
+- **A template declares the files it writes: `files = [...]`.** It replaces the hardcoded
+  `README.md` / `eval/questions.yaml` pair. **An absent key still means exactly those two** — every
+  template in existence declares nothing, so absent has to keep meaning what it always did; an
+  explicit `files = []` is a different statement and copies nothing.
+- **Four refusals, and every entry is checked before any entry is written**, so a bad declaration
+  never leaves a half-stamped KB. An entry naming `_versions/` is refused because containment cannot
+  catch it — the path lands *inside* the KB, and what is wrong with it is provenance, not escape:
+  an archived version is the frozen record of what a reference *meant*.
+- **Writing outside the KB and reading outside the template are two layers, and neither covers the
+  other.** An escaping destination reads from inside the template; an escaping source writes to
+  inside the target. The plan's rule sentence named only the first while its test list required the
+  second, so both were built.
+- **The drift gate folds `files` into its content hash, closing a hole this increment opened.**
+  `template.toml` is otherwise excluded from that hash, deliberately — hashing the file that
+  declares the version would make every bump change the hash by construction, so *a version bumped
+  with no content change* could never be detected. That exclusion was priced when the file held only
+  a name, a version and a description. `files` decides what a KB is stamped with, so it would have
+  sat outside the very check the archive exists to provide. Only the list is folded in; an absent
+  key contributes nothing, so **every hash published before 0.21.0 is byte-identical** and no ledger
+  row needed migrating.
+- **A damaged template is named, not fatal.** One template directory without a readable
+  `template.toml` used to abort the whole listing as a traceback, reporting nothing about the
+  templates that read perfectly. It is now an `unreadable` row beside the good ones, with a line
+  naming what to reinstall and exit `1`. The underlying defect in `template.describe` reaches
+  `init`, `doctor` and `upgrade` too and stays open — what is fixed is the blast radius this command
+  introduced.
+
+No `schema_version` bump, so no rebuild.
+
+---
+
 ## 0.20.1 — A tier that is not built stops being accepted · 20260808 06:41
 
 - **`vector_tier = "sqlite-vec"` is refused at load time.** It named a tier that does not exist in
@@ -890,20 +936,25 @@ No `schema_version` bump, so no rebuild.
 
 # Part 5 · What is not built
 
-## Open corrections — five live
+## Open corrections — six live
 
 **It emptied on 20260805 22:18, refilled on 20260807 from one increment, and again on 20260808 from
-T3's, T4's and T5's work.** Owned by
+T3's, T4's, T5's and T7's work.** Owned by
 [`plans/20260731_1202-open-corrections.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260731_1202-open-corrections.md),
-which carries all five in full.
+which carries all six in full.
 
-**The five arrived four different ways, and that is the useful part of the count.** Items 1 and 2
+**The six arrived five different ways, and that is the useful part of the count.** Items 1 and 2
 came from *building* 2d and neither is visible from reading the code that holds it — the pattern
 every entry had followed until 20260808. **Item 3** broke it, found by T3's adversarial *reading*.
 **Item 4** was not found at all but *created*, by T4, in the increment that closed the item standing
 there before it. **Item 5** came from T5 asking where else the defect it had just fixed still
 lives, and finding it two files away in code T5 never touched — an eval outcome recording the
-vector tier it was *configured* with rather than the one that ran. The first two:
+vector tier it was *configured* with rather than the one that ran. **Item 6** came from T7 building
+a new surface and asking what it inherited: `pnk init` writes `pinakes.toml` before it copies a
+template's declared files, so a refused declaration leaves a directory holding a manifest and no
+extras. It is pre-existing — *any* failure after that write does it — and T7 only added one more way
+to reach it, which is why it is an item rather than something T7 fixed on its way past. The first
+two:
 
 * **`graph_gate.check_identity` is blind to `chunking`.** It compares `k`, `embedding`, `rerank`,
   `ranking` and `retrieval` across its three legs, and not the block that says what a leg was
@@ -1097,8 +1148,11 @@ will be until the next template bump.
 **State:** the plan
 ([`plans/20260804_1016-template-release.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1016-template-release.md))
 is written, adversarially reviewed (36 findings), and its four open decisions were taken by the user
-on 20260804. **T1 to T5 are done** — T5 shipped in 0.20.1, refusing `vector_tier = "sqlite-vec"`
-instead of accepting and ignoring it, and taking D-4 as option A. **T7 (`pnk templates`) remains.**
+on 20260804. **T1 to T5 and T7 are done** — T5 shipped in 0.20.1, refusing `vector_tier = "sqlite-vec"`
+instead of accepting and ignoring it and taking D-4 as option A; T7 shipped in 0.21.0 with
+`pnk templates` and a template's own `files = [...]`. **Only the two gated increments remain — T6
+(the `sqlite-vec` tier) and T8 (a second template) — and neither is scheduled**, so the release name
+stays in the unbuilt-work table.
 T4 in turn left two things behind: it **created** an open correction — `--apply` writes nothing on
 the *same manifest* outcome, so that KB can never record the new reference — and it found two of the
 plan's own test specifications unable to measure what they named. T5 found an eighth: the plan asks

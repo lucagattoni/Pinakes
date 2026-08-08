@@ -79,6 +79,21 @@ one copy.
 pnk init my-kb --name "My notes"
 ```
 
+`notes` is the blueprint, and it is the only one shipped. To see what this build has, and the
+version each is on:
+
+```bash
+pnk templates
+```
+
+```
+notes  1.1  Plain Markdown notes: the smallest useful knowledge base.
+```
+
+It takes no `--kb` — the answer is a property of the install, not of a KB. Once you have one,
+[`pnk upgrade`](#adopting-a-template-change) is what says which template it is on and what has
+changed since.
+
 ```
 created /path/to/my-kb from notes@1.1
   kb id: 01KYMJMH8ECH945D5056CJD72V  (permanent — never edit it)
