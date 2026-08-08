@@ -69,6 +69,7 @@ def _source(
     per_operation: str = "0.05",
     low_below: str = "0.31",
     tail_note: bool = False,
+    tight: bool = False,
 ) -> str:
     """A manifest template shaped like the shipped one: identity block, rendered values, literals.
 
@@ -81,6 +82,7 @@ def _source(
     | `per_operation` | one `[budget]` value | replacement |
     | `low_below` | one line inside a *commented-out* block | replacement, in comments |
     | `tail_note` | a comment at the end of the file | pure addition, **no trailing context** |
+    | `tight` | the blank line before `[budget]` | pure **deletion** of a line the file repeats |
 
     `tail_note` is the one that looks redundant beside `pdf_note` and is not: with nothing after
     the added lines, the hunk's *before* image (its context alone) is still present once the change
@@ -123,7 +125,7 @@ def _source(
         "[rerank]",
         'provider = "{{ rerank_provider }}"',
         'model    = "{{ rerank_model }}"',
-        "",
+        *([] if tight else [""]),
         "[budget]",
         "confirm_above_eur = 0.01",
         f"per_operation_eur = {per_operation}",
@@ -190,7 +192,8 @@ def _run(root: Path, *flags: str) -> tuple[int, str]:
 
 
 def _placements(output: str) -> list[tuple[str, str]]:
-    """Every `(placement, header)` pair the human listing carries, in order."""
+    """Every `(placement, section, header)` the human listing carries, flattened to the first and
+    last, in order."""
     found: list[tuple[str, str]] = []
     for line in output.splitlines():
         match = re.match(r"\s+(applies cleanly|already applied|conflicts)\s+(.*?)(@@ .*@@)$", line)
@@ -199,17 +202,44 @@ def _placements(output: str) -> list[tuple[str, str]]:
     return found
 
 
-def _tree(root: Path) -> dict[str, bytes]:
-    """Every file under the KB, by relative path, with its bytes.
+def _listed(output: str) -> list[tuple[str, str]]:
+    """Every `(placement, section)` pair — what the listing *names*, not what the diff contains.
 
-    The **path set** is compared as well as the contents, because "writes nothing" is a claim about
-    the directory and a snapshot of one file would be satisfied by a command that wrote a different
-    one. Bytes rather than mtimes: an mtime comparison passes for a rewrite of identical content.
+    `"[budget]" in out` is not that assertion: the diff body carries `[budget]` as a context line,
+    so a listing that named no section at all would satisfy it. That is how `_section` came to be
+    entirely untested while a test appeared to cover it.
+    """
+    found: list[tuple[str, str]] = []
+    for line in output.splitlines():
+        match = re.match(r"\s+(applies cleanly|already applied|conflicts)\s+(.*?)\s*@@ .*@@$", line)
+        if match:
+            found.append((match.group(1), match.group(2)))
+    return found
+
+
+def _tree(root: Path) -> dict[str, object]:
+    """Every path under the KB — files **and** directories — with its bytes and its mtime.
+
+    Three things are compared, because "writes nothing" is a claim about the whole directory and
+    each of the three is blind to a different write:
+
+    | Compared | Catches | Blind to |
+    |---|---|---|
+    | the path set | a file or directory created or removed | a rewrite in place |
+    | the bytes | a file whose contents changed | **a rewrite of identical content** |
+    | `st_mtime_ns` | a rewrite of identical content, and a directory a new entry touched | — |
+
+    **The first version of this helper compared only the bytes of only the files, and its docstring
+    had the reasoning inverted** — it said an mtime comparison passes for a rewrite of identical
+    content, when the opposite is true. The plan's own named mutation (`plan()` opens the manifest
+    for writing) survived it, as did `mkdir(".pinakes")`. Both die now.
     """
     return {
-        str(path.relative_to(root)): path.read_bytes()
+        str(path.relative_to(root)): (
+            path.read_bytes() if path.is_file() else None,
+            path.stat().st_mtime_ns,
+        )
         for path in sorted(root.rglob("*"))
-        if path.is_file()
     }
 
 
@@ -323,7 +353,10 @@ def test_a_user_edited_region_is_reported_as_a_conflict_not_applied(
         "applies cleanly",
         "conflicts",
     ]
-    assert "[budget]" in out
+    # The *listing* names the region, which `"[budget]" in out` does not assert: the diff body
+    # carries that string as a context line whatever the listing says.
+    assert ("conflicts", "[budget]") in _listed(out)
+    assert ("applies cleanly", "[sources]") in _listed(out)
 
 
 def test_a_kb_with_links_kb_entries_still_places_unambiguous_hunks(
@@ -514,6 +547,8 @@ def test_nothing_under_the_kb_is_written(
     assert code == 0
     assert "@@" in out, "a run with nothing to report would satisfy this test for the wrong reason"
     assert _tree(root) == before
+    # docs/CLI.md and docs/GUIDE.md both promise the report says so in as many words.
+    assert "Nothing was written" in out
 
 
 def test_json_and_human_output_report_the_same_hunks(
@@ -550,6 +585,9 @@ def test_a_version_bump_with_no_manifest_change_says_same_manifest(
     assert code == 0
     assert "identical" in out
     assert "@@" not in out
+    # The human line rides on `detail`, so `Outcome.SAME_MANIFEST` -> `UP_TO_DATE` changes nothing
+    # a reader sees and everything a JSON consumer sees. Only this assertion notices.
+    assert json.loads(_run(root, "--json")[1])["outcome"] == Outcome.SAME_MANIFEST.value
 
 
 def test_an_unarchived_recorded_version_refuses_with_a_remedy(
@@ -752,3 +790,150 @@ def test_the_report_never_diffs_the_user_against_the_template(
     assert _changed(after), "a report with no changed lines would be invariant under anything"
     assert not any("fastembed" in line for line in _changed(after))
     assert "final_k" not in after
+
+
+# --- What the adversarial review found missing, each with the mutant it kills -------------------
+
+
+def test_a_removed_line_the_manifest_repeats_does_not_block_already_applied(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The *already applied* test asks about the hunk's **before image**, not about its removed
+    lines on their own — and the difference is a misclassification, not a nicety.
+
+    `tight` deletes the blank line before `[budget]`. A blank line occurs a dozen times in any
+    manifest, so "do the removed lines appear anywhere in the file" is always *yes* and the user
+    who adopted this change by hand was told **conflicts** — under a later `--apply`'s
+    all-or-nothing rule, that refuses the whole run for them. The same holds for a hunk removing a
+    bare `#`, which a comment-dense template also repeats.
+
+    Found by review, not by mutation: nothing was wrong with the *code path*, only with which
+    question it asked.
+    """
+    name = _two_versions(synthetic_template, old=_source(), new=_source(tight=True))
+    root = _stamp(tmp_path / "kb", name, "2.0", records="synth@1.0")
+
+    code, out = _run(root)
+
+    assert code == 0
+    assert [placement for placement, _ in _placements(out)] == ["already applied"]
+
+
+def test_a_deletion_not_yet_applied_is_clean_not_already_applied(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The control for the test above, and the reason the second half of the predicate exists.
+
+    Deleting that half entirely makes *this* KB — which still has the line the template dropped —
+    report `already applied`, and a later `--apply` would skip a change the user has not got.
+
+    **The deletion has to be at the end of the file, and the first version of this test missed
+    that.** With trailing context (the `tight` variant), removing a line breaks the *after* image's
+    contiguity in `theirs` on its own, so the first half of the predicate already answers and the
+    second is never consulted — the test passed under the mutant. At the end of the file there is
+    no trailing context: the after image is the leading context alone, which is still present, so
+    only the before-image half can tell "not yet applied" from "already applied".
+    """
+    name = _two_versions(synthetic_template, old=_source(tail_note=True), new=_source())
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    code, out = _run(root)
+
+    assert code == 0
+    assert [placement for placement, _ in _placements(out)] == ["applies cleanly"]
+
+
+def test_the_printed_diff_is_a_real_unified_diff(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """Every `@@ -a,b +c,d @@` header, against `difflib`'s own.
+
+    `hunks()` re-implements unified-diff range formatting by hand (a one-line range prints bare, an
+    empty range points at the line before the gap). **No test asserted a single one of those
+    numbers**: three independent mutants of `_range` survived the first mutation run, and the diff
+    is the part of this command a user may paste into `patch`.
+
+    Asserted against the library rather than against literals, so it cannot drift with the fixture.
+    """
+    import difflib
+
+    from pinakes.upgrade import hunks
+
+    for old, new in (
+        (_source(), _source(pdf_note=True, per_operation="0.30")),
+        (_source(), _source(tight=True)),
+        (_source(), _source(tail_note=True)),
+        (_source(tail_note=True), _source()),
+        ("only one line\n", "only one other line\n"),
+        ("a\nb\nc\n", "x\na\nb\nc\n"),
+        ("a\nb\nc\n", ""),
+    ):
+        mine = "\n".join(
+            line for hunk in hunks(old, new, "") for line in (hunk.header, *hunk.lines)
+        )
+        theirs = "\n".join(
+            difflib.unified_diff(old.splitlines(), new.splitlines(), lineterm="", n=3)
+        )
+        # `unified_diff`'s first two lines are the `---`/`+++` file headers, which this command has
+        # no filenames to fill in and deliberately does not print.
+        assert mine == "\n".join(theirs.splitlines()[2:]), f"{old!r} -> {new!r}"
+
+
+def test_the_listing_names_the_table_each_hunk_falls_in(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """`_section` was entirely untested — returning `None` for everything, reading `ours` instead of
+    `base`, and dropping the column from the listing all survived — because the assertion that
+    looked like it covered this was `"[budget]" in out`, satisfied by the diff's own context line.
+    """
+    name = _two_versions(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    code, out = _run(root)
+
+    assert code == 0
+    assert _listed(out) == [("applies cleanly", "[sources]"), ("applies cleanly", "[budget]")]
+
+
+def test_a_multi_line_array_is_not_reported_as_a_table(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """A continuation line of a multi-line array opens with `[`, and the first `_section` pattern
+    matched it — reporting `["b", "c"],` as the enclosing table. Not reachable from the shipped
+    template, whose arrays are one-liners, and reachable from any template that wraps one."""
+    spread = _source().replace(
+        'include = ["**/*.md", "**/*.txt"]',
+        'include = [\n  "**/*.md",\n  "**/*.txt",\n]',
+    )
+    name = _two_versions(
+        synthetic_template,
+        old=spread,
+        new=spread.replace('"**/*.txt",', '"**/*.txt",\n  "**/*.rst",'),
+    )
+    root = _stamp(tmp_path / "kb", name, "1.0")
+
+    code, out = _run(root)
+
+    assert code == 0
+    assert [section for _, section in _listed(out)] == ["[sources]"]
+
+
+def test_doctor_and_upgrade_say_the_same_thing_about_an_unarchived_version(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """One fact, one wording. The two surfaces carried byte-identical copies of this message for one
+    increment with nothing to notice if either were reworded — which is the *"two surfaces
+    disagreeing about one KB"* defect the module's own docstring says it exists to prevent."""
+    from pinakes.doctor import diagnose
+    from pinakes.manifest import load
+    from pinakes.upgrade import plan
+
+    name = _two_versions(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0", records="synth@0.9")
+
+    report = plan(load(root))
+    check = next(c for c in diagnose(load(root)).checks if c.name == "template")
+
+    assert report.detail == check.detail
+    assert report.remedy == check.remedy
+    assert "cannot compare" in check.detail

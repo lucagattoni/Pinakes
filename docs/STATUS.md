@@ -25,6 +25,7 @@
 | `pnk budget` | shipped 0.3.0 | I6b. Day/month/operation spend, `--resolve` for an unknown outcome |
 | `pnk links` | shipped 0.5.0 | L4. What a document connects to and what connects to it: `--rel`, `--direction`, `--depth`, `--query`, `--json` |
 | `pnk link` | shipped 0.6.0 | L6. Writes one `links[]` entry into the source document's own sidecar. Targets: a `pnk://` URI, `<alias>:<path>`, or a path in this KB |
+| `pnk upgrade` | merged to `main`, not yet released | T3. Prints the template diff and says, hunk by hunk, whether each change still fits your manifest. Writes nothing. Exits `3` — *no baseline* — on every KB that predates the version archive, which today is all of them |
 | `pnk ask --deep` | **not built** | the deep release |
 
 | Capability | State | Notes |
@@ -315,7 +316,7 @@ Rationale for the ordering is in [DESIGN §8](DESIGN.md#8-delivery-plan).
 | **the graph release** ✅ **shipped 0.11.0** | Structural edges, the expansion channel (`graph_channel`, default off), `schema_version` 3 — eval-gated. All six increments landed: **G1** and **G4** in 0.6.0, **G2** in 0.7.0, **G3**, **G5** and **G6** in 0.11.0. **Its gate ran and did not pass, so `expand` ships `off`** ([the numbers](#did-the-expansion-channel-earn-its-default--no-measured-20260804-2252)) — an eval-gated feature that is built, measured and off by construction, which is the structure working rather than failing. What would change it is a corpus or a different channel design, never a more expensive one ([decision](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1442-decision-g3-go.md)) |
 | *the graph release, staged* | PPR graph channel, the `[ner]` extra — each eval-gated, not scheduled |
 | *the deep release* | `pnk ask --deep` |
-| *the template release* | Template ecosystem, `pnk upgrade` migrations, the `sqlite-vec` tier |
+| *the template release* | Template ecosystem, `pnk upgrade`, the `sqlite-vec` tier |
 
 The order is a dependency order, not a schedule. Anything unreleased may be resequenced; only the
 ✅ rows are facts.

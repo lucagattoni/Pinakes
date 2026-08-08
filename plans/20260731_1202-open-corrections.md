@@ -66,6 +66,35 @@ copied, since embedding is free and the chunk texts are already in hand. The chu
 remains, and it predates the injection option by three releases.
 
 
+### 3 · A damaged template install escapes as a traceback, on two surfaces
+
+**File:** `src/pinakes/template.py`, `describe` (`:99`) and `render_archived` (`:230`).
+**Current:** every read of a template's own files is unguarded, so a damaged install raises
+something that is **not** a `PinakesError` and `cli.main` prints a stack trace instead of a
+message: `_versions/<v>/` without its `pinakes.toml.j2` gives `FileNotFoundError`, an unreadable
+file `PermissionError`, a non-UTF-8 one `UnicodeDecodeError`, a broken `{{` a
+`jinja2.TemplateSyntaxError`, and a missing or malformed `template.toml` a `FileNotFoundError` or
+`tomllib.TOMLDecodeError`.
+**Required:** the same treatment `_render` already gives `UndefinedError` — catch, and re-raise as
+a `TemplateError` naming the template, the version and the file.
+
+**Found 20260808 by T3's adversarial review, and it is not T3's.** `pnk doctor` has had the
+identical hole since the archive landed, and `pnk upgrade` inherited it by calling the same two
+functions. Unreachable from a wheel this project ships — the drift gate would be red first — so it
+is a message-quality defect on a damaged or third-party install, not a correctness one.
+
+### 4 · CRLF is invisible to the placement predicate, and only `--apply` can be hurt by it
+
+**File:** `src/pinakes/upgrade.py`, `hunks` (`str.splitlines()`).
+**Current:** `splitlines()` strips `\r`, so a hunk generated from LF-rendered templates is reported
+as placeable against a **CRLF** manifest. For a report that is correct — the change genuinely does
+belong there.
+**Required, in T4 and not before:** `--apply` writes lines back, so it would write LF lines into a
+CRLF file and leave a mixed-ending manifest. Either preserve each line's ending or refuse a
+manifest whose endings are not uniform, and say which.
+
+**Recorded now because the evidence is now**, and T4 will otherwise meet it as a bug report.
+
 
 ---
 

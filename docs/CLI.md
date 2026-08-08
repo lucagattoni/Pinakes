@@ -220,7 +220,7 @@ Four outcomes, and on every KB in existence today it is the second:
 |---|---|
 | `notes@1.1` — `OK` | the recorded and installed versions match |
 | `cannot compare: notes@1.0 is not in this build's archive` | the recorded version's content was never archived. `notes@1.0` denotes eleven different template contents, so it is deliberately left out: a diff from the wrong base is worse than no diff. The remedy names the comparison available today — `pnk init` a throwaway directory and diff its `pinakes.toml` against yours — and does **not** promise a later release will fix it, because an unarchived version's content is gone rather than pending. A KB stamped from `notes@1.1` onward is compared automatically |
-| `KB says X, installed is Y — 7 lines differ` | both versions are archived and their manifests differ. `pnk upgrade` will print the lines; nothing is applied automatically |
+| `KB says X, installed is Y — 7 lines differ` | both versions are archived and their manifests differ. [`pnk upgrade`](#pnk-upgrade) prints the lines; nothing is applied automatically |
 | `KB says X, installed is Y — same manifest` | both are archived and stamp an identical `pinakes.toml`. A template version covers four files and this comparison reads one of them, so the version moved without changing your manifest. Its `README.md` and starter golden set are yours to keep or refresh by hand |
 
 A template needing a variable this build cannot supply — a third-party one, or an archived version
@@ -534,20 +534,22 @@ Each hunk is then placed against your manifest, and there are three answers:
 | Outcome | What it means |
 |---|---|
 | **applies cleanly** | the lines the change expects are in your file, contiguous, in order, at exactly one place |
-| **already applied** | the change is *already* there — you adopted it by hand, or a newer `pnk init` wrote it. Not "clean": a later `--apply` re-inserting it would duplicate a key, which is a TOML error |
+| **already applied** | the change is *already* there — you adopted it by hand, or a newer `pnk init` wrote it. Not "clean": a later `--apply` would insert the lines a second time — which duplicates a key where the change carries one, and that is a TOML error rather than a mess you can tidy |
 | **conflicts** | anything else — you edited that region, the lines are there but in a different order, or they match in two places. Nothing is placed, and the diff above is what to apply by hand |
 
 **A conflict is not a failure and does not change the exit code.** This command writes nothing, so
 it has nothing to fail at; `pnk upgrade` exiting non-zero on a conflict would make it unusable
-beside `pnk doctor` in one script. The one non-zero code is `3` — *no baseline* — and it means the
-comparison never happened at all:
+beside `pnk doctor` in one script. The one code **peculiar to this command** is `3` — *no baseline*,
+meaning the comparison never happened at all. `1` and `2` still mean what they mean everywhere else,
+and a script that treats every non-zero as *no baseline* will read an unreadable manifest as one:
 
 | It says | Exit | When |
 |---|---|---|
 | `up to date: notes@1.1` | `0` | the recorded and installed versions match |
 | a diff, then a placement for each hunk | `0` | both versions are archived and their manifests differ |
 | `… stamp an identical pinakes.toml` | `0` | both are archived and render the same manifest. A template version covers four files and this command reads one of them |
-| `cannot compare: …` | `3` | the recorded version is not archived, the installed one is not, the template is not installed here, this KB records no template, or an archived version needs a variable this build cannot supply |
+| `cannot compare: …` | `3` | the recorded version is not archived, the installed one is not, the template is not installed here, this KB records no template, or an archived version needs a variable this build cannot supply. **Every one of them opens with `cannot compare:`**, so a script can match one string for the whole class |
+| `error: …` on stderr | `1` | an operational failure that is yours to fix: there is no KB here, or its manifest does not load |
 
 **Today `cannot compare` is what every KB in existence gets**, because `notes@1.0` is deliberately
 not archived — it denotes eleven different template contents, and a diff computed from the wrong

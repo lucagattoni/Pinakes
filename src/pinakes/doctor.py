@@ -221,34 +221,15 @@ def _changed_lines(base: str, ours: str) -> int:
 
 
 def _cannot_compare(missing: Sequence[str], name: str, archived: Sequence[str]) -> Check:
-    """The path every KB in existence takes, so it is written for someone who did nothing wrong.
+    """One `WARN` row carrying `template.cannot_compare`'s words — `pnk upgrade` prints the same.
 
-    `notes@1.0` is deliberately not archived — it denotes eleven different template contents, and a
-    diff computed from the wrong base is worse than no diff (D-2b). So this is the ordinary case
-    and not an edge case, and a one-word shrug here would be the single most-read string this
-    increment ships.
-
-    **It does not promise that a later release will fix this KB.** An earlier wording ended "from
-    the next template version onward the comparison is automatic", which is false for exactly the
-    people who read it most: `1.0`'s content is not archived and never will be, so a KB recording
-    it stays uncomparable however many versions ship afterwards. What a later version changes is
-    the *next* KB, and that is what this says.
+    The wording lives in `template.py` rather than here because two surfaces say it. They were
+    byte-identical copies for one increment and nothing would have noticed one of them drifting;
+    `tests/test_cli_upgrade.py::test_doctor_and_upgrade_say_the_same_thing_about_an_unarchived_version`
+    is what notices now.
     """
-    shipped = ", ".join(f"{name}@{version}" for version in archived)
-    return Check(
-        "template",
-        Status.WARN,
-        f"cannot compare: {' and '.join(missing)} "
-        f"{'is' if len(missing) == 1 else 'are'} not in this build's archive",
-        f"Nothing is wrong with your KB and nothing needs changing. A manifest records a version "
-        f"string, never the content that version meant, and this build ships the content of "
-        f"{shipped or 'no version of this template'} — so there is no baseline to diff against, "
-        f"and there will not be a later one: an unarchived version's content is gone, not pending. "
-        f"To see what moved, compare it by hand: run `pnk init` on a throwaway directory and diff "
-        f"its pinakes.toml against yours. A KB stamped from "
-        f"{f'{name}@{archived[-1]}' if archived else 'an archived version'} or later is compared "
-        f"automatically.",
-    )
+    detail, remedy = template.cannot_compare(missing, name, archived)
+    return Check("template", Status.WARN, detail, remedy)
 
 
 def _template(manifest: Manifest) -> Check:
@@ -273,7 +254,8 @@ def _template(manifest: Manifest) -> Check:
             "template",
             Status.WARN,
             f"{recorded} is not installed here",
-            "The KB still works; `pnk upgrade` is what will diff templates.",
+            "The KB still works. `pnk upgrade` is what diffs templates, and it needs this "
+            "one installed to do it.",
         )
     if installed.version == version:
         return Check("template", Status.OK, recorded)
@@ -321,7 +303,7 @@ def _template(manifest: Manifest) -> Check:
         Status.WARN,
         f"KB says {recorded}, installed is {installed.reference} — "
         f"{difference} {'line differs' if difference == 1 else 'lines differ'}",
-        "`pnk upgrade` will print them. Nothing is applied automatically, and a KB on an older "
+        "`pnk upgrade` prints them. Nothing is applied automatically, and a KB on an older "
         "template is not a broken one.",
     )
 

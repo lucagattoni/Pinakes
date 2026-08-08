@@ -41,7 +41,9 @@ in `theirs`, exactly once" a question worth asking.
 WRAP = 92
 """Where a remedy paragraph wraps. Never the diff — a wrapped diff line is a wrong diff line."""
 
-_TABLE = re.compile(r"\s*\[")
+# A TOML table header and nothing else. `\s*\[` alone also matched a multi-line array's
+# continuation line, so a hunk inside `include = [` reported its section as `["p", "q"],`.
+_TABLE = re.compile(r"\s*\[[^]\[]+\]\s*\Z")
 _CODE_SPAN = re.compile(r"`[^`]+`")
 _GLUE = "\ue000"
 """A private-use codepoint standing in for a space inside a `code span` while the text is wrapped.
@@ -82,6 +84,13 @@ _PLACEMENT_LABELS = {
     Placement.ALREADY_APPLIED: "already applied",
     Placement.CONFLICT: "conflicts",
 }
+
+_PLACEMENT_COUNTED = {
+    Placement.CLEAN: "clean",
+    Placement.ALREADY_APPLIED: "already applied",
+    Placement.CONFLICT: "conflicting",
+}
+"""The same three outcomes as nouns, for a line that puts a number in front of them."""
 
 
 class Outcome(Enum):
@@ -150,12 +159,10 @@ class Report:
 def _occurrences(lines: Sequence[str], block: Sequence[str]) -> int:
     """How many positions of *lines* hold *block* contiguously, in order, byte for byte.
 
-    **An empty block occurs zero times, and that is load-bearing rather than a convenience.** The
-    *already applied* predicate asks whether a hunk's removed lines are still present; a hunk that
-    only adds lines has none, so the honest answer is "no" and the predicate stays satisfiable.
-    Returning "everywhere" for the empty block — the other defensible convention — would make every
-    pure addition fall through to *clean*, which is exactly the misclassification the ordering of
-    the predicate exists to prevent.
+    An empty block occurs zero times. Nothing depends on that today — the pure-addition case is
+    carried by `_placement`'s own `not removed` guard, where it is visible — but "everywhere" is
+    the other defensible convention for the empty block and silently picking it would change an
+    answer, so the choice is stated rather than left to whoever reads the loop.
     """
     if not block:
         return 0
@@ -168,8 +175,9 @@ def _occurrences(lines: Sequence[str], block: Sequence[str]) -> int:
 def _placement(hunk_lines: Sequence[str], theirs: Sequence[str]) -> Placement:
     """The placement predicate, evaluated in an order that is part of the predicate.
 
-    1. `ALREADY_APPLIED` — the *after* image occurs at exactly one position, and the removed
-       lines occur nowhere.
+    1. `ALREADY_APPLIED` — the *after* image occurs at exactly one position, and the hunk's
+       *before* image occurs at none. A hunk that removes nothing satisfies the second half
+       vacuously, and that is what makes this reachable at all for a pure addition.
     2. `CLEAN` — the *before* image occurs at exactly one position.
     3. `CONFLICT` — anything else: no match, several matches, a partial match, a different order.
 
@@ -180,17 +188,26 @@ def _placement(hunk_lines: Sequence[str], theirs: Sequence[str]) -> Placement:
     has ever produced under `[sources]` is a pure addition, so this is the ordinary case and not a
     corner.
 
-    **"Found, unmodified, somewhere in `theirs`" is not the predicate.** It is satisfied by a
-    manifest whose `[budget]` table the user moved above `[retrieval]` — every context line is
-    present, so a loose rule reports *clean* while the hunk's position is meaningless — and it is
-    satisfied twice over by a comment-dense file's repeated blank lines. Uniqueness and contiguity
-    are part of the rule, not a refinement of it.
+    **The second half of test 1 asks about the *before image*, not about the removed lines on their
+    own — and the difference is a misclassification, not a nicety.** "Do the removed lines appear
+    anywhere in the file" is a whole-file question, so a hunk that removes a blank line or a bare
+    `#` — a manifest is comment-dense and repeats both — could never be *already applied*: the
+    user who adopted that change by hand was told `conflicts`, and under a later `--apply`'s
+    all-or-nothing rule that refuses the whole run for them. Asking whether the *before image* is
+    still there scopes the question to the hunk's own region, which is what was meant.
+
+    **"Found, unmodified, somewhere in `theirs`" is not the predicate.** A comment-dense file's
+    repeated blank lines and repeated comment shapes satisfy a loose rule twice over, and two
+    places a hunk could belong is not one. Uniqueness and contiguity are part of the rule, not a
+    refinement of it. (A user who moved a whole table *intact* is **not** an example of this:
+    placement here is content-addressed rather than offset-addressed, so a moved-but-unbroken
+    region still places, correctly. The plan's own text used it as one, and it does not hold.)
     """
     removed = tuple(line[1:] for line in hunk_lines if line[:1] == "-")
     after = tuple(line[1:] for line in hunk_lines if line[:1] in (" ", "+"))
-    if _occurrences(theirs, after) == 1 and _occurrences(theirs, removed) == 0:
-        return Placement.ALREADY_APPLIED
     before = tuple(line[1:] for line in hunk_lines if line[:1] in (" ", "-"))
+    if _occurrences(theirs, after) == 1 and (not removed or _occurrences(theirs, before) == 0):
+        return Placement.ALREADY_APPLIED
     if _occurrences(theirs, before) == 1:
         return Placement.CLEAN
     return Placement.CONFLICT
@@ -232,10 +249,11 @@ def _section(
 def hunks(base: str, ours: str, theirs: str) -> tuple[Hunk, ...]:
     """Every region `base → ours` changes, each carrying where it stands against `theirs`.
 
-    `autojunk=False`: the heuristic treats a line appearing in more than 1% of a long sequence as
-    noise, and a comment-dense manifest is exactly the shape whose blank lines and rule-off comments
-    qualify. A manifest is small enough that the heuristic buys nothing and confusing enough that
-    it could cost a hunk.
+    `autojunk=False` is a guard rather than a fix, and its limit is worth stating: difflib's
+    heuristic only engages at 200 elements or more, and the shipped manifest is about fifty lines,
+    so **on anything this project ships the flag changes nothing**. It is set for the manifest that
+    is not ours — a third-party template, or one that grows — where a blank line appearing in more
+    than 1% of the file would be treated as noise and could cost a hunk.
     """
     base_lines = base.splitlines()
     ours_lines = ours.splitlines()
@@ -289,34 +307,12 @@ def _no_baseline(
     )
 
 
-def _cannot_compare(missing: Sequence[str], name: str, archived: Sequence[str]) -> tuple[str, str]:
-    """The path 100% of today's KBs take, so it is written for someone who did nothing wrong.
-
-    Deliberately the same message `pnk doctor` prints for the same fact — two surfaces disagreeing
-    about one KB is worse than either wording. It promises nothing a release can keep: an
-    unarchived version's content is gone, not pending.
-    """
-    shipped = ", ".join(f"{name}@{version}" for version in archived)
-    return (
-        f"cannot compare: {' and '.join(missing)} "
-        f"{'is' if len(missing) == 1 else 'are'} not in this build's archive",
-        f"Nothing is wrong with your KB and nothing needs changing. A manifest records a version "
-        f"string, never the content that version meant, and this build ships the content of "
-        f"{shipped or 'no version of this template'} — so there is no baseline to diff against, "
-        f"and there will not be a later one: an unarchived version's content is gone, not pending. "
-        f"To see what moved, compare it by hand: run `pnk init` on a throwaway directory and diff "
-        f"its pinakes.toml against yours. A KB stamped from "
-        f"{f'{name}@{archived[-1]}' if archived else 'an archived version'} or later is compared "
-        f"automatically.",
-    )
-
-
 def plan(manifest: Manifest) -> Report:
     """Read three inputs, decide, and return. Nothing under the KB is opened for writing."""
     recorded = manifest.kb.template
     if recorded is None:
         return _no_baseline(
-            "this KB records no template",
+            "cannot compare: this KB records no template",
             "`[kb] template` is what says which blueprint the KB was stamped from, and this "
             "manifest has none — so there is nothing to compare it against. A KB written by hand "
             "is a legitimate KB; `pnk upgrade` is simply not a command it has a use for.",
@@ -350,7 +346,7 @@ def plan(manifest: Manifest) -> Report:
         if candidate not in archived
     ]
     if missing:
-        detail, remedy = _cannot_compare(missing, name, archived)
+        detail, remedy = template.cannot_compare(missing, name, archived)
         return _no_baseline(
             detail,
             remedy,
@@ -454,8 +450,10 @@ def lines(report: Report) -> list[str]:
     for hunk in report.hunks:
         where = f"{hunk.section} " if hunk.section else ""
         out.append(f"  {hunk.placement.label:<15} {where}{hunk.header}")
+    # `placement.label` is a verb phrase for the per-hunk listing ("applies cleanly"), which reads
+    # as "2 applies cleanly" once a count is put in front of it. The summary needs a noun.
     counts = ", ".join(
-        f"{report.counted(placement)} {placement.label}"
+        f"{report.counted(placement)} {_PLACEMENT_COUNTED[placement]}"
         for placement in (Placement.CLEAN, Placement.ALREADY_APPLIED, Placement.CONFLICT)
         if report.counted(placement)
     )
@@ -463,8 +461,10 @@ def lines(report: Report) -> list[str]:
     if report.counted(Placement.CONFLICT):
         out.append(
             _fill(
-                "A conflict is not a fault: it means you have edited that region, so nothing "
-                "can be placed there mechanically and the diff above is what to apply by hand."
+                "A conflict is not a fault. It means the lines a change expects are not in your "
+                "file the way it expects them — edited, reordered, or present in two places — so "
+                "nothing can be placed there mechanically and the diff above is what to apply by "
+                "hand."
             )
         )
     out += ["", f"Nothing was written: `pnk upgrade` reads your {MANIFEST_NAME} and reports."]

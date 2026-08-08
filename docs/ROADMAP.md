@@ -106,7 +106,7 @@ number belongs to a release only when it is cut
 | | | **[Open corrections](#open-corrections--two-live)** | • **Two live**, both from building 2d<br>• **Every one** came from *building* something, not from reading code<br>• Neither blocking |
 | | | **[The graph release, staged](#the-graph-release-staged--gates-only-not-scheduled)** | • PPR channel, the `[ner]` extra<br>• Gate-only: no implementation plan exists, by design<br>• Not scheduled |
 | | | **[The deep release](#the-deep-release)** | • `pnk ask --deep` — the budgeted agentic loop<br>• Only paid entry point still unbuilt |
-| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0, T2 in 0.18.0**; T3, T4, T7 to come<br>• Cuts more than once (D-9), so the name stays here |
+| | | **[The template release](#the-template-release--t1-shipped-in-0170)** | • Template ecosystem, `pnk upgrade`, `sqlite-vec` tier<br>• ✅ Plan written and reviewed, decisions taken<br>• **T1 shipped in 0.17.0, T2 in 0.18.0, T3 merged**; T4, T7 to come<br>• Cuts more than once (D-9), so the name stays here |
 
 ---
 
@@ -700,8 +700,8 @@ the name stays in the unbuilt-work table until the final cut.*
 **The user-visible effect is the intended one, and it is not small.** Every KB in existence now
 prints `WARN template: KB says notes@1.0, installed is notes@1.1`. Nothing is applied
 automatically, no KB needs changing, and **the WARN does not change `pnk doctor`'s exit code** —
-only a `FAIL` does — so no CI that runs it turns red. `pnk upgrade` is what will diff and apply,
-and it is not built yet.
+only a `FAIL` does — so no CI that runs it turns red. `pnk upgrade` (T3) is what diffs; applying
+a change is still the user's own edit.
 
 **Why the archive had to come first.** A KB records a *reference*, never the content. Without a
 copy of what a version meant, nothing on the machine can answer *what was `notes@1.1`?* — which is
@@ -968,7 +968,8 @@ shipped in [`0.2.2`](#022--the-silent-skip-named--20260728-1849) appears in no K
 [`0.6.0`](#060--links-you-can-write--20260801-1051)'s `requires_pinakes` closed the *diagnosis*;
 **0.17.0 makes the divergence detectable** and **0.18.0 makes it measurable** — though not on a KB
 recording `notes@1.0`, whose content was never archived, which is every KB that exists today.
-`pnk upgrade` is what will close the gap.
+`pnk upgrade` (T3) prints the lines themselves; what still closes nothing on its own is adoption —
+no command writes a template change into a manifest.
 
 **State:** the plan
 ([`plans/20260804_1016-template-release.md`](https://github.com/lucagattoni/pinakes/blob/main/plans/20260804_1016-template-release.md))

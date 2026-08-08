@@ -14,10 +14,10 @@
   two places, so nothing can be placed mechanically and the diff is what to apply by hand.
 - **A conflict is not a failure and exits `0`.** The command writes nothing, so it has nothing to
   fail at, and exiting non-zero there would make `pnk upgrade` unusable beside `pnk doctor` in one
-  script. There is one non-zero code and it is new: **`3` means no baseline** — the comparison could
+  script. One code is new and it is this command's alone: **`3` means no baseline** — the comparison could
   not be made and no action of yours would make it possible. **Every KB in existence gets `3`
   today**, because `notes@1.0` was never archived; the message says so, names the comparison
-  available now, and promises nothing a later release can keep. `1` still means what it means
+  available now, and promises nothing a later release cannot keep. `1` still means what it means
   everywhere else: something is wrong and it is yours to fix.
 - **Scope is `pinakes.toml` alone, stated as a boundary rather than left as a gap.** A template also
   ships a `README.md` and a starter `eval/questions.yaml`; `pnk upgrade` touches neither, because
