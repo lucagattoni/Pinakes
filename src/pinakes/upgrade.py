@@ -1055,7 +1055,21 @@ class Applied:
     written: tuple[Hunk, ...]
     skipped: tuple[Hunk, ...]
     backup: Path
+    root: Path
     reference: str
+
+    @property
+    def backup_shown(self) -> str:
+        """How to name the backup so a reader can find it.
+
+        Its bare filename, when it sits in the KB — which is every ordinary KB, and the form the
+        rest of this command's output uses. **Its full path when it does not**, which happens when
+        `pinakes.toml` is a symlink: the backup is written beside the file it backs up, and telling
+        someone their old manifest is in `pinakes.toml.orig` when that file is in another directory
+        entirely is worse than saying nothing.
+        """
+        return self.backup.name if self.backup.parent == self.root else str(self.backup)
+
     invalidating: tuple[Change, ...]
     introduced: tuple[str, ...]
 
@@ -1144,6 +1158,7 @@ def apply(manifest: Manifest, report: Report) -> Applied:
         written=report.placed(Placement.CLEAN),
         skipped=report.placed(Placement.ALREADY_APPLIED),
         backup=backup,
+        root=manifest.root,
         reference=reference,
         invalidating=invalidating(report),
         introduced=introduced(report, report.base),
@@ -1161,7 +1176,7 @@ def applied_lines(result: Applied) -> list[str]:
     if result.skipped:
         counted.append(f"{len(result.skipped)} already applied and skipped")
     out = ["", ", ".join(counted) + ".", ""]
-    out.append(f"{result.backup.name} holds your previous {MANIFEST_NAME}, byte for byte.")
+    out.append(f"{result.backup_shown} holds your previous {MANIFEST_NAME}, byte for byte.")
     out.append(
         fill(
             "It is a new file in your KB and nothing ignores it — `pnk init` writes a "

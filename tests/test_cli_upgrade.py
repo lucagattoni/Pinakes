@@ -2180,3 +2180,52 @@ def test_splices_refuses_a_hunk_that_no_longer_places_uniquely() -> None:
 
     with pytest.raises(UpgradeError, match="single position"):
         splices(twice, ["a", "b", "a"])
+
+
+def test_same_manifest_under_apply_writes_nothing(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """A version bump that leaves the manifest byte-identical has no hunks, so `--apply` has nothing
+    to apply and writes nothing — **including the `[kb] template` restamp**.
+
+    That is the plan's reading taken literally rather than extended: `--apply` is specified in terms
+    of hunks. The consequence is real and is recorded in `plans/20260731_1202-open-corrections.md`
+    rather than silently fixed — a KB on this path keeps reporting drift with no way to record the
+    new reference, and deciding otherwise is a change to what the command does, not a detail.
+    """
+    name = synthetic_template(
+        "synth",
+        versions={"1.0": _source(), "2.0": _source()},
+        current="2.0",
+    )
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    before = _tree(root)
+
+    code, out, err = _run2(root, "--apply")
+
+    assert code == 0, err
+    assert "stamp an identical pinakes.toml" in out
+    assert _tree(root) == before
+
+
+def test_the_backup_is_named_by_its_full_path_when_it_leaves_the_kb(
+    tmp_path: Path, synthetic_template: Callable[..., str]
+) -> None:
+    """The backup is written beside the file it backs up, so a symlinked `pinakes.toml` puts it in
+    another directory. Printing the bare filename then sends the user looking in their KB for a file
+    that is not there — the output would be true of the ordinary case and misleading in the one
+    where finding it actually takes work."""
+    name = _spend_pair(synthetic_template)
+    root = _stamp(tmp_path / "kb", name, "1.0")
+    elsewhere = tmp_path / "shared" / "pinakes.toml"
+    elsewhere.parent.mkdir()
+    elsewhere.write_bytes(_manifest(root).read_bytes())
+    _manifest(root).unlink()
+    _manifest(root).symlink_to(elsewhere)
+
+    code, out, err = _run2(root, "--apply")
+
+    assert code == 0, err
+    assert str(elsewhere.parent.resolve() / "pinakes.toml.orig") in out
+    assert (elsewhere.parent / "pinakes.toml.orig").exists()
+    assert not _backup(root).exists()
