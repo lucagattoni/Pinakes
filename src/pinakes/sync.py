@@ -36,7 +36,7 @@ if TYPE_CHECKING:  # `budget.accountant` reads the price table; a free sync must
 
 from ruamel.yaml.scalarbool import ScalarBoolean
 
-from pinakes import linkscan
+from pinakes import linkscan, search
 from pinakes.chunk import (
     PDF_SUFFIXES,
     Chunk,
@@ -1080,7 +1080,11 @@ def _run(
                 "embedding_model": manifest.embedding.model,
                 "embedding_revision": manifest.embedding.revision or "",
                 "embedding_dim": str(manifest.embedding.dim),
-                "vector_tier": "numpy",
+                # The resolver's return, never a literal. This line read `"numpy"` while
+                # `[retrieval] vector_tier` was a parsed field nothing consumed, so a manifest
+                # naming any other tier still got a `meta` claiming this one. Called through the
+                # module so there is one answer to "which tier ran", not a copy per caller.
+                "vector_tier": search.resolve_tier(manifest),
                 # Only when this run chunked the whole index. An incremental sync re-chunks just
                 # the documents that changed, so writing the current settings here would claim a
                 # coherence the index does not have — and would *silence the warning it just

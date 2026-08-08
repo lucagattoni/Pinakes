@@ -235,6 +235,51 @@ def test_enumerated_values_are_checked(write_manifest: WriteManifest) -> None:
     assert "must be one of" in exc_info.value.message
 
 
+def test_an_unbuilt_vector_tier_is_refused_with_the_tier_that_is_built(
+    write_manifest: WriteManifest,
+) -> None:
+    """`sqlite-vec` loaded silently until it was removed, and got the NumPy tier regardless.
+
+    The assertions are on the *shape* of the accepted list, not merely on it mentioning `numpy`:
+    `sqlite-vec` must be the value **found**, never a comma-followed member of what is allowed.
+    "must be one of 'auto', 'numpy', 'sqlite-vec', found 'bogus'" would satisfy a naive
+    `"numpy" in message` — and is exactly the pre-fix text.
+    """
+    body = minimal(extra="\n[retrieval]\nvector_tier = 'sqlite-vec'\n")
+    with pytest.raises(ManifestError) as exc_info:
+        load(write_manifest(body))
+    message = exc_info.value.message
+    assert "must be one of 'auto', 'numpy'" in message
+    assert "'sqlite-vec'," not in message  # not a member of the accepted list
+    assert "found 'sqlite-vec'" in message  # it is what was refused
+
+    # And the built tiers still load, so what was refused is one value rather than the key.
+    for built in ("auto", "numpy"):
+        loaded = load(write_manifest(minimal(extra=f"\n[retrieval]\nvector_tier = '{built}'\n")))
+        assert loaded.retrieval.vector_tier == built
+
+
+def test_the_manifest_error_names_docs_status(write_manifest: WriteManifest) -> None:
+    """The fix has to be in the error the user actually sees, not only in the CHANGELOG.
+
+    `remedy` is a field of its own, which is why this is a test of its own: an accepted-list message
+    naming nowhere to go would pass the refusal test above unchanged.
+    """
+    body = minimal(extra="\n[retrieval]\nvector_tier = 'sqlite-vec'\n")
+    with pytest.raises(ManifestError) as exc_info:
+        load(write_manifest(body))
+    remedy = exc_info.value.remedy or ""
+    assert "docs/STATUS.md" in remedy
+    assert 'vector_tier = "auto"' in remedy  # the one-line fix, spelled the way it is typed
+
+    # A *typo* keeps the generic remedy: the mapping is per removed value, not per key. Without
+    # this, moving the pointer onto every rejected `vector_tier` would still pass.
+    typo = minimal(extra="\n[retrieval]\nvector_tier = 'nmupy'\n")
+    with pytest.raises(ManifestError) as typo_info:
+        load(write_manifest(typo))
+    assert "docs/STATUS.md" not in (typo_info.value.remedy or "")
+
+
 def test_source_roots_stay_inside_the_kb(write_manifest: WriteManifest) -> None:
     for bad in ("/etc", "../elsewhere"):
         body = MINIMAL.format(kb_id=mint_kb_id()).replace('roots = ["docs/"]', f"roots = ['{bad}']")
